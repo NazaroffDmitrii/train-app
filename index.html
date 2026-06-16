@@ -376,19 +376,52 @@ canvas{display:block;width:100%!important}
   position:fixed;inset:0;background:var(--bg);
   display:flex;align-items:flex-end;justify-content:center;
   z-index:1000;
-  padding:0;
+  padding:calc(var(--sat) + 18px) max(16px,var(--sar)) 0 max(16px,var(--sal));
+  overflow:auto;
 }
 .login-sheet{
-  background:var(--bg1);
-  border-radius:24px 24px 0 0;
-  border-top:0.5px solid var(--border);
+  background:linear-gradient(180deg,#161616 0%,var(--bg1) 100%);
+  border-radius:28px 28px 0 0;
+  border:0.5px solid var(--border);
+  border-bottom:none;
   width:100%;
-  padding:28px 24px calc(var(--sab) + 32px);
+  max-width:460px;
+  padding:30px 20px calc(var(--sab) + 28px);
+  box-shadow:0 -18px 50px rgba(0,0,0,.42);
 }
-.login-logo{font-size:42px;font-weight:800;margin-bottom:2px;letter-spacing:-2px}
+.login-logo{font-size:44px;font-weight:800;margin-bottom:4px;letter-spacing:0;line-height:1}
 .login-logo span{color:var(--accent)}
-.login-sub{color:var(--text2);font-size:16px;margin-bottom:28px}
+.login-sub{color:var(--text2);font-size:16px;margin-bottom:24px;line-height:1.35}
 .login-err{color:var(--red);font-size:14px;margin-top:10px;display:none}
+.login-profiles{display:flex;flex-direction:column;gap:10px}
+.profile-btn{
+  width:100%;
+  display:flex;align-items:center;gap:14px;
+  padding:14px 16px;
+  min-height:68px;
+  border-radius:18px;
+  background:var(--bg2);
+  border:0.5px solid var(--border2);
+  color:var(--text);
+  text-align:left;
+  transition:transform .1s,background .1s,border-color .1s;
+  -webkit-user-select:none;user-select:none;
+}
+.profile-btn:active{transform:scale(.985);background:var(--bg3);border-color:var(--accent)}
+.profile-avatar{
+  width:44px;height:44px;border-radius:14px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:18px;
+  background:var(--accent-dim);color:var(--accent-text);
+}
+.profile-name{font-size:18px;font-weight:650;line-height:1.15;color:var(--text)}
+.profile-meta{font-size:13px;color:var(--text3);margin-top:3px;font-weight:400}
+.profile-chevron{margin-left:auto;color:var(--text3);flex-shrink:0}
+
+@media(max-width:430px){
+  #login-page{padding-left:0;padding-right:0}
+  .login-sheet{border-left:none;border-right:none;padding-left:18px;padding-right:18px}
+}
 
 /* ===== MODAL / SHEET ===== */
 .overlay{
@@ -520,18 +553,9 @@ canvas{display:block;width:100%!important}
 <div id="login-page">
   <div class="login-sheet">
     <div class="login-logo">train<span>.</span></div>
-    <div class="login-sub">Дневник тренировок</div>
-    <div class="field" style="margin-bottom:12px">
-      <label>Логин</label>
-      <input class="input" id="l-user" placeholder="dima" autocomplete="username" autocapitalize="none" autocorrect="off">
-    </div>
-    <div class="field" style="margin-bottom:22px">
-      <label>Пароль</label>
-      <input class="input" type="password" id="l-pass" placeholder="••••••" autocomplete="current-password">
-    </div>
-    <button class="btn btn-primary btn-full" onclick="doLogin()" style="font-size:18px;min-height:56px">Войти</button>
-    <div class="login-err" id="l-err">Неверный логин или пароль</div>
-    <div class="small" id="l-hint" style="text-align:center;margin-top:14px"></div>
+    <div class="login-sub" id="login-sub">Выбери профиль, чтобы продолжить</div>
+    <div class="login-profiles" id="login-profiles"></div>
+    <div class="login-err" id="login-err">Не удалось войти в профиль</div>
   </div>
 </div>
 
@@ -976,11 +1000,11 @@ const DEF_TPLS=[
   {id:'t5',name:'Фулл-бади',exercises:['e19','e1','e9','e5']},
 ];
 
-function hp(p){try{return btoa(unescape(encodeURIComponent('train_v3:'+p)));}catch(e){return p;}}
+function hp(p){return p;}
 
 const DEF_USERS=[
-  {id:'u1',name:'Dima',username:'dima',passHash:hp('dima2026'),role:'admin'},
-  {id:'u2',name:'Natela',username:'natela',passHash:hp('natela2026'),role:'user'},
+  {id:'u1',name:'Dima',username:'dima',passHash:'dima2026',role:'admin'},
+  {id:'u2',name:'Natela',username:'natela',passHash:'natela2026',role:'user'},
 ];
 
 let S={
@@ -993,13 +1017,19 @@ let S={
 // =================== CLOUD ===================
 let cloudOk=null;
 async function loadCloud(){
+  const controller=typeof AbortController!=='undefined'?new AbortController():null;
+  const timeout=controller?setTimeout(()=>controller.abort(),3500):null;
   try{
-    const r=await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`,{headers:{'X-Master-Key':JSONBIN_KEY}});
+    const r=await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`,{
+      headers:{'X-Master-Key':JSONBIN_KEY},
+      signal:controller?.signal
+    });
     if(!r.ok)throw 0;
     const j=await r.json();
     if(j.record&&typeof j.record==='object'){S.data=norm(j.record);saveLocal();cloudOk=true;return;}
     throw 0;
   }catch(e){cloudOk=false;loadLocal();}
+  finally{if(timeout)clearTimeout(timeout);}
 }
 async function saveCloud(){
   saveLocal();
@@ -1021,22 +1051,46 @@ function saveLocal(){localStorage.setItem('train_data',JSON.stringify(S.data));}
 function save(){saveCloud();}
 
 // =================== AUTH ===================
-async function doLogin(){
-  const u=document.getElementById('l-user').value.trim().toLowerCase();
-  const p=document.getElementById('l-pass').value;
-  const user=S.data.users.find(x=>x.username===u&&x.passHash===hp(p));
-  if(!user){document.getElementById('l-err').style.display='block';return;}
-  document.getElementById('l-err').style.display='none';
+function renderLoginProfiles(){
+  const box=document.getElementById('login-profiles');
+  if(!box)return;
+  const users=S.data.users?.length?S.data.users:DEF_USERS;
+  box.innerHTML=users.map((u,i)=>{
+    const name=esc(u.name||u.username||'Профиль');
+    const initial=esc((u.name||u.username||'?').trim()[0]?.toUpperCase()||'?');
+    const hue=(i*67+252)%360;
+    return `
+      <button class="profile-btn" onclick="loginAs('${esc(u.id)}')" aria-label="Войти как ${name}">
+        <div class="profile-avatar" style="background:hsla(${hue},72%,58%,.16);color:hsl(${hue},88%,76%)">${initial}</div>
+        <div class="flex1">
+          <div class="profile-name">${name}</div>
+          <div class="profile-meta">Войти без пароля</div>
+        </div>
+        <svg class="profile-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    `;
+  }).join('');
+}
+
+function loginAs(userId){
+  const user=S.data.users.find(x=>x.id===userId);
+  if(!user){
+    const err=document.getElementById('login-err');
+    if(err)err.style.display='block';
+    return;
+  }
   S.user=user;localStorage.setItem('train_uid',user.id);
   document.getElementById('login-page').style.display='none';
   document.getElementById('app').style.display='flex';
+  document.getElementById('tab-admin').style.display='none';
+  document.getElementById('tab-spacer').style.display='none';
   if(user.role==='admin'){
     document.getElementById('tab-admin').style.display='flex';
     document.getElementById('tab-spacer').style.display='flex';
   }
   initApp();
 }
-document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+async function doLogin(){renderLoginProfiles();}
 
 function doLogout(){
   S.user=null;localStorage.removeItem('train_uid');
@@ -1044,15 +1098,17 @@ function doLogout(){
   document.getElementById('app').style.display='none';
   document.getElementById('tab-admin').style.display='none';
   document.getElementById('tab-spacer').style.display='none';
-  document.getElementById('l-user').value='';
-  document.getElementById('l-pass').value='';
+  renderLoginProfiles();
 }
 
 async function autoLogin(){
-  const h=document.getElementById('l-hint');
-  if(h)h.textContent='Синхронизация...';
+  const sub=document.getElementById('login-sub');
+  loadLocal();
+  renderLoginProfiles();
+  if(sub)sub.textContent='Синхронизация...';
   await loadCloud();
-  if(h)h.textContent='';
+  renderLoginProfiles();
+  if(sub)sub.textContent='Выбери профиль, чтобы продолжить';
   const id=localStorage.getItem('train_uid');
   if(id){
     const u=S.data.users.find(x=>x.id===id);
@@ -1060,6 +1116,8 @@ async function autoLogin(){
       S.user=u;
       document.getElementById('login-page').style.display='none';
       document.getElementById('app').style.display='flex';
+      document.getElementById('tab-admin').style.display='none';
+      document.getElementById('tab-spacer').style.display='none';
       if(u.role==='admin'){
         document.getElementById('tab-admin').style.display='flex';
         document.getElementById('tab-spacer').style.display='flex';
@@ -1697,7 +1755,7 @@ function saveInvite(){
   if(!name||!login||!pass){toast('Заполни все поля','err');return;}
   if((S.data.users||DEF_USERS).some(u=>u.username===login)){toast('Логин занят','err');return;}
   if(!S.data.users)S.data.users=[...DEF_USERS];
-  S.data.users.push({id:'u'+Date.now(),name,username:login,passHash:hp(pass),role});
+  S.data.users.push({id:'u'+Date.now(),name,username:login,passHash:pass,role});
   save();closeSheet('sh-invite');renderAdmin();toast(`Пользователь "${name}" создан`,'ok');
 }
 function openEditTpl(idx){
