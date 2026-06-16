@@ -1,0 +1,2131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Дневник тренировок</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f0f0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="train.">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+/* ===== RESET & BASE ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.5;background:#0f0f0f;color:#f0f0f0}
+button{font-family:inherit;cursor:pointer}
+input,textarea,select{font-family:inherit;font-size:inherit}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+
+/* ===== CSS VARIABLES ===== */
+:root{
+  --bg:#0f0f0f;
+  --bg-card:#1a1a1a;
+  --bg-card2:#222;
+  --bg-input:#111;
+  --border:#2a2a2a;
+  --border-hover:#3a3a3a;
+  --text:#f0f0f0;
+  --text-2:#888;
+  --text-3:#555;
+  --accent:#7c6af7;
+  --accent-dim:#2a2460;
+  --accent-text:#c5bfff;
+  --green:#22c55e;
+  --green-dim:#14532d;
+  --red:#ef4444;
+  --amber:#f59e0b;
+  --amber-dim:#451a03;
+  --radius:10px;
+  --radius-sm:6px;
+  --radius-lg:14px;
+}
+
+/* ===== LAYOUT ===== */
+#app{display:flex;height:100vh;overflow:hidden}
+.sidebar{
+  width:54px;background:var(--bg-card);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:2px;flex-shrink:0;
+  overflow-y:auto;
+}
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.page{display:none;flex:1;overflow-y:auto;padding:24px}
+.page.active{display:block}
+
+/* ===== SIDEBAR NAV ===== */
+.nav-item{
+  width:38px;height:38px;border-radius:var(--radius-sm);border:none;background:transparent;
+  color:var(--text-3);display:flex;align-items:center;justify-content:center;
+  font-size:19px;transition:background .15s,color .15s;position:relative;flex-shrink:0;
+}
+.nav-item:hover{background:var(--bg-card2);color:var(--text-2)}
+.nav-item.active{background:var(--accent-dim);color:var(--accent-text)}
+.nav-spacer{flex:1}
+.nav-tooltip{
+  position:absolute;left:46px;background:#1e1e1e;border:1px solid var(--border);
+  color:var(--text);font-size:12px;padding:4px 8px;border-radius:var(--radius-sm);
+  white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;z-index:100;
+}
+.nav-item:hover .nav-tooltip{opacity:1}
+
+/* ===== TYPOGRAPHY ===== */
+h1{font-size:22px;font-weight:600;color:var(--text)}
+h2{font-size:17px;font-weight:500;color:var(--text);margin-bottom:12px}
+.label{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:500}
+.muted{color:var(--text-2);font-size:13px}
+.small{font-size:12px;color:var(--text-3)}
+
+/* ===== CARDS ===== */
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px}
+.card+.card,.card+.section-title,.section-title+.card{margin-top:12px}
+.section-title{margin:20px 0 8px}
+
+/* ===== BUTTONS ===== */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;padding:8px 16px;
+  border-radius:var(--radius-sm);border:1px solid var(--border);background:transparent;
+  color:var(--text);font-size:13px;font-weight:500;transition:background .15s,border-color .15s;
+}
+.btn:hover{background:var(--bg-card2);border-color:var(--border-hover)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{background:#6a59e8;border-color:#6a59e8}
+.btn-full{width:100%;justify-content:center}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-icon{padding:6px;border-radius:var(--radius-sm)}
+.btn-danger{color:var(--red);border-color:transparent}
+.btn-danger:hover{background:#2a0a0a;border-color:var(--red)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ===== FORMS ===== */
+.input{
+  background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text);padding:7px 10px;outline:none;transition:border-color .15s;width:100%;
+}
+.input:focus{border-color:var(--accent)}
+.input-sm{padding:5px 8px;font-size:13px}
+.input-number{width:72px;text-align:center}
+textarea.input{resize:vertical;min-height:72px}
+select.input{cursor:pointer}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;color:var(--text-2)}
+
+/* ===== TAGS / BADGES ===== */
+.tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:3px 8px;border-radius:20px}
+.tag-gym{background:var(--accent-dim);color:var(--accent-text)}
+.tag-run{background:var(--green-dim);color:#86efac}
+.tag-pr{background:var(--amber-dim);color:#fcd34d;font-size:11px}
+.tag-new{background:var(--amber-dim);color:#fcd34d;font-size:10px}
+
+/* ===== HEATMAP ===== */
+.heatmap{display:flex;gap:3px}
+.hm-col{display:flex;flex-direction:column;gap:3px}
+.hm-cell{width:13px;height:13px;border-radius:2px;background:var(--bg-card2)}
+.hm-cell.l1{background:#1d4ed8}
+.hm-cell.l2{background:#3b82f6}
+.hm-cell.l3{background:#7c6af7}
+
+/* ===== HISTORY ITEM ===== */
+.history-item{
+  display:flex;align-items:center;gap:12px;padding:11px 0;
+  border-bottom:1px solid var(--border);cursor:pointer;
+}
+.history-item:last-child{border-bottom:none}
+.history-item:hover .history-title{color:var(--accent-text)}
+.history-icon{
+  width:36px;height:36px;border-radius:var(--radius-sm);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:17px;
+}
+.history-icon.gym{background:var(--accent-dim);color:var(--accent-text)}
+.history-icon.run{background:var(--green-dim);color:#86efac}
+.history-title{font-size:14px;font-weight:500;transition:color .15s}
+
+/* ===== EXERCISE CARD ===== */
+.exercise-block{
+  background:var(--bg-card2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px;margin-bottom:10px;
+}
+.exercise-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.exercise-name{font-weight:500;font-size:15px;flex:1}
+.drag-handle{color:var(--text-3);cursor:grab;font-size:18px;padding:2px}
+.drag-handle:active{cursor:grabbing}
+.reorder-btns{display:flex;flex-direction:column;gap:1px}
+.reorder-btn{
+  width:20px;height:16px;border:none;background:var(--bg-card);color:var(--text-3);
+  display:flex;align-items:center;justify-content:center;font-size:10px;border-radius:3px;
+  line-height:1;
+}
+.reorder-btn:hover{background:var(--border-hover);color:var(--text)}
+.reorder-btn:disabled{opacity:.25;cursor:not-allowed}
+.sets-header{display:grid;grid-template-columns:28px 80px 80px 90px 32px;gap:6px;font-size:11px;color:var(--text-3);margin-bottom:4px;padding:0 2px}
+.set-row{display:grid;grid-template-columns:28px 80px 80px 90px 32px;gap:6px;align-items:center;margin-bottom:4px}
+.set-num{font-size:12px;color:var(--text-3);text-align:center}
+.rpe-input{display:flex;flex-direction:column;gap:3px}
+.rpe-dots{display:flex;gap:2px;align-items:center}
+.rpe-dot{width:14px;height:5px;border-radius:2px;background:var(--bg-card);cursor:pointer;transition:background .1s}
+.rpe-dot.on{background:var(--accent)}
+.rpe-val{font-size:11px;color:var(--text-3);text-align:center}
+.set-check{background:none;border:none;color:var(--text-3);font-size:16px;display:flex;align-items:center;justify-content:center;padding:4px;border-radius:4px;transition:color .15s}
+.set-check:hover{color:var(--green)}
+.set-check.done{color:var(--green)}
+.pr-info{font-size:11px;color:var(--text-3);margin-bottom:8px}
+.pr-info span{color:var(--amber);font-weight:500}
+.exercise-comment{margin-top:10px}
+
+/* ===== WORKOUT SUMMARY BAR ===== */
+.summary-bar{
+  display:flex;gap:0;background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden;margin-top:14px;
+}
+.summary-item{flex:1;padding:10px;text-align:center;border-right:1px solid var(--border)}
+.summary-item:last-child{border-right:none}
+.summary-num{font-size:17px;font-weight:600;color:var(--text)}
+.summary-label{font-size:11px;color:var(--text-3);margin-top:1px}
+
+/* ===== WORKOUT HEADER ===== */
+.workout-topbar{
+  display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap;
+  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;
+}
+.workout-title-input{
+  background:none;border:none;color:var(--text);font-size:16px;font-weight:500;
+  outline:none;flex:1;min-width:0;
+}
+.timer-display{font-size:15px;color:var(--accent-text);font-variant-numeric:tabular-nums;font-weight:500}
+
+/* ===== RUN PAGE ===== */
+.run-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.big-metric{font-size:28px;font-weight:600;color:var(--text)}
+.big-unit{font-size:14px;color:var(--text-2)}
+.map-placeholder{
+  background:var(--bg-card2);border:1px solid var(--border);border-radius:var(--radius);
+  height:160px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;
+  color:var(--text-3);cursor:pointer;transition:border-color .15s;
+}
+.map-placeholder:hover{border-color:var(--border-hover)}
+
+/* ===== STATS / CHARTS ===== */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.stat-card{background:var(--bg-card2);border:1px solid var(--border);border-radius:var(--radius);padding:12px}
+.stat-num{font-size:24px;font-weight:600;color:var(--text)}
+.stat-label{font-size:12px;color:var(--text-3);margin-top:2px}
+.chart-wrap{position:relative;width:100%;overflow:hidden;min-height:100px}
+
+/* ===== ADMIN ===== */
+.user-row{
+  display:flex;align-items:center;gap:12px;padding:10px;border-radius:var(--radius-sm);
+  cursor:pointer;transition:background .15s;
+}
+.user-row:hover{background:var(--bg-card2)}
+.avatar{
+  width:38px;height:38px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-weight:600;font-size:14px;flex-shrink:0;
+}
+.exercise-lib-row{
+  display:flex;align-items:center;gap:10px;padding:9px 0;
+  border-bottom:1px solid var(--border);
+}
+.exercise-lib-row:last-child{border-bottom:none}
+.template-row{
+  display:flex;align-items:center;gap:10px;padding:9px 0;
+  border-bottom:1px solid var(--border);
+}
+.template-row:last-child{border-bottom:none}
+
+/* ===== LOGIN PAGE ===== */
+#login-page{
+  position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;
+  justify-content:center;z-index:1000;
+}
+.login-box{width:340px}
+.login-logo{font-size:28px;font-weight:700;margin-bottom:4px;color:var(--text)}
+.login-logo span{color:var(--accent)}
+.login-sub{color:var(--text-2);font-size:14px;margin-bottom:28px}
+.login-error{color:var(--red);font-size:13px;margin-top:8px;display:none}
+.sync-status{font-size:12px;color:var(--text-3);margin-top:14px;text-align:center}
+
+/* ===== MODAL ===== */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;
+  display:none;align-items:center;justify-content:center;
+}
+.modal-overlay.open{display:flex}
+.modal{
+  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:20px;width:420px;max-height:80vh;overflow-y:auto;
+}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.modal-title{font-size:16px;font-weight:500}
+
+/* ===== EXERCISE LIBRARY MODAL ===== */
+.lib-exercise-item{
+  display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-sm);
+  cursor:pointer;transition:background .15s;
+}
+.lib-exercise-item:hover{background:var(--bg-card2)}
+.lib-cat-label{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px 2px;font-weight:500}
+
+/* ===== FILTER TABS ===== */
+.filter-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.filter-tab{
+  padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:transparent;
+  color:var(--text-2);font-size:13px;cursor:pointer;transition:all .15s;
+}
+.filter-tab.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-text)}
+
+/* ===== RECORDS TABLE ===== */
+.records-table{width:100%;border-collapse:collapse}
+.records-table th{text-align:left;font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:1px solid var(--border)}
+.records-table td{padding:10px 10px;font-size:13px;border-bottom:1px solid var(--border)}
+.records-table tr:last-child td{border-bottom:none}
+.records-table tr.fresh{background:rgba(245,158,11,.07)}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-hover);border-radius:4px}
+
+/* ===== TEMPLATE PICKER ===== */
+.template-item{
+  padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);
+  cursor:pointer;margin-bottom:6px;transition:background .15s,border-color .15s;
+}
+.template-item:hover{background:var(--bg-card2);border-color:var(--accent)}
+.template-name{font-size:14px;font-weight:500}
+.template-desc{font-size:12px;color:var(--text-3);margin-top:2px}
+
+/* ===== TOASTS ===== */
+#toast-container{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast{
+  background:#1e1e1e;border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:10px 16px;font-size:13px;color:var(--text);animation:slideIn .2s ease;
+}
+.toast.success{border-color:var(--green);color:#86efac}
+.toast.error{border-color:var(--red);color:#fca5a5}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ===== DRAG OVER ===== */
+.drag-over{border:1px dashed var(--accent)!important}
+.dragging{opacity:.4}
+</style>
+</head>
+<body>
+
+<!-- ==================== LOGIN ==================== -->
+<div id="login-page">
+  <div class="login-box">
+    <div class="login-logo">train<span>.</span></div>
+    <div class="login-sub">Личный дневник тренировок</div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Имя пользователя</label>
+      <input class="input" id="login-username" placeholder="dima" autocomplete="username">
+    </div>
+    <div class="field" style="margin-bottom:16px">
+      <label>Пароль</label>
+      <input class="input" type="password" id="login-password" placeholder="••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-full" onclick="doLogin()">Войти</button>
+    <div class="login-error" id="login-error">Неверное имя или пароль</div>
+    <div class="sync-status" id="sync-status"></div>
+  </div>
+</div>
+
+<!-- ==================== APP ==================== -->
+<div id="app" style="display:none">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <button class="nav-item active" onclick="nav('home')" id="nav-home">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span class="nav-tooltip">Главная</span>
+    </button>
+    <button class="nav-item" onclick="nav('workout')" id="nav-workout">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v16M18 4v16M2 9h4M18 9h4M2 15h4M18 15h4"/></svg>
+      <span class="nav-tooltip">Тренировка</span>
+    </button>
+    <button class="nav-item" onclick="nav('run')" id="nav-run">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><path d="M10 22l1-7-2-3.5 3.5-3L16 12"/><path d="M8 14l-2 4"/><path d="M14.5 8.5L17 10l3 1"/></svg>
+      <span class="nav-tooltip">Бег</span>
+    </button>
+    <button class="nav-item" onclick="nav('history')" id="nav-history">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span class="nav-tooltip">История</span>
+    </button>
+    <button class="nav-item" onclick="nav('records')" id="nav-records">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M5 4H3v2a4 4 0 0 0 4 4M19 4h2v2a4 4 0 0 1-4 4"/></svg>
+      <span class="nav-tooltip">Рекорды</span>
+    </button>
+    <button class="nav-item" onclick="nav('stats')" id="nav-stats">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span class="nav-tooltip">Статистика</span>
+    </button>
+    <div class="nav-spacer"></div>
+    <button class="nav-item" onclick="nav('admin')" id="nav-admin" style="display:none">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span class="nav-tooltip">Админ</span>
+    </button>
+    <button class="nav-item" onclick="doLogout()" style="margin-top:4px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span class="nav-tooltip">Выйти</span>
+    </button>
+  </div>
+
+  <!-- ==================== HOME PAGE ==================== -->
+  <div class="main">
+  <div class="page active" id="page-home">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px">
+      <div>
+        <h1 id="home-greeting">Привет!</h1>
+        <div class="muted" id="home-date"></div>
+      </div>
+      <button class="btn btn-primary" onclick="startNewWorkout()" style="margin-top:4px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Начать тренировку
+      </button>
+    </div>
+
+    <div class="label section-title">Активность — 3 месяца</div>
+    <div class="card">
+      <div id="heatmap-container" class="heatmap"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px">
+        <span class="small" id="hm-m1"></span>
+        <span class="small" id="hm-m2"></span>
+        <span class="small" id="hm-m3"></span>
+      </div>
+    </div>
+
+    <div class="label section-title">Последние тренировки</div>
+    <div class="card" id="home-recent" style="padding:0 16px"></div>
+  </div>
+
+  <!-- ==================== WORKOUT PAGE ==================== -->
+  <div class="page" id="page-workout">
+    <div class="workout-topbar">
+      <input class="workout-title-input" id="workout-name" value="Новая тренировка" placeholder="Название тренировки">
+      <span class="timer-display" id="workout-timer">00:00</span>
+      <button class="btn btn-sm" onclick="openTemplateModal()">Шаблон</button>
+      <button class="btn btn-sm" onclick="openSaveAsTemplateModal()">Сохранить как шаблон</button>
+      <button class="btn btn-sm btn-danger" onclick="finishWorkout()">Завершить</button>
+    </div>
+
+    <div id="exercises-list"></div>
+
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-full" onclick="openLibraryModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Добавить упражнение
+      </button>
+    </div>
+
+    <div class="summary-bar" id="workout-summary">
+      <div class="summary-item"><div class="summary-num" id="sum-tonnage">0</div><div class="summary-label">тоннаж, кг</div></div>
+      <div class="summary-item"><div class="summary-num" id="sum-sets">0</div><div class="summary-label">подходов</div></div>
+      <div class="summary-item"><div class="summary-num" id="sum-time">0</div><div class="summary-label">минут</div></div>
+    </div>
+  </div>
+
+  <!-- ==================== RUN PAGE ==================== -->
+  <div class="page" id="page-run">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h1>Новая пробежка</h1>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="resetRunForm(true)">Новая пробежка</button>
+        <button class="btn btn-primary" onclick="saveRun()">Сохранить</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="run-grid" style="margin-bottom:16px">
+        <div class="field">
+          <label>Дистанция, км</label>
+          <input class="input input-number" type="number" step="0.1" id="run-dist" placeholder="0.0" oninput="calcPace()">
+        </div>
+        <div class="field">
+          <label>Время (мм:сс)</label>
+          <input class="input input-number" id="run-time" placeholder="28:00" oninput="calcPace()">
+        </div>
+        <div class="field">
+          <label>Темп (авторасчёт)</label>
+          <div class="big-metric" id="run-pace">—</div>
+        </div>
+        <div class="field">
+          <label>Средний пульс, уд/мин</label>
+          <input class="input input-number" type="number" id="run-hr" placeholder="150">
+        </div>
+        <div class="field">
+          <label>Каденс, шаг/мин</label>
+          <input class="input input-number" type="number" id="run-cadence" placeholder="172">
+        </div>
+        <div class="field">
+          <label>GPX маршрут</label>
+          <input type="file" accept=".gpx" id="run-gpx-input" style="display:none" onchange="handleGpx(this)">
+          <button class="btn btn-sm" onclick="document.getElementById('run-gpx-input').click()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Импорт GPX
+          </button>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:14px">
+        <label>Заметки</label>
+        <textarea class="input" id="run-notes" placeholder="Как себя чувствовал, условия..."></textarea>
+      </div>
+      <div class="map-placeholder" id="run-map" onclick="document.getElementById('run-gpx-input').click()">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+        <span class="muted">Импортируйте GPX для отображения маршрута</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== HISTORY PAGE ==================== -->
+  <div class="page" id="page-history">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h1>История</h1>
+    </div>
+    <div class="filter-tabs">
+      <button class="filter-tab active" onclick="filterHistory('all',this)">Все</button>
+      <button class="filter-tab" onclick="filterHistory('gym',this)">Зал</button>
+      <button class="filter-tab" onclick="filterHistory('run',this)">Бег</button>
+    </div>
+    <div class="card" id="history-list" style="padding:0 16px"></div>
+  </div>
+
+  <!-- ==================== RECORDS PAGE ==================== -->
+  <div class="page" id="page-records">
+    <h1 style="margin-bottom:18px">Личные рекорды</h1>
+    <div class="filter-tabs" id="records-cat-filters"></div>
+    <div class="card" style="padding:0;overflow-x:auto">
+      <table class="records-table" id="records-table">
+        <thead>
+          <tr>
+            <th>Упражнение</th>
+            <th>Макс. вес × повторы</th>
+            <th>Макс. повторения</th>
+            <th>Дата</th>
+          </tr>
+        </thead>
+        <tbody id="records-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ==================== STATS PAGE ==================== -->
+  <div class="page" id="page-stats">
+    <h1 style="margin-bottom:18px">Статистика</h1>
+
+    <div class="stat-grid" id="stats-summary"></div>
+
+    <div class="card section-title">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div style="font-weight:500;font-size:14px">Прогресс по упражнению</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select class="input" style="width:auto;font-size:13px" id="stats-exercise-select" onchange="renderProgressChart()"></select>
+          <div class="filter-tabs" style="margin:0" id="progress-period-tabs">
+            <button class="filter-tab active" data-period="1m" onclick="setProgressPeriod('1m',this)">1 мес</button>
+            <button class="filter-tab" data-period="3m" onclick="setProgressPeriod('3m',this)">3 мес</button>
+            <button class="filter-tab" data-period="all" onclick="setProgressPeriod('all',this)">Всё время</button>
+          </div>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="progress-chart" height="120"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div style="font-weight:500;font-size:14px">Тоннаж</div>
+        <div class="filter-tabs" style="margin:0" id="tonnage-period-tabs">
+          <button class="filter-tab active" data-period="week" onclick="setTonnagePeriod('week',this)">Неделя</button>
+          <button class="filter-tab" data-period="month" onclick="setTonnagePeriod('month',this)">Месяц</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="tonnage-chart" height="100"></canvas>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div style="font-weight:500;font-size:14px;margin-bottom:12px">Бег — динамика темпа</div>
+      <div class="stat-grid" id="run-best-pace" style="margin-bottom:12px"></div>
+      <div class="chart-wrap">
+        <canvas id="run-chart" height="100"></canvas>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div style="font-weight:500;font-size:14px;margin-bottom:12px">Бег — недельный километраж</div>
+      <div class="chart-wrap">
+        <canvas id="run-km-chart" height="100"></canvas>
+      </div>
+    </div>
+
+    <div class="label section-title" style="margin-top:18px">Активность</div>
+    <div class="card">
+      <div id="stats-heatmap" class="heatmap"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px">
+        <span class="small" id="stats-hm-m1"></span>
+        <span class="small" id="stats-hm-m2"></span>
+        <span class="small" id="stats-hm-m3"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ADMIN PAGE ==================== -->
+  <div class="page" id="page-admin">
+    <h1 style="margin-bottom:18px">Админ-панель</h1>
+
+    <div class="label">Пользователи</div>
+    <div class="card" id="admin-users" style="margin-top:8px;padding:8px"></div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:18px;margin-bottom:8px">
+      <div class="label" style="margin:0">Библиотека упражнений</div>
+      <button class="btn btn-sm" onclick="openAddExerciseModal()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Добавить
+      </button>
+    </div>
+    <div class="card" id="admin-exercises" style="padding:0 16px"></div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:18px;margin-bottom:8px">
+      <div class="label" style="margin:0">Шаблоны тренировок</div>
+    </div>
+    <div class="card" id="admin-templates" style="padding:0 16px"></div>
+
+    <div style="margin-top:18px">
+      <div class="label" style="margin-bottom:8px">Управление доступом</div>
+      <button class="btn btn-full" onclick="openInviteModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Пригласить пользователя
+      </button>
+    </div>
+  </div>
+  </div><!-- end .main -->
+</div><!-- end #app -->
+
+<!-- ==================== MODALS ==================== -->
+
+<!-- Library Modal -->
+<div class="modal-overlay" id="modal-library">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Выбрать упражнение</div>
+      <button class="btn btn-icon" onclick="closeModal('modal-library')">✕</button>
+    </div>
+    <input class="input" id="lib-search" placeholder="Поиск..." oninput="renderLibModal()" style="margin-bottom:12px">
+    <div id="lib-modal-list"></div>
+  </div>
+</div>
+
+<!-- Template Modal -->
+<div class="modal-overlay" id="modal-template">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Выбрать шаблон</div>
+      <button class="btn btn-icon" onclick="closeModal('modal-template')">✕</button>
+    </div>
+    <div id="template-list"></div>
+  </div>
+</div>
+
+<!-- Save As Template Modal -->
+<div class="modal-overlay" id="modal-save-template">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Сохранить как шаблон</div>
+      <button class="btn btn-icon" onclick="closeModal('modal-save-template')">✕</button>
+    </div>
+    <div class="field" style="margin-bottom:16px">
+      <label>Название шаблона</label>
+      <input class="input" id="save-template-name" placeholder="Грудь / Трицепс">
+    </div>
+    <button class="btn btn-primary btn-full" onclick="saveCurrentAsTemplate()">Сохранить</button>
+  </div>
+</div>
+
+<!-- Edit Template Modal (admin) -->
+<div class="modal-overlay" id="modal-edit-template">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Редактировать шаблон</div>
+      <button class="btn btn-icon" onclick="closeModal('modal-edit-template')">✕</button>
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Название</label>
+      <input class="input" id="edit-template-name">
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Упражнения (через запятую, названия)</label>
+      <textarea class="input" id="edit-template-exercises" placeholder="Жим штанги лёжа, Тяга верхнего блока"></textarea>
+      <div class="small">Совпадения ищутся по названию из библиотеки упражнений.</div>
+    </div>
+    <button class="btn btn-primary btn-full" onclick="saveEditedTemplate()">Сохранить</button>
+    <input type="hidden" id="edit-template-idx">
+  </div>
+</div>
+
+<!-- Add Exercise Modal -->
+<div class="modal-overlay" id="modal-add-exercise">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="add-ex-title">Добавить упражнение</div>
+      <button class="btn btn-icon" onclick="closeModal('modal-add-exercise')">✕</button>
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Название</label>
+      <input class="input" id="add-ex-name" placeholder="Жим штанги лёжа">
+    </div>
+    <div class="field" style="margin-bottom:16px">
+      <label>Категория</label>
+      <input class="input" id="add-ex-cat" placeholder="Грудь">
+    </div>
+    <button class="btn btn-primary btn-full" onclick="saveExercise()">Сохранить</button>
+    <input type="hidden" id="add-ex-id">
+  </div>
+</div>
+
+<!-- Invite User Modal -->
+<div class="modal-overlay" id="modal-invite">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Пригласить пользователя</div>
+      <button class="btn btn-icon" onclick="closeModal('modal-invite')">✕</button>
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Имя</label>
+      <input class="input" id="invite-name" placeholder="Имя">
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Логин</label>
+      <input class="input" id="invite-username" placeholder="login">
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Пароль</label>
+      <input class="input" id="invite-password" placeholder="пароль">
+    </div>
+    <div class="field" style="margin-bottom:16px">
+      <label>Роль</label>
+      <select class="input" id="invite-role">
+        <option value="user">Пользователь</option>
+        <option value="admin">Администратор</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-full" onclick="saveInvitedUser()">Создать пользователя</button>
+    <div class="small" style="margin-top:10px">Пользователь будет сохранён в общих данных (JSONBin / localStorage) и сразу сможет войти под указанным логином и паролем.</div>
+  </div>
+</div>
+
+<!-- View Workout Modal -->
+<div class="modal-overlay" id="modal-view-workout">
+  <div class="modal" style="width:500px;max-width:95vw">
+    <div class="modal-header">
+      <div class="modal-title" id="view-wt-title"></div>
+      <button class="btn btn-icon" onclick="closeModal('modal-view-workout')">✕</button>
+    </div>
+    <div id="view-wt-content"></div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<script>
+// ==================== DATA LAYER ====================
+// JSONBin.io config — вставь свои ключи (jsonbin.io → Create Bin → X-Master-Key и Bin ID)
+const JSONBIN_KEY = '$2a$10$V6uN6I6Tmh58DaSu3JWZw.N1kCOzbvepgcZu17ZTdnYX9o.qw/LkW'; // X-Master-Key
+const BIN_ID = '6a3120ecda38895dfec8cfe2';      // ID бина
+const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b/';
+
+// DEMO_MODE=true работает полностью на localStorage без сети (удобно для тестов).
+// Чтобы включить облако: впиши JSONBIN_KEY и BIN_ID выше и поставь DEMO_MODE=false.
+const DEMO_MODE = false;
+
+const DEFAULT_EXERCISES = [
+  {id:'e1',name:'Жим штанги лёжа',cat:'Грудь'},
+  {id:'e2',name:'Жим гантелей лёжа',cat:'Грудь'},
+  {id:'e3',name:'Разводка гантелей',cat:'Грудь'},
+  {id:'e4',name:'Отжимания на брусьях',cat:'Грудь'},
+  {id:'e5',name:'Тяга штанги в наклоне',cat:'Спина'},
+  {id:'e6',name:'Тяга верхнего блока',cat:'Спина'},
+  {id:'e7',name:'Тяга нижнего блока',cat:'Спина'},
+  {id:'e8',name:'Подтягивания',cat:'Спина'},
+  {id:'e9',name:'Присед со штангой',cat:'Ноги'},
+  {id:'e10',name:'Жим ногами',cat:'Ноги'},
+  {id:'e11',name:'Румынская тяга',cat:'Ноги'},
+  {id:'e12',name:'Выпады с гантелями',cat:'Ноги'},
+  {id:'e13',name:'Жим штанги сидя',cat:'Плечи'},
+  {id:'e14',name:'Разведение гантелей стоя',cat:'Плечи'},
+  {id:'e15',name:'Подъём EZ-штанги на бицепс',cat:'Бицепс'},
+  {id:'e16',name:'Молотки с гантелями',cat:'Бицепс'},
+  {id:'e17',name:'Французский жим',cat:'Трицепс'},
+  {id:'e18',name:'Разгибания на блоке',cat:'Трицепс'},
+  {id:'e19',name:'Становая тяга',cat:'Базовые'},
+  {id:'e20',name:'Планка',cat:'Пресс'},
+];
+
+const DEFAULT_TEMPLATES = [
+  {id:'t1',name:'Грудь / Трицепс',exercises:['e1','e2','e3','e17','e18']},
+  {id:'t2',name:'Спина / Бицепс',exercises:['e5','e6','e8','e15','e16']},
+  {id:'t3',name:'День ног',exercises:['e9','e10','e11','e12']},
+  {id:'t4',name:'Плечи / Пресс',exercises:['e13','e14','e20']},
+  {id:'t5',name:'Фулл-бади',exercises:['e19','e1','e9','e5']},
+];
+
+// Простое хэширование пароля (не криптостойкое, но не хранит plain text в данных).
+function hashPass(p){
+  // SHA-256 через WebCrypto недоступен синхронно — используем простой обратимый-нестойкий хэш на base64+соль.
+  // Для уровня "минимальная защита от случайного просмотра" этого достаточно.
+  try { return btoa(unescape(encodeURIComponent('train_salt_v3:' + p))); }
+  catch(e){ return p; }
+}
+
+const DEFAULT_USERS = [
+  {id:'u1',name:'Dima',username:'dima',passHash:hashPass('dima2026'),role:'admin'},
+  {id:'u2',name:'Natela',username:'natela',passHash:hashPass('natela2026'),role:'user'},
+];
+
+// ==================== APP STATE ====================
+let state = {
+  currentUser: null,
+  data: {
+    exercises: [...DEFAULT_EXERCISES],
+    workouts: [],
+    runs: [],
+    templates: [...DEFAULT_TEMPLATES],
+    users: [...DEFAULT_USERS],
+    records: {},
+  },
+  workout: {
+    active: false,
+    name: 'Новая тренировка',
+    startTime: null,
+    timerInterval: null,
+    autoSaveInterval: null,
+    exercises: [], // [{exId, sets:[{weight,reps,rpe,done}], comment}]
+  },
+  progressPeriod: '1m',
+  tonnagePeriod: 'week',
+};
+
+function getUsers(){ return state.data.users || DEFAULT_USERS; }
+
+// ==================== CLOUD SYNC (JSONBin.io) ====================
+// loadFromCloud(): тянет данные из бина. Если сеть недоступна — fallback на localStorage.
+// saveToCloud(): пишет текущее состояние в бин. Если сеть недоступна — данные остаются в localStorage,
+//                а попытка отправки в облако повторится при следующем сохранении.
+let cloudAvailable = !DEMO_MODE;
+let lastSyncOk = null;
+
+async function loadFromCloud() {
+  if (DEMO_MODE) { loadFromLocal(); return; }
+  try {
+    const res = await fetch(JSONBIN_BASE + BIN_ID + '/latest', {
+      method: 'GET',
+      headers: { 'X-Master-Key': JSONBIN_KEY },
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const record = json.record;
+    if (record && typeof record === 'object') {
+      state.data = normalizeData(record);
+      saveLocalCache(); // держим локальный кэш свежим на случай offline
+      lastSyncOk = true;
+      cloudAvailable = true;
+      return;
+    }
+    throw new Error('Пустой ответ от JSONBin');
+  } catch (err) {
+    console.warn('loadFromCloud: не удалось получить данные из облака, fallback на localStorage', err);
+    lastSyncOk = false;
+    cloudAvailable = false;
+    loadFromLocal();
+    toast('Нет связи с облаком — используются локальные данные', 'error');
+  }
+}
+
+async function saveToCloud() {
+  if (DEMO_MODE) { saveLocalCache(); return; }
+  // Всегда обновляем локальный кэш сразу, чтобы данные не потерялись при сбое сети
+  saveLocalCache();
+  try {
+    const res = await fetch(JSONBIN_BASE + BIN_ID, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_KEY,
+      },
+      body: JSON.stringify(state.data),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    lastSyncOk = true;
+    cloudAvailable = true;
+  } catch (err) {
+    console.warn('saveToCloud: не удалось сохранить в облако, данные сохранены только локально', err);
+    lastSyncOk = false;
+    cloudAvailable = false;
+    toast('Сохранено локально. Облако недоступно — синхронизируется позже', 'error');
+  }
+}
+
+function normalizeData(record) {
+  return {
+    exercises: record.exercises && record.exercises.length ? record.exercises : [...DEFAULT_EXERCISES],
+    workouts: record.workouts || [],
+    runs: record.runs || [],
+    templates: record.templates && record.templates.length ? record.templates : [...DEFAULT_TEMPLATES],
+    users: record.users && record.users.length ? record.users : [...DEFAULT_USERS],
+    records: record.records || {},
+  };
+}
+
+function loadFromLocal() {
+  const saved = localStorage.getItem('train_data');
+  if (saved) {
+    try { state.data = normalizeData(JSON.parse(saved)); return; } catch(e){}
+  }
+  state.data = {
+    exercises: [...DEFAULT_EXERCISES],
+    workouts: [],
+    runs: [],
+    templates: [...DEFAULT_TEMPLATES],
+    users: [...DEFAULT_USERS],
+    records: {},
+  };
+}
+
+function saveLocalCache() {
+  localStorage.setItem('train_data', JSON.stringify(state.data));
+}
+
+// Совместимость со старым названием — все внутренние вызовы saveData() теперь идут в облако (с fallback).
+function saveData() {
+  saveToCloud();
+}
+
+// ==================== AUTH ====================
+async function doLogin() {
+  const u = document.getElementById('login-username').value.trim().toLowerCase();
+  const p = document.getElementById('login-password').value;
+  const user = getUsers().find(x => x.username === u && x.passHash === hashPass(p));
+  if (!user) {
+    document.getElementById('login-error').style.display = 'block';
+    return;
+  }
+  document.getElementById('login-error').style.display = 'none';
+  state.currentUser = user;
+  localStorage.setItem('train_user', user.id);
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  if (user.role === 'admin') {
+    document.getElementById('nav-admin').style.display = 'flex';
+  }
+  initApp();
+}
+
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+function doLogout() {
+  state.currentUser = null;
+  localStorage.removeItem('train_user');
+  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('nav-admin').style.display = 'none';
+  document.getElementById('login-username').value = '';
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').style.display = 'none';
+}
+
+async function tryAutoLogin() {
+  const statusEl = document.getElementById('sync-status');
+  if (statusEl) statusEl.textContent = DEMO_MODE ? '' : 'Синхронизация...';
+  await loadFromCloud();
+  if (statusEl) {
+    statusEl.textContent = DEMO_MODE ? '' : (lastSyncOk ? '' : 'Офлайн-режим (локальные данные)');
+  }
+  const id = localStorage.getItem('train_user');
+  if (id) {
+    const user = getUsers().find(x => x.id === id);
+    if (user) {
+      state.currentUser = user;
+      document.getElementById('login-page').style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+      if (user.role === 'admin') document.getElementById('nav-admin').style.display = 'flex';
+      initApp();
+      return;
+    }
+  }
+}
+
+// ==================== NAVIGATION ====================
+function nav(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.getElementById('nav-' + page)?.classList.add('active');
+  if (page === 'home') renderHome();
+  if (page === 'history') renderHistory();
+  if (page === 'records') renderRecords();
+  if (page === 'stats') renderStats();
+  if (page === 'admin') renderAdmin();
+}
+
+// ==================== INIT ====================
+function initApp() {
+  const u = state.currentUser;
+  const days = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+  const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  const now = new Date();
+  document.getElementById('home-greeting').textContent = `Привет, ${u.name}!`;
+  document.getElementById('home-date').textContent = `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]}`;
+  renderHome();
+  nav('home');
+}
+
+// ==================== HOME ====================
+function renderHome() {
+  renderHeatmap('heatmap-container', 'hm-m1', 'hm-m2', 'hm-m3');
+  renderRecentWorkouts();
+}
+
+function getMyWorkouts() {
+  return state.data.workouts.filter(w => w.userId === state.currentUser.id);
+}
+function getMyRuns() {
+  return state.data.runs.filter(r => r.userId === state.currentUser.id);
+}
+
+function renderRecentWorkouts() {
+  const container = document.getElementById('home-recent');
+  const workouts = getMyWorkouts().slice(-5).reverse();
+  const runs = getMyRuns().slice(-3).reverse();
+  const all = [
+    ...workouts.map(w => ({...w, _type:'gym'})),
+    ...runs.map(r => ({...r, _type:'run'}))
+  ].sort((a,b) => b.date - a.date).slice(0,5);
+
+  if (!all.length) {
+    container.innerHTML = '<div class="muted" style="padding:16px 0">Тренировок пока нет. Начни первую!</div>';
+    return;
+  }
+  container.innerHTML = all.map((item, i) => {
+    const isLast = i === all.length - 1;
+    if (item._type === 'gym') {
+      const sets = item.exercises.reduce((a,e) => a + e.sets.filter(s=>s.done).length, 0);
+      const tons = calcTonnage(item.exercises);
+      const dur = Math.round(item.duration / 60);
+      return `<div class="history-item${isLast?' style="border:none"':''}" onclick="viewWorkout('${item.id}')">
+        <div class="history-icon gym">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v16M18 4v16M2 9h4M18 9h4M2 15h4M18 15h4"/></svg>
+        </div>
+        <div style="flex:1">
+          <div class="history-title">${item.name}</div>
+          <div class="muted">${formatDate(item.date)} · ${dur} мин · ${tons.toLocaleString()} кг</div>
+        </div>
+        <span class="tag tag-gym">Зал</span>
+      </div>`;
+    } else {
+      const pace = item.pace || '—';
+      return `<div class="history-item${isLast?' style="border:none"':''}" onclick="viewRun('${item.id}')">
+        <div class="history-icon run">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><path d="M10 22l1-7-2-3.5 3.5-3L16 12"/><path d="M8 14l-2 4"/><path d="M14.5 8.5L17 10l3 1"/></svg>
+        </div>
+        <div style="flex:1">
+          <div class="history-title">${item.name || 'Пробежка'}</div>
+          <div class="muted">${formatDate(item.date)} · ${item.dist} км · ${pace} мин/км</div>
+        </div>
+        <span class="tag tag-run">Бег</span>
+      </div>`;
+    }
+  }).join('');
+}
+
+// ==================== HEATMAP ====================
+// Баг исправлен: подписи месяцев теперь всегда передаются и проставляются (m1Id/m2Id/m3Id опциональны).
+function renderHeatmap(containerId, m1Id, m2Id, m3Id) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const now = new Date();
+  const msDay = 86400000;
+  const days90 = 91;
+  const start = new Date(now - (days90 - 1) * msDay);
+  start.setHours(0,0,0,0);
+
+  const workoutDates = new Set();
+  [...getMyWorkouts(), ...getMyRuns()].forEach(w => {
+    const d = new Date(w.date);
+    d.setHours(0,0,0,0);
+    workoutDates.add(d.getTime());
+  });
+
+  const weeks = Math.ceil(days90 / 7);
+  container.innerHTML = '';
+
+  const monthNames = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+  const ms = [start.getMonth(), new Date(start.getTime() + 30*msDay).getMonth(), new Date(start.getTime() + 60*msDay).getMonth()];
+  if (m1Id && document.getElementById(m1Id)) document.getElementById(m1Id).textContent = monthNames[ms[0]];
+  if (m2Id && document.getElementById(m2Id)) document.getElementById(m2Id).textContent = monthNames[ms[1]];
+  if (m3Id && document.getElementById(m3Id)) document.getElementById(m3Id).textContent = monthNames[ms[2]];
+
+  for (let w = 0; w < weeks; w++) {
+    const col = document.createElement('div');
+    col.className = 'hm-col';
+    for (let d = 0; d < 7; d++) {
+      const dayIdx = w * 7 + d;
+      if (dayIdx >= days90) { col.appendChild(document.createElement('div')); continue; }
+      const date = new Date(start.getTime() + dayIdx * msDay);
+      date.setHours(0,0,0,0);
+      const cell = document.createElement('div');
+      cell.className = 'hm-cell';
+      if (workoutDates.has(date.getTime())) cell.className += ' l2';
+      if (date.getTime() === new Date(now.toDateString()).getTime()) cell.style.border = '1px solid #7c6af7';
+      col.appendChild(cell);
+    }
+    container.appendChild(col);
+  }
+}
+
+// ==================== WORKOUT MODULE ====================
+function startNewWorkout() {
+  state.workout = {
+    active: true,
+    name: 'Новая тренировка',
+    startTime: Date.now(),
+    timerInterval: null,
+    autoSaveInterval: null,
+    exercises: [],
+  };
+  document.getElementById('workout-name').value = 'Новая тренировка';
+  renderExercises();
+  updateSummary();
+  startTimer();
+  nav('workout');
+}
+
+function startTimer() {
+  clearInterval(state.workout.timerInterval);
+  state.workout.timerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - state.workout.startTime) / 1000);
+    const m = String(Math.floor(elapsed / 60)).padStart(2,'0');
+    const s = String(elapsed % 60).padStart(2,'0');
+    document.getElementById('workout-timer').textContent = m + ':' + s;
+    document.getElementById('sum-time').textContent = Math.floor(elapsed / 60);
+  }, 1000);
+
+  state.workout.autoSaveInterval = setInterval(() => {
+    saveDraft();
+  }, 30000);
+}
+
+function saveDraft() {
+  localStorage.setItem('train_draft', JSON.stringify({
+    name: document.getElementById('workout-name').value,
+    startTime: state.workout.startTime,
+    exercises: state.workout.exercises
+  }));
+}
+
+function finishWorkout() {
+  if (!state.workout.exercises.length) { toast('Добавь хотя бы одно упражнение','error'); return; }
+  const duration = Math.floor((Date.now() - state.workout.startTime) / 1000);
+  const workout = {
+    id: 'w' + Date.now(),
+    userId: state.currentUser.id,
+    date: Date.now(),
+    name: document.getElementById('workout-name').value || 'Тренировка',
+    exercises: JSON.parse(JSON.stringify(state.workout.exercises)),
+    duration,
+  };
+  state.data.workouts.push(workout);
+  updatePersonalRecords(workout);
+  clearInterval(state.workout.timerInterval);
+  clearInterval(state.workout.autoSaveInterval);
+  localStorage.removeItem('train_draft');
+  state.workout.active = false;
+  state.workout.exercises = [];
+  // Синхронизация после сохранения тренировки (п.1 ТЗ)
+  saveToCloud().then(() => {
+    toast(lastSyncOk === false ? 'Сохранено локально (офлайн)' : 'Тренировка сохранена!', lastSyncOk === false ? 'error' : 'success');
+  });
+  nav('home');
+}
+
+function updatePersonalRecords(workout) {
+  if (!state.data.records) state.data.records = {};
+  workout.exercises.forEach(ex => {
+    const doneSets = ex.sets.filter(s => s.done && s.weight && s.reps);
+    doneSets.forEach(set => {
+      const key = `${workout.userId}_${ex.exId}`;
+      if (!state.data.records[key]) state.data.records[key] = {maxWeight:0,repsAtMax:0,maxReps:0,weightAtMaxReps:0,date:null};
+      const r = state.data.records[key];
+      if (set.weight > r.maxWeight) { r.maxWeight = set.weight; r.repsAtMax = set.reps; r.date = workout.date; r.fresh = true; }
+      if (set.reps > r.maxReps) { r.maxReps = set.reps; r.weightAtMaxReps = set.weight; if(!r.date) r.date = workout.date; r.freshReps = true; }
+    });
+  });
+}
+
+function getRecord(exId) {
+  if (!state.data.records) return null;
+  return state.data.records[`${state.currentUser.id}_${exId}`] || null;
+}
+
+// ===== EXERCISES RENDER =====
+function renderExercises() {
+  const list = document.getElementById('exercises-list');
+  list.innerHTML = '';
+  const total = state.workout.exercises.length;
+  state.workout.exercises.forEach((ex, idx) => {
+    const exData = state.data.exercises.find(e => e.id === ex.exId) || {name: ex.exId, cat: ''};
+    const rec = getRecord(ex.exId);
+    const block = document.createElement('div');
+    block.className = 'exercise-block';
+    block.dataset.idx = idx;
+    block.draggable = true;
+
+    const recHtml = rec ? `<div class="pr-info">
+      ПР: <span>${rec.maxWeight} кг × ${rec.repsAtMax}</span>
+      &nbsp;|&nbsp; Макс. повторений: <span>${rec.maxReps} × ${rec.weightAtMaxReps} кг</span>
+    </div>` : '';
+
+    block.innerHTML = `
+      <div class="exercise-header">
+        <div class="drag-handle" title="Перетащить">⠿</div>
+        <div class="reorder-btns">
+          <button class="reorder-btn" onclick="moveExercise(${idx},-1)" ${idx===0?'disabled':''} title="Выше">▲</button>
+          <button class="reorder-btn" onclick="moveExercise(${idx},1)" ${idx===total-1?'disabled':''} title="Ниже">▼</button>
+        </div>
+        <div class="exercise-name">${exData.name}</div>
+        <span class="tag" style="background:var(--bg-card);color:var(--text-3);font-size:10px">${exData.cat}</span>
+        <button class="btn btn-icon btn-danger btn-sm" onclick="removeExercise(${idx})" title="Удалить">✕</button>
+      </div>
+      ${recHtml}
+      <div class="sets-header"><span>#</span><span>Вес, кг</span><span>Повторы</span><span>RPE</span><span></span></div>
+      <div id="sets-${idx}"></div>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <button class="btn btn-sm" onclick="addSet(${idx})">+ Подход</button>
+        <span class="small">Коммент:</span>
+        <input class="input input-sm" style="flex:1" placeholder="Заметка к упражнению"
+          value="${ex.comment||''}" oninput="state.workout.exercises[${idx}].comment=this.value">
+      </div>
+    `;
+
+    renderSets(block.querySelector(`#sets-${idx}`), idx);
+    setupDrag(block, idx);
+    list.appendChild(block);
+  });
+  updateSummary();
+}
+
+// Кнопки ↑↓ для перестановки упражнений без drag&drop (для мобильных, п.2 ТЗ)
+function moveExercise(idx, dir) {
+  const arr = state.workout.exercises;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= arr.length) return;
+  const item = arr.splice(idx, 1)[0];
+  arr.splice(newIdx, 0, item);
+  renderExercises();
+}
+
+function renderSets(container, exIdx) {
+  const ex = state.workout.exercises[exIdx];
+  container.innerHTML = '';
+  ex.sets.forEach((set, sIdx) => {
+    const row = document.createElement('div');
+    row.className = 'set-row';
+    row.innerHTML = `
+      <span class="set-num">${sIdx + 1}</span>
+      <input class="input input-sm input-number" type="number" placeholder="кг" value="${set.weight||''}"
+        oninput="state.workout.exercises[${exIdx}].sets[${sIdx}].weight=+this.value;updateSummary()">
+      <input class="input input-sm input-number" type="number" placeholder="×" value="${set.reps||''}"
+        oninput="state.workout.exercises[${exIdx}].sets[${sIdx}].reps=+this.value;updateSummary()">
+      <div class="rpe-input">
+        <div class="rpe-dots" id="rpe-${exIdx}-${sIdx}"></div>
+        <div class="rpe-val" id="rpeval-${exIdx}-${sIdx}">${set.rpe || '—'}</div>
+      </div>
+      <button class="set-check ${set.done?'done':''}" onclick="toggleSet(${exIdx},${sIdx},this)">
+        ${set.done ? '✓' : '○'}
+      </button>
+    `;
+    const rpeContainer = row.querySelector(`#rpe-${exIdx}-${sIdx}`);
+    for (let i = 1; i <= 10; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'rpe-dot' + (set.rpe >= i ? ' on' : '');
+      dot.onclick = () => setRpe(exIdx, sIdx, i);
+      rpeContainer.appendChild(dot);
+    }
+    // Remove button
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn btn-icon btn-danger btn-sm';
+    removeBtn.style.cssText = 'padding:2px 5px;font-size:11px;margin-left:4px;grid-column:6';
+    removeBtn.textContent = '×';
+    removeBtn.onclick = () => removeSet(exIdx, sIdx);
+    row.appendChild(removeBtn);
+    container.appendChild(row);
+  });
+}
+
+function setRpe(exIdx, sIdx, val) {
+  state.workout.exercises[exIdx].sets[sIdx].rpe = val;
+  const container = document.getElementById(`rpe-${exIdx}-${sIdx}`);
+  const valEl = document.getElementById(`rpeval-${exIdx}-${sIdx}`);
+  if (container) container.querySelectorAll('.rpe-dot').forEach((d,i) => {
+    d.classList.toggle('on', i < val);
+  });
+  if (valEl) valEl.textContent = val;
+}
+
+function toggleSet(exIdx, sIdx, btn) {
+  const set = state.workout.exercises[exIdx].sets[sIdx];
+  set.done = !set.done;
+  btn.classList.toggle('done', set.done);
+  btn.textContent = set.done ? '✓' : '○';
+  updateSummary();
+}
+
+function addSet(exIdx) {
+  state.workout.exercises[exIdx].sets.push({weight:'',reps:'',rpe:0,done:false});
+  renderExercises();
+}
+
+function removeSet(exIdx, sIdx) {
+  state.workout.exercises[exIdx].sets.splice(sIdx, 1);
+  renderExercises();
+}
+
+function removeExercise(idx) {
+  state.workout.exercises.splice(idx, 1);
+  renderExercises();
+}
+
+function calcTonnage(exercises) {
+  let t = 0;
+  exercises.forEach(ex => {
+    ex.sets.forEach(s => { if (s.done && s.weight && s.reps) t += s.weight * s.reps; });
+  });
+  return t;
+}
+
+function updateSummary() {
+  const tons = calcTonnage(state.workout.exercises);
+  const sets = state.workout.exercises.reduce((a,e) => a + e.sets.filter(s=>s.done).length, 0);
+  document.getElementById('sum-tonnage').textContent = tons.toLocaleString();
+  document.getElementById('sum-sets').textContent = sets;
+}
+
+// ===== DRAG & DROP (мышь/десктоп) =====
+let dragSrc = null;
+function setupDrag(el, idx) {
+  el.addEventListener('dragstart', () => { dragSrc = idx; el.classList.add('dragging'); });
+  el.addEventListener('dragend', () => { el.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(e=>e.classList.remove('drag-over')); });
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag-over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.classList.remove('drag-over');
+    if (dragSrc === null || dragSrc === idx) return;
+    const arr = state.workout.exercises;
+    const item = arr.splice(dragSrc, 1)[0];
+    arr.splice(idx, 0, item);
+    renderExercises();
+  });
+}
+
+// ===== LIBRARY MODAL =====
+function openLibraryModal() {
+  document.getElementById('lib-search').value = '';
+  renderLibModal();
+  openModal('modal-library');
+}
+
+function renderLibModal() {
+  const q = document.getElementById('lib-search').value.toLowerCase();
+  const exercises = state.data.exercises.filter(e => !q || e.name.toLowerCase().includes(q) || e.cat.toLowerCase().includes(q));
+  const grouped = {};
+  exercises.forEach(e => {
+    if (!grouped[e.cat]) grouped[e.cat] = [];
+    grouped[e.cat].push(e);
+  });
+  const list = document.getElementById('lib-modal-list');
+  list.innerHTML = Object.entries(grouped).map(([cat, exs]) => `
+    <div class="lib-cat-label">${cat}</div>
+    ${exs.map(e => `
+      <div class="lib-exercise-item" onclick="addExerciseToWorkout('${e.id}')">
+        <span style="flex:1;font-size:14px">${e.name}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>`).join('')}
+  `).join('');
+}
+
+function addExerciseToWorkout(exId) {
+  state.workout.exercises.push({exId, sets:[{weight:'',reps:'',rpe:0,done:false}], comment:''});
+  closeModal('modal-library');
+  renderExercises();
+}
+
+// ===== TEMPLATE MODAL (использование) =====
+function openTemplateModal() {
+  const list = document.getElementById('template-list');
+  const templates = state.data.templates || [];
+  if (!templates.length) {
+    list.innerHTML = '<div class="muted">Шаблонов пока нет</div>';
+  } else {
+    list.innerHTML = templates.map((t,i) => `
+      <div class="template-item" onclick="applyTemplate(${i})">
+        <div class="template-name">${t.name}</div>
+        <div class="template-desc">${t.exercises.map(id => state.data.exercises.find(e=>e.id===id)?.name||'').filter(Boolean).join(', ')}</div>
+      </div>
+    `).join('');
+  }
+  openModal('modal-template');
+}
+
+function applyTemplate(idx) {
+  const t = state.data.templates[idx];
+  state.workout.exercises = t.exercises.map(exId => ({exId, sets:[{weight:'',reps:'',rpe:0,done:false}], comment:''}));
+  document.getElementById('workout-name').value = t.name;
+  closeModal('modal-template');
+  renderExercises();
+}
+
+// ===== СОХРАНИТЬ ТЕКУЩУЮ ТРЕНИРОВКУ КАК ШАБЛОН (п.3 ТЗ) =====
+function openSaveAsTemplateModal() {
+  if (!state.workout.exercises.length) { toast('В тренировке нет упражнений', 'error'); return; }
+  document.getElementById('save-template-name').value = document.getElementById('workout-name').value || '';
+  openModal('modal-save-template');
+}
+
+function saveCurrentAsTemplate() {
+  const name = document.getElementById('save-template-name').value.trim();
+  if (!name) { toast('Укажи название шаблона', 'error'); return; }
+  if (!state.data.templates) state.data.templates = [];
+  state.data.templates.push({
+    id: 't' + Date.now(),
+    name,
+    exercises: state.workout.exercises.map(e => e.exId),
+  });
+  saveData();
+  closeModal('modal-save-template');
+  toast('Шаблон сохранён', 'success');
+}
+
+// ===== АДМИН: РЕДАКТИРОВАНИЕ / УДАЛЕНИЕ ШАБЛОНОВ (п.3 ТЗ) =====
+function renderAdminTemplates() {
+  const container = document.getElementById('admin-templates');
+  const templates = state.data.templates || [];
+  if (!templates.length) {
+    container.innerHTML = '<div class="muted" style="padding:12px 0">Шаблонов нет</div>';
+    return;
+  }
+  container.innerHTML = templates.map((t, i) => `
+    <div class="template-row">
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:500">${t.name}</div>
+        <div class="small">${t.exercises.map(id => state.data.exercises.find(e=>e.id===id)?.name||'').filter(Boolean).join(', ') || '—'}</div>
+      </div>
+      <button class="btn btn-icon btn-sm" onclick="openEditTemplateModal(${i})" title="Редактировать">✏️</button>
+      <button class="btn btn-icon btn-sm btn-danger" onclick="deleteTemplate(${i})" title="Удалить">✕</button>
+    </div>
+  `).join('');
+}
+
+function openEditTemplateModal(idx) {
+  const t = state.data.templates[idx];
+  document.getElementById('edit-template-idx').value = idx;
+  document.getElementById('edit-template-name').value = t.name;
+  const names = t.exercises.map(id => state.data.exercises.find(e=>e.id===id)?.name).filter(Boolean);
+  document.getElementById('edit-template-exercises').value = names.join(', ');
+  openModal('modal-edit-template');
+}
+
+function saveEditedTemplate() {
+  const idx = +document.getElementById('edit-template-idx').value;
+  const name = document.getElementById('edit-template-name').value.trim();
+  const namesStr = document.getElementById('edit-template-exercises').value.trim();
+  if (!name) { toast('Укажи название', 'error'); return; }
+  const names = namesStr.split(',').map(s => s.trim()).filter(Boolean);
+  const exIds = [];
+  names.forEach(n => {
+    const found = state.data.exercises.find(e => e.name.toLowerCase() === n.toLowerCase());
+    if (found) exIds.push(found.id);
+  });
+  state.data.templates[idx] = { ...state.data.templates[idx], name, exercises: exIds };
+  saveData();
+  closeModal('modal-edit-template');
+  renderAdminTemplates();
+  toast('Шаблон обновлён', 'success');
+}
+
+function deleteTemplate(idx) {
+  if (!confirm('Удалить шаблон?')) return;
+  state.data.templates.splice(idx, 1);
+  saveData();
+  renderAdminTemplates();
+  toast('Шаблон удалён', 'success');
+}
+
+// ==================== RUN MODULE ====================
+function calcPace() {
+  const dist = parseFloat(document.getElementById('run-dist').value);
+  const timeStr = document.getElementById('run-time').value;
+  const paceEl = document.getElementById('run-pace');
+  if (!dist || !timeStr || !timeStr.includes(':')) { paceEl.textContent = '—'; return; }
+  const [mm, ss] = timeStr.split(':').map(Number);
+  const totalMin = mm + (ss || 0) / 60;
+  if (!totalMin || !dist) { paceEl.textContent = '—'; return; }
+  const pace = totalMin / dist;
+  const pMin = Math.floor(pace);
+  const pSec = String(Math.round((pace - pMin) * 60)).padStart(2,'0');
+  paceEl.textContent = `${pMin}:${pSec} мин/км`;
+}
+
+function handleGpx(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const mapEl = document.getElementById('run-map');
+  mapEl.innerHTML = `
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    <span class="muted">GPX загружен: ${file.name}</span>
+  `;
+  toast('GPX файл загружен', 'success');
+}
+
+// Сброс формы пробежки (п.2 ТЗ — кнопка "Новая пробежка" в хедере)
+function resetRunForm(askConfirm) {
+  const hasData = document.getElementById('run-dist').value || document.getElementById('run-time').value ||
+                  document.getElementById('run-notes').value || document.getElementById('run-hr').value ||
+                  document.getElementById('run-cadence').value;
+  if (askConfirm && hasData && !confirm('Сбросить введённые данные пробежки?')) return;
+  ['run-dist','run-time','run-hr','run-cadence','run-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('run-pace').textContent = '—';
+  document.getElementById('run-gpx-input').value = '';
+  document.getElementById('run-map').innerHTML = `
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+    <span class="muted">Импортируйте GPX для отображения маршрута</span>
+  `;
+}
+
+function saveRun() {
+  const dist = parseFloat(document.getElementById('run-dist').value);
+  const time = document.getElementById('run-time').value;
+  if (!dist || !time) { toast('Заполни дистанцию и время', 'error'); return; }
+  const [mm, ss] = time.split(':').map(Number);
+  const totalMin = mm + (ss||0)/60;
+  const pace = totalMin / dist;
+  const pMin = Math.floor(pace);
+  const pSec = String(Math.round((pace - pMin)*60)).padStart(2,'0');
+  const run = {
+    id: 'r' + Date.now(),
+    userId: state.currentUser.id,
+    date: Date.now(),
+    name: 'Пробежка',
+    dist,
+    time,
+    pace: `${pMin}:${pSec}`,
+    hr: +document.getElementById('run-hr').value || null,
+    cadence: +document.getElementById('run-cadence').value || null,
+    notes: document.getElementById('run-notes').value,
+  };
+  state.data.runs.push(run);
+  resetRunForm(false);
+  // Синхронизация после сохранения (п.1 ТЗ)
+  saveToCloud().then(() => {
+    toast(lastSyncOk === false ? 'Сохранено локально (офлайн)' : 'Пробежка сохранена!', lastSyncOk === false ? 'error' : 'success');
+  });
+  nav('home');
+}
+
+// ==================== HISTORY ====================
+let historyFilter = 'all';
+function filterHistory(f, btn) {
+  historyFilter = f;
+  document.querySelectorAll('#page-history .filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderHistory();
+}
+
+function renderHistory() {
+  const workouts = getMyWorkouts().map(w => ({...w,_type:'gym'}));
+  const runs = getMyRuns().map(r => ({...r,_type:'run'}));
+  let all = [...workouts, ...runs].sort((a,b) => b.date - a.date);
+  if (historyFilter === 'gym') all = all.filter(x=>x._type==='gym');
+  if (historyFilter === 'run') all = all.filter(x=>x._type==='run');
+
+  const container = document.getElementById('history-list');
+  if (!all.length) {
+    container.innerHTML = '<div class="muted" style="padding:16px 0">Записей нет</div>';
+    return;
+  }
+  container.innerHTML = all.map((item, i) => {
+    const isLast = i === all.length - 1;
+    const style = isLast ? 'border:none' : '';
+    if (item._type === 'gym') {
+      const tons = calcTonnage(item.exercises);
+      const dur = Math.round(item.duration / 60);
+      return `<div class="history-item" style="${style}" onclick="viewWorkout('${item.id}')">
+        <div class="history-icon gym">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v16M18 4v16M2 9h4M18 9h4M2 15h4M18 15h4"/></svg>
+        </div>
+        <div style="flex:1">
+          <div class="history-title">${item.name}</div>
+          <div class="muted">${formatDate(item.date)} · ${dur} мин · ${tons.toLocaleString()} кг</div>
+        </div>
+        <span class="tag tag-gym">Зал</span>
+      </div>`;
+    } else {
+      return `<div class="history-item" style="${style}" onclick="viewRun('${item.id}')">
+        <div class="history-icon run">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><path d="M10 22l1-7-2-3.5 3.5-3L16 12"/><path d="M8 14l-2 4"/><path d="M14.5 8.5L17 10l3 1"/></svg>
+        </div>
+        <div style="flex:1">
+          <div class="history-title">${item.name || 'Пробежка'}</div>
+          <div class="muted">${formatDate(item.date)} · ${item.dist} км · ${item.pace} мин/км</div>
+        </div>
+        <span class="tag tag-run">Бег</span>
+      </div>`;
+    }
+  }).join('');
+}
+
+function viewWorkout(id) {
+  const w = state.data.workouts.find(x => x.id === id);
+  if (!w) return;
+  document.getElementById('view-wt-title').textContent = w.name;
+  const dur = Math.round(w.duration / 60);
+  const tons = calcTonnage(w.exercises);
+  document.getElementById('view-wt-content').innerHTML = `
+    <div class="muted" style="margin-bottom:12px">${formatDate(w.date)} · ${dur} мин · ${tons.toLocaleString()} кг тоннаж</div>
+    ${w.exercises.map(ex => {
+      const exData = state.data.exercises.find(e => e.id === ex.exId) || {name: ex.exId};
+      const doneSets = ex.sets.filter(s=>s.done);
+      return `<div style="margin-bottom:14px">
+        <div style="font-weight:500;margin-bottom:6px">${exData.name}</div>
+        ${doneSets.map((s,i) => `
+          <div style="display:flex;gap:12px;font-size:13px;color:var(--text-2);margin-bottom:3px">
+            <span style="color:var(--text-3)">${i+1}</span>
+            <span>${s.weight} кг × ${s.reps}</span>
+            ${s.rpe ? `<span>RPE ${s.rpe}</span>` : ''}
+            <span style="color:var(--green)">✓</span>
+          </div>`).join('')}
+        ${ex.comment ? `<div class="small" style="margin-top:4px;color:var(--text-3)">${ex.comment}</div>` : ''}
+      </div>`;
+    }).join('')}
+  `;
+  openModal('modal-view-workout');
+}
+
+function viewRun(id) {
+  const r = state.data.runs.find(x => x.id === id);
+  if (!r) return;
+  document.getElementById('view-wt-title').textContent = r.name || 'Пробежка';
+  document.getElementById('view-wt-content').innerHTML = `
+    <div class="muted" style="margin-bottom:12px">${formatDate(r.date)}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="stat-card"><div class="stat-num">${r.dist} км</div><div class="stat-label">Дистанция</div></div>
+      <div class="stat-card"><div class="stat-num">${r.time}</div><div class="stat-label">Время</div></div>
+      <div class="stat-card"><div class="stat-num">${r.pace}</div><div class="stat-label">Темп мин/км</div></div>
+      ${r.hr ? `<div class="stat-card"><div class="stat-num">${r.hr}</div><div class="stat-label">Пульс уд/мин</div></div>` : ''}
+      ${r.cadence ? `<div class="stat-card"><div class="stat-num">${r.cadence}</div><div class="stat-label">Каденс шаг/мин</div></div>` : ''}
+    </div>
+    ${r.notes ? `<div style="margin-top:12px;font-size:13px;color:var(--text-2)">${r.notes}</div>` : ''}
+  `;
+  openModal('modal-view-workout');
+}
+
+// ==================== RECORDS PAGE (п.4 ТЗ) ====================
+let recordsCategoryFilter = 'all';
+
+function renderRecords() {
+  const userId = state.currentUser.id;
+  const records = state.data.records || {};
+  const myRecordEntries = Object.entries(records).filter(([key]) => key.startsWith(userId + '_'));
+
+  // последняя тренировка пользователя — для подсветки свежих рекордов
+  const myWorkouts = getMyWorkouts();
+  const lastWorkout = myWorkouts.length ? myWorkouts.reduce((a,b) => a.date > b.date ? a : b) : null;
+
+  const rows = myRecordEntries.map(([key, rec]) => {
+    const exId = key.slice(userId.length + 1);
+    const ex = state.data.exercises.find(e => e.id === exId);
+    return { exId, ex, rec };
+  }).filter(r => r.ex);
+
+  // категории для фильтра
+  const cats = ['all', ...new Set(rows.map(r => r.ex.cat))];
+  const filtersEl = document.getElementById('records-cat-filters');
+  filtersEl.innerHTML = cats.map(c => `
+    <button class="filter-tab ${c===recordsCategoryFilter?'active':''}" onclick="setRecordsCategory('${c}', this)">${c==='all'?'Все':c}</button>
+  `).join('');
+
+  let filteredRows = recordsCategoryFilter === 'all' ? rows : rows.filter(r => r.ex.cat === recordsCategoryFilter);
+  filteredRows.sort((a,b) => a.ex.name.localeCompare(b.ex.name, 'ru'));
+
+  const tbody = document.getElementById('records-tbody');
+  if (!filteredRows.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted" style="padding:16px 10px">Рекордов пока нет</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filteredRows.map(({ex, rec}) => {
+    const isFresh = lastWorkout && rec.date && (rec.date === lastWorkout.date) && (rec.fresh || rec.freshReps);
+    return `<tr class="${isFresh ? 'fresh' : ''}">
+      <td>${ex.name}${isFresh ? ' <span class="tag-new">НОВЫЙ</span>' : ''}</td>
+      <td>${rec.maxWeight} кг × ${rec.repsAtMax}</td>
+      <td>${rec.maxReps} × ${rec.weightAtMaxReps} кг</td>
+      <td class="small">${rec.date ? formatDate(rec.date) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function setRecordsCategory(cat, btn) {
+  recordsCategoryFilter = cat;
+  document.querySelectorAll('#records-cat-filters .filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderRecords();
+}
+
+// ==================== STATS ====================
+function renderStats() {
+  const workouts = getMyWorkouts();
+  const runs = getMyRuns();
+  const now = Date.now();
+  const month = 30 * 86400000;
+  const thisMonth = workouts.filter(w => now - w.date < month);
+  const thisMonthRuns = runs.filter(r => now - r.date < month);
+  const totalTons = thisMonth.reduce((a,w) => a + calcTonnage(w.exercises), 0);
+  const totalKm = thisMonthRuns.reduce((a,r) => a + (parseFloat(r.dist)||0), 0);
+
+  document.getElementById('stats-summary').innerHTML = `
+    <div class="stat-card"><div class="stat-num">${thisMonth.length + thisMonthRuns.length}</div><div class="stat-label">тренировок за месяц</div></div>
+    <div class="stat-card"><div class="stat-num">${Math.round(totalTons/1000 * 10)/10} т</div><div class="stat-label">тоннаж за месяц</div></div>
+    <div class="stat-card"><div class="stat-num">${Math.round(totalKm * 10)/10} км</div><div class="stat-label">бег за месяц</div></div>
+    <div class="stat-card"><div class="stat-num">${workouts.length + runs.length}</div><div class="stat-label">всего тренировок</div></div>
+  `;
+
+  // Exercise select
+  const select = document.getElementById('stats-exercise-select');
+  const usedIds = new Set();
+  workouts.forEach(w => w.exercises.forEach(e => usedIds.add(e.exId)));
+  const prevVal = select.value;
+  select.innerHTML = '<option value="">— выбери упражнение —</option>' +
+    [...usedIds].map(id => {
+      const ex = state.data.exercises.find(e => e.id === id);
+      return `<option value="${id}">${ex?.name || id}</option>`;
+    }).join('');
+  if ([...usedIds].includes(prevVal)) select.value = prevVal;
+
+  renderProgressChart();
+  renderTonnageChart();
+  renderRunChart();
+  renderRunKmChart();
+  renderRunBestPace();
+  renderHeatmap('stats-heatmap', 'stats-hm-m1', 'stats-hm-m2', 'stats-hm-m3');
+}
+
+// Баг исправлен: графики теперь ждут, пока контейнер получит реальную ширину
+// (ResizeObserver + запасной фолбэк через requestAnimationFrame для браузеров без layout пересчёта).
+function waitForWidth(canvas, cb) {
+  const container = canvas.parentElement;
+  if (container.offsetWidth > 0) { cb(container.offsetWidth); return; }
+  let done = false;
+  const ro = new ResizeObserver(entries => {
+    const w = entries[0].contentRect.width;
+    if (w > 0 && !done) {
+      done = true;
+      ro.disconnect();
+      cb(w);
+    }
+  });
+  ro.observe(container);
+  // запасной вариант, если ResizeObserver почему-то не сработает
+  setTimeout(() => {
+    if (!done) {
+      done = true;
+      ro.disconnect();
+      cb(container.offsetWidth || 560);
+    }
+  }, 300);
+}
+
+function setProgressPeriod(period, btn) {
+  state.progressPeriod = period;
+  document.querySelectorAll('#progress-period-tabs .filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderProgressChart();
+}
+
+function setTonnagePeriod(period, btn) {
+  state.tonnagePeriod = period;
+  document.querySelectorAll('#tonnage-period-tabs .filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTonnageChart();
+}
+
+function periodCutoff(period) {
+  const now = Date.now();
+  if (period === '1m') return now - 30*86400000;
+  if (period === '3m') return now - 90*86400000;
+  return 0; // all
+}
+
+function renderProgressChart() {
+  const exId = document.getElementById('stats-exercise-select').value;
+  const canvas = document.getElementById('progress-chart');
+  waitForWidth(canvas, (w) => {
+    const ctx = canvas.getContext('2d');
+    canvas.width = w; canvas.height = 120;
+    ctx.clearRect(0,0,w,120);
+
+    if (!exId) {
+      ctx.fillStyle = '#555';
+      ctx.font = '13px system-ui';
+      ctx.fillText('Выбери упражнение для отображения прогресса', 20, 60);
+      return;
+    }
+
+    const cutoff = periodCutoff(state.progressPeriod);
+    const points = [];
+    getMyWorkouts().filter(wt => wt.date >= cutoff).forEach(workout => {
+      const ex = workout.exercises.find(e => e.exId === exId);
+      if (!ex) return;
+      const weights = ex.sets.filter(s=>s.done&&s.weight).map(s=>s.weight);
+      if (!weights.length) return;
+      const maxW = Math.max(...weights);
+      if (maxW > 0) points.push({date: workout.date, weight: maxW});
+    });
+
+    if (points.length < 2) {
+      ctx.fillStyle = '#555';
+      ctx.font = '13px system-ui';
+      ctx.fillText('Недостаточно данных за выбранный период', 20, 60);
+      return;
+    }
+    points.sort((a,b) => a.date - b.date);
+    drawLineChart(ctx, w, 120, points.map(p=>p.weight), points.map(p=>formatDate(p.date)), '#7c6af7');
+  });
+}
+
+function renderTonnageChart() {
+  const canvas = document.getElementById('tonnage-chart');
+  waitForWidth(canvas, (w) => {
+    const ctx = canvas.getContext('2d');
+    canvas.height = 100;
+    canvas.width = w;
+    ctx.clearRect(0,0,w,100);
+
+    const buckets = [];
+    const now = Date.now();
+    if (state.tonnagePeriod === 'week') {
+      for (let i = 7; i >= 0; i--) {
+        const start = now - (i+1)*7*86400000;
+        const end = now - i*7*86400000;
+        const tons = getMyWorkouts().filter(wt => wt.date >= start && wt.date < end).reduce((a,wt) => a + calcTonnage(wt.exercises), 0);
+        const d = new Date(end);
+        buckets.push({label: `${d.getDate()}.${d.getMonth()+1}`, value: Math.round(tons/1000*10)/10});
+      }
+    } else {
+      for (let i = 5; i >= 0; i--) {
+        const start = new Date(now);
+        start.setMonth(start.getMonth() - (i+1));
+        const end = new Date(now);
+        end.setMonth(end.getMonth() - i);
+        const tons = getMyWorkouts().filter(wt => wt.date >= start.getTime() && wt.date < end.getTime()).reduce((a,wt) => a + calcTonnage(wt.exercises), 0);
+        const monthNames = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+        buckets.push({label: monthNames[end.getMonth() === 0 ? 11 : end.getMonth()-1] , value: Math.round(tons/1000*10)/10});
+      }
+    }
+    drawBarChart(ctx, w, 100, buckets.map(x=>x.value), buckets.map(x=>x.label), '#7c6af7');
+  });
+}
+
+function getRunPaceMinutes(r) {
+  const [m,s] = (r.pace||'0:0').split(':').map(Number);
+  return m + (s||0)/60;
+}
+
+function renderRunBestPace() {
+  const runs = getMyRuns();
+  const el = document.getElementById('run-best-pace');
+  if (!runs.length) { el.innerHTML = ''; return; }
+  const best = runs.reduce((a,b) => getRunPaceMinutes(a) < getRunPaceMinutes(b) ? a : b);
+  const pace = getRunPaceMinutes(best);
+  const pMin = Math.floor(pace);
+  const pSec = String(Math.round((pace - pMin)*60)).padStart(2,'0');
+  el.innerHTML = `
+    <div class="stat-card"><div class="stat-num">${best.pace}</div><div class="stat-label">Лучший темп, мин/км (личник)</div></div>
+    <div class="stat-card"><div class="stat-num">${best.dist} км</div><div class="stat-label">Дистанция этого забега · ${formatDate(best.date)}</div></div>
+  `;
+}
+
+function renderRunChart() {
+  const canvas = document.getElementById('run-chart');
+  waitForWidth(canvas, (w) => {
+    const ctx = canvas.getContext('2d');
+    canvas.width = w; canvas.height = 100;
+    ctx.clearRect(0,0,w,100);
+
+    const runs = getMyRuns().slice(-8);
+    if (runs.length < 2) {
+      ctx.fillStyle = '#555'; ctx.font = '13px system-ui';
+      ctx.fillText('Нужно хотя бы 2 пробежки', 20, 50);
+      return;
+    }
+    const vals = runs.map(r => +getRunPaceMinutes(r).toFixed(2));
+    const labels = runs.map(r => formatDate(r.date).slice(0,5));
+    drawLineChart(ctx, w, 100, vals, labels, '#22c55e');
+  });
+}
+
+function renderRunKmChart() {
+  const canvas = document.getElementById('run-km-chart');
+  waitForWidth(canvas, (w) => {
+    const ctx = canvas.getContext('2d');
+    canvas.width = w; canvas.height = 100;
+    ctx.clearRect(0,0,w,100);
+
+    const runs = getMyRuns();
+    if (!runs.length) {
+      ctx.fillStyle = '#555'; ctx.font = '13px system-ui';
+      ctx.fillText('Нет данных о пробежках', 20, 50);
+      return;
+    }
+    const now = Date.now();
+    const weeks = [];
+    for (let i = 7; i >= 0; i--) {
+      const start = now - (i+1)*7*86400000;
+      const end = now - i*7*86400000;
+      const km = runs.filter(r => r.date >= start && r.date < end).reduce((a,r) => a + (parseFloat(r.dist)||0), 0);
+      const d = new Date(end);
+      weeks.push({label: `${d.getDate()}.${d.getMonth()+1}`, value: Math.round(km*10)/10});
+    }
+    drawBarChart(ctx, w, 100, weeks.map(x=>x.value), weeks.map(x=>x.label), '#22c55e');
+  });
+}
+
+function drawLineChart(ctx, w, h, values, labels, color) {
+  const pad = {top:16, bottom:28, left:10, right:10};
+  const cw = w - pad.left - pad.right;
+  const ch = h - pad.top - pad.bottom;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pts = values.map((v,i) => ({
+    x: pad.left + (i/(values.length-1)) * cw,
+    y: pad.top + (1 - (v - min)/range) * ch
+  }));
+
+  ctx.strokeStyle = color + '40';
+  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  pts.forEach((p,i) => i===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y));
+  ctx.stroke();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  pts.forEach((p,i) => i===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y));
+  ctx.stroke();
+
+  pts.forEach((p,i) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,3.5,0,Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#888';
+    ctx.font = '10px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(labels[i] || '', p.x, h - 4);
+    ctx.fillStyle = '#ccc';
+    ctx.fillText(values[i], p.x, p.y - 8);
+  });
+}
+
+function drawBarChart(ctx, w, h, values, labels, color) {
+  const pad = {top:8, bottom:22, left:4, right:4};
+  const cw = w - pad.left - pad.right;
+  const ch = h - pad.top - pad.bottom;
+  const max = Math.max(...values, 1);
+  const bw = cw / values.length * 0.7;
+  const gap = cw / values.length;
+
+  values.forEach((v,i) => {
+    const bh = (v/max) * ch;
+    const x = pad.left + i * gap + (gap - bw)/2;
+    const y = pad.top + ch - bh;
+    ctx.fillStyle = i === values.length - 2 ? color : color + '50';
+    ctx.beginPath();
+    ctx.roundRect(x, y, bw, bh, 3);
+    ctx.fill();
+    ctx.fillStyle = '#555';
+    ctx.font = '9px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(labels[i] || '', x + bw/2, h - 4);
+    if (v > 0) {
+      ctx.fillStyle = '#999';
+      ctx.font = '10px system-ui';
+      ctx.fillText(v, x + bw/2, y - 3);
+    }
+  });
+}
+
+// ==================== ADMIN ====================
+function renderAdmin() {
+  const users = getUsers();
+  const container = document.getElementById('admin-users');
+  container.innerHTML = users.map(u => `
+    <div class="user-row" onclick="viewUserAsAdmin('${u.id}')">
+      <div class="avatar" style="background:${u.role==='admin'?'#2a2460':'#14532d'};color:${u.role==='admin'?'#c5bfff':'#86efac'}">
+        ${u.name[0]}
+      </div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:500">${u.name}
+          ${u.role==='admin'?'<span class="tag" style="background:#2a2460;color:#c5bfff;font-size:10px;margin-left:6px">admin</span>':''}
+        </div>
+        <div class="muted">
+          ${state.data.workouts.filter(w=>w.userId===u.id).length} тренировок в зале,
+          ${state.data.runs.filter(r=>r.userId===u.id).length} пробежек
+        </div>
+      </div>
+      <button class="btn btn-sm" onclick="event.stopPropagation();viewUserAsAdmin('${u.id}')">Смотреть</button>
+    </div>
+  `).join('');
+
+  const exContainer = document.getElementById('admin-exercises');
+  exContainer.innerHTML = state.data.exercises.map(e => `
+    <div class="exercise-lib-row">
+      <div style="flex:1">
+        <span style="font-size:14px">${e.name}</span>
+        <span class="small" style="margin-left:8px">${e.cat}</span>
+      </div>
+      <button class="btn btn-icon btn-sm" onclick="editExercise('${e.id}')" title="Редактировать">✏️</button>
+      <button class="btn btn-icon btn-sm btn-danger" onclick="deleteExercise('${e.id}')" title="Удалить">✕</button>
+    </div>
+  `).join('');
+
+  renderAdminTemplates();
+}
+
+function viewUserAsAdmin(userId) {
+  const u = getUsers().find(x => x.id === userId);
+  if (!u) return;
+  const workouts = state.data.workouts.filter(w => w.userId === userId);
+  const runs = state.data.runs.filter(r => r.userId === userId);
+  const all = [...workouts.map(w=>({...w,_type:'gym'})),...runs.map(r=>({...r,_type:'run'}))].sort((a,b)=>b.date-a.date);
+  document.getElementById('view-wt-title').textContent = `Тренировки: ${u.name}`;
+  document.getElementById('view-wt-content').innerHTML = all.length ? all.map(item => {
+    if (item._type==='gym') {
+      const tons = calcTonnage(item.exercises);
+      return `<div class="history-item"><div class="history-icon gym"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v16M18 4v16M2 9h4M18 9h4M2 15h4M18 15h4"/></svg></div><div style="flex:1"><div style="font-size:14px;font-weight:500">${item.name}</div><div class="muted">${formatDate(item.date)} · ${tons.toLocaleString()} кг</div></div></div>`;
+    } else {
+      return `<div class="history-item"><div class="history-icon run"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><path d="M10 22l1-7-2-3.5 3.5-3L16 12"/></svg></div><div style="flex:1"><div style="font-size:14px;font-weight:500">${item.name||'Пробежка'}</div><div class="muted">${formatDate(item.date)} · ${item.dist} км · ${item.pace} мин/км</div></div></div>`;
+    }
+  }).join('') : '<div class="muted">Тренировок нет</div>';
+  openModal('modal-view-workout');
+}
+
+function openAddExerciseModal() {
+  document.getElementById('add-ex-title').textContent = 'Добавить упражнение';
+  document.getElementById('add-ex-name').value = '';
+  document.getElementById('add-ex-cat').value = '';
+  document.getElementById('add-ex-id').value = '';
+  openModal('modal-add-exercise');
+}
+
+function editExercise(id) {
+  const ex = state.data.exercises.find(e => e.id === id);
+  if (!ex) return;
+  document.getElementById('add-ex-title').textContent = 'Редактировать упражнение';
+  document.getElementById('add-ex-name').value = ex.name;
+  document.getElementById('add-ex-cat').value = ex.cat;
+  document.getElementById('add-ex-id').value = id;
+  openModal('modal-add-exercise');
+}
+
+function saveExercise() {
+  const name = document.getElementById('add-ex-name').value.trim();
+  const cat = document.getElementById('add-ex-cat').value.trim();
+  const existingId = document.getElementById('add-ex-id').value;
+  if (!name || !cat) { toast('Заполни название и категорию', 'error'); return; }
+  if (existingId) {
+    const ex = state.data.exercises.find(e => e.id === existingId);
+    if (ex) { ex.name = name; ex.cat = cat; }
+  } else {
+    state.data.exercises.push({id:'e'+Date.now(), name, cat});
+  }
+  saveData();
+  closeModal('modal-add-exercise');
+  renderAdmin();
+  toast('Сохранено', 'success');
+}
+
+function deleteExercise(id) {
+  if (!confirm('Удалить упражнение?')) return;
+  state.data.exercises = state.data.exercises.filter(e => e.id !== id);
+  saveData();
+  renderAdmin();
+  toast('Удалено', 'success');
+}
+
+// ===== ПРИГЛАШЕНИЕ ПОЛЬЗОВАТЕЛЯ — форма вместо alert() (п.6 ТЗ) =====
+function openInviteModal() {
+  document.getElementById('invite-name').value = '';
+  document.getElementById('invite-username').value = '';
+  document.getElementById('invite-password').value = '';
+  document.getElementById('invite-role').value = 'user';
+  openModal('modal-invite');
+}
+
+function saveInvitedUser() {
+  const name = document.getElementById('invite-name').value.trim();
+  const username = document.getElementById('invite-username').value.trim().toLowerCase();
+  const password = document.getElementById('invite-password').value;
+  const role = document.getElementById('invite-role').value;
+  if (!name || !username || !password) { toast('Заполни все поля', 'error'); return; }
+  if (getUsers().some(u => u.username === username)) { toast('Такой логин уже существует', 'error'); return; }
+  const newUser = { id: 'u' + Date.now(), name, username, passHash: hashPass(password), role };
+  if (!state.data.users) state.data.users = [...DEFAULT_USERS];
+  state.data.users.push(newUser);
+  saveData();
+  closeModal('modal-invite');
+  renderAdmin();
+  toast(`Пользователь "${name}" создан. Логин: ${username}`, 'success');
+}
+
+// ==================== MODALS ====================
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('open'); });
+});
+
+// ==================== TOAST ====================
+function toast(msg, type='') {
+  const el = document.createElement('div');
+  el.className = 'toast' + (type ? ' ' + type : '');
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ==================== UTILS ====================
+function formatDate(ts) {
+  const d = new Date(ts);
+  const months = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// ==================== PWA: SERVICE WORKER REGISTRATION (опционально, п.7 ТЗ) ====================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(err => {
+      console.warn('Service Worker не зарегистрирован (нормально при открытии файла локально без сервера):', err);
+    });
+  });
+}
+
+// ==================== BOOT ====================
+tryAutoLogin();
+</script>
+</body>
+</html>
