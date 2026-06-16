@@ -391,7 +391,11 @@ canvas{display:block;width:100%!important}
   -webkit-backdrop-filter:blur(40px) saturate(180%);backdrop-filter:blur(40px) saturate(180%);
   border:0.5px solid var(--border2);border-bottom:none;
   border-radius:32px 32px 0 0;width:100%;max-width:460px;
+  /* padding-bottom учитывает home indicator + запас, чтобы контент не залезал под него */
   padding:32px 22px calc(var(--sab) + 36px);
+  /* Растягиваем фон ниже видимой области — перекрываем зазор при bounce-скролле */
+  margin-bottom:-100px;
+  padding-bottom:calc(var(--sab) + 36px + 100px);
   box-shadow:0 -24px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.05);
   animation:sheetUp .5s cubic-bezier(.22,1,.36,1);
 }
