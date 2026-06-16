@@ -62,7 +62,9 @@ input::placeholder,textarea::placeholder{color:#48484a}
   --blue:#0a84ff;
   --tab-h:49px;
   --sat:env(safe-area-inset-top,0px);
-  --sab:env(safe-area-inset-bottom,0px);
+  /* Двойной fallback: сначала constant (для старых iOS), затем env, и запасной 20px */
+  --sab: constant(safe-area-inset-bottom, 20px);
+  --sab: env(safe-area-inset-bottom, 20px);
   --sal:env(safe-area-inset-left,0px);
   --sar:env(safe-area-inset-right,0px);
   --r:10px;--r-sm:8px;--r-md:12px;--r-lg:16px;--r-xl:20px;--r-2xl:24px;
@@ -71,16 +73,15 @@ input::placeholder,textarea::placeholder{color:#48484a}
 /* ===== APP SHELL ===== */
 #app{
   display:flex;flex-direction:column;
-  position:fixed;          /* фиксируем по всему экрану, не зависим от body-scroll */
-  inset:0;                 /* top/right/bottom/left: 0 — закрывает весь экран включая notch */
+  position:fixed;
+  inset:0;                 /* этого достаточно, чтобы занять весь экран */
   width:100%;
-  /* Высота через dvh с fallback для старых iOS — dvh учитывает скрытую адресную строку */
-  height:100dvh;
+  /* Убираем height:100dvh — inset уже даёт правильную высоту */
   padding-bottom:calc(var(--tab-h) + var(--sab));
-  background:#080808;      /* своя заливка чтобы notch-область не просвечивала */
+  background:#080808;
 }
 .pages{flex:1 1 auto;width:100%;min-width:0;min-height:0;overflow:hidden;position:relative}
-.page{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding-bottom:calc(var(--tab-h) + var(--sab) + 40px);display:none;-webkit-overflow-scrolling:touch}
+.page{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding-bottom:calc(var(--tab-h) + var(--sab) + 60px);display:none;-webkit-overflow-scrolling:touch}
 .page.active{display:block}
 
 /* ===== SYNC BANNER ===== */
