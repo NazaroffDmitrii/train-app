@@ -57,15 +57,13 @@ input::placeholder,textarea::placeholder{color:#48484a}
   --sab:env(safe-area-inset-bottom,0px);
   --sal:env(safe-area-inset-left,0px);
   --sar:env(safe-area-inset-right,0px);
-  --vh:1vh;
-  --app-h:calc(var(--vh) * 100);
   --r:10px;--r-sm:8px;--r-md:12px;--r-lg:16px;--r-xl:20px;--r-2xl:24px;
 }
 
 /* ===== APP SHELL ===== */
 #app{
   display:flex;flex-direction:column;
-  width:100%;height:var(--app-h);
+  width:100%;height:100vh;height:100dvh;
   padding-bottom:calc(var(--tab-h) + var(--sab));
 }
 .pages{flex:1 1 auto;width:100%;min-width:0;min-height:0;overflow:hidden;position:relative}
@@ -346,7 +344,7 @@ canvas{display:block;width:100%!important}
 #login-page{
   position:fixed;inset:0;background:var(--bg);
   display:flex;align-items:flex-end;justify-content:center;
-  z-index:1000;width:100%;height:var(--app-h);padding:0;overflow:hidden;
+  z-index:1000;width:100%;height:100vh;height:100dvh;padding:0;overflow:hidden;
 }
 /* Animated gradient BG */
 #login-page::before{
@@ -1989,33 +1987,6 @@ self.addEventListener('fetch',e=>{
     navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(()=>{});
   }
 })();
-
-// ============================================================
-// VIEWPORT HEIGHT
-// ============================================================
-function setViewportHeight(){
-  const h=window.visualViewport?.height||window.innerHeight||document.documentElement.clientHeight;
-  if(h)document.documentElement.style.setProperty('--vh',`${h*0.01}px`);
-}
-let viewportHeightRaf=0;
-function scheduleViewportHeight(){
-  cancelAnimationFrame(viewportHeightRaf);
-  viewportHeightRaf=requestAnimationFrame(setViewportHeight);
-}
-setViewportHeight();
-window.addEventListener('resize',scheduleViewportHeight,{passive:true});
-window.addEventListener('orientationchange',()=>{
-  scheduleViewportHeight();
-  setTimeout(scheduleViewportHeight,250);
-},{passive:true});
-if(window.visualViewport){
-  window.visualViewport.addEventListener('resize',scheduleViewportHeight,{passive:true});
-  window.visualViewport.addEventListener('scroll',scheduleViewportHeight,{passive:true});
-}
-window.addEventListener('load',()=>{
-  scheduleViewportHeight();
-  setTimeout(scheduleViewportHeight,250);
-},{once:true});
 
 // ============================================================
 // BOOT
