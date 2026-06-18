@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>train.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -45,7 +45,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 /* ══════════════════════════════════
    SPLASH
 ══════════════════════════════════ */
-#screen-splash{background:var(--bg);justify-content:flex-end}
+#screen-splash{background:var(--bg2);justify-content:flex-end}  /* исправлено: вместо var(--bg) */
 .splash-bg{
   position:absolute;inset:0;pointer-events:none;
   background:
@@ -300,6 +300,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
   padding:20px 18px calc(44px + env(safe-area-inset-bottom,0px));
   transform:translateY(100%);
   transition:transform 0.34s cubic-bezier(0.32,0.72,0,1);
+  min-height:45vh;   /* добавлено: чтобы закрывать низ экрана */
 }
 .overlay.open .ov-sheet{transform:translateY(0)}
 .ov-handle{width:32px;height:3px;border-radius:2px;background:var(--border2);margin:0 auto 18px}
@@ -795,7 +796,6 @@ function selectProfile(pid) {
   renderHome();
   showScreen('home');
   if (!_sheetInited) {
-    // Wait one frame so sheet has rendered and offsetHeight is real
     requestAnimationFrame(() => { requestAnimationFrame(() => { initSheet(); _sheetInited = true; }); });
   }
 }
@@ -926,20 +926,18 @@ function groupLabel(dateStr) {
 }
 
 /* ══ SHEET DRAG ══ */
-let _sheetY = 0;        // current translateY in px (0 = peeking, negative = open)
-let _sheetOpen = 0;     // Y when fully open (negative number)
-let _sheetClosed = 0;   // Y when peeking (0)
+let _sheetY = 0;
+let _sheetOpen = 0;
+let _sheetClosed = 0;
 
 function initSheet() {
   const sheet  = document.getElementById('sheet');
   const handle = document.getElementById('sheet-handle');
 
-  // Measure after layout: sheet height is 92vh, we want SHEET_PEEK px visible
   const sheetH = sheet.offsetHeight;
-  _sheetClosed = sheetH - SHEET_PEEK;   // translateY to show only peek
-  _sheetOpen   = 0;                      // translateY to show fully
+  _sheetClosed = sheetH - SHEET_PEEK;
+  _sheetOpen   = 0;
 
-  // Start at closed (peeking) position, now make it visible
   _sheetY = _sheetClosed;
   sheet.style.visibility = 'visible';
   sheet.style.transition = 'none';
@@ -979,18 +977,14 @@ function initSheet() {
     if (!sheetDragging) return;
     sheetDragging = false;
     const delta = clientY - dragStartClientY;
-    // tiny tap = toggle
     if (Math.abs(delta) < 8) { snapSheet(!sheetIsOpen); return; }
-    // swipe direction decides
     snapSheet(sheetIsOpen ? delta < 80 : delta < -60);
   }
 
-  // Touch
   handle.addEventListener('touchstart', e => onStart(e.touches[0].clientY), {passive:true});
   handle.addEventListener('touchmove',  e => { e.preventDefault(); onMove(e.touches[0].clientY); }, {passive:false});
   handle.addEventListener('touchend',   e => onEnd(e.changedTouches[0].clientY));
 
-  // Mouse (desktop)
   handle.addEventListener('mousedown', e => { onStart(e.clientY); e.preventDefault(); });
   window.addEventListener('mousemove', e => { if (sheetDragging) onMove(e.clientY); });
   window.addEventListener('mouseup',   e => { if (sheetDragging) onEnd(e.clientY); });
@@ -1036,7 +1030,6 @@ function renderStats() {
   const hours  = workouts.reduce((s,w)=>s+(w.duration||0),0)/60;
   const maxw   = workouts.filter(w=>w.weight).reduce((m,w)=>Math.max(m,w.weight),0);
 
-  // users
   document.getElementById('users-row').innerHTML = ['1','2'].map(pid=>{
     const u = allUsers[pid]; const me = pid===currentProfile;
     const cnt = u.workouts.length;
@@ -1055,7 +1048,6 @@ function renderStats() {
     </div>`;
   }).join('');
 
-  // stat cards
   document.getElementById('scard-grid').innerHTML = `
     <div class="scard s-total"><span class="scard-icon">⚡</span><div class="scard-lbl">Всего</div><div class="scard-val">${total}</div></div>
     <div class="scard s-km"><span class="scard-icon">📍</span><div class="scard-lbl">Километров</div><div class="scard-val">${km.toFixed(1)}<sup>км</sup></div></div>
