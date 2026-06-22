@@ -4528,6 +4528,36 @@ window.addEventListener("resize", setAppHeight);
 window.addEventListener("orientationchange", setAppHeight);
 setAppHeight();
 
+/* ВРЕМЕННЫЙ диагностический оверлей — снять после отладки чёрной полосы. */
+(function debugHeights() {
+  const box = document.createElement("div");
+  box.style.cssText = "position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;" +
+    "background:rgba(255,0,80,0.92);color:#fff;font:12px/1.5 monospace;" +
+    "padding:8px 10px;border-radius:8px;white-space:pre;text-align:left;";
+  document.body.appendChild(box);
+  function upd() {
+    const app = document.querySelector(".app");
+    const sheet = document.getElementById("history-sheet");
+    const a = app ? app.getBoundingClientRect() : {bottom:0};
+    const s = sheet ? sheet.getBoundingClientRect() : {bottom:0};
+    const vv = window.visualViewport || {};
+    box.textContent =
+      "innerH=" + window.innerHeight +
+      "  screenH=" + window.screen.height +
+      "  vvH=" + (vv.height ? Math.round(vv.height) : "-") + "\n" +
+      "clientH=" + document.documentElement.clientHeight +
+      "  dpr=" + window.devicePixelRatio +
+      "  standalone=" + (window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches) + "\n" +
+      "app.bottom=" + Math.round(a.bottom) +
+      "  sheet.bottom=" + Math.round(s.bottom) +
+      "  gap=" + Math.round(window.innerHeight - a.bottom);
+  }
+  upd();
+  window.addEventListener("resize", upd);
+  window.addEventListener("orientationchange", () => setTimeout(upd, 300));
+  setTimeout(upd, 500);
+})();
+
 /* ==========================================================================
    Init
    ========================================================================== */
