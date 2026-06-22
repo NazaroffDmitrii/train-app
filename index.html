@@ -82,11 +82,15 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
 input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 .app {
-  position: relative;
+  /* fixed + inset:0 гарантированно закрывает весь экран на iOS-standalone,
+     где 100dvh иногда не дотягивается до самого низа и снизу проступает
+     чёрная полоса под home-indicator. left/right:0 + max-width + margin:auto
+     по-прежнему центрируют «телефон» на широких экранах. */
+  position: fixed;
+  inset: 0;
   width: 100%;
   max-width: 480px;
   margin: 0 auto;
-  height: 100dvh;
   overflow: hidden;
   background: var(--bg-base);
 }
@@ -363,6 +367,24 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .history-item-meta { font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
 .history-item-right { flex: none; text-align: right; }
 .history-item-date { font-size: 12px; color: var(--text-tertiary); }
+
+/* Кнопка перехода на полный экран «История» (под превью в шторке) */
+.history-all-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; margin-top: 2px; padding: 13px;
+  border-radius: var(--radius-md);
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  color: var(--text-secondary); font-size: 14px; font-weight: 600;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.history-all-btn:active { transform: scale(0.985); background: var(--panel-hi); }
+.history-all-btn svg { width: 16px; height: 16px; color: var(--text-tertiary); flex: none; }
+.history-all-count {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  background: var(--accent-soft); color: var(--accent-bright);
+  font-size: 11.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
 
 /* ============ Modals ============ */
 .modal-backdrop {
@@ -887,6 +909,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   white-space: nowrap;
 }
 .ex-cat-tab.active { background: var(--accent); border-color: transparent; color: #fff; }
+
+/* Второй ряд фильтров «Истории» (период) — без верхней границы, плотнее к первому */
+.history-period-wrap { padding-top: 2px; border-top: none; }
 .ex-cat-manage-btn {
   flex: none; width: 34px; height: 34px; border-radius: 12px;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
@@ -1318,6 +1343,24 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       </button>
     </div>
     <div class="exercises-scroll" id="exercises-scroll"></div>
+  </section>
+
+  <!-- ===== ЭКРАН: полная история тренировок (доступен только из шторки) ===== -->
+  <section id="screen-history" class="screen screen-exercises slide-right">
+    <div class="exercises-header">
+      <button class="btn-chip" id="history-back-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        Назад
+      </button>
+      <div class="exercises-header-title">История</div>
+    </div>
+    <div class="ex-cat-tabs-wrap">
+      <div class="ex-cat-tabs" id="history-filter-tabs"></div>
+    </div>
+    <div class="ex-cat-tabs-wrap history-period-wrap">
+      <div class="ex-cat-tabs" id="history-period-tabs"></div>
+    </div>
+    <div class="exercises-scroll" id="history-screen-list"></div>
   </section>
 
   <!-- ===== ЭКРАН: статистика и рекорды (раздел 9.2 спецификации) ===== -->
@@ -2261,7 +2304,7 @@ window.addEventListener("pagehide", () => SyncQueue.flush());
 /* ==========================================================================
    Screen switching
    ========================================================================== */
-const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), templateDetail: $("screen-template-detail") };
+const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), templateDetail: $("screen-template-detail") };
 
 function goToScreen(name, opts = {}) {
   Object.values(SCREENS).forEach(s => s.classList.remove("active"));
@@ -2274,6 +2317,7 @@ function goToScreen(name, opts = {}) {
   if (name === "workout")  { initWorkoutScreen(opts); }
   if (name === "run")      { initRunScreen(opts); }
   if (name === "exercises") { initExercisesScreen(); }
+  if (name === "history")  { initHistoryScreen(); }
   if (name === "stats")    { initStatsScreen(); }
   if (name === "templates") { initTemplatesScreen(); }
 }
@@ -2332,12 +2376,42 @@ $("profile-chip").addEventListener("click", () => {
   goToScreen("profile");
 });
 
+const HISTORY_SVG_STRENGTH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
+const HISTORY_SVG_RUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="14.5" cy="5.5" r="1.6"/><path d="M9.5 8.5l2.5 1.5 1 3.5-3 2.5M14.5 7l2.5 4.5-3 1.5"/><path d="M6 20l2.5-4"/></svg>`;
+
+// Разметка одной карточки тренировки — общая для превью-шторки и экрана «История».
+function historyItemHtml(w) {
+  const isRun = w.type === "run";
+  const meta = isRun
+    ? [w.distance ? `${w.distance} км` : null, w.pace ? `${w.pace} мин/км` : null].filter(Boolean).join(" · ")
+    : (() => {
+        const sets = (w.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
+        const vol  = (w.exercises || []).reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
+        return [sets ? `${sets} подх` : null, vol ? `${vol} кг` : null].filter(Boolean).join(" · ");
+      })();
+  const duration = w.durationSec ? formatDuration(w.durationSec) : "";
+
+  return `
+    <div class="history-item" data-id="${w.id}">
+      <span class="history-item-icon${isRun ? " run" : ""}">${isRun ? HISTORY_SVG_RUN : HISTORY_SVG_STRENGTH}</span>
+      <span class="history-item-body">
+        <span class="history-item-label">${escHtml(w.name || (isRun ? "Пробежка" : "Силовая"))}</span>
+        <span class="history-item-meta">${meta || "—"}</span>
+      </span>
+      <span class="history-item-right">
+        <span class="history-item-date">${fmtDate(w.startedAt)}</span>
+        ${duration ? `<br><span style="font-size:11.5px;color:var(--text-tertiary)">${duration}</span>` : ""}
+      </span>
+    </div>`;
+}
+
+// Сколько последних тренировок показываем в шторке-превью. Остальные — на
+// отдельном экране «История» по кнопке «Вся история».
+const HISTORY_PREVIEW_LIMIT = 5;
+
 function renderHistory(userId) {
   const history = DATA.getWorkoutHistory(userId);
   historyCount.textContent = history.length;
-
-  const SVG_STRENGTH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
-  const SVG_RUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="14.5" cy="5.5" r="1.6"/><path d="M9.5 8.5l2.5 1.5 1 3.5-3 2.5M14.5 7l2.5 4.5-3 1.5"/><path d="M6 20l2.5-4"/></svg>`;
 
   if (!history.length) {
     historyBody.innerHTML = `<p class="empty-state">Тренировок пока нет — начни первую, и она появится здесь.</p>`;
@@ -2345,30 +2419,13 @@ function renderHistory(userId) {
     return;
   }
 
-  historyBody.innerHTML = history.map(w => {
-    const isRun = w.type === "run";
-    const meta = isRun
-      ? [w.distance ? `${w.distance} км` : null, w.pace ? `${w.pace} мин/км` : null].filter(Boolean).join(" · ")
-      : (() => {
-          const sets = (w.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
-          const vol  = (w.exercises || []).reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
-          return [sets ? `${sets} подх` : null, vol ? `${vol} кг` : null].filter(Boolean).join(" · ");
-        })();
-    const duration = w.durationSec ? formatDuration(w.durationSec) : "";
-
-    return `
-      <div class="history-item" data-id="${w.id}">
-        <span class="history-item-icon${isRun ? " run" : ""}">${isRun ? SVG_RUN : SVG_STRENGTH}</span>
-        <span class="history-item-body">
-          <span class="history-item-label">${escHtml(w.name || (isRun ? "Пробежка" : "Силовая"))}</span>
-          <span class="history-item-meta">${meta || "—"}</span>
-        </span>
-        <span class="history-item-right">
-          <span class="history-item-date">${fmtDate(w.startedAt)}</span>
-          ${duration ? `<br><span style="font-size:11.5px;color:var(--text-tertiary)">${duration}</span>` : ""}
-        </span>
-      </div>`;
-  }).join("");
+  const preview = history.slice(0, HISTORY_PREVIEW_LIMIT);
+  historyBody.innerHTML =
+    preview.map(historyItemHtml).join("") +
+    `<button class="history-all-btn" id="history-all-btn">
+       Вся история<span class="history-all-count">${history.length}</span>
+       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+     </button>`;
 
   historyBody.querySelectorAll(".history-item").forEach(el => {
     el.addEventListener("click", () => {
@@ -2381,8 +2438,87 @@ function renderHistory(userId) {
     });
   });
 
+  const allBtn = $("history-all-btn");
+  if (allBtn) allBtn.addEventListener("click", () => {
+    if (!sheet.classList.contains("expanded")) { window.settleSheet(true); return; }
+    goToScreen("history");
+  });
+
   repositionCollapsedSheet();
 }
+
+/* ==========================================================================
+   Экран: полная история тренировок (с фильтром по типу)
+   ========================================================================== */
+let _historyFilter = "all";
+let _historyPeriod = "all";
+
+// Период → сколько дней назад от «сейчас» считаем границей (null = всё время).
+const HISTORY_PERIODS = [
+  ["all",   "Всё время", null],
+  ["week",  "Неделя",    7],
+  ["month", "Месяц",     30],
+  ["year",  "Год",       365],
+];
+
+function historyTypeMatch(w, key) {
+  if (key === "all") return true;
+  return key === "run" ? w.type === "run" : w.type !== "run";
+}
+function historyPeriodMatch(w, key) {
+  const period = HISTORY_PERIODS.find(p => p[0] === key);
+  if (!period || period[2] == null) return true;
+  return w.startedAt >= Date.now() - period[2] * 86400000;
+}
+
+function initHistoryScreen() {
+  _historyFilter = "all";
+  _historyPeriod = "all";
+  renderHistoryScreen();
+}
+
+function renderHistoryScreen() {
+  const userId = DATA.getCurrentUser();
+  const all = DATA.getWorkoutHistory(userId);
+
+  // Тип-фильтр: счётчики считаем в пределах выбранного периода.
+  const inPeriod = all.filter(w => historyPeriodMatch(w, _historyPeriod));
+  const filters = [["all", "Все"], ["strength", "Силовые"], ["run", "Пробежки"]];
+  const tabsEl = $("history-filter-tabs");
+  tabsEl.innerHTML = filters.map(([key, label]) => {
+    const count = inPeriod.filter(w => historyTypeMatch(w, key)).length;
+    return `<button class="ex-cat-tab${_historyFilter === key ? " active" : ""}" data-filter="${key}">${label} ${count}</button>`;
+  }).join("");
+  tabsEl.querySelectorAll(".ex-cat-tab").forEach(btn => {
+    btn.addEventListener("click", () => { _historyFilter = btn.dataset.filter; renderHistoryScreen(); });
+  });
+
+  // Период-фильтр.
+  const periodEl = $("history-period-tabs");
+  periodEl.innerHTML = HISTORY_PERIODS.map(([key, label]) =>
+    `<button class="ex-cat-tab${_historyPeriod === key ? " active" : ""}" data-period="${key}">${label}</button>`
+  ).join("");
+  periodEl.querySelectorAll(".ex-cat-tab").forEach(btn => {
+    btn.addEventListener("click", () => { _historyPeriod = btn.dataset.period; renderHistoryScreen(); });
+  });
+
+  const list = all.filter(w => historyTypeMatch(w, _historyFilter) && historyPeriodMatch(w, _historyPeriod));
+
+  const listEl = $("history-screen-list");
+  if (!list.length) {
+    listEl.innerHTML = `<p class="empty-state" style="padding:24px 6px">Тренировок по выбранным фильтрам нет.</p>`;
+    return;
+  }
+  listEl.innerHTML = list.map(historyItemHtml).join("");
+  listEl.querySelectorAll(".history-item").forEach(el => {
+    el.addEventListener("click", () => {
+      const w = all.find(x => x.id === el.dataset.id);
+      if (w) openDetailScreen(w, "history");
+    });
+  });
+}
+
+$("history-back-btn").addEventListener("click", () => goToScreen("menu"));
 
 
 /* ==========================================================================
@@ -2468,8 +2604,10 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
     const dragH  = sheetDragArea.getBoundingClientRect().height;
     const firstItem = historyBody.querySelector(".history-item");
     if (!firstItem) return sheetH - dragH;
-    // Показываем: шапка + первый элемент + 26px зазор (10px margin-b карточки + 16px воздух)
-    return sheetH - dragH - 4 - firstItem.getBoundingClientRect().height - 26;
+    // Показываем ровно: шапка + первая карточка + её 10px margin-bottom.
+    // Зазор не больше отступа карточки — иначе из-под сгиба выглядывает
+    // вторая тренировка. 10px заканчиваются точно на верхней грани 2-й карточки.
+    return sheetH - dragH - 4 - firstItem.getBoundingClientRect().height - 10;
   }
   function onStart(clientY) {
     dragging = true; isTap = true; startY = clientY;
@@ -3345,7 +3483,9 @@ $("exercise-form-save").addEventListener("click", () => {
 /* ==========================================================================
    Screen: detail view (просмотр тренировки из истории)
    ========================================================================== */
-function openDetailScreen(workout) {
+let _detailReturnScreen = "menu";
+function openDetailScreen(workout, returnScreen = "menu") {
+  _detailReturnScreen = returnScreen;
   const isRun = workout.type === "run";
 
   const iconEl = $("detail-screen-icon");
@@ -3456,7 +3596,7 @@ function openDetailEditMode(workout) {
         draft.cadence   = parseInt($("de-cad").value) || null;
         saveEditedWorkout(draft, userId);
       });
-      $("de-cancel").addEventListener("click", () => openDetailScreen(workout));
+      $("de-cancel").addEventListener("click", () => openDetailScreen(workout, _detailReturnScreen));
     } else {
       const exRows = (draft.exercises || []).map((ex, exIdx) => {
         const def = exDefs.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
@@ -3506,7 +3646,7 @@ function openDetailEditMode(workout) {
         });
         saveEditedWorkout(draft, userId);
       });
-      $("de-cancel").addEventListener("click", () => openDetailScreen(workout));
+      $("de-cancel").addEventListener("click", () => openDetailScreen(workout, _detailReturnScreen));
     }
   }
 
@@ -3518,11 +3658,11 @@ function saveEditedWorkout(workout, userId) {
   DATA.updateWorkout(userId, workout);
   SyncQueue.push("workout:edit", { workoutId: workout.id });
   renderHistory(userId);
-  openDetailScreen(workout);
+  openDetailScreen(workout, _detailReturnScreen);
   showToast("Тренировка сохранена");
 }
 
-$("detail-back-btn").addEventListener("click", () => goToScreen("menu"));
+$("detail-back-btn").addEventListener("click", () => goToScreen(_detailReturnScreen));
 
 /* ==========================================================================
    Screen 6: Stats (раздел 9.2 спецификации)
