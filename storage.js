@@ -29,18 +29,37 @@ const Storage = (() => {
     return !!(cfg.enabled && (cfg.accessKey || cfg.masterKey));
   }
 
-  // Для чтения/обновления бинов — Access Key (или Master Key если нет отдельного).
-  function authHeaders(extra) {
-    return { "X-Access-Key": cfg.accessKey || cfg.masterKey, ...extra };
+  function hasSeparateAccessKey() {
+    return !!(cfg.accessKey && cfg.accessKey !== cfg.masterKey);
   }
 
-  // Для СОЗДАНИЯ бина — JSONBin требует именно X-Master-Key.
-  // X-Access-Key с правом Create тоже работает, но только если это
-  // настоящий Access Key — Master Key, посланный как X-Access-Key,
-  // JSONBin отвергает при создании.
+  // Для чтения/обновления бинов — отдельный Access Key отправляем как
+  // X-Access-Key, а мастер-ключ как X-Master-Key. JSONBin не считает
+  // мастер-ключ валидным access key, даже если строка ключа та же самая.
+  function authHeaders(extra) {
+    const auth = hasSeparateAccessKey()
+      ? { "X-Access-Key": cfg.accessKey }
+      : { "X-Master-Key": cfg.masterKey || cfg.accessKey };
+    return { ...auth, ...extra };
+  }
+
+  // Для СОЗДАНИЯ бина предпочитаем X-Master-Key; если пользователь всё же
+  // настроил отдельный Access Key с правом Create и не указал мастер-ключ,
+  // отправляем его как X-Access-Key.
   function createAuthHeaders(extra) {
-    const key = cfg.masterKey || cfg.accessKey;
-    return { "X-Master-Key": key, ...extra };
+    const auth = cfg.masterKey
+      ? { "X-Master-Key": cfg.masterKey }
+      : { "X-Access-Key": cfg.accessKey };
+    return { ...auth, ...extra };
+  }
+
+  async function throwHttpError(res, where) {
+    let message = "";
+    try { message = (await res.json())?.message || ""; }
+    catch {
+      try { message = await res.text(); } catch {}
+    }
+    throw new Error(`${where}: HTTP ${res.status}${message ? ` — ${message}` : ""}`);
   }
 
   // Создать новый bin с данными. Возвращает id созданного bin'а.
@@ -57,7 +76,7 @@ const Storage = (() => {
       }),
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error(`Storage.createBin: HTTP ${res.status}`);
+    if (!res.ok) await throwHttpError(res, "Storage.createBin");
     const json = await res.json();
     const id = json?.metadata?.id || json?.id;
     if (!id) throw new Error("Storage.createBin: сервер не вернул id");
@@ -75,7 +94,7 @@ const Storage = (() => {
       cache: "no-store",
     });
     if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`Storage.readBin: HTTP ${res.status}`);
+    if (!res.ok) await throwHttpError(res, "Storage.readBin");
     const json = await res.json();
     return json?.record ?? json;
   }
@@ -90,7 +109,7 @@ const Storage = (() => {
       headers: authHeaders({ "Content-Type": "application/json", "X-Bin-Versioning": "false" }),
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error(`Storage.updateBin: HTTP ${res.status}`);
+    if (!res.ok) await throwHttpError(res, "Storage.updateBin");
     const json = await res.json();
     return json?.record ?? json;
   }

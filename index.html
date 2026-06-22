@@ -192,6 +192,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .status-dot.offline { background: #6b6b76; box-shadow: none; }
 .status-dot.pending { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.status-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
 
 /* ============ Screen 2: main menu ============ */
 .screen-menu { padding-top: calc(20px + var(--safe-top)); }
@@ -2183,14 +2184,18 @@ function pluralChanges(n) {
 function updateOnlineStatus() {
   const online = navigator.onLine;
   const pending = SyncQueue.size();
+  const syncError = typeof SyncQueue.lastError === "function" ? SyncQueue.lastError() : null;
 
   statusDot.classList.toggle("offline", !online);
-  statusDot.classList.toggle("pending", online && pending > 0);
+  statusDot.classList.toggle("pending", online && pending > 0 && !syncError);
+  statusDot.classList.toggle("error", online && !!syncError);
 
   if (!online) {
     statusText.textContent = pending > 0
       ? `Нет сети — ${pending} ${pluralChanges(pending)} ждут синхронизации`
       : "Нет сети — данные сохраняются локально";
+  } else if (syncError) {
+    statusText.textContent = `Ошибка синхронизации: ${syncError}`;
   } else if (pending > 0) {
     statusText.textContent = "Синхронизация…";
   } else {
@@ -2395,9 +2400,17 @@ document.querySelectorAll(".pill").forEach(pill => {
    ========================================================================== */
 $("settings-close").addEventListener("click", () => closeModal(settingsModalBackdrop));
 $("refresh-data-btn").addEventListener("click", () => {
+  const userId = DATA.getCurrentUser();
+  closeModal(settingsModalBackdrop);
+  showToast("Синхронизируем данные…");
+  SyncQueue.flush();
+  Promise.resolve(userId ? SyncQueue.hydrateUser(userId) : null)
+    .then(() => {
+      if (screenMenu.classList.contains("active")) refreshMenu();
+      updateOnlineStatus();
+      showToast(SyncQueue.lastError() ? "Синхронизация не удалась" : "Данные обновлены");
+    });
   if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.update()));
-  showToast("Обновляем данные…");
-  setTimeout(() => window.location.reload(), 500);
 });
 $("switch-user-btn").addEventListener("click", () => {
   closeModal(settingsModalBackdrop);
@@ -4258,4 +4271,3 @@ init();
 </script>
 </body>
 </html>
-

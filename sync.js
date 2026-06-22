@@ -43,6 +43,7 @@ const Sync = (() => {
 
   const dirty = loadDirty();
   const timers = new Map();
+  let lastError = null;
 
   /* ----- вспомогательные ключи/бины ----- */
   function binIdForUser(userId)          { return CONFIG.BINS[`user_${userId}`]; }
@@ -192,8 +193,10 @@ const Sync = (() => {
       await pushScope(scope);
       dirty.delete(scope);
       persistDirty();
+      if (!dirty.size) lastError = null;
     } catch (e) {
       console.warn("Sync: не удалось отправить", scope, e);
+      lastError = e?.message || String(e);
       // оставляем dirty — заберёт следующий flushAll()
     }
     notifyStatus();
@@ -236,15 +239,18 @@ const Sync = (() => {
   }
 
   function pendingCount() { return dirty.size; }
+  function getLastError() { return lastError; }
 
   /* ----- подтягивание данных при входе в профиль ----- */
   async function hydrateUser(userId) {
     if (!Storage.isEnabled() || !navigator.onLine) return;
+    lastError = null;
+    notifyStatus();
 
     try {
       const exercises = await Storage.readBin(CONFIG.BINS.exercises);
       if (Array.isArray(exercises) && exercises.length) DATA.saveExercises(exercises);
-    } catch (e) { console.warn("Sync: pull exercises failed", e); }
+    } catch (e) { console.warn("Sync: pull exercises failed", e); lastError = e?.message || String(e); }
 
     try {
       // Дошлём то, что не успели отправить с этого устройства, — но только
@@ -269,7 +275,7 @@ const Sync = (() => {
           }
         }
       }
-    } catch (e) { console.warn("Sync: pull user failed", e); }
+    } catch (e) { console.warn("Sync: pull user failed", e); lastError = e?.message || String(e); }
 
     try {
       await pushIfDirty(`templates:${userId}`);
@@ -279,7 +285,7 @@ const Sync = (() => {
       const tplList = Array.isArray(remoteTpl) ? remoteTpl
         : (remoteTpl && Array.isArray(remoteTpl.items)) ? remoteTpl.items : null;
       if (tplList) DATA.saveTemplates(userId, tplList);
-    } catch (e) { console.warn("Sync: pull templates failed", e); }
+    } catch (e) { console.warn("Sync: pull templates failed", e); lastError = e?.message || String(e); }
 
     try {
       await pushIfDirty(`workoutIndex:${userId}`);
@@ -290,7 +296,7 @@ const Sync = (() => {
         DATA.saveWorkoutIndex(userId, indexList);
         await hydrateMissingWorkouts(userId, indexList);
       }
-    } catch (e) { console.warn("Sync: pull workout index failed", e); }
+    } catch (e) { console.warn("Sync: pull workout index failed", e); lastError = e?.message || String(e); }
 
     notifyStatus();
   }
@@ -324,5 +330,5 @@ const Sync = (() => {
     return copy;
   }
 
-  return { push, flush: flushAll, size: pendingCount, hydrateUser, shareTemplate };
+  return { push, flush: flushAll, size: pendingCount, lastError: getLastError, hydrateUser, shareTemplate };
 })();
