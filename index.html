@@ -82,15 +82,18 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
 input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 .app {
-  /* fixed + inset:0 гарантированно закрывает весь экран на iOS-standalone,
-     где 100dvh иногда не дотягивается до самого низа и снизу проступает
-     чёрная полоса под home-indicator. left/right:0 + max-width + margin:auto
-     по-прежнему центрируют «телефон» на широких экранах. */
+  /* На iOS-standalone ни 100dvh, ни fixed+inset:0 не дотягиваются до
+     физического низа экрана — снизу проступает чёрная полоса (фон body)
+     под home-indicator. Поэтому реальную высоту экрана меряем в JS через
+     window.innerHeight и кладём в --app-height; CSS-значения ниже — фоллбэк.
+     left/right:0 + max-width + margin:auto центрируют «телефон» на десктопе. */
   position: fixed;
-  inset: 0;
+  top: 0; left: 0; right: 0;
   width: 100%;
   max-width: 480px;
   margin: 0 auto;
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
   overflow: hidden;
   background: var(--bg-base);
 }
@@ -4510,6 +4513,20 @@ if ("serviceWorker" in navigator) {
     }).catch(() => { /* нет SW — офлайн-режим работает только на уже загруженных данных, без кэша каркаса */ });
   });
 }
+
+/* ==========================================================================
+   Высота экрана на iOS-standalone (см. .app в CSS)
+   window.innerHeight в standalone-режиме = вся высота экрана, включая зону
+   home-indicator, в отличие от 100dvh, который иногда оказывается короче и
+   оставляет снизу чёрную полосу. Пишем реальное значение в --app-height.
+   ========================================================================== */
+function setAppHeight() {
+  document.documentElement.style.setProperty("--app-height", window.innerHeight + "px");
+  if (window.repositionCollapsedSheet) window.repositionCollapsedSheet();
+}
+window.addEventListener("resize", setAppHeight);
+window.addEventListener("orientationchange", setAppHeight);
+setAppHeight();
 
 /* ==========================================================================
    Init
