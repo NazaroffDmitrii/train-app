@@ -1563,7 +1563,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 <script>
 "use strict";
 
-Storage.configure({ enabled: CONFIG.ENABLED, accessKey: CONFIG.ACCESS_KEY });
+Storage.configure({
+  enabled:   CONFIG.ENABLED,
+  accessKey: CONFIG.ACCESS_KEY,
+  masterKey: CONFIG.MASTER_KEY || CONFIG.ACCESS_KEY, // MASTER_KEY появился в новом setup.html;
+  // старые config.js, сгенерированные до этого фикса, имеют только ACCESS_KEY —
+  // в таком случае используем его и для createBin (работает если это настоящий мастер-ключ).
+});
 
 /* ==========================================================================
    DATA — адаптер (localStorage-заглушка).
