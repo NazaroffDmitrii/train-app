@@ -311,7 +311,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg);
   border-top: 1px solid var(--border-subtle);
   box-shadow: 0 -8px 30px rgba(0,0,0,0.35);
-  transform: translateY(calc(100% - 150px - var(--safe-bottom)));
+  transform: translateY(calc(100% - 80px - var(--safe-bottom)));
   transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   display: flex; flex-direction: column;
 }
@@ -332,22 +332,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   display: flex; align-items: center; justify-content: center;
 }
 
-.sheet-preview {
-  display: flex; align-items: center; gap: 10px;
-  margin-top: 12px; padding: 11px 12px;
-  background: var(--panel-raised); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-}
-.sheet-preview-dot {
-  flex: none; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--accent-bright);
-}
-.sheet-preview-dot.run { background: var(--green); }
-.sheet-preview-text {
-  flex: 1; min-width: 0; font-size: 13px; color: var(--text-secondary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.sheet-preview-text b { color: var(--text-primary); font-weight: 600; }
 
 .sheet-body {
   flex: 1; overflow-y: auto;
@@ -828,7 +812,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .detail-screen-icon.run { background: var(--green-soft); color: var(--green); }
 .detail-screen-icon svg { width: 18px; height: 18px; }
-.detail-screen-title { font-size: 18px; font-weight: 700; flex: 1; }
+.detail-screen-title { font-size: 18px; font-weight: 700; }
 .detail-screen-meta { font-size: 13px; color: var(--text-tertiary); }
 .detail-screen-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 20px calc(24px + var(--safe-bottom)); }
 
@@ -1225,7 +1209,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
           <span class="sheet-title">История</span>
           <span class="sheet-badge" id="history-count">0</span>
         </div>
-        <div class="sheet-preview" id="sheet-preview"></div>
       </div>
       <div class="sheet-body" id="history-body">
         <p class="empty-state">Тренировок пока нет — начни первую, и она появится здесь.</p>
@@ -1547,10 +1530,16 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
           <line x1="8.6" y1="12" x2="15.4" y2="12"/>
         </svg>
       </div>
-      <div>
+      <div style="flex:1;min-width:0;">
         <div class="detail-screen-title" id="detail-screen-title">Тренировка</div>
         <div class="detail-screen-meta" id="detail-screen-meta"></div>
       </div>
+      <button class="btn-chip" id="detail-edit-btn" title="Редактировать">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
+      <button class="btn-chip" id="detail-delete-btn" title="Удалить" style="color:var(--red,#f87171)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </button>
     </div>
     <div class="detail-screen-body" id="detail-screen-body"></div>
   </section>
@@ -1695,15 +1684,40 @@ const DATA = (() => {
     getHiddenIds(userId) { return ls(`train_hidden_${userId}`, []); },
     saveHiddenIds(userId, list) { lsSet(`train_hidden_${userId}`, list); },
 
-    // Видимый список для пользователя = (общие − скрытые) + личные (раздел 3, 4)
+    // Полный список упражнений пользователя — стартовый набор + добавленные им.
     getVisibleExercises(userId) {
-      const common = this.getExercises();
-      const hidden = new Set(this.getHiddenIds(userId));
+      this.ensureExercisesSeeded(userId);
+      return this.getOwnExercises(userId);
+    },
+
+    // Скопировать стартовый набор в личный список пользователя, если ещё не сделано.
+    // Запускается один раз при первом открытии экрана упражнений после перехода на
+    // архитектуру «у каждого своя база».
+    ensureExercisesSeeded(userId) {
+      if (ls(`train_exercises_seeded_${userId}`)) return false;
       const own = this.getOwnExercises(userId);
-      return [
-        ...common.filter(e => !hidden.has(e.id)),
-        ...own,
-      ];
+      const existingNames = new Set(own.map(e => e.name.toLowerCase()));
+      const toAdd = DEFAULT_EXERCISES
+        .filter(e => !existingNames.has(e.name.toLowerCase()))
+        .map(e => ({ ...e, owner: userId }));
+      if (toAdd.length) this.saveOwnExercises(userId, [...toAdd, ...own]);
+      lsSet(`train_exercises_seeded_${userId}`, true);
+      return true; // первый запуск — нужно запушить в remote
+    },
+
+    // Поделиться упражнением с другим пользователем — копия по значению,
+    // независимая от оригинала. Возвращает 'shared' | 'duplicate' | 'not_found'.
+    shareExercise(exerciseId, fromUserId, toUserId) {
+      this.ensureExercisesSeeded(fromUserId);
+      const ex = this.getOwnExercises(fromUserId).find(e => e.id === exerciseId);
+      if (!ex) return "not_found";
+      this.ensureExercisesSeeded(toUserId);
+      const toList = this.getOwnExercises(toUserId);
+      const nameLow = ex.name.toLowerCase().trim();
+      if (toList.some(e => e.name.toLowerCase().trim() === nameLow)) return "duplicate";
+      const copy = { ...ex, id: `e_own_${toUserId}_${Date.now()}`, owner: toUserId };
+      this.saveOwnExercises(toUserId, [...toList, copy]);
+      return "shared";
     },
 
     // Добавить новое упражнение. owner=null недоступно из UI пользователя —
@@ -1803,6 +1817,21 @@ const DATA = (() => {
     deleteWorkout(userId, workoutId) {
       const history = ls(`train_history_${userId}`, []);
       lsSet(`train_history_${userId}`, history.filter(w => w.id !== workoutId));
+      const index = this.getWorkoutIndex(userId);
+      this.saveWorkoutIndex(userId, index.filter(e => e.id !== workoutId));
+    },
+
+    updateWorkout(userId, workout) {
+      const history = ls(`train_history_${userId}`, []);
+      const idx = history.findIndex(w => w.id === workout.id);
+      if (idx !== -1) { history[idx] = workout; lsSet(`train_history_${userId}`, history); }
+      const index = this.getWorkoutIndex(userId);
+      const idxI = index.findIndex(e => e.id === workout.id);
+      if (idxI !== -1) {
+        index[idxI].name = workout.name;
+        if (workout.durationSec != null) index[idxI].durationSec = workout.durationSec;
+        this.saveWorkoutIndex(userId, index);
+      }
     },
 
     // Рекорды по упражнению для пользователя
@@ -2309,8 +2338,6 @@ function renderHistory(userId) {
   const SVG_STRENGTH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
   const SVG_RUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="14.5" cy="5.5" r="1.6"/><path d="M9.5 8.5l2.5 1.5 1 3.5-3 2.5M14.5 7l2.5 4.5-3 1.5"/><path d="M6 20l2.5-4"/></svg>`;
 
-  renderSheetPreview(history[0]);
-
   if (!history.length) {
     historyBody.innerHTML = `<p class="empty-state">Тренировок пока нет — начни первую, и она появится здесь.</p>`;
     repositionCollapsedSheet();
@@ -2344,6 +2371,10 @@ function renderHistory(userId) {
 
   historyBody.querySelectorAll(".history-item").forEach(el => {
     el.addEventListener("click", () => {
+      if (!sheet.classList.contains("expanded")) {
+        window.settleSheet(true);
+        return;
+      }
       const w = DATA.getWorkoutHistory(userId).find(x => x.id === el.dataset.id);
       if (w) openDetailScreen(w);
     });
@@ -2352,24 +2383,6 @@ function renderHistory(userId) {
   repositionCollapsedSheet();
 }
 
-// Компактная строка с последней тренировкой — видна и в свёрнутом виде шторки
-// (раньше в свёрнутом виде был виден только счётчик, без содержания — эскиз
-// просит показывать последнюю тренировку сразу, не разворачивая шторку).
-function renderSheetPreview(latest) {
-  const el = $("sheet-preview");
-  if (!el) return;
-  if (!latest) { el.classList.add("hidden"); el.innerHTML = ""; return; }
-  el.classList.remove("hidden");
-  const isRun = latest.type === "run";
-  const meta = isRun
-    ? [latest.distance ? `${latest.distance} км` : null, latest.pace ? `${latest.pace} мин/км` : null].filter(Boolean).join(" · ")
-    : (latest.durationSec ? formatDuration(latest.durationSec) : "");
-  const label = latest.name || (isRun ? "Пробежка" : "Силовая");
-  el.innerHTML = `
-    <span class="sheet-preview-dot${isRun ? " run" : ""}"></span>
-    <span class="sheet-preview-text"><b>${escHtml(label)}</b> · ${fmtDate(latest.startedAt)}${meta ? " · " + escHtml(meta) : ""}</span>
-  `;
-}
 
 /* ==========================================================================
    Start button
@@ -2450,7 +2463,12 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
   let history = [];
 
   function getCollapsedTranslate() {
-    return sheet.getBoundingClientRect().height - sheetDragArea.getBoundingClientRect().height;
+    const sheetH = sheet.getBoundingClientRect().height;
+    const dragH  = sheetDragArea.getBoundingClientRect().height;
+    const firstItem = historyBody.querySelector(".history-item");
+    if (!firstItem) return sheetH - dragH;
+    // Показываем: шапка + первый элемент истории + 16px зазор снизу
+    return sheetH - dragH - 4 - firstItem.getBoundingClientRect().height - 16;
   }
   function onStart(clientY) {
     dragging = true; isTap = true; startY = clientY;
@@ -2508,6 +2526,7 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
   }
   window.addEventListener("resize", reposition);
   window.repositionCollapsedSheet = reposition;
+  window.settleSheet = settle;
 
   // Тап в свободную область экрана выше шторки (хедер, кнопка «начать»)
   // должен сворачивать её — раньше это работало только драгом или тапом по
@@ -3073,6 +3092,8 @@ function initExercisesScreen() {
   exercisesSearch.value = "";
   _exercisesCatFilter = "all";
   _exercisesShowHidden = false;
+  const userId = DATA.getCurrentUser();
+  if (DATA.ensureExercisesSeeded(userId)) SyncQueue.push("exercise:create", {});
   renderExercisesList("");
 }
 
@@ -3099,107 +3120,62 @@ function renderCatTabs(userId, presentCats) {
 }
 
 function renderExercisesList(query) {
-  const userId = DATA.getCurrentUser();
-  const q = query.trim().toLowerCase();
+  const userId  = DATA.getCurrentUser();
+  const q       = query.trim().toLowerCase();
+  const allExs  = DATA.getVisibleExercises(userId); // seeded + personal, единый список
+  const otherUser = DATA.USERS.find(u => u.id !== userId);
 
-  const common = DATA.getExercises();
-  const own = DATA.getOwnExercises(userId);
-  const hiddenIds = new Set(DATA.getHiddenIds(userId));
+  renderCatTabs(userId, Array.from(new Set(allExs.map(e => e.cat))));
 
-  renderCatTabs(userId, Array.from(new Set([...common, ...own].map(e => e.cat))));
+  const filtered = allExs.filter(e =>
+    (!q || e.name.toLowerCase().includes(q) || e.cat.toLowerCase().includes(q))
+    && (_exercisesCatFilter === "all" || e.cat === _exercisesCatFilter)
+  );
 
-  const matches = e => (!q || e.name.toLowerCase().includes(q) || e.cat.toLowerCase().includes(q))
-    && (_exercisesCatFilter === "all" || e.cat === _exercisesCatFilter);
-
-  const ownFiltered = own.filter(matches);
-  const commonMatched = common.filter(matches);
-  // Скрытые у себя общие упражнения больше не показываются вперемешку с
-  // видимыми (раньше они просто становились тусклее) — теперь их вообще
-  // нет в основном списке, а ниже есть отдельная кнопка-раскрывашка.
-  const commonVisible = commonMatched.filter(e => !hiddenIds.has(e.id));
-  const commonHidden  = commonMatched.filter(e => hiddenIds.has(e.id));
-
-  if (!ownFiltered.length && !commonVisible.length && !commonHidden.length) {
+  if (!filtered.length) {
     exercisesScroll.innerHTML = `<p class="empty-state">Ничего не найдено</p>`;
     return;
   }
 
-  const renderRow = (ex, { isOwn, hidden }) => {
-    return `
-      <div class="ex-row" data-id="${escHtml(ex.id)}" data-own="${isOwn ? "1" : "0"}">
-        <span class="ex-row-body">
-          <span class="ex-row-name">${escHtml(ex.name)}</span>
-          <span class="ex-row-meta">
-            <span class="ex-row-badge ${isOwn ? "own" : "common"}">${isOwn ? "Личное" : "Общее"}</span>
-            <span>${escHtml(ex.cat)}</span>
-          </span>
-        </span>
-        <span class="ex-row-actions">
-          ${isOwn ? `
-            <button class="ex-row-action-btn" data-act="edit" title="Редактировать">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-            </button>
-            <button class="ex-row-action-btn danger" data-act="delete" title="Удалить">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          ` : `
-            <button class="ex-row-action-btn ${hidden ? "active-state" : ""}" data-act="toggle-hide" title="${hidden ? "Показать" : "Скрыть у себя"}">
-              ${hidden
-                ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>`
-                : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.22-5.07M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 7 11 7a18.6 18.6 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
-              }
-            </button>
-          `}
-        </span>
-      </div>
-    `;
-  };
+  const SVG_EDIT  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+  const SVG_DEL   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  const SVG_SHARE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
 
-  let html = "";
-  if (ownFiltered.length) {
-    html += `<div class="exercises-section-label">Личные</div>`;
-    html += ownFiltered.map(e => renderRow(e, { isOwn: true, hidden: false })).join("");
-  }
-  if (commonVisible.length) {
-    html += `<div class="exercises-section-label">Общие</div>`;
-    html += commonVisible.map(e => renderRow(e, { isOwn: false, hidden: false })).join("");
-  }
-  if (commonHidden.length) {
-    html += `<button class="ex-show-hidden-btn" id="ex-show-hidden-btn">${_exercisesShowHidden ? "Скрыть скрытые упражнения ↑" : `Показать скрытые (${commonHidden.length}) ↓`}</button>`;
-    if (_exercisesShowHidden) {
-      html += `<div class="exercises-section-label">Скрытые</div>`;
-      html += commonHidden.map(e => renderRow(e, { isOwn: false, hidden: true })).join("");
-    }
-  }
-  exercisesScroll.innerHTML = html;
-
-  const showHiddenBtn = $("ex-show-hidden-btn");
-  if (showHiddenBtn) showHiddenBtn.addEventListener("click", () => {
-    _exercisesShowHidden = !_exercisesShowHidden;
-    renderExercisesList(exercisesSearch.value);
-  });
+  exercisesScroll.innerHTML = filtered.map(ex => `
+    <div class="ex-row" data-id="${escHtml(ex.id)}">
+      <span class="ex-row-body">
+        <span class="ex-row-name">${escHtml(ex.name)}</span>
+        <span class="ex-row-meta"><span>${escHtml(ex.cat)}</span></span>
+      </span>
+      <span class="ex-row-actions">
+        ${otherUser ? `<button class="ex-row-action-btn" data-act="share" title="Поделиться с ${escHtml(otherUser.name)}">${SVG_SHARE}</button>` : ""}
+        <button class="ex-row-action-btn" data-act="edit" title="Редактировать">${SVG_EDIT}</button>
+        <button class="ex-row-action-btn danger" data-act="delete" title="Удалить">${SVG_DEL}</button>
+      </span>
+    </div>`).join("");
 
   exercisesScroll.querySelectorAll(".ex-row").forEach(row => {
     const id = row.dataset.id;
     row.querySelectorAll(".ex-row-action-btn").forEach(b => {
-      const act = b.dataset.act;
-      if (act === "toggle-hide") {
-        b.addEventListener("click", () => {
-          if (hiddenIds.has(id)) DATA.unhideExercise(userId, id);
-          else DATA.hideExercise(userId, id);
-          SyncQueue.push("exercise:visibility", { id });
-          renderExercisesList(exercisesSearch.value);
-        });
-      }
-      if (act === "edit") {
+      if (b.dataset.act === "edit") {
         b.addEventListener("click", () => openExerciseForm(id));
       }
-      if (act === "delete") {
+      if (b.dataset.act === "delete") {
         b.addEventListener("click", () => {
           DATA.deleteOwnExercise(userId, id);
           SyncQueue.push("exercise:delete", { id });
           showToast("Упражнение удалено");
           renderExercisesList(exercisesSearch.value);
+        });
+      }
+      if (b.dataset.act === "share" && otherUser) {
+        b.addEventListener("click", async () => {
+          b.disabled = true;
+          const result = await SyncQueue.shareExercise(id, userId, otherUser.id);
+          b.disabled = false;
+          if (result === "shared")    showToast(`Упражнение передано ${otherUser.name}`);
+          if (result === "duplicate") showToast(`У ${otherUser.name} уже есть такое упражнение`);
+          if (result === "not_found") showToast("Упражнение не найдено");
         });
       }
     });
@@ -3279,8 +3255,8 @@ function openCategoryManager() {
     backdrop.addEventListener("click", e => { if (e.target === backdrop) backdrop.remove(); });
   }
 
-  render();
   document.body.appendChild(backdrop);
+  render();
 }
 
 /* — Форма добавления / редактирования личного упражнения — */
@@ -3305,7 +3281,7 @@ function openExerciseForm(exerciseId) {
   const userId = DATA.getCurrentUser();
 
   if (exerciseId) {
-    const ex = DATA.getOwnExercises(userId).find(e => e.id === exerciseId);
+    const ex = DATA.getVisibleExercises(userId).find(e => e.id === exerciseId);
     if (!ex) return;
     exerciseFormTitle.textContent = "Редактировать упражнение";
     exerciseFormName.value = ex.name;
@@ -3417,6 +3393,118 @@ function openDetailScreen(workout) {
   }
 
   goToScreen("detail");
+
+  $("detail-delete-btn").onclick = () => {
+    if (!confirm("Удалить эту тренировку? Отменить нельзя.")) return;
+    const userId = DATA.getCurrentUser();
+    DATA.deleteWorkout(userId, workout.id);
+    SyncQueue.push("workout:delete", {});
+    renderHistory(userId);
+    goToScreen("menu");
+    showToast("Тренировка удалена");
+  };
+
+  $("detail-edit-btn").onclick = () => openDetailEditMode(workout);
+}
+
+function openDetailEditMode(workout) {
+  const userId = DATA.getCurrentUser();
+  const isRun  = workout.type === "run";
+  const exDefs = DATA.getVisibleExercises(userId);
+  const draft  = JSON.parse(JSON.stringify(workout));
+
+  function renderEdit() {
+    const body = $("detail-screen-body");
+    if (isRun) {
+      body.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:12px;padding-bottom:24px">
+          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Название</label>
+          <input class="ex-form-input" id="de-name" value="${escHtml(draft.name || "")}" placeholder="Название">
+          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Дистанция (км)</label>
+          <input class="ex-form-input" id="de-dist" type="number" step="0.01" value="${draft.distance || ""}">
+          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Темп (мин/км)</label>
+          <input class="ex-form-input" id="de-pace" value="${escHtml(draft.pace || "")}">
+          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Пульс ср.</label>
+          <input class="ex-form-input" id="de-hr" type="number" value="${draft.heartRate || ""}">
+          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Каденс</label>
+          <input class="ex-form-input" id="de-cad" type="number" value="${draft.cadence || ""}">
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button class="btn-chip" id="de-cancel" style="flex:1">Отмена</button>
+            <button class="btn-chip primary" id="de-save" style="flex:1">Сохранить</button>
+          </div>
+        </div>`;
+      $("de-save").addEventListener("click", () => {
+        draft.name      = $("de-name").value.trim() || draft.name;
+        draft.distance  = parseFloat($("de-dist").value) || null;
+        draft.pace      = $("de-pace").value.trim() || null;
+        draft.heartRate = parseInt($("de-hr").value) || null;
+        draft.cadence   = parseInt($("de-cad").value) || null;
+        saveEditedWorkout(draft, userId);
+      });
+      $("de-cancel").addEventListener("click", () => openDetailScreen(workout));
+    } else {
+      const exRows = (draft.exercises || []).map((ex, exIdx) => {
+        const def = exDefs.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
+        const doneSets = ex.sets.map((s, si) => ({ ...s, _si: si })).filter(s => s.done);
+        return `<div class="detail-ex">
+          <div class="detail-ex-name">${escHtml(def.name)}</div>
+          ${doneSets.map((s, i) => `
+            <div class="de-set-row" data-ex="${exIdx}" data-si="${s._si}" style="display:flex;align-items:center;gap:8px;padding:6px 14px">
+              <span class="detail-set-num">${i + 1}</span>
+              <input class="de-weight" type="number" step="0.5" value="${s.weight || 0}" style="width:56px;padding:4px 6px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--panel-raised);color:var(--text-primary);font-size:13px;text-align:center">
+              <span style="color:var(--text-tertiary);font-size:13px">кг ×</span>
+              <input class="de-reps" type="number" value="${s.reps || 0}" style="width:44px;padding:4px 6px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--panel-raised);color:var(--text-primary);font-size:13px;text-align:center">
+              <span style="color:var(--text-tertiary);font-size:13px">повт</span>
+              <button class="ex-row-action-btn danger de-del-set" data-ex="${exIdx}" data-si="${s._si}" title="Удалить подход" style="margin-left:auto;flex:none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>`).join("")}
+          ${!doneSets.length ? `<div style="padding:6px 14px;color:var(--text-tertiary);font-size:13px">Нет выполненных подходов</div>` : ""}
+        </div>`;
+      }).join("");
+
+      body.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:4px;padding-bottom:80px">
+          <div style="margin-bottom:8px">
+            <input class="ex-form-input" id="de-name" value="${escHtml(draft.name || "")}" placeholder="Название тренировки">
+          </div>
+          ${exRows}
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn-chip" id="de-cancel" style="flex:1">Отмена</button>
+            <button class="btn-chip primary" id="de-save" style="flex:1">Сохранить</button>
+          </div>
+        </div>`;
+
+      body.querySelectorAll(".de-del-set").forEach(btn => {
+        btn.addEventListener("click", () => {
+          draft.exercises[+btn.dataset.ex].sets[+btn.dataset.si].done = false;
+          renderEdit();
+        });
+      });
+
+      $("de-save").addEventListener("click", () => {
+        draft.name = $("de-name").value.trim() || draft.name;
+        body.querySelectorAll(".de-set-row").forEach(row => {
+          const exIdx = +row.dataset.ex, si = +row.dataset.si;
+          draft.exercises[exIdx].sets[si].weight = parseFloat(row.querySelector(".de-weight").value) || 0;
+          draft.exercises[exIdx].sets[si].reps   = parseInt(row.querySelector(".de-reps").value)   || 0;
+        });
+        saveEditedWorkout(draft, userId);
+      });
+      $("de-cancel").addEventListener("click", () => openDetailScreen(workout));
+    }
+  }
+
+  renderEdit();
+}
+
+function saveEditedWorkout(workout, userId) {
+  DATA.updateRecords(userId, workout);
+  DATA.updateWorkout(userId, workout);
+  SyncQueue.push("workout:edit", { workoutId: workout.id });
+  renderHistory(userId);
+  openDetailScreen(workout);
+  showToast("Тренировка сохранена");
 }
 
 $("detail-back-btn").addEventListener("click", () => goToScreen("menu"));

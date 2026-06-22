@@ -76,6 +76,12 @@ const Sync = (() => {
         // и видимость, которые живут в пользовательском бине, а не в общем пуле
         // (общий пул в UI сейчас не редактируется — см. комментарий выше).
         return [`user:${currentUserId}`];
+      case "exercise:share":
+        return [`user:${payload.toUserId}`];
+      case "workout:delete":
+        return [`workoutIndex:${currentUserId}`];
+      case "workout:edit":
+        return [`workout:${payload.workoutId}`, `workoutIndex:${currentUserId}`];
       case "template:update":
       case "template:rename":
       case "template:delete":
@@ -174,7 +180,15 @@ const Sync = (() => {
     // (тренировка завершена), а не на каждую правку подхода — иначе расход
     // запросов растёт вдвое на каждое сохранение почти без пользы.
     if (workout.finishedAt) {
+      // Помечаем индекс грязным ДО отправки: если iOS убьёт страницу между
+      // созданием бина тренировки и отправкой индекса — следующий заход
+      // подхватит workoutIndex:<userId> как самостоятельный retry.
+      const indexScope = `workoutIndex:${userId}`;
+      dirty.add(indexScope);
+      persistDirty();
       await Storage.updateBin(binIdForWorkoutIndex(userId), { items: DATA.getWorkoutIndex(userId) });
+      dirty.delete(indexScope);
+      persistDirty();
     }
   }
 
@@ -332,5 +346,17 @@ const Sync = (() => {
     return copy;
   }
 
-  return { push, flush: flushAll, size: pendingCount, lastError: getLastError, hydrateUser, shareTemplate };
+  async function shareExercise(exerciseId, fromUserId, toUserId) {
+    if (Storage.isEnabled() && navigator.onLine) {
+      try {
+        const remote = await Storage.readBin(binIdForUser(toUserId));
+        if (remote && Array.isArray(remote.own)) DATA.saveOwnExercises(toUserId, remote.own);
+      } catch (e) { console.warn("Sync: pull recipient exercises before share failed", e); }
+    }
+    const result = DATA.shareExercise(exerciseId, fromUserId, toUserId);
+    if (result === "shared") push("exercise:share", { toUserId });
+    return result;
+  }
+
+  return { push, flush: flushAll, size: pendingCount, lastError: getLastError, hydrateUser, shareTemplate, shareExercise };
 })();
