@@ -17,7 +17,7 @@
  * каркаса, чтобы activate-обработчик подчистил старые записи.
  */
 
-const CACHE_VERSION = "train-shell-v4";
+const CACHE_VERSION = "train-shell-v5";
 
 // Эти пути — относительно расположения sw.js (корень GitHub Pages).
 const APP_SHELL = [
@@ -79,7 +79,7 @@ function staleWhileRevalidate(req, fallbackKey) {
           if (res && res.ok) cache.put(fallbackKey || req, res.clone());
           return res;
         })
-        .catch(() => cached);
+        .catch(() => cached || new Response("Нет сети", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } }));
       return cached || network;
     })
   );

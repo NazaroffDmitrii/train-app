@@ -322,7 +322,9 @@ const Sync = (() => {
     if (Storage.isEnabled() && navigator.onLine) {
       try {
         const remoteList = await Storage.readBin(binIdForTemplates(toUserId));
-        if (Array.isArray(remoteList)) DATA.saveTemplates(toUserId, remoteList);
+        const tplArr = Array.isArray(remoteList) ? remoteList
+          : (remoteList && Array.isArray(remoteList.items)) ? remoteList.items : null;
+        if (tplArr) DATA.saveTemplates(toUserId, tplArr);
       } catch (e) { console.warn("Sync: pull recipient templates before share failed", e); }
     }
     const copy = DATA.shareTemplate(templateId, fromUserId, toUserId);

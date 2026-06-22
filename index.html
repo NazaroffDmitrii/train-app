@@ -1564,6 +1564,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 <script>
 "use strict";
 
+function escHtml(s) {
+  return String(s === null || s === undefined ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 Storage.configure({
   enabled:   CONFIG.ENABLED,
   accessKey: CONFIG.ACCESS_KEY,
@@ -1621,7 +1627,10 @@ const DATA = (() => {
     try { const r = localStorage.getItem(key); return r !== null ? JSON.parse(r) : fallback; }
     catch { return fallback; }
   }
-  function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+  function lsSet(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); }
+    catch (e) { if (e instanceof DOMException) document.dispatchEvent(new CustomEvent("storage-full")); }
+  }
 
   return {
     USERS,
@@ -2023,6 +2032,7 @@ const startBtn      = $("start-btn");
 
   // Орбита
   function drawOrbit() {
+    if (document.hidden) { requestAnimationFrame(drawOrbit); return; }
     const W = canvas.width, H = canvas.height;
     const cx = W/2, cy = H/2;
     const rx = W/2 - 8, ry = H/2 - 8;
@@ -2048,6 +2058,7 @@ const startBtn      = $("start-btn");
   function setupPulse(r1, r2, getColor) {
     let t = 0;
     function tick() {
+      if (document.hidden) { requestAnimationFrame(tick); return; }
       t += 0.016;
       const ease = p => 1 - Math.pow(1 - p, 3);
       const p1 = (t % 2) / 2, p2 = ((t + 1) % 2) / 2;
@@ -2066,16 +2077,18 @@ const startBtn      = $("start-btn");
   // Дыхание двоеточия в покое
   let idlePhase = 0;
   function breatheIdle() {
-    const colon = $("start-colon-idle");
-    if (colon) {
-      idlePhase += 0.022;
-      colon.style.opacity = (0.35 + 0.65 * (0.5 + 0.5 * Math.sin(idlePhase))).toFixed(2);
+    if (!document.hidden) {
+      const colon = $("start-colon-idle");
+      if (colon) {
+        idlePhase += 0.022;
+        colon.style.opacity = (0.35 + 0.65 * (0.5 + 0.5 * Math.sin(idlePhase))).toFixed(2);
+      }
     }
     requestAnimationFrame(breatheIdle);
   }
 
   // Обновление таймера на кнопке
-  let _timerRAF = null;
+  let _startBtnRaf = null;
   function updateStartBtn(activeWorkout) {
     const isActive = !!activeWorkout;
     startBtn.classList.toggle("active-workout", isActive);
@@ -2085,7 +2098,7 @@ const startBtn      = $("start-btn");
       // иначе он продолжает тикать в фоне и каждую секунду перезатирает
       // только что отрисованное двоеточие обратно на цифры таймера —
       // выглядит как «таймер не останавливается на неактивной кнопке».
-      if (_timerRAF) { cancelAnimationFrame(_timerRAF); _timerRAF = null; }
+      if (_startBtnRaf) { cancelAnimationFrame(_startBtnRaf); _startBtnRaf = null; }
       timer.innerHTML = `<div class="start-colon" id="start-colon-idle"><div class="start-colon-dot"></div><div class="start-colon-dot"></div></div>`;
       startBtn.classList.remove("long-workout");
       return;
@@ -2095,13 +2108,14 @@ const startBtn      = $("start-btn");
     const startTs = activeWorkout.startTimestamp || activeWorkout.startedAt || Date.now();
 
     function renderTimer() {
+      if (document.hidden) { _startBtnRaf = requestAnimationFrame(renderTimer); return; }
       const elapsed = Math.floor((Date.now() - startTs) / 1000);
       const h  = Math.floor(elapsed / 3600);
       const m  = Math.floor((elapsed % 3600) / 60);
       const s  = elapsed % 60;
       const mm = String(m).padStart(2, "0");
       const ss = String(s).padStart(2, "0");
-      const colonDot = (tick) => {
+      const colonDot = () => {
         const op = Math.floor(Date.now() / 1000) % 2 === 0 ? "1" : "0.22";
         return `<div class="start-colon"><div class="start-colon-dot" style="opacity:${op}"></div><div class="start-colon-dot" style="opacity:${op}"></div></div>`;
       };
@@ -2114,10 +2128,10 @@ const startBtn      = $("start-btn");
       } else {
         timer.innerHTML = `<span class="start-timer-num">${mm}</span>${colonDot()}<span class="start-timer-num">${ss}</span>`;
       }
-      _timerRAF = requestAnimationFrame(renderTimer);
+      _startBtnRaf = requestAnimationFrame(renderTimer);
     }
 
-    if (_timerRAF) cancelAnimationFrame(_timerRAF);
+    if (_startBtnRaf) cancelAnimationFrame(_startBtnRaf);
     renderTimer();
   }
 
@@ -2158,6 +2172,7 @@ function showToast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2200);
 }
+document.addEventListener("storage-full", () => showToast("Хранилище заполнено — удали старые тренировки"));
 
 /* ==========================================================================
    Sync queue (раздел 8 спецификации)
@@ -2317,7 +2332,7 @@ function renderHistory(userId) {
       <div class="history-item" data-id="${w.id}">
         <span class="history-item-icon${isRun ? " run" : ""}">${isRun ? SVG_RUN : SVG_STRENGTH}</span>
         <span class="history-item-body">
-          <span class="history-item-label">${w.name || (isRun ? "Пробежка" : "Силовая")}</span>
+          <span class="history-item-label">${escHtml(w.name || (isRun ? "Пробежка" : "Силовая"))}</span>
           <span class="history-item-meta">${meta || "—"}</span>
         </span>
         <span class="history-item-right">
@@ -2352,7 +2367,7 @@ function renderSheetPreview(latest) {
   const label = latest.name || (isRun ? "Пробежка" : "Силовая");
   el.innerHTML = `
     <span class="sheet-preview-dot${isRun ? " run" : ""}"></span>
-    <span class="sheet-preview-text"><b>${label}</b> · ${fmtDate(latest.startedAt)}${meta ? " · " + meta : ""}</span>
+    <span class="sheet-preview-text"><b>${escHtml(label)}</b> · ${fmtDate(latest.startedAt)}${meta ? " · " + escHtml(meta) : ""}</span>
   `;
 }
 
@@ -2609,6 +2624,7 @@ function discardActiveWorkout() {
 }
 
 function openFinishConfirmModal(exCount, doneSets) {
+  if (document.getElementById("finish-confirm-cancel")) return;
   const volume = (_workout.exercises || []).reduce((v, ex) =>
     v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
   const durationSec = Math.floor((Date.now() - _workout.startedAt) / 1000);
@@ -2637,6 +2653,7 @@ function openFinishConfirmModal(exCount, doneSets) {
 }
 
 function openEmptyWorkoutModal() {
+  if (document.getElementById("empty-continue-btn")) return;
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop open";
   backdrop.innerHTML = `
@@ -2708,7 +2725,7 @@ function renderExerciseList() {
 
     block.innerHTML = `
       <div class="ex-block-header">
-        <span class="ex-block-name" title="${exDef.name}">${exDef.name}</span>
+        <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
         <div class="ex-reorder">
           <button class="ex-reorder-btn" data-dir="up" ${canUp ? "" : "disabled"} title="Переместить вверх">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
@@ -2892,10 +2909,10 @@ function renderPickerList(query) {
   }
 
   pickerList.innerHTML = Object.entries(groups).map(([cat, exs]) => `
-    <div class="picker-section-label">${cat}</div>
+    <div class="picker-section-label">${escHtml(cat)}</div>
     ${exs.map(e => `
-      <div class="picker-item" data-id="${e.id}">
-        <div><div class="picker-item-name">${e.name}</div></div>
+      <div class="picker-item" data-id="${escHtml(e.id)}">
+        <div><div class="picker-item-name">${escHtml(e.name)}</div></div>
       </div>
     `).join("")}
   `).join("");
@@ -3071,7 +3088,7 @@ function renderCatTabs(userId, presentCats) {
   const cats = Array.from(new Set([...DATA.getAllCategories(userId), ...presentCats]));
   const tabs = ["all", ...cats];
   tabsEl.innerHTML = tabs.map(c => `
-    <button class="ex-cat-tab ${_exercisesCatFilter === c ? "active" : ""}" data-cat="${c}">${c === "all" ? "Все" : c}</button>
+    <button class="ex-cat-tab ${_exercisesCatFilter === c ? "active" : ""}" data-cat="${escHtml(c)}">${c === "all" ? "Все" : escHtml(c)}</button>
   `).join("");
   tabsEl.querySelectorAll(".ex-cat-tab").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -3109,12 +3126,12 @@ function renderExercisesList(query) {
 
   const renderRow = (ex, { isOwn, hidden }) => {
     return `
-      <div class="ex-row" data-id="${ex.id}" data-own="${isOwn ? "1" : "0"}">
+      <div class="ex-row" data-id="${escHtml(ex.id)}" data-own="${isOwn ? "1" : "0"}">
         <span class="ex-row-body">
-          <span class="ex-row-name">${ex.name}</span>
+          <span class="ex-row-name">${escHtml(ex.name)}</span>
           <span class="ex-row-meta">
             <span class="ex-row-badge ${isOwn ? "own" : "common"}">${isOwn ? "Личное" : "Общее"}</span>
-            <span>${ex.cat}</span>
+            <span>${escHtml(ex.cat)}</span>
           </span>
         </span>
         <span class="ex-row-actions">
@@ -3214,8 +3231,8 @@ function openCategoryManager() {
         </div>
         ${custom.length ? custom.map(c => `
           <div style="display:flex;gap:8px;align-items:center;">
-            <input class="ex-form-input cat-rename-input" data-old="${c}" value="${c}" style="flex:1;">
-            <button class="ex-row-action-btn danger cat-delete-btn" data-cat="${c}" title="Удалить">
+            <input class="ex-form-input cat-rename-input" data-old="${escHtml(c)}" value="${escHtml(c)}" style="flex:1;">
+            <button class="ex-row-action-btn danger cat-delete-btn" data-cat="${escHtml(c)}" title="Удалить">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -3273,7 +3290,7 @@ $("exercise-form-cancel").addEventListener("click", () => closeModal(exerciseFor
 function buildCategoryChips(selected) {
   const userId = DATA.getCurrentUser();
   exerciseFormCatGroup.innerHTML = DATA.getAllCategories(userId).map(cat => `
-    <button class="ex-form-chip ${cat === selected ? "selected" : ""}" data-cat="${cat}">${cat}</button>
+    <button class="ex-form-chip ${cat === selected ? "selected" : ""}" data-cat="${escHtml(cat)}">${escHtml(cat)}</button>
   `).join("");
   exerciseFormCatGroup.querySelectorAll(".ex-form-chip").forEach(chip => {
     chip.addEventListener("click", () => {
@@ -3383,7 +3400,7 @@ function openDetailScreen(workout) {
         const exDef = exercises.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
         const doneSets = ex.sets.filter(s => s.done);
         return `<div class="detail-ex">
-          <div class="detail-ex-name">${exDef.name}</div>
+          <div class="detail-ex-name">${escHtml(exDef.name)}</div>
           ${doneSets.map((s, i) => `
             <div class="detail-set-row">
               <span class="detail-set-num">${i + 1}</span>
@@ -3703,7 +3720,7 @@ function initStatsScreen() {
     ${_statsSelectedExId ? `
     <div class="s-ex-card">
       <div class="s-ex-header">
-        <span class="s-ex-name">${selEx?.name||_statsSelectedExId}</span>
+        <span class="s-ex-name">${escHtml(selEx?.name||_statsSelectedExId)}</span>
         <button class="s-ex-pick-btn" id="stats-ex-pick-btn">
           выбрать
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
@@ -3772,7 +3789,7 @@ function openStatsExPicker(exWithHist, allEx, userId) {
     const name = ex?.name||id;
     const item = document.createElement("button");
     item.className = "stats-picker-item" + (id===_statsSelectedExId?" selected":"");
-    item.innerHTML = `${name}<span class="stats-picker-item-count">${count}×</span>${id===_statsSelectedExId?`<svg class="stats-picker-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`:""}`;
+    item.innerHTML = `${escHtml(name)}<span class="stats-picker-item-count">${count}×</span>${id===_statsSelectedExId?`<svg class="stats-picker-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`:""}`;
     item.addEventListener("click", () => { _statsSelectedExId=id; backdrop.remove(); initStatsScreen(); });
     list.appendChild(item);
   });
@@ -3923,7 +3940,7 @@ function renderTemplatesList() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>
       </span>
       <span class="ex-row-body">
-        <span class="ex-row-name">${t.name}</span>
+        <span class="ex-row-name">${escHtml(t.name)}</span>
         <span class="tpl-row-meta">${t.exercises.length} ${pluralExercises(t.exercises.length)}</span>
       </span>
       <span class="profile-chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
@@ -3978,7 +3995,7 @@ function renderTemplateBlocks(tpl) {
     block.className = "ex-block";
     block.innerHTML = `
       <div class="ex-block-header">
-        <span class="ex-block-name" title="${exDef.name}">${exDef.name}</span>
+        <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
         <div class="ex-reorder">
           <button class="ex-reorder-btn" data-dir="up" ${canUp ? "" : "disabled"} title="Переместить вверх">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>

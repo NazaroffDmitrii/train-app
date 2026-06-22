@@ -69,6 +69,7 @@ const Storage = (() => {
     if (!isEnabled()) throw new Error("Storage: JSONBin отключён (см. config.js)");
     const res = await fetch(`${cfg.baseUrl}/b`, {
       method: "POST",
+      keepalive: true,
       headers: createAuthHeaders({
         "Content-Type": "application/json",
         "X-Bin-Private": "true",
@@ -90,6 +91,7 @@ const Storage = (() => {
     if (!isEnabled() || !binId) return null;
     const res = await fetch(`${cfg.baseUrl}/b/${binId}/latest`, {
       method: "GET",
+      keepalive: true,
       headers: authHeaders(),
       cache: "no-store",
     });
@@ -106,6 +108,7 @@ const Storage = (() => {
     if (!isEnabled() || !binId) throw new Error("Storage.updateBin: нет bin id или JSONBin отключён");
     const res = await fetch(`${cfg.baseUrl}/b/${binId}`, {
       method: "PUT",
+      keepalive: true,
       headers: authHeaders({ "Content-Type": "application/json", "X-Bin-Versioning": "false" }),
       body: JSON.stringify(data),
     });
