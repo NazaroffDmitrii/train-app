@@ -1,0 +1,93 @@
+/*
+ * storage.js — адаптер доступа к удалённому хранилищу (раздел 2 спецификации)
+ *
+ * Сейчас бэкенда нет, поэтому здесь реализован клиент JSONBin (https://jsonbin.io)
+ * напрямую из браузера через fetch. Это единственный файл, который вообще
+ * знает о существовании JSONBin — DATA, sync.js и экраны приложения обращаются
+ * только к функциям ниже. Когда появится нормальный бэкенд, переписывается
+ * только этот файл (и config.js), остальной код не меняется.
+ *
+ * Один bin = один JSON-документ. Обновление всегда перезаписывает документ
+ * целиком (PUT) — построчных/частичных обновлений JSONBin не поддерживает.
+ * Поэтому данные разбиты на отдельные бины по сущностям (раздел 8 спецификации) —
+ * чтобы конкурентные перезаписи разных бинов не били друг друга.
+ *
+ * Ключ доступа (Access Key, не Master Key — см. config.js) живёт в клиентском
+ * коде в открытом виде. Это осознанный компромисс пет-проекта на двух
+ * доверенных пользователей (раздел 2 спецификации), снимается при переезде
+ * на нормальный бэкенд.
+ */
+
+const Storage = (() => {
+  let cfg = { enabled: false, baseUrl: "https://api.jsonbin.io/v3", accessKey: "" };
+
+  function configure(next) {
+    cfg = { ...cfg, ...next };
+  }
+
+  function isEnabled() {
+    return !!(cfg.enabled && cfg.accessKey);
+  }
+
+  function authHeaders(extra) {
+    return { "X-Access-Key": cfg.accessKey, ...extra };
+  }
+
+  // Создать новый bin с данными. Возвращает id созданного bin'а.
+  // Используется только во время работы приложения для тренировок
+  // (один bin на тренировку создаётся на лету — раздел 8 спецификации).
+  async function createBin(data, name) {
+    if (!isEnabled()) throw new Error("Storage: JSONBin отключён (см. config.js)");
+    const res = await fetch(`${cfg.baseUrl}/b`, {
+      method: "POST",
+      headers: authHeaders({
+        "Content-Type": "application/json",
+        "X-Bin-Private": "true",
+        // X-Bin-Name — заголовок, а заголовки должны быть ISO-8859-1, при этом
+        // почти все названия тренировок/шаблонов в приложении на кириллице —
+        // поэтому кодируем (имя используется только для удобства в дашборде
+        // JSONBin, в самом приложении бины ищутся по id, а не по имени).
+        ...(name ? { "X-Bin-Name": encodeURIComponent(name).slice(0, 120) } : {}),
+      }),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`Storage.createBin: HTTP ${res.status}`);
+    const json = await res.json();
+    const id = json?.metadata?.id || json?.id;
+    if (!id) throw new Error("Storage.createBin: сервер не вернул id");
+    return id;
+  }
+
+  // Прочитать последнюю версию bin'а. null, если bin не найден (404) —
+  // это не ошибка, просто «пока ничего нет», вызывающий код должен сам
+  // решить, что в этом случае делать (обычно — оставить локальные данные).
+  async function readBin(binId) {
+    if (!isEnabled() || !binId) return null;
+    const res = await fetch(`${cfg.baseUrl}/b/${binId}/latest`, {
+      method: "GET",
+      headers: authHeaders(),
+      cache: "no-store",
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Storage.readBin: HTTP ${res.status}`);
+    const json = await res.json();
+    return json?.record ?? json;
+  }
+
+  // Перезаписать bin целиком. X-Bin-Versioning: false — чтобы не копить
+  // историю версий на каждое мелкое изменение (бесплатный тариф ограничен
+  // числом запросов, а не места ради истории смысла нет — см. README).
+  async function updateBin(binId, data) {
+    if (!isEnabled() || !binId) throw new Error("Storage.updateBin: нет bin id или JSONBin отключён");
+    const res = await fetch(`${cfg.baseUrl}/b/${binId}`, {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json", "X-Bin-Versioning": "false" }),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`Storage.updateBin: HTTP ${res.status}`);
+    const json = await res.json();
+    return json?.record ?? json;
+  }
+
+  return { configure, isEnabled, createBin, readBin, updateBin };
+})();
