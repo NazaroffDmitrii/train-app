@@ -88,6 +88,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   margin: 0 auto;
   height: 100dvh;
   overflow: hidden;
+  background: var(--bg-base);
 }
 
 @media (min-width: 481px) {
@@ -2467,8 +2468,8 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
     const dragH  = sheetDragArea.getBoundingClientRect().height;
     const firstItem = historyBody.querySelector(".history-item");
     if (!firstItem) return sheetH - dragH;
-    // Показываем: шапка + первый элемент истории + 16px зазор снизу
-    return sheetH - dragH - 4 - firstItem.getBoundingClientRect().height - 16;
+    // Показываем: шапка + первый элемент + 26px зазор (10px margin-b карточки + 16px воздух)
+    return sheetH - dragH - 4 - firstItem.getBoundingClientRect().height - 26;
   }
   function onStart(clientY) {
     dragging = true; isTap = true; startY = clientY;
@@ -2494,7 +2495,21 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
   function settle(expand) {
     sheet.classList.toggle("expanded", expand);
     sheet.classList.remove("dragging");
-    requestAnimationFrame(() => { sheet.style.transform = ""; });
+    // Блокируем клики в body на время анимации — иначе iOS отправляет
+    // синтетический click через ~350мс и он попадает в карточку истории,
+    // которая успела съехать под палец пока шторка анимировалась.
+    historyBody.style.pointerEvents = "none";
+    requestAnimationFrame(() => {
+      if (expand) {
+        // CSS .expanded { transform: translateY(0) } справится сам
+        sheet.style.transform = "";
+      } else {
+        // Явно ставим JS-рассчитанную позицию — нельзя сбрасывать в "",
+        // потому что CSS fallback = только 80px, а нам надо показать карточку.
+        sheet.style.transform = `translateY(${getCollapsedTranslate()}px)`;
+      }
+      setTimeout(() => { historyBody.style.pointerEvents = ""; }, 400);
+    });
   }
   function onEnd(clientY) {
     if (!dragging) return;
