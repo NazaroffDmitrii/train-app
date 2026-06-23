@@ -4535,43 +4535,6 @@ window.addEventListener("resize", setAppHeight);
 window.addEventListener("orientationchange", setAppHeight);
 setAppHeight();
 
-/* ВРЕМЕННЫЙ диагностический оверлей #2 — замер при black-translucent. Снять после. */
-(function debugHeights2() {
-  const box = document.createElement("div");
-  box.style.cssText = "position:fixed;left:8px;right:8px;top:96px;z-index:99999;" +
-    "background:rgba(255,0,80,0.95);color:#fff;font:12px/1.5 monospace;" +
-    "padding:8px 10px;border-radius:8px;white-space:pre;text-align:left;";
-  document.body.appendChild(box);
-  const probe = document.createElement("div");
-  probe.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;visibility:hidden;";
-  probe.innerHTML =
-    '<i data-u="vh"  style="display:block;height:100vh"></i>' +
-    '<i data-u="svh" style="display:block;height:100svh"></i>' +
-    '<i data-u="lvh" style="display:block;height:100lvh"></i>' +
-    '<i data-u="dvh" style="display:block;height:100dvh"></i>' +
-    '<i data-u="sat" style="display:block;height:env(safe-area-inset-top)"></i>' +
-    '<i data-u="sab" style="display:block;height:env(safe-area-inset-bottom)"></i>';
-  document.body.appendChild(probe);
-  // Маркеры физических краёв вьюпорта: где реально находятся top:0 и bottom:0.
-  const mTop = document.createElement("div");
-  mTop.style.cssText = "position:fixed;top:0;left:0;right:0;height:3px;background:#0f0;z-index:99998;";
-  const mBot = document.createElement("div");
-  mBot.style.cssText = "position:fixed;bottom:0;left:0;right:0;height:3px;background:#0f0;z-index:99998;";
-  document.body.appendChild(mTop); document.body.appendChild(mBot);
-  function px(u){ const el = probe.querySelector('[data-u="'+u+'"]'); return el ? Math.round(el.getBoundingClientRect().height) : "-"; }
-  function upd() {
-    const a = document.querySelector(".app").getBoundingClientRect();
-    box.textContent =
-      "innerH=" + window.innerHeight + "  screenH=" + window.screen.height + "  app.bot=" + Math.round(a.bottom) + "\n" +
-      "vh=" + px("vh") + "  svh=" + px("svh") + "  lvh=" + px("lvh") + "  dvh=" + px("dvh") + "\n" +
-      "safe-top=" + px("sat") + "  safe-bottom=" + px("sab");
-  }
-  upd();
-  window.addEventListener("resize", upd);
-  window.addEventListener("orientationchange", () => setTimeout(upd, 300));
-  setTimeout(upd, 500);
-})();
-
 /* ==========================================================================
    Init
    ========================================================================== */
