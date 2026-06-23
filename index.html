@@ -100,6 +100,19 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   .app { box-shadow: 0 0 0 1px var(--border-subtle); }
 }
 
+/* Ровная подложка под статус-баром цвета фона (#0a0a12): на всех экранах зона
+   часов/значков лежит на одинаковом чистом тёмном — glow на главной и шапки-
+   панели на вкладках больше не подмешиваются под статус-бар. Высота = safe-top
+   (высота самого статус-бара). z-index выше экранов, но ниже модалок. */
+.statusbar-bg {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: var(--safe-top);
+  background: var(--bg-base);
+  z-index: 5;
+  pointer-events: none;
+}
+
 .bg-glow {
   position: absolute;
   top: -10%; left: 50%;
@@ -1153,6 +1166,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 <div class="app">
   <div class="bg-glow"></div>
+  <div class="statusbar-bg"></div>
 
   <!-- ===== ЭКРАН 1: выбор профиля ===== -->
   <section id="screen-profile" class="screen screen-profile active">
