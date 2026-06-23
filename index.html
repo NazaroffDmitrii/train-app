@@ -84,15 +84,17 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
 input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 .app {
-  /* Простой рецепт из ранней рабочей версии: relative + height:100dvh + cover в
-     viewport + black-translucent + БЕЗ манифеста. iOS рисует webview на весь
-     экран под прозрачным статус-баром, env(safe-area-inset-*) даёт корректные
-     отступы — полос нет ни сверху, ни снизу. max-width/margin — центровка на ПК. */
+  /* relative + cover + black-translucent + БЕЗ манифеста. ВАЖНО про высоту:
+     на iOS-standalone (cover) 100dvh короче физического экрана (= innerHeight),
+     а 100vh = реальная screen.height. Поэтому именно 100vh, иначе снизу
+     остаётся полоса фона ~= (screen.height - innerHeight). Проверено зондом на
+     устройстве: 100dvh=812, 100vh=screen.height=874. Отступы под статус-бар и
+     home-indicator даёт env(safe-area-inset-*). max-width/margin — центровка на ПК. */
   position: relative;
   width: 100%;
   max-width: 480px;
   margin: 0 auto;
-  height: 100dvh;
+  height: 100vh;
   overflow: hidden;
   background: var(--bg-base);
 }
@@ -2603,17 +2605,6 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
   let startY = 0, currentTranslate = 0, collapsedTranslate = 0, dragging = false, isTap = true;
   let history = [];
 
-  // Зонд для чтения реальной величины safe-area-inset-bottom в пикселях
-  // (зона жеста-индикатора снизу на iPhone). Нужен, чтобы свёрнутая шторка
-  // приподнимала карточку над индикатором, а сам индикатор закрывался
-  // панелью шторки, а не «чёрной полосой» фона под ней.
-  const sbProbe = document.createElement("div");
-  sbProbe.style.cssText =
-    "position:fixed;left:0;bottom:0;width:0;height:env(safe-area-inset-bottom,0px);" +
-    "pointer-events:none;visibility:hidden;";
-  document.body.appendChild(sbProbe);
-  function getSafeBottom() { return sbProbe.getBoundingClientRect().height || 0; }
-
   function getCollapsedTranslate() {
     const sheetH = sheet.getBoundingClientRect().height;
     const dragH  = sheetDragArea.getBoundingClientRect().height;
@@ -2710,52 +2701,6 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
     if (sheet.contains(e.target)) return;
     settle(false);
   });
-})();
-
-/* ==========================================================================
-   ВРЕМЕННАЯ ДИАГНОСТИКА (удалить после отладки нижней полосы)
-   ========================================================================== */
-(function diag() {
-  const box = document.createElement("div");
-  box.style.cssText =
-    "position:fixed;top:60px;left:8px;right:8px;z-index:99999;" +
-    "background:rgba(255,0,0,0.88);color:#fff;font:12px/1.45 monospace;" +
-    "padding:8px 10px;border-radius:8px;white-space:pre;pointer-events:auto;";
-  box.addEventListener("click", () => box.remove());
-  document.body.appendChild(box);
-
-  // зонды safe-area и 100dvh
-  const probe = (css) => {
-    const d = document.createElement("div");
-    d.style.cssText = "position:fixed;left:0;bottom:0;width:0;visibility:hidden;" + css;
-    document.body.appendChild(d);
-    const h = d.getBoundingClientRect().height;
-    d.remove();
-    return Math.round(h);
-  };
-  function update() {
-    const app = document.querySelector(".app").getBoundingClientRect();
-    const vv = window.visualViewport;
-    box.textContent =
-      "standalone=" + (navigator.standalone) + "  (тап чтобы скрыть)\n" +
-      "screen.height = " + window.screen.height + "\n" +
-      "innerHeight   = " + window.innerHeight + "\n" +
-      "clientHeight  = " + document.documentElement.clientHeight + "\n" +
-      "visualVP.h    = " + (vv ? Math.round(vv.height) : "—") + "\n" +
-      "100dvh измер. = " + probe("height:100dvh") + "\n" +
-      "100vh  измер. = " + probe("height:100vh") + "\n" +
-      "safe-top  env = " + probe("height:env(safe-area-inset-top,0px)") + "\n" +
-      "safe-bot  env = " + probe("height:env(safe-area-inset-bottom,0px)") + "\n" +
-      ".app height   = " + Math.round(app.height) + "\n" +
-      ".app bottom   = " + Math.round(app.bottom) + "\n" +
-      "gap (screen-appBottom) = " + (window.screen.height - Math.round(app.bottom));
-  }
-  update();
-  window.addEventListener("resize", update);
-  window.addEventListener("load", update);
-  if (window.visualViewport) window.visualViewport.addEventListener("resize", update);
-  setTimeout(update, 300);
-  setTimeout(update, 800);
 })();
 
 /* ==========================================================================
