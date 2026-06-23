@@ -318,7 +318,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg);
   border-top: 1px solid var(--border-subtle);
   box-shadow: 0 -8px 30px rgba(0,0,0,0.35);
-  transform: translateY(calc(100% - 80px - var(--safe-bottom)));
+  /* Стартовый «пик» до того, как JS пересчитает точную позицию по высоте
+     карточки. JS сразу перекрывает это inline-трансформом (см. setupSheetDrag). */
+  transform: translateY(calc(100% - 96px - var(--safe-bottom)));
   transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   display: flex; flex-direction: column;
 }
@@ -2601,15 +2603,27 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
   let startY = 0, currentTranslate = 0, collapsedTranslate = 0, dragging = false, isTap = true;
   let history = [];
 
+  // Зонд для чтения реальной величины safe-area-inset-bottom в пикселях
+  // (зона жеста-индикатора снизу на iPhone). Нужен, чтобы свёрнутая шторка
+  // приподнимала карточку над индикатором, а сам индикатор закрывался
+  // панелью шторки, а не «чёрной полосой» фона под ней.
+  const sbProbe = document.createElement("div");
+  sbProbe.style.cssText =
+    "position:fixed;left:0;bottom:0;width:0;height:env(safe-area-inset-bottom,0px);" +
+    "pointer-events:none;visibility:hidden;";
+  document.body.appendChild(sbProbe);
+  function getSafeBottom() { return sbProbe.getBoundingClientRect().height || 0; }
+
   function getCollapsedTranslate() {
     const sheetH = sheet.getBoundingClientRect().height;
     const dragH  = sheetDragArea.getBoundingClientRect().height;
     const firstItem = historyBody.querySelector(".history-item");
-    if (!firstItem) return sheetH - dragH;
+    const safeB = getSafeBottom();
+    // Вычитаем safeB, чтобы карточка поднялась НАД home-indicator, а его зону
+    // закрыла панель шторки (а не «чёрная полоса» фона под ней).
+    if (!firstItem) return sheetH - dragH - safeB;
     // Показываем ровно: шапка + первая карточка + её 10px margin-bottom.
-    // Зазор не больше отступа карточки — иначе из-под сгиба выглядывает
-    // вторая тренировка. 10px заканчиваются точно на верхней грани 2-й карточки.
-    return sheetH - dragH - 4 - firstItem.getBoundingClientRect().height - 10;
+    return sheetH - dragH - 4 - firstItem.getBoundingClientRect().height - 10 - safeB;
   }
   function onStart(clientY) {
     dragging = true; isTap = true; startY = clientY;
@@ -2644,8 +2658,7 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
         // CSS .expanded { transform: translateY(0) } справится сам
         sheet.style.transform = "";
       } else {
-        // Явно ставим JS-рассчитанную позицию — нельзя сбрасывать в "",
-        // потому что CSS fallback = только 80px, а нам надо показать карточку.
+        // Явно ставим JS-рассчитанную позицию свёрнутой шторки.
         sheet.style.transform = `translateY(${getCollapsedTranslate()}px)`;
       }
       setTimeout(() => { historyBody.style.pointerEvents = ""; }, 400);
@@ -2680,6 +2693,14 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
     sheet.style.transform = `translateY(${getCollapsedTranslate()}px)`;
   }
   window.addEventListener("resize", reposition);
+  // На старте PWA на iOS высота dvh «плавает» первые кадры — из-за этого
+  // свёрнутая шторка вставала не на место и снизу вылезал зазор. Добиваем
+  // пересчётом после полной загрузки, возврата из фона и осадки viewport.
+  window.addEventListener("load", () => { reposition(); requestAnimationFrame(reposition); });
+  window.addEventListener("pageshow", reposition);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", reposition);
+  setTimeout(reposition, 250);
+  setTimeout(reposition, 600);
   window.repositionCollapsedSheet = reposition;
   window.settleSheet = settle;
 
