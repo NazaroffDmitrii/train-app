@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0a0a12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -4524,6 +4524,26 @@ if ("serviceWorker" in navigator) {
     }).catch(() => { /* нет SW — офлайн-режим работает только на уже загруженных данных, без кэша каркаса */ });
   });
 }
+
+/* ВРЕМЕННАЯ диагностика верхней границы webview — снять после. */
+(function debugTop() {
+  // Зелёная линия точно по top:0 (верхний край webview).
+  const line = document.createElement("div");
+  line.style.cssText = "position:fixed;top:0;left:0;right:0;height:4px;background:#0f0;z-index:99999;";
+  // Жёлтая линия на высоте env(safe-area-inset-top) — куда iOS считает «безопасно».
+  const safe = document.createElement("div");
+  safe.style.cssText = "position:fixed;top:env(safe-area-inset-top);left:0;right:0;height:2px;background:#ff0;z-index:99999;";
+  const label = document.createElement("div");
+  label.style.cssText = "position:fixed;top:140px;left:8px;z-index:99999;background:rgba(255,0,80,.95);color:#fff;font:12px/1.4 monospace;padding:6px 9px;border-radius:7px;white-space:pre;";
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;left:-9999px;top:0;height:env(safe-area-inset-top);width:1px;";
+  document.body.append(line, safe, label, probe);
+  const envTop = Math.round(probe.getBoundingClientRect().height);
+  label.textContent =
+    "зелёная = top:0 webview\nжёлтая = env safe-top=" + envTop + "px\n" +
+    "innerH=" + window.innerHeight + " screenH=" + window.screen.height +
+    " standalone=" + (navigator.standalone===true||matchMedia("(display-mode: standalone)").matches);
+})();
 
 /* ==========================================================================
    Init
