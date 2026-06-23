@@ -48,12 +48,8 @@
   --radius-md: 18px;
   --radius-sm: 12px;
 
-  /* Со статус-баром black-translucent контент рисуется на весь экран (под
-     статус-баром), но env(safe-area-inset-*) без viewport-fit=cover может
-     вернуть 0. Поэтому держим запасной минимум, чтобы шапка не налезала на
-     часы (≈высота статус-бара) и контент снизу не уходил под home-indicator. */
-  --safe-top: max(env(safe-area-inset-top), 50px);
-  --safe-bottom: max(env(safe-area-inset-bottom), 20px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * { box-sizing: border-box; }
