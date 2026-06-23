@@ -2,13 +2,15 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#0a0a12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="train.">
-<meta name="mobile-web-app-capable" content="yes">
-<link rel="manifest" href="manifest.json">
+<!-- Манифест НЕ подключаем: на iOS 16.4+ display:standalone из манифеста
+     перекрывает apple black-translucent и ломает полноэкранную отрисовку
+     (снизу появляется чёрная полоса). Ранняя версия работала идеально именно
+     без манифеста — оставляем только apple-мета. -->
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>train.</title>
@@ -82,10 +84,10 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
 input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 .app {
-  /* БЕЗ viewport-fit=cover: webview занимает только safe-area, а зоны статус-бара
-     и home-indicator iOS закрашивает сам цветом theme-color / background_color
-     (#0a0a12 = фон приложения) — поэтому чёрных полос по краям нет. 100dvh здесь
-     уже равен safe-area, тянуть до физического низа не нужно. */
+  /* Простой рецепт из ранней рабочей версии: relative + height:100dvh + cover в
+     viewport + black-translucent + БЕЗ манифеста. iOS рисует webview на весь
+     экран под прозрачным статус-баром, env(safe-area-inset-*) даёт корректные
+     отступы — полос нет ни сверху, ни снизу. max-width/margin — центровка на ПК. */
   position: relative;
   width: 100%;
   max-width: 480px;
@@ -98,19 +100,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 @media (min-width: 481px) {
   body { background: #000; }
   .app { box-shadow: 0 0 0 1px var(--border-subtle); }
-}
-
-/* Ровная подложка под статус-баром цвета фона (#0a0a12): на всех экранах зона
-   часов/значков лежит на одинаковом чистом тёмном — glow на главной и шапки-
-   панели на вкладках больше не подмешиваются под статус-бар. Высота = safe-top
-   (высота самого статус-бара). z-index выше экранов, но ниже модалок. */
-.statusbar-bg {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: var(--safe-top);
-  background: var(--bg-base);
-  z-index: 5;
-  pointer-events: none;
 }
 
 .bg-glow {
@@ -1166,7 +1155,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 <div class="app">
   <div class="bg-glow"></div>
-  <div class="statusbar-bg"></div>
 
   <!-- ===== ЭКРАН 1: выбор профиля ===== -->
   <section id="screen-profile" class="screen screen-profile active">
@@ -4524,26 +4512,6 @@ if ("serviceWorker" in navigator) {
     }).catch(() => { /* нет SW — офлайн-режим работает только на уже загруженных данных, без кэша каркаса */ });
   });
 }
-
-/* ВРЕМЕННАЯ диагностика верхней границы webview — снять после. */
-(function debugTop() {
-  // Зелёная линия точно по top:0 (верхний край webview).
-  const line = document.createElement("div");
-  line.style.cssText = "position:fixed;top:0;left:0;right:0;height:4px;background:#0f0;z-index:99999;";
-  // Жёлтая линия на высоте env(safe-area-inset-top) — куда iOS считает «безопасно».
-  const safe = document.createElement("div");
-  safe.style.cssText = "position:fixed;top:env(safe-area-inset-top);left:0;right:0;height:2px;background:#ff0;z-index:99999;";
-  const label = document.createElement("div");
-  label.style.cssText = "position:fixed;top:140px;left:8px;z-index:99999;background:rgba(255,0,80,.95);color:#fff;font:12px/1.4 monospace;padding:6px 9px;border-radius:7px;white-space:pre;";
-  const probe = document.createElement("div");
-  probe.style.cssText = "position:fixed;left:-9999px;top:0;height:env(safe-area-inset-top);width:1px;";
-  document.body.append(line, safe, label, probe);
-  const envTop = Math.round(probe.getBoundingClientRect().height);
-  label.textContent =
-    "зелёная = top:0 webview\nжёлтая = env safe-top=" + envTop + "px\n" +
-    "innerH=" + window.innerHeight + " screenH=" + window.screen.height +
-    " standalone=" + (navigator.standalone===true||matchMedia("(display-mode: standalone)").matches);
-})();
 
 /* ==========================================================================
    Init
