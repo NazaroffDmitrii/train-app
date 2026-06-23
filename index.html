@@ -2,10 +2,10 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0a0a12">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="train.">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.json">
@@ -82,17 +82,15 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
 input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 .app {
-  /* На iOS-standalone 100dvh короче физического экрана на высоту статус-бара,
-     из-за чего снизу оставалась чёрная полоса. Реальную высоту экрана кладём в
-     --app-height из JS (в standalone = window.screen.height); CSS — фоллбэк.
-     left/right:0 + max-width + margin:auto центрируют «телефон» на десктопе. */
-  position: fixed;
-  top: 0; left: 0; right: 0;
+  /* БЕЗ viewport-fit=cover: webview занимает только safe-area, а зоны статус-бара
+     и home-indicator iOS закрашивает сам цветом theme-color / background_color
+     (#0a0a12 = фон приложения) — поэтому чёрных полос по краям нет. 100dvh здесь
+     уже равен safe-area, тянуть до физического низа не нужно. */
+  position: relative;
   width: 100%;
   max-width: 480px;
   margin: 0 auto;
   height: 100dvh;
-  height: var(--app-height, 100dvh);
   overflow: hidden;
   background: var(--bg-base);
 }
@@ -4512,28 +4510,6 @@ if ("serviceWorker" in navigator) {
     }).catch(() => { /* нет SW — офлайн-режим работает только на уже загруженных данных, без кэша каркаса */ });
   });
 }
-
-/* ==========================================================================
-   Высота экрана (см. .app в CSS)
-   В standalone (PWA с домашнего экрана) со статус-баром black-translucent
-   layout-viewport / 100dvh / innerHeight короче физического экрана на высоту
-   статус-бара (~62px) — раньше эти px оставались чёрной полосой ВНИЗУ.
-   Замеры на устройстве: window.screen.height = полная высота экрана (ориентация
-   залочена в портрет), 100vh тоже = полный экран. Тянем .app по screen.height —
-   контент достаёт до физического низа, а сверху уходит под полупрозрачный
-   статус-бар (фон рисуется бесшовно, без полосы).
-   В обычном браузере берём innerHeight — видимую область между тулбарами Safari.
-   ========================================================================== */
-function setAppHeight() {
-  const standalone = window.navigator.standalone === true ||
-    window.matchMedia("(display-mode: standalone)").matches;
-  const h = standalone ? window.screen.height : window.innerHeight;
-  document.documentElement.style.setProperty("--app-height", h + "px");
-  if (window.repositionCollapsedSheet) window.repositionCollapsedSheet();
-}
-window.addEventListener("resize", setAppHeight);
-window.addEventListener("orientationchange", setAppHeight);
-setAppHeight();
 
 /* ==========================================================================
    Init

@@ -17,7 +17,7 @@
  * каркаса, чтобы activate-обработчик подчистил старые записи.
  */
 
-const CACHE_VERSION = "train-shell-v15";
+const CACHE_VERSION = "train-shell-v16";
 
 // Эти пути — относительно расположения sw.js (корень GitHub Pages).
 const APP_SHELL = [
