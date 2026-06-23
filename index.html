@@ -2618,12 +2618,9 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
     const sheetH = sheet.getBoundingClientRect().height;
     const dragH  = sheetDragArea.getBoundingClientRect().height;
     const firstItem = historyBody.querySelector(".history-item");
-    const safeB = getSafeBottom();
-    // Вычитаем safeB, чтобы карточка поднялась НАД home-indicator, а его зону
-    // закрыла панель шторки (а не «чёрная полоса» фона под ней).
-    if (!firstItem) return sheetH - dragH - safeB;
+    if (!firstItem) return sheetH - dragH;
     // Показываем ровно: шапка + первая карточка + её 10px margin-bottom.
-    return sheetH - dragH - 4 - firstItem.getBoundingClientRect().height - 10 - safeB;
+    return sheetH - dragH - 4 - firstItem.getBoundingClientRect().height - 10;
   }
   function onStart(clientY) {
     dragging = true; isTap = true; startY = clientY;
@@ -2713,6 +2710,52 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
     if (sheet.contains(e.target)) return;
     settle(false);
   });
+})();
+
+/* ==========================================================================
+   ВРЕМЕННАЯ ДИАГНОСТИКА (удалить после отладки нижней полосы)
+   ========================================================================== */
+(function diag() {
+  const box = document.createElement("div");
+  box.style.cssText =
+    "position:fixed;top:60px;left:8px;right:8px;z-index:99999;" +
+    "background:rgba(255,0,0,0.88);color:#fff;font:12px/1.45 monospace;" +
+    "padding:8px 10px;border-radius:8px;white-space:pre;pointer-events:auto;";
+  box.addEventListener("click", () => box.remove());
+  document.body.appendChild(box);
+
+  // зонды safe-area и 100dvh
+  const probe = (css) => {
+    const d = document.createElement("div");
+    d.style.cssText = "position:fixed;left:0;bottom:0;width:0;visibility:hidden;" + css;
+    document.body.appendChild(d);
+    const h = d.getBoundingClientRect().height;
+    d.remove();
+    return Math.round(h);
+  };
+  function update() {
+    const app = document.querySelector(".app").getBoundingClientRect();
+    const vv = window.visualViewport;
+    box.textContent =
+      "standalone=" + (navigator.standalone) + "  (тап чтобы скрыть)\n" +
+      "screen.height = " + window.screen.height + "\n" +
+      "innerHeight   = " + window.innerHeight + "\n" +
+      "clientHeight  = " + document.documentElement.clientHeight + "\n" +
+      "visualVP.h    = " + (vv ? Math.round(vv.height) : "—") + "\n" +
+      "100dvh измер. = " + probe("height:100dvh") + "\n" +
+      "100vh  измер. = " + probe("height:100vh") + "\n" +
+      "safe-top  env = " + probe("height:env(safe-area-inset-top,0px)") + "\n" +
+      "safe-bot  env = " + probe("height:env(safe-area-inset-bottom,0px)") + "\n" +
+      ".app height   = " + Math.round(app.height) + "\n" +
+      ".app bottom   = " + Math.round(app.bottom) + "\n" +
+      "gap (screen-appBottom) = " + (window.screen.height - Math.round(app.bottom));
+  }
+  update();
+  window.addEventListener("resize", update);
+  window.addEventListener("load", update);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", update);
+  setTimeout(update, 300);
+  setTimeout(update, 800);
 })();
 
 /* ==========================================================================
