@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#0a0a12">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="train.">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.json">
@@ -4535,22 +4535,25 @@ setAppHeight();
     "background:rgba(255,0,80,0.92);color:#fff;font:12px/1.5 monospace;" +
     "padding:8px 10px;border-radius:8px;white-space:pre;text-align:left;";
   document.body.appendChild(box);
+  // Пробники CSS-единиц высоты и safe-area — измеряем реальные px на устройстве.
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;visibility:hidden;";
+  probe.innerHTML =
+    '<i data-u="vh"  style="display:block;height:100vh"></i>' +
+    '<i data-u="svh" style="display:block;height:100svh"></i>' +
+    '<i data-u="lvh" style="display:block;height:100lvh"></i>' +
+    '<i data-u="dvh" style="display:block;height:100dvh"></i>' +
+    '<i data-u="sat" style="display:block;height:env(safe-area-inset-top)"></i>' +
+    '<i data-u="sab" style="display:block;height:env(safe-area-inset-bottom)"></i>';
+  document.body.appendChild(probe);
+  function px(u){ const el = probe.querySelector('[data-u="'+u+'"]'); return el ? Math.round(el.getBoundingClientRect().height) : "-"; }
   function upd() {
     const app = document.querySelector(".app");
-    const sheet = document.getElementById("history-sheet");
     const a = app ? app.getBoundingClientRect() : {bottom:0};
-    const s = sheet ? sheet.getBoundingClientRect() : {bottom:0};
-    const vv = window.visualViewport || {};
     box.textContent =
-      "innerH=" + window.innerHeight +
-      "  screenH=" + window.screen.height +
-      "  vvH=" + (vv.height ? Math.round(vv.height) : "-") + "\n" +
-      "clientH=" + document.documentElement.clientHeight +
-      "  dpr=" + window.devicePixelRatio +
-      "  standalone=" + (window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches) + "\n" +
-      "app.bottom=" + Math.round(a.bottom) +
-      "  sheet.bottom=" + Math.round(s.bottom) +
-      "  gap=" + Math.round(window.innerHeight - a.bottom);
+      "innerH=" + window.innerHeight + "  screenH=" + window.screen.height + "  app.bottom=" + Math.round(a.bottom) + "\n" +
+      "vh=" + px("vh") + "  svh=" + px("svh") + "  lvh=" + px("lvh") + "  dvh=" + px("dvh") + "\n" +
+      "safe-top=" + px("sat") + "  safe-bottom=" + px("sab");
   }
   upd();
   window.addEventListener("resize", upd);
