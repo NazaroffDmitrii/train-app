@@ -503,6 +503,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .workout-scroll {
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 16px 16px calc(40px + var(--safe-bottom));
+  transition: padding-bottom 0.2s ease;
+}
+/* Когда показана пилюля отдыха — резервируем место снизу, чтобы кнопку
+   «Добавить упражнение» можно было доскроллить выше пилюли (п.2). */
+.workout-scroll.rest-active {
+  padding-bottom: calc(104px + var(--safe-bottom));
 }
 
 /* ============ Rest timer ============ */
@@ -519,8 +525,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .rest-time { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
 .rest-label { font-size: 9.5px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px; }
 .rest-adj { font-size: 13px; font-weight: 700; color: var(--accent-bright); padding: 8px 6px; border-radius: 10px; }
-.rest-skip { display: flex; padding: 8px; color: var(--text-secondary); }
-.rest-skip svg { width: 18px; height: 18px; }
+.rest-skip {
+  display: flex; align-items: center; justify-content: center; flex: none;
+  width: 34px; height: 34px; padding: 0; margin-left: 2px;
+  border-radius: 50%; border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+.rest-skip svg { width: 16px; height: 16px; }
 
 /* ============ Exercise block ============ */
 .ex-block {
@@ -529,7 +540,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   border-radius: var(--radius-md);
   margin-bottom: 12px;
   overflow: hidden;
+  /* Долгое нажатие для перестановки не должно выделять текст/вызывать
+     контекстное меню (п.6). Поля ввода — исключение (см. ниже). */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none; user-select: none;
 }
+.ex-block input, .ex-block textarea { -webkit-user-select: text; user-select: text; }
 
 .ex-block-header {
   display: flex; align-items: center; gap: 10px;
@@ -611,9 +627,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .ex-del-badge svg { width: 13px; height: 13px; }
 
-.workout-scroll.ex-editing .ex-block {
-  touch-action: none; cursor: grab; user-select: none;
-}
+/* В режиме перестановки оставляем нативный вертикальный скролл по блоку
+   (touch-action не блокируем) — перетаскивание включается коротким hold,
+   и только тогда обработчик гасит скролл через preventDefault (п.6). */
+.workout-scroll.ex-editing .ex-block { cursor: grab; }
+/* …но если блок тащат, схватив за строку подхода, строке нужно отдать жест
+   перетаскиванию, а не вертикальному пану. */
+.workout-scroll.ex-editing .set-row { touch-action: none; }
 .workout-scroll.ex-editing .ex-del-badge { display: flex; }
 .workout-scroll.ex-editing .ex-pr-chip { opacity: 0; }
 .workout-scroll.ex-editing .ex-block:not(.dragging) {
@@ -665,7 +685,25 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   color: var(--text-tertiary);
 }
 
-.set-row { padding: 3px 0; }
+.set-row {
+  padding: 3px 0;
+  position: relative; z-index: 1;
+  background: var(--panel);
+  touch-action: pan-y; will-change: transform;
+}
+
+/* Свайп-удаление подхода (п.7): строка едет влево, открывая красную зону. */
+.set-row-wrap { position: relative; overflow: hidden; }
+.set-row-delete {
+  position: absolute; inset: 3px 0; z-index: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: 7px;
+  padding-right: 16px; border-radius: 10px;
+  background: var(--red); color: #fff;
+  font-size: 13px; font-weight: 700; opacity: 0.9;
+  transition: opacity 0.12s ease;
+}
+.set-row-delete svg { width: 18px; height: 18px; }
+.set-row-wrap.will-delete .set-row-delete { opacity: 1; }
 
 .set-num {
   font-size: 12px; font-weight: 700;
@@ -720,14 +758,21 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .set-note-btn.has-note { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
 .set-note-btn svg { width: 15px; height: 15px; }
 .set-note-input {
-  display: none; width: 100%;
-  background: var(--panel-raised); border: 1px solid var(--border-subtle);
-  border-radius: 10px; padding: 9px 12px;
+  display: block; box-sizing: border-box;
+  width: calc(100% - 28px);
+  max-height: 0; opacity: 0; overflow: hidden;
+  background: var(--panel-raised);
+  border: 0 solid var(--border-subtle); border-radius: 10px;
   font-size: 13.5px; color: var(--text-primary);
-  transition: border-color 0.15s ease;
-  margin: 0 14px 10px;
+  margin: 0 14px; padding: 0 12px; resize: none;
+  transition: max-height 0.22s ease, opacity 0.18s ease,
+              padding 0.22s ease, margin 0.22s ease,
+              border-width 0.22s ease, border-color 0.15s ease;
 }
-.set-note-input.visible { display: block; }
+.set-note-input.visible {
+  max-height: 180px; opacity: 1; overflow-y: auto;
+  border-width: 1px; padding: 9px 12px; margin: 0 14px 10px;
+}
 .set-note-input:focus { border-color: var(--accent); }
 
 /* set-field with placeholder from prev workout */
@@ -899,7 +944,25 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .picker-search:focus { border-color: var(--accent); }
 
-.picker-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* Вкладки-категории (п.5) — горизонтальная лента чипов. */
+.picker-tabs {
+  display: flex; gap: 7px; flex: none;
+  padding: 2px 16px 12px; overflow-x: auto;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.picker-tabs::-webkit-scrollbar { display: none; }
+.picker-tab {
+  flex: none; white-space: nowrap;
+  padding: 7px 14px; border-radius: 999px;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  color: var(--text-secondary); font-size: 13px; font-weight: 600;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.picker-tab.active {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright);
+}
+
+.picker-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 
 .picker-section-label {
   padding: 10px 16px 4px;
@@ -1716,6 +1779,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       <div class="picker-search-wrap">
         <input class="picker-search" id="picker-search" placeholder="Поиск упражнения…" type="text">
       </div>
+      <div class="picker-tabs" id="picker-tabs"></div>
       <div class="picker-list" id="picker-list"></div>
     </div>
   </div>

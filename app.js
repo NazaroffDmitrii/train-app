@@ -725,6 +725,7 @@ const settingsModalBackdrop = $("settings-modal-backdrop");
 const pickerBackdrop = $("picker-backdrop");
 const pickerSearch   = $("picker-search");
 const pickerList     = $("picker-list");
+const pickerTabs     = $("picker-tabs");
 
 const rpeBackdrop = $("rpe-backdrop");
 const rpeGrid     = $("rpe-grid");
@@ -1463,6 +1464,7 @@ function endRest(commit) {
   }
   _restStartTs = 0;
   $("rest-timer").hidden = true;
+  $("workout-scroll").classList.remove("rest-active");  // вернуть обычный нижний отступ
 }
 function startRest() {
   endRest(true);                  // если отдых уже шёл — зачесть его и начать заново
@@ -1476,6 +1478,9 @@ function startRest() {
   _restDurationSec = DATA.getRestDefault();   // запомненный пользователем дефолт
   _restStartTs = Date.now();
   $("rest-timer").hidden = false;
+  // Зарезервировать место снизу скролла, чтобы пилюля таймера не накрывала
+  // кнопку «Добавить упражнение» (её можно доскроллить над пилюлей) — п.2.
+  $("workout-scroll").classList.add("rest-active");
   renderRest();
   _restInt = setInterval(() => {
     if (restRemaining() <= 0) { haptic(40); playRestDoneSound(); notifyRestDone(); endRest(true); return; }
@@ -1678,8 +1683,7 @@ function refreshReorderButtons() {
    вверх/вниз для смены порядка. Крестик → подтверждение → удаление.
    ============================================================ */
 let _exEdit = false;       // активен ли режим редактирования списка
-let _exDrag = null;        // состояние текущего перетаскивания
-const EX_GAP = 12;         // margin-bottom между блоками (для расчёта смещения)
+let _drag = null;          // активное перетаскивание: { block, ex, grabDy, ty, pointerY, raf }
 
 function enterExEditMode() {
   if (_exEdit) return;
@@ -1695,7 +1699,7 @@ function enterExEditMode() {
   }
 }
 function exitExEditMode() {
-  _exDrag = null;
+  endDrag(false);
   if (!_exEdit) return;
   _exEdit = false;
   $("workout-scroll").classList.remove("ex-editing");
@@ -1703,88 +1707,132 @@ function exitExEditMode() {
   if (btn) btn.remove();
 }
 
-// Навешивает на блок обработчики долгого нажатия и перетаскивания.
-function wireExBlockGestures(block, ex) {
-  const LONG_PRESS_MS = 450;
-  let lpTimer = null, sx = 0, sy = 0;
-  const clearLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
-
-  block.addEventListener("pointerdown", (e) => {
-    if (!_exEdit) {
-      // вне режима — не мешаем вводу и кнопкам; ждём долгое нажатие
-      if (e.target.closest("input, textarea, button")) return;
-      sx = e.clientX; sy = e.clientY;
-      clearLP();
-      lpTimer = setTimeout(() => { lpTimer = null; enterExEditMode(); haptic(30); }, LONG_PRESS_MS);
-    } else {
-      // в режиме — старт перетаскивания (кроме клика по крестику)
-      if (e.target.closest(".ex-del-badge")) return;
-      try { block.setPointerCapture(e.pointerId); } catch {}
-      _exDrag = { block, ex, startY: e.clientY };
-      block.classList.add("dragging");
-      haptic(15);
-    }
-  });
-
-  block.addEventListener("pointermove", (e) => {
-    if (lpTimer) {
-      if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) clearLP();
-      return;
-    }
-    if (_exDrag && _exDrag.block === block) {
-      try { e.preventDefault(); } catch {}
-      block.style.transform = `translateY(${e.clientY - _exDrag.startY}px) scale(1.03)`;
-      maybeReorder(block, ex, e.clientY);
-    }
-  });
-
-  const endDrag = () => {
-    clearLP();
-    if (_exDrag && _exDrag.block === block) {
-      block.classList.remove("dragging");
-      block.style.transition = "transform 0.18s ease";
-      block.style.transform = "";
-      setTimeout(() => { block.style.transition = ""; }, 200);
-      _exDrag = null;
-      saveWorkoutState();
-    }
-  };
-  block.addEventListener("pointerup", endDrag);
-  block.addEventListener("pointercancel", endDrag);
-}
-
-// Меняет блок местами с соседом, когда палец перешёл его середину.
-// startY подправляем на высоту соседа, чтобы блок оставался под пальцем.
-function maybeReorder(block, ex, pointerY) {
+/* — Перетаскивание блока: общая логика для touch и mouse —
+   Ключ к стабильности (п.6): смещение блока считаем КАЖДЫЙ кадр от его текущего
+   положения в потоке (rect.top − ty), а не накоплением startY. Поэтому после
+   перестановки соседей и автоскролла блок остаётся ровно под пальцем и не
+   образуется зазор. Блок остаётся в потоке (не absolute) — его слот и есть
+   место будущей вставки, поэтому «дырки» не возникает. */
+function reorderDuringDrag(pointerY) {
+  const d = _drag; if (!d) return;
   const arr = _workout.exercises;
-  const prev = block.previousElementSibling;
+  const h = d.block.getBoundingClientRect().height;
+  const center = (pointerY - d.grabDy) + h / 2;     // куда «целится» центр блока
+  const prev = d.block.previousElementSibling;
   if (prev && prev.classList.contains("ex-block")) {
     const r = prev.getBoundingClientRect();
-    if (pointerY < r.top + r.height / 2) {
-      const i = arr.indexOf(ex);
-      if (i > 0) {
-        [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]];
-        block.parentNode.insertBefore(block, prev);
-        _exDrag.startY -= r.height + EX_GAP;
-        block.style.transform = `translateY(${pointerY - _exDrag.startY}px) scale(1.03)`;
-        return;
-      }
+    if (center < r.top + r.height / 2) {
+      const i = arr.indexOf(d.ex);
+      if (i > 0) { [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]]; d.block.parentNode.insertBefore(d.block, prev); }
+      return;
     }
   }
-  const next = block.nextElementSibling;
+  const next = d.block.nextElementSibling;
   if (next && next.classList.contains("ex-block")) {
     const r = next.getBoundingClientRect();
-    if (pointerY > r.top + r.height / 2) {
-      const i = arr.indexOf(ex);
-      if (i < arr.length - 1) {
-        [arr[i + 1], arr[i]] = [arr[i], arr[i + 1]];
-        block.parentNode.insertBefore(next, block);
-        _exDrag.startY += r.height + EX_GAP;
-        block.style.transform = `translateY(${pointerY - _exDrag.startY}px) scale(1.03)`;
-        return;
-      }
+    if (center > r.top + r.height / 2) {
+      const i = arr.indexOf(d.ex);
+      if (i < arr.length - 1) { [arr[i + 1], arr[i]] = [arr[i], arr[i + 1]]; d.block.parentNode.insertBefore(next, d.block); }
+      return;
     }
   }
+}
+
+function dragMoveTo(pointerY) {
+  const d = _drag; if (!d) return;
+  d.pointerY = pointerY;
+  reorderDuringDrag(pointerY);
+  const rect = d.block.getBoundingClientRect();
+  const naturalTop = rect.top - d.ty;               // положение в потоке без transform
+  d.ty = (pointerY - d.grabDy) - naturalTop;
+  d.block.style.transform = `translateY(${d.ty}px)`;
+}
+
+// Автоскролл, когда палец у верхней/нижней кромки списка во время перетаскивания.
+function autoScrollTick() {
+  const d = _drag; if (!d) return;
+  const scroll = $("workout-scroll");
+  const r = scroll.getBoundingClientRect();
+  const edge = 72;
+  let dy = 0;
+  if (d.pointerY < r.top + edge)         dy = -Math.ceil((r.top + edge - d.pointerY) / 4);
+  else if (d.pointerY > r.bottom - edge) dy =  Math.ceil((d.pointerY - (r.bottom - edge)) / 4);
+  if (dy) {
+    const before = scroll.scrollTop;
+    scroll.scrollTop = before + Math.max(-16, Math.min(16, dy));
+    if (scroll.scrollTop !== before) dragMoveTo(d.pointerY);   // держим блок под пальцем
+  }
+  d.raf = requestAnimationFrame(autoScrollTick);
+}
+
+function startDrag(block, ex, pointerY) {
+  if (!_exEdit) enterExEditMode();
+  const top = block.getBoundingClientRect().top;
+  _drag = { block, ex, grabDy: pointerY - top, ty: 0, pointerY, raf: 0 };
+  block.style.transition = "none";
+  block.classList.add("dragging");
+  haptic(18);
+  _drag.raf = requestAnimationFrame(autoScrollTick);
+}
+
+function endDrag(commit) {
+  const d = _drag; if (!d) return;
+  _drag = null;
+  if (d.raf) cancelAnimationFrame(d.raf);
+  const block = d.block;
+  block.style.transition = "transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)";
+  block.style.transform = "";
+  block.classList.remove("dragging");
+  setTimeout(() => { block.style.transition = ""; }, 200);
+  if (commit) saveWorkoutState();
+}
+
+// Долгое нажатие → режим перестановки + сразу подхват блока тем же касанием
+// (как иконки на iOS). До подхвата любой сдвиг >8px отменяет таймер и отдаётся
+// нативному скроллу/свайпу строки; touchmove НЕ passive, но preventDefault
+// зовём только когда уже тащим — поэтому в режиме можно и скроллить, и таскать.
+function wireExBlockGestures(block, ex) {
+  let holdTimer = null, sx = 0, sy = 0, engaged = false, moved = false;
+  const delay = () => (_exEdit ? 160 : 430);
+  const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+  const canStart = (target) => {
+    if (target.closest(".ex-del-badge")) return false;     // крестик — отдаём клику
+    // вне режима не мешаем вводу, кнопкам и свайпу подхода
+    if (!_exEdit && target.closest("input, textarea, button, .set-row")) return false;
+    return true;
+  };
+  const begin = (x, y, target) => {
+    engaged = false; moved = false; sx = x; sy = y;
+    if (!canStart(target)) return;
+    clearHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      if (moved) return;
+      engaged = true;
+      startDrag(block, ex, y);
+    }, delay());
+  };
+  const move = (x, y, e) => {
+    if (engaged) { if (e && e.cancelable) e.preventDefault(); dragMoveTo(y); return; }
+    if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); }
+  };
+  const finish = () => { clearHold(); if (engaged) { engaged = false; endDrag(true); } };
+
+  // touch — основной путь на телефоне
+  block.addEventListener("touchstart", (e) => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
+  block.addEventListener("touchmove",  (e) => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
+  block.addEventListener("touchend",   finish);
+  block.addEventListener("touchcancel", finish);
+
+  // mouse — для проверки на десктопе (скролл колесом не конфликтует)
+  const onMouseMove = (e) => move(e.clientX, e.clientY, e);
+  const onMouseUp   = () => { finish(); window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
+  block.addEventListener("mousedown", (e) => {
+    if (!canStart(e.target)) return;
+    begin(e.clientX, e.clientY, e.target);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  });
 }
 
 function renderExerciseList() {
@@ -1850,7 +1898,7 @@ function renderExerciseList() {
       <div class="sets-actions">
         <button class="btn-chip add-set-btn" style="flex:1">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Подход
+          Добавить подход
         </button>
         <button class="set-note-btn ${ex.note ? "has-note" : ""}" title="Заметка">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L13 14l-4 1 1-4 6.5-6.5z"/></svg>
@@ -1925,6 +1973,11 @@ function renderSetsInBlock(block, ex, lastWorkout) {
 
   ex.sets.forEach((set, sIdx) => {
     const prev = lastSets[sIdx];
+    const wrap = document.createElement("div");
+    wrap.className = "set-row-wrap";
+    const del = document.createElement("div");
+    del.className = "set-row-delete";
+    del.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>Удалить</span>`;
     const row = document.createElement("div");
     row.className = "set-row";
     row.innerHTML = `
@@ -1970,8 +2023,77 @@ function renderSetsInBlock(block, ex, lastWorkout) {
       updateSummaryBar();
     });
 
-    tbody.appendChild(row);
+    // Свайп влево по строке → удалить подход (п.7). Удаляем по ссылке на объект
+    // подхода: индексы после ре-рендера сдвигаются.
+    wrap.appendChild(del);
+    wrap.appendChild(row);
+    wireSetRowSwipe(wrap, row, () => {
+      const i = ex.sets.indexOf(set);
+      if (i === -1) return;
+      ex.sets.splice(i, 1);
+      saveWorkoutState();
+      renderSetsInBlock(block, ex, lastWorkout);
+      updateSummaryBar();
+      showToast("Подход удалён");
+    });
+    tbody.appendChild(wrap);
   });
+}
+
+// Горизонтальный свайп влево по строке подхода → раскрыть зону «Удалить»;
+// за порогом отпускания подход удаляется, иначе строка возвращается. Вертикаль
+// отдаём скроллу; в режиме перестановки свайп выключен. (п.7)
+function wireSetRowSwipe(wrap, row, onDelete) {
+  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
+  const MAX = 132, DEL = 92;
+  row.addEventListener("pointerdown", (e) => {
+    if (_exEdit) return;
+    if (e.target.closest("input")) return;          // правка веса/повторов — не свайп
+    sx = e.clientX; sy = e.clientY; dx = 0;
+    active = true; decided = false; horiz = false; swiped = false;
+    row.style.transition = "";
+  });
+  row.addEventListener("pointermove", (e) => {
+    if (!active) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!decided) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      decided = true;
+      horiz = Math.abs(mx) > Math.abs(my) + 2;
+      if (!horiz) { active = false; return; }       // вертикаль — отдаём скроллу
+      try { row.setPointerCapture(e.pointerId); } catch {}
+    }
+    dx = Math.max(-MAX, Math.min(0, mx));            // тянем только влево
+    if (dx < -4) swiped = true;
+    row.style.transform = `translateX(${dx}px)`;
+    wrap.classList.toggle("will-delete", dx <= -DEL);
+  });
+  const settle = () => {
+    if (!active) return;
+    active = false;
+    if (!horiz) return;
+    if (dx <= -DEL) {
+      row.style.transition = "transform 0.16s ease";
+      row.style.transform = "translateX(-110%)";
+      wrap.style.height = wrap.offsetHeight + "px";
+      requestAnimationFrame(() => {
+        wrap.style.transition = "height 0.16s ease, opacity 0.16s ease";
+        wrap.style.height = "0"; wrap.style.opacity = "0";
+      });
+      setTimeout(onDelete, 180);
+    } else {
+      row.style.transition = "transform 0.18s ease";
+      row.style.transform = "";
+      wrap.classList.remove("will-delete");
+    }
+  };
+  row.addEventListener("pointerup", settle);
+  row.addEventListener("pointercancel", settle);
+  // Если это был свайп — подавляем последующий клик, чтобы случайно не
+  // переключить «выполнено»/RPE.
+  row.addEventListener("click", (e) => {
+    if (swiped) { e.stopPropagation(); e.preventDefault(); swiped = false; }
+  }, true);
 }
 
 function updateSummaryBar() {
@@ -1988,39 +2110,85 @@ $("add-ex-btn").addEventListener("click", () => openExercisePicker(addExerciseTo
 
 let _pickerOnSelect = addExerciseToWorkout;
 
+let _pickerCat = "Все";   // активная вкладка-категория пикера
+
 function openExercisePicker(onSelect) {
   _pickerOnSelect = onSelect || addExerciseToWorkout;
+  _pickerCat = "Все";
   pickerSearch.value = "";
+  renderPickerTabs();
   renderPickerList("");
+  if (pickerList) pickerList.scrollTop = 0;
   pickerBackdrop.classList.add("open");
-  setTimeout(() => pickerSearch.focus(), 300);
+  // Без авто-фокуса на поиск: иначе клавиатура сразу перекрывает вкладки и
+  // список. Поиск открывается по тапу пользователем (п.5).
 }
 function closeExercisePicker() { pickerBackdrop.classList.remove("open"); }
 pickerBackdrop.addEventListener("click", e => { if (e.target === pickerBackdrop) closeExercisePicker(); });
-pickerSearch.addEventListener("input", () => renderPickerList(pickerSearch.value));
+pickerSearch.addEventListener("input", () => {
+  // Активный поиск перекрывает фильтр по вкладке — возвращаем вкладку на «Все».
+  if (pickerSearch.value.trim() && _pickerCat !== "Все") { _pickerCat = "Все"; renderPickerTabs(); }
+  renderPickerList(pickerSearch.value);
+});
+
+// «Все» + реально присутствующие у пользователя категории, в порядке справочника.
+function pickerCategories() {
+  const present = new Set(DATA.getVisibleExercises(DATA.getCurrentUser()).map(e => e.cat));
+  const ordered = (DATA.EXERCISE_CATEGORIES || []).filter(c => present.has(c));
+  present.forEach(c => { if (!ordered.includes(c)) ordered.push(c); });   // вне справочника — в конец
+  return ["Все", ...ordered];
+}
+
+function renderPickerTabs() {
+  if (!pickerTabs) return;
+  pickerTabs.innerHTML = pickerCategories().map(c =>
+    `<button class="picker-tab ${c === _pickerCat ? "active" : ""}" data-cat="${escHtml(c)}">${escHtml(c)}</button>`
+  ).join("");
+  pickerTabs.querySelectorAll(".picker-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      _pickerCat = tab.dataset.cat;
+      if (pickerSearch.value) pickerSearch.value = "";   // выбор вкладки сбрасывает поиск
+      renderPickerTabs();
+      renderPickerList("");
+      pickerList.scrollTop = 0;
+      tab.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+    });
+  });
+}
 
 function renderPickerList(query) {
   const q = query.trim().toLowerCase();
   const all = DATA.getVisibleExercises(DATA.getCurrentUser());
-  const filtered = q ? all.filter(e => e.name.toLowerCase().includes(q) || e.cat.toLowerCase().includes(q)) : all;
-
-  // Group by category
-  const groups = {};
-  filtered.forEach(e => { if (!groups[e.cat]) groups[e.cat] = []; groups[e.cat].push(e); });
+  let filtered;
+  if (q) {
+    filtered = all.filter(e => e.name.toLowerCase().includes(q) || e.cat.toLowerCase().includes(q));
+  } else if (_pickerCat && _pickerCat !== "Все") {
+    filtered = all.filter(e => e.cat === _pickerCat);
+  } else {
+    filtered = all;
+  }
 
   if (!filtered.length) {
     pickerList.innerHTML = `<p style="padding:24px 16px;color:var(--text-tertiary);font-size:14px">Ничего не найдено</p>`;
     return;
   }
 
-  pickerList.innerHTML = Object.entries(groups).map(([cat, exs]) => `
-    <div class="picker-section-label">${escHtml(cat)}</div>
-    ${exs.map(e => `
-      <div class="picker-item" data-id="${escHtml(e.id)}">
-        <div><div class="picker-item-name">${escHtml(e.name)}</div></div>
-      </div>
-    `).join("")}
-  `).join("");
+  const itemHtml = e => `
+    <div class="picker-item" data-id="${escHtml(e.id)}">
+      <div><div class="picker-item-name">${escHtml(e.name)}</div></div>
+    </div>`;
+
+  if (!q && _pickerCat !== "Все") {
+    // Конкретная категория — плоский список без повторного заголовка.
+    pickerList.innerHTML = filtered.map(itemHtml).join("");
+  } else {
+    // «Все»/поиск — с разбивкой по категориям.
+    const groups = {};
+    filtered.forEach(e => { (groups[e.cat] = groups[e.cat] || []).push(e); });
+    pickerList.innerHTML = Object.entries(groups).map(([cat, exs]) =>
+      `<div class="picker-section-label">${escHtml(cat)}</div>${exs.map(itemHtml).join("")}`
+    ).join("");
+  }
 
   pickerList.querySelectorAll(".picker-item").forEach(item => {
     item.addEventListener("click", () => {
@@ -2029,6 +2197,51 @@ function renderPickerList(query) {
     });
   });
 }
+
+/* Закрытие шторки пикера свайпом вниз (п.4). Тянем сам лист вниз; если палец в
+   списке — только когда он прокручен в самый верх, иначе это его прокрутка. */
+(function setupPickerSwipe() {
+  const sheet = pickerBackdrop.querySelector(".picker-sheet");
+  if (!sheet) return;
+  let startY = 0, dy = 0, active = false, decided = false, vert = false, onList = false;
+  const down = (y, target) => {
+    active = true; decided = false; vert = false; dy = 0; startY = y;
+    onList = !!(target.closest && target.closest(".picker-list"));
+    sheet.style.transition = "none";
+  };
+  const moveTo = (y, e) => {
+    if (!active) return;
+    const d = y - startY;
+    if (!decided) {
+      if (Math.abs(d) < 6) return;
+      decided = true;
+      vert = d > 0 && (!onList || pickerList.scrollTop <= 0);
+      if (!vert) { active = false; sheet.style.transition = ""; return; }   // отдаём прокрутке
+    }
+    dy = Math.max(0, d);
+    if (e && e.cancelable) e.preventDefault();
+    sheet.style.transform = `translateY(${dy}px)`;
+  };
+  const up = () => {
+    if (!active) return;
+    active = false;
+    sheet.style.transition = "";
+    if (!vert) return;
+    sheet.style.transform = "";              // снимаем inline → дальше рулит CSS
+    if (dy > 110) closeExercisePicker();     // .open снимется → лист уезжает вниз
+  };
+  sheet.addEventListener("touchstart", e => down(e.touches[0].clientY, e.target), { passive: true });
+  sheet.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) moveTo(t.clientY, e); }, { passive: false });
+  sheet.addEventListener("touchend", up);
+  sheet.addEventListener("touchcancel", up);
+  sheet.addEventListener("mousedown", e => {
+    down(e.clientY, e.target);
+    const mm = ev => moveTo(ev.clientY, ev);
+    const mu = () => { up(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); };
+    window.addEventListener("mousemove", mm);
+    window.addEventListener("mouseup", mu);
+  });
+})();
 
 function addExerciseToWorkout(exerciseId) {
   if (!_workout) return;
@@ -3444,6 +3657,110 @@ if ("serviceWorker" in navigator) {
     }).catch(() => { /* нет SW — офлайн-режим работает только на уже загруженных данных, без кэша каркаса */ });
   });
 }
+
+/* ==========================================================================
+   Свайп вправо от левого края = «Назад» (п.3)
+   В коде такого жеста раньше не было нигде (то, что работало в Safari — нативный
+   жест браузера, в standalone-PWA его нет). Делаем свой и вешаем на все экраны с
+   кнопкой «Назад»: жест просто «нажимает» её, переиспользуя всю логику возврата.
+   ========================================================================== */
+(function setupEdgeSwipeBack() {
+  const BACK = {
+    "screen-workout":         "workout-back-btn",
+    "screen-run":             "run-back-btn",
+    "screen-exercises":       "exercises-back-btn",
+    "screen-history":         "history-back-btn",
+    "screen-stats":           "stats-back-btn",
+    "screen-stat-chart":      "stat-chart-back-btn",
+    "screen-templates":       "templates-back-btn",
+    "screen-template-detail": "template-detail-back-btn",
+    "screen-detail":          "detail-back-btn",
+  };
+  const EDGE = 26;          // зона старта у левого края, px
+  const THRESHOLD = 0.32;   // доля ширины для срабатывания
+  let screen = null, backId = null, startX = 0, startY = 0, dx = 0, active = false, decided = false, horiz = false;
+
+  function activeScreen() {
+    for (const id in BACK) {
+      const el = document.getElementById(id);
+      if (el && el.classList.contains("active")) return el;
+    }
+    return null;
+  }
+  function blocked() {
+    if (typeof _exEdit !== "undefined" && _exEdit) return true;   // идёт перестановка
+    return !!document.querySelector(".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open");
+  }
+  function down(x, y) {
+    active = false; decided = false; horiz = false; dx = 0; screen = null;
+    if (x > EDGE || blocked()) return;
+    const el = activeScreen();
+    if (!el) return;
+    screen = el; backId = BACK[el.id]; startX = x; startY = y; active = true;
+  }
+  function moveTo(x, y, e) {
+    if (!active) return;
+    const mx = x - startX, my = y - startY;
+    if (!decided) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      decided = true;
+      horiz = mx > Math.abs(my);          // вправо и преимущественно горизонтально
+      if (!horiz) { active = false; return; }
+      screen.style.transition = "none";
+      screen.style.willChange = "transform";
+    }
+    dx = Math.max(0, mx);
+    if (e && e.cancelable) e.preventDefault();
+    screen.style.transform = `translateX(${dx}px)`;
+  }
+  function up() {
+    if (!active) return;
+    active = false;
+    if (!horiz || !screen) { snapBack(); return; }
+    const w = window.innerWidth || 400;
+    if (dx > w * THRESHOLD) {
+      const el = screen, id = backId; screen = null;
+      el.style.transition = "transform 0.18s ease, opacity 0.18s ease";
+      el.style.transform = `translateX(${w}px)`;
+      el.style.opacity = "0";
+      setTimeout(() => {
+        const btn = document.getElementById(id); if (btn) btn.click();  // вернуться
+        requestAnimationFrame(() => { el.style.transition = ""; el.style.transform = ""; el.style.opacity = ""; el.style.willChange = ""; });
+      }, 180);
+    } else {
+      snapBack();
+    }
+  }
+  function snapBack() {
+    if (!screen) return;
+    const el = screen; screen = null;
+    el.style.transition = "transform 0.2s ease";
+    el.style.transform = "";
+    el.style.willChange = "";
+    setTimeout(() => { el.style.transition = ""; }, 220);
+  }
+
+  // touchmove/end вешаем только после старта у края — чтобы не делать
+  // document-touchmove не-passive на каждый скролл.
+  const onMove = (e) => { const t = e.touches[0]; if (t) moveTo(t.clientX, t.clientY, e); };
+  const onEnd  = () => { up(); document.removeEventListener("touchmove", onMove); document.removeEventListener("touchend", onEnd); document.removeEventListener("touchcancel", onEnd); };
+  document.addEventListener("touchstart", (e) => {
+    const t = e.touches[0]; down(t.clientX, t.clientY);
+    if (active) {
+      document.addEventListener("touchmove", onMove, { passive: false });
+      document.addEventListener("touchend", onEnd, { passive: true });
+      document.addEventListener("touchcancel", onEnd, { passive: true });
+    }
+  }, { passive: true });
+
+  // mouse — для проверки на десктопе
+  const onMM = (e) => moveTo(e.clientX, e.clientY, e);
+  const onMU = () => { up(); window.removeEventListener("mousemove", onMM); window.removeEventListener("mouseup", onMU); };
+  document.addEventListener("mousedown", (e) => {
+    down(e.clientX, e.clientY);
+    if (active) { window.addEventListener("mousemove", onMM); window.addEventListener("mouseup", onMU); }
+  });
+})();
 
 /* ==========================================================================
    Init
