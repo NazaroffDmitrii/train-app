@@ -1104,6 +1104,27 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .s-prog-flat { background:var(--panel-raised); border:1px solid var(--border-subtle); color:var(--text-tertiary); }
 .s-empty { padding:24px 14px; text-align:center; font-size:13px; color:var(--text-tertiary); font-style:italic; }
 
+/* ── Редизайн карточек статистики (06 · Статистика) ── */
+.s-card-stat { text-align: center; }
+.s-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 11px 0; }
+.s-main-num { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-primary); line-height: 1; }
+.s-main-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
+.s-sub-stats { display: flex; justify-content: space-around; gap: 4px; }
+.s-sub-val { font-size: 14px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+.s-sub-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); margin-top: 3px; }
+/* Period seg — прокручивается при 5 вкладках */
+.s-period-seg { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex-wrap: nowrap; }
+.s-period-seg::-webkit-scrollbar { display: none; }
+.s-period-btn { white-space: nowrap; flex: none; }
+/* Кнопка выбора упражнения — новый стиль (селектор) */
+.s-ex-pick-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--panel-raised); border: 1px solid var(--border-subtle); border-radius: 11px; padding: 7px 12px; font-size: 14px; font-weight: 700; color: var(--text-primary); transition: background 0.15s; }
+.s-ex-pick-btn svg { flex: none; }
+.s-ex-pick-btn:active { background: var(--panel-hi); }
+/* Контейнер графика с рамкой */
+.s-chart-frame { background: var(--panel-raised); border: 1px solid rgba(124,108,230,0.18); border-radius: 12px; padding: 10px 8px 6px; height: 150px; overflow: hidden; }
+/* Бейдж прогресса — без лишних отступов в новом header */
+.s-prog-badge { white-space: nowrap; flex: none; }
+
 /* Пикер упражнения */
 .stats-picker-backdrop { position:fixed; inset:0; background:rgba(5,5,10,0.6); backdrop-filter:blur(6px); z-index:20; display:flex; flex-direction:column; justify-content:flex-end; opacity:0; pointer-events:none; transition:opacity 0.22s ease; }
 .stats-picker-backdrop.open { opacity:1; pointer-events:auto; }

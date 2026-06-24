@@ -2579,14 +2579,19 @@ let _statsTab = "strength"; // сохраняется между заходам�
 /* ── СТАТИСТИКА (новая версия по ТЗ) ── */
 
 // Переменные состояния статистики
-let _statsPeriod = "30d";          // "30d" | "all"
+let _statsPeriod = "month";         // "week"|"month"|"3month"|"year"|"all"
 let _statsSelectedExId = null;      // ID выбранного упражнения
 let _statsGraphMode = "weight";    // "weight" | "volume"
 
 // DAY_MS, statsStartOfDay, computeStreak — в lib.js (чистая логика, тестируется).
 
 function statsPeriodStart() {
-  return _statsPeriod === "all" ? 0 : Date.now() - 30 * DAY_MS;
+  if (_statsPeriod === "all")    return 0;
+  if (_statsPeriod === "week")   return Date.now() - 7   * DAY_MS;
+  if (_statsPeriod === "month")  return Date.now() - 30  * DAY_MS;
+  if (_statsPeriod === "3month") return Date.now() - 90  * DAY_MS;
+  if (_statsPeriod === "year")   return Date.now() - 365 * DAY_MS;
+  return 0;
 }
 
 // ── Календарь: диапазон ──
@@ -2794,75 +2799,90 @@ function initStatsScreen() {
     progressBadge = `<div class="s-prog-badge ${cls}">${txt} за период</div>`;
   }
 
+  // Время по типам (для карточек)
+  let strengthMs = 0, runMs = 0;
+  strength.forEach(w => { if (w.finishedAt && w.startedAt) strengthMs += w.finishedAt - w.startedAt; });
+  runs.forEach(w => { if (w.finishedAt && w.startedAt) runMs += w.finishedAt - w.startedAt; });
+  const _hrsStr = ms => { const h = ms / 3600000; return h < 1 ? `${Math.round(h * 60)} мин` : `${Math.round(h * 10) / 10}`; };
+  const strengthHrs = strengthMs > 0 ? _hrsStr(strengthMs) : "—";
+  const runHrs = runMs > 0 ? _hrsStr(runMs) : "—";
+  const oneRM = selRec && typeof estimate1RM === "function" ? estimate1RM(selRec.maxWeight, selRec.repsAtMaxWeight) : 0;
+
   scroll.innerHTML = `
     <div class="s-period-seg">
-      <button class="s-period-btn${_statsPeriod==="30d"?" active":""}" data-p="30d">30 дней</button>
-      <button class="s-period-btn${_statsPeriod==="all"?" active":""}" data-p="all">Всё время</button>
+      ${[["week","Неделя"],["month","Месяц"],["3month","3 мес"],["year","Год"],["all","Всё"]].map(([p,l]) =>
+        `<button class="s-period-btn${_statsPeriod===p?" active":""}" data-p="${p}">${l}</button>`
+      ).join("")}
     </div>
 
-    <div class="s-section-label">Общая активность</div>
     <div class="s-cards-grid">
-      <div class="s-card">
-        <div class="s-card-val">${filtered.length}</div>
-        <div class="s-card-label">тренировок</div>
-      </div>
-      <div class="s-card">
-        <div class="s-card-val">🔥 ${streak.current}</div>
-        <div class="s-card-label">дней серия</div>
-        <div class="s-card-sub">рекорд: ${streak.best} дн</div>
-      </div>
-      <div class="s-card s-card-full">
-        <div class="s-card-val">${durStr}</div>
-        <div class="s-card-label">общее время тренировок</div>
-      </div>
-      <div class="s-card s-card-blue">
+      <div class="s-card s-card-blue s-card-stat">
         <div class="s-type-label s-type-blue">Силовые</div>
-        <div class="s-type-row"><span class="s-type-name">тренировок</span><span class="s-type-val">${strength.length}</span></div>
-        <div class="s-type-row"><span class="s-type-name">тоннаж</span><span class="s-type-val">${volume.toLocaleString("ru-RU")} кг</span></div>
+        <div class="s-divider"></div>
+        <div class="s-main-num">${strength.length}</div>
+        <div class="s-main-sub">трен.</div>
+        <div class="s-divider"></div>
+        <div class="s-sub-stats">
+          <div>
+            <div class="s-sub-val">${strengthHrs}</div>
+            <div class="s-sub-label">Время, ч</div>
+          </div>
+          <div>
+            <div class="s-sub-val">${volume > 0 ? volume.toLocaleString("ru-RU") : "—"}</div>
+            <div class="s-sub-label">Тоннаж, кг</div>
+          </div>
+        </div>
       </div>
-      <div class="s-card s-card-green">
+      <div class="s-card s-card-green s-card-stat">
         <div class="s-type-label s-type-green">Бег</div>
-        <div class="s-type-row"><span class="s-type-name">тренировок</span><span class="s-type-val">${runs.length}</span></div>
-        <div class="s-type-row"><span class="s-type-name">дистанция</span><span class="s-type-val">${Math.round(totalDist*10)/10} км</span></div>
-        <div class="s-type-row"><span class="s-type-name">ср. темп</span><span class="s-type-val">${paceStr(avgPaceSec)}</span></div>
-        <div class="s-type-row"><span class="s-type-name">лучший темп</span><span class="s-type-val">${paceStr(bestPaceSec===Infinity?null:bestPaceSec)}</span></div>
+        <div class="s-divider"></div>
+        <div class="s-main-num">${runs.length}</div>
+        <div class="s-main-sub">трен.</div>
+        <div class="s-divider"></div>
+        <div class="s-sub-stats">
+          <div>
+            <div class="s-sub-val">${runHrs}</div>
+            <div class="s-sub-label">Время, ч</div>
+          </div>
+          <div>
+            <div class="s-sub-val">${totalDist > 0 ? Math.round(totalDist*10)/10 : "—"}</div>
+            <div class="s-sub-label">Дист., км</div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div class="s-section-label">Активность</div>
     <div class="s-calendar">${renderStatsCalendar(workouts)}</div>
 
-    <div class="s-section-label">Упражнение</div>
+    <div class="s-section-label">Прогресс</div>
     ${_statsSelectedExId ? `
     <div class="s-ex-card">
       <div class="s-ex-header">
-        <span class="s-ex-name">${escHtml(selEx?.name||_statsSelectedExId)}</span>
         <button class="s-ex-pick-btn" id="stats-ex-pick-btn">
-          выбрать
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+          ${escHtml(selEx?.name||_statsSelectedExId)}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
         </button>
+        ${progressBadge}
       </div>
       <div class="s-ex-body">
+        <div class="s-chart-frame" id="s-graph-wrap">${renderStatsGraph(gpInPeriod, _statsGraphMode)}</div>
         <div class="s-ex-recs">
-          <div class="s-ex-rec" style="grid-column:1/-1">
-            <div class="s-ex-rec-val">${selRec?`${selRec.maxWeight} кг × ${selRec.repsAtMaxWeight}`:"—"}</div>
-            <div class="s-ex-rec-label">рекорд веса · всё время</div>
+          <div class="s-ex-rec">
+            <div class="s-ex-rec-val">${selRec ? `${selRec.maxWeight} кг` : "—"}</div>
+            <div class="s-ex-rec-label">макс. вес</div>
+          </div>
+          <div class="s-ex-rec">
+            <div class="s-ex-rec-val">${oneRM ? `${oneRM} кг` : "—"}</div>
+            <div class="s-ex-rec-label">1ПМ расчёт</div>
           </div>
         </div>
-        <div class="s-graph-toggle">
-          <button class="s-graph-btn${_statsGraphMode==="weight"?" active":""}" data-m="weight">Макс вес</button>
-          <button class="s-graph-btn${_statsGraphMode==="volume"?" active":""}" data-m="volume">Тоннаж</button>
-        </div>
-        <div class="s-graph-wrap" id="s-graph-wrap">${renderStatsGraph(gpInPeriod, _statsGraphMode)}</div>
-        ${progressBadge}
       </div>
     </div>
     ` : `<div class="s-empty">Проведи первую силовую тренировку</div>`}
   `;
 
-  // График рисуется 1:1 в пикселях (без preserveAspectRatio="none"), поэтому
-  // ему нужна реальная измеренная ширина карточки — её узнаём только после
-  // вставки в DOM, и перерисовываем уже с точным числом.
+  // График рисуется 1:1 в пикселях — перерисовываем с точными размерами после вставки в DOM.
   const graphWrap = $("s-graph-wrap");
   if (graphWrap) {
     const realW = Math.round(graphWrap.getBoundingClientRect().width);
@@ -2873,10 +2893,6 @@ function initStatsScreen() {
   // Переключатель периода
   scroll.querySelectorAll(".s-period-btn").forEach(btn => {
     btn.addEventListener("click", () => { _statsPeriod = btn.dataset.p; initStatsScreen(); });
-  });
-  // Переключатель графика
-  scroll.querySelectorAll(".s-graph-btn").forEach(btn => {
-    btn.addEventListener("click", () => { _statsGraphMode = btn.dataset.m; initStatsScreen(); });
   });
   // Выбор упражнения
   const pickBtn = $("stats-ex-pick-btn");
