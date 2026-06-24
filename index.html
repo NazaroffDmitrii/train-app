@@ -1116,9 +1116,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .s-period-seg { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex-wrap: nowrap; }
 .s-period-seg::-webkit-scrollbar { display: none; }
 .s-period-btn { white-space: nowrap; flex: none; }
-/* Кнопка выбора упражнения — новый стиль (селектор) */
-.s-ex-pick-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--panel-raised); border: 1px solid var(--border-subtle); border-radius: 11px; padding: 7px 12px; font-size: 14px; font-weight: 700; color: var(--text-primary); transition: background 0.15s; }
-.s-ex-pick-btn svg { flex: none; }
+/* Кнопка редактирования упражнения — иконка-карандаш */
+.s-ex-pick-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--panel-raised); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 5px 6px; color: var(--text-tertiary); flex: none; transition: background 0.15s; }
 .s-ex-pick-btn:active { background: var(--panel-hi); }
 /* Контейнер графика с рамкой */
 .s-chart-frame { background: var(--panel-raised); border: 1px solid rgba(124,108,230,0.18); border-radius: 12px; padding: 10px 8px 6px; height: 150px; overflow: hidden; }

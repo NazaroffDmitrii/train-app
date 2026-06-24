@@ -2613,66 +2613,22 @@ function statsCalendarRange(workouts) {
 
 // ── Рендер календаря ──
 function renderStatsCalendar(workouts) {
-  const { from, to } = statsCalendarRange(workouts);
-  const dayMap = {};
-  workouts.forEach(w => {
-    const d = statsStartOfDay(w.startedAt);
-    if (d < from || d > to) return;
-    if (!dayMap[d]) dayMap[d] = { s: 0, r: 0 };
-    if (w.type === "strength") dayMap[d].s++;
-    else if (w.type === "run") dayMap[d].r++;
-  });
-  const weeks = [];
-  let cur = from;
+  const COUNT = 15;
   const todayStart = statsStartOfDay(Date.now());
-  while (cur <= to + 6*DAY_MS) {
-    const week = [];
-    for (let d = 0; d < 7; d++) week.push({ ts: cur + d*DAY_MS, ...(dayMap[cur + d*DAY_MS] || {s:0,r:0}) });
-    weeks.push(week);
-    cur += 7*DAY_MS;
+  let html = `<div style="display:grid;grid-template-columns:repeat(${COUNT},1fr);gap:5px;">`;
+  for (let i = COUNT - 1; i >= 0; i--) {
+    const ts = todayStart - i * DAY_MS;
+    const day = workouts.filter(w => statsStartOfDay(w.startedAt) === ts);
+    const hasS = day.some(w => w.type === "strength");
+    const hasR = day.some(w => w.type === "run");
+    let bg = "rgba(255,255,255,0.05)";
+    if (hasS && hasR) bg = "linear-gradient(135deg,#8a78f0 50%,#3fd6a0 50%)";
+    else if (hasS) bg = "#8a78f0";
+    else if (hasR) bg = "#3fd6a0";
+    const opacity = (hasS || hasR) ? " opacity:0.85;" : "";
+    html += `<div style="aspect-ratio:1;border-radius:3px;background:${bg};${opacity}"></div>`;
   }
-  // Метки месяцев
-  let monthLabelsHtml = "";
-  let lastMonth = -1;
-  const monthPos = [];
-  weeks.forEach((week, wi) => {
-    const d = new Date(week[0].ts);
-    if (d.getMonth() !== lastMonth) { monthPos.push({ wi, label: d.toLocaleString("ru-RU",{month:"short"}).replace(".","") }); lastMonth = d.getMonth(); }
-  });
-  const totalWeeks = weeks.length;
-  let html = `<div class="s-cal-months" style="padding-left:20px;display:flex">`;
-  monthPos.forEach(({wi, label}, i) => {
-    const nextWi = i+1 < monthPos.length ? monthPos[i+1].wi : totalWeeks;
-    const flex = nextWi - wi;
-    html += `<span style="flex:${flex};font-size:9px;color:var(--text-tertiary);font-weight:600">${label}</span>`;
-  });
-  html += `</div><div style="display:flex;gap:3px">`;
-  // Лейблы дней
-  html += `<div style="display:flex;flex-direction:column;gap:2px;margin-right:3px;flex:none">`;
-  ["пн","","ср","","пт","","вс"].forEach(l => {
-    html += `<div style="font-size:8px;font-weight:600;color:var(--text-tertiary);height:11px;line-height:11px">${l}</div>`;
-  });
-  html += `</div><div style="display:flex;gap:2px;flex:1">`;
-  weeks.forEach(week => {
-    html += `<div style="display:flex;flex-direction:column;gap:2px;flex:1">`;
-    week.forEach(day => {
-      let cls = "s-cal-cell";
-      if (day.ts > todayStart) { html += `<div class="${cls}" style="opacity:0"></div>`; return; }
-      const total = day.s + day.r;
-      let extra = "";
-      if (total === 0) extra = "";
-      else if (day.s > 0 && day.r > 0) {
-        extra = " s-cal-both"; if (total >= 3) extra += " s-cal-hi";
-      } else if (day.s > 0) {
-        extra = " s-cal-strength"; if (day.s >= 2) extra += " s-cal-hi";
-      } else {
-        extra = " s-cal-run"; if (day.r >= 2) extra += " s-cal-hi";
-      }
-      html += `<div class="${cls}${extra}"></div>`;
-    });
-    html += `</div>`;
-  });
-  html += `</div></div>`;
+  html += `</div>`;
   return html;
 }
 
@@ -2796,7 +2752,8 @@ function initStatsScreen() {
     const pct = Math.round((gpInPeriod[gpInPeriod.length-1].maxWeight - gpInPeriod[0].maxWeight)/gpInPeriod[0].maxWeight*100);
     const cls = pct>0?"s-prog-up":pct<0?"s-prog-down":"s-prog-flat";
     const txt = pct>0?`+${pct}%`:pct<0?`${pct}%`:"без изменений";
-    progressBadge = `<div class="s-prog-badge ${cls}">${txt} за период</div>`;
+    const arrow = pct > 0 ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M7 17L17 7M17 7H9M17 7v8"/></svg>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M7 7L17 17M17 17H9M17 17v-8"/></svg>`;
+    progressBadge = `<div class="s-prog-badge ${cls}">${arrow}${txt}</div>`;
   }
 
   // Время по типам (для карточек)
@@ -2855,15 +2812,16 @@ function initStatsScreen() {
     <div class="s-section-label">Активность</div>
     <div class="s-calendar">${renderStatsCalendar(workouts)}</div>
 
-    <div class="s-section-label">Прогресс</div>
     ${_statsSelectedExId ? `
     <div class="s-ex-card">
       <div class="s-ex-header">
-        <button class="s-ex-pick-btn" id="stats-ex-pick-btn">
-          ${escHtml(selEx?.name||_statsSelectedExId)}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        ${progressBadge}
+        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:7px;">
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(selEx?.name||_statsSelectedExId)}</div>
+          <button class="s-ex-pick-btn" id="stats-ex-pick-btn" title="Изменить упражнение">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        </div>
+        <div style="flex:none;">${progressBadge}</div>
       </div>
       <div class="s-ex-body">
         <div class="s-chart-frame" id="s-graph-wrap">${renderStatsGraph(gpInPeriod, _statsGraphMode)}</div>
