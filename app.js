@@ -968,15 +968,22 @@ $("profile-chip").addEventListener("click", () => {
 const HISTORY_SVG_STRENGTH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
 const HISTORY_SVG_RUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="14.5" cy="5.5" r="1.6"/><path d="M9.5 8.5l2.5 1.5 1 3.5-3 2.5M14.5 7l2.5 4.5-3 1.5"/><path d="M6 20l2.5-4"/></svg>`;
 
+function pluralSets(n) {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "подход";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "подхода";
+  return "подходов";
+}
+
 // Разметка одной карточки тренировки — общая для превью-шторки и экрана «История».
 function historyItemHtml(w) {
   const isRun = w.type === "run";
   const meta = isRun
     ? [w.distance ? `${w.distance} км` : null, w.pace ? `${w.pace} мин/км` : null].filter(Boolean).join(" · ")
     : (() => {
-        const sets = (w.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
-        const vol  = (w.exercises || []).reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
-        return [sets ? `${sets} подх` : null, vol ? `${vol} кг` : null].filter(Boolean).join(" · ");
+        const exCnt = (w.exercises || []).filter(ex => ex.sets.some(s => s.done)).length;
+        const sets  = (w.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
+        return [exCnt ? `${exCnt} ${pluralExercises(exCnt)}` : null, sets ? `${sets} ${pluralSets(sets)}` : null].filter(Boolean).join(" · ");
       })();
   const duration = w.durationSec ? formatDuration(w.durationSec) : "";
 
