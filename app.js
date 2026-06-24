@@ -874,10 +874,26 @@ function enableSwipeBack(screen, onBack) {
     if (!tracking) return;
     tracking = false;
     if (mode !== "back") return;
-    screen.style.transition = "";
-    screen.style.transform = "";
-    screen.style.opacity = "";
-    if (dx > 90 || dx > window.innerWidth * 0.28) onBack();
+    if (dx > 90 || dx > window.innerWidth * 0.28) {
+      // Мгновенно скрываем уходящий экран — без анимации обратно в позицию 0.
+      screen.style.transition = "none";
+      screen.style.opacity = "0";
+      onBack(); // goToScreen: переключает active
+      // Подавляем анимацию появления у входящего экрана — он уже должен быть на месте.
+      const incoming = Object.values(SCREENS).find(s => s !== screen && s.classList.contains("active"));
+      if (incoming) incoming.style.transition = "none";
+      requestAnimationFrame(() => {
+        screen.style.transition = "";
+        screen.style.transform = "";
+        screen.style.opacity = "";
+        if (incoming) incoming.style.transition = "";
+      });
+    } else {
+      // Короткий свайп — возвращаем экран на место.
+      screen.style.transition = "";
+      screen.style.transform = "";
+      screen.style.opacity = "";
+    }
   };
   screen.addEventListener("touchend", finish);
   screen.addEventListener("touchcancel", finish);
