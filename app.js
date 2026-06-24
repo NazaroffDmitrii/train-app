@@ -273,6 +273,8 @@ const DATA = (() => {
 
     // История тренировок
     getWorkoutHistory(userId) { return ls(`train_history_${userId}`, []); },
+    // Перезаписать историю целиком — для отката удаления (undo).
+    saveWorkoutHistory(userId, list) { return lsSet(`train_history_${userId}`, list); },
     // Возвращает true/false — записалось ли. Вызывающий (doFinishWorkout)
     // обязан не очищать активную тренировку, если сюда вернулся false.
     saveWorkout(userId, workout) {
@@ -710,11 +712,38 @@ const toastEl = $("toast");
    ========================================================================== */
 let toastTimer = null;
 function showToast(msg) {
+  clearTimeout(toastTimer);
+  toastEl.classList.remove("actionable");
   toastEl.textContent = msg;
   toastEl.classList.add("show");
-  clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2200);
 }
+
+// Кликабельный тост с действием — для отмены удалений и для предложения
+// обновиться. onAction вызывается максимум один раз. duration<=0 — не прячем
+// автоматически (висит, пока не нажмут).
+function showActionToast(msg, actionLabel, onAction, duration = 5000) {
+  clearTimeout(toastTimer);
+  toastEl.innerHTML = "";
+  const text = document.createElement("span");
+  text.className = "toast-text";
+  text.textContent = msg;
+  const btn = document.createElement("button");
+  btn.className = "toast-undo-btn";
+  btn.textContent = actionLabel;
+  let used = false;
+  btn.addEventListener("click", () => {
+    if (used) return;
+    used = true;
+    toastEl.classList.remove("show", "actionable");
+    try { onAction(); } catch (e) { console.warn("Toast action failed", e); }
+  });
+  toastEl.append(text, btn);
+  toastEl.classList.add("show", "actionable");
+  if (duration > 0) toastTimer = setTimeout(() => toastEl.classList.remove("show", "actionable"), duration);
+}
+// Для откатываемых удалений.
+function showUndoToast(msg, onUndo) { showActionToast(msg, "Отменить", onUndo, 5000); }
 document.addEventListener("storage-full", () => showToast("Хранилище заполнено — удали старые тренировки"));
 
 /* ==========================================================================
@@ -972,17 +1001,33 @@ function renderHistoryScreen() {
 
   const list = all.filter(w => historyTypeMatch(w, _historyFilter) && historyPeriodMatch(w, _historyPeriod));
 
+  // Хвост истории, который есть в индексе на JSONBin, но ещё не подтянут локально
+  // (старше лимита гидратации). Кнопка догружает следующую пачку по запросу.
+  const missing = (Sync.missingWorkoutCount && navigator.onLine) ? Sync.missingWorkoutCount(userId) : 0;
+  const moreBtnHtml = missing > 0
+    ? `<button class="history-all-btn" id="history-load-more">Загрузить ещё<span class="history-all-count">${missing}</span></button>`
+    : "";
+
   const listEl = $("history-screen-list");
   if (!list.length) {
-    listEl.innerHTML = `<p class="empty-state" style="padding:24px 6px">Тренировок по выбранным фильтрам нет.</p>`;
-    return;
-  }
-  listEl.innerHTML = list.map(historyItemHtml).join("");
-  listEl.querySelectorAll(".history-item").forEach(el => {
-    el.addEventListener("click", () => {
-      const w = all.find(x => x.id === el.dataset.id);
-      if (w) openDetailScreen(w, "history");
+    listEl.innerHTML = `<p class="empty-state" style="padding:24px 6px">Тренировок по выбранным фильтрам нет.</p>` + moreBtnHtml;
+  } else {
+    listEl.innerHTML = list.map(historyItemHtml).join("") + moreBtnHtml;
+    listEl.querySelectorAll(".history-item").forEach(el => {
+      el.addEventListener("click", () => {
+        const w = all.find(x => x.id === el.dataset.id);
+        if (w) openDetailScreen(w, "history");
+      });
     });
+  }
+
+  const moreBtn = $("history-load-more");
+  if (moreBtn) moreBtn.addEventListener("click", () => {
+    moreBtn.disabled = true;
+    moreBtn.textContent = "Загрузка…";
+    Sync.loadMoreWorkouts(userId)
+      .then(n => { showToast(n > 0 ? `Загружено ещё: ${n}` : "Больше нет данных"); renderHistoryScreen(); })
+      .catch(() => { showToast("Не удалось загрузить"); renderHistoryScreen(); });
   });
 }
 
@@ -1051,6 +1096,88 @@ $("switch-user-btn").addEventListener("click", () => {
   goToScreen("profile");
 });
 
+/* — Экспорт / импорт данных (для каждого профиля отдельно) —
+   Бэкап ОДНОГО пользователя: все ключи train_*_<userId> (история, упражнения,
+   шаблоны, рекорды, категории, активная тренировка). Общие/девайсные ключи
+   (train_exercises, train_current_user, train_sync_dirty) в персональный бэкап
+   не входят. Страховка на случай потери JSONBin или очистки localStorage. */
+const BACKUP_PREFIX = "train_";
+
+// Ключи данных конкретного пользователя — оканчиваются на "_<userId>".
+// ID профилей ("dima"/"natela") не являются суффиксами друг друга, поэтому
+// endsWith однозначно разделяет их.
+function userDataKeys(userId) {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(BACKUP_PREFIX) && k.endsWith("_" + userId)) keys.push(k);
+  }
+  return keys;
+}
+
+$("export-data-btn").addEventListener("click", () => {
+  const userId = DATA.getCurrentUser();
+  if (!userId) { showToast("Сначала выбери профиль"); return; }
+  const data = {};
+  userDataKeys(userId).forEach(k => data[k] = localStorage.getItem(k));
+  const payload = { app: "train.", version: 2, user: userId, exportedAt: new Date().toISOString(), data };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const d = new Date();
+  const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  a.href = url;
+  a.download = `train-${userId}-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  closeModal(settingsModalBackdrop);
+  showToast("Копия данных сохранена");
+});
+
+$("import-data-btn").addEventListener("click", () => $("import-data-input").click());
+
+$("import-data-input").addEventListener("change", e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = ""; // позволяем повторно выбрать тот же файл
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try { parsed = JSON.parse(reader.result); }
+    catch { showToast("Не удалось прочитать файл"); return; }
+    const data = parsed && parsed.data;
+    const keys = data && typeof data === "object" ? Object.keys(data).filter(k => k.startsWith(BACKUP_PREFIX)) : [];
+    if (!keys.length) { showToast("В файле нет данных train."); return; }
+    // Какие профили затрагивает файл (по суффиксу ключей) — заменяем только их,
+    // данные других профилей на устройстве не трогаем.
+    const affected = DATA.USERS.filter(u => keys.some(k => k.endsWith("_" + u.id)));
+    const who = affected.length ? affected.map(u => u.name).join(", ") : "профиля";
+    openConfirmModal({
+      title: "Импортировать данные?",
+      message: `Заменит данные ${who} на этом устройстве (${keys.length} ключей). Другие профили не тронутся.`,
+      confirmLabel: "Импортировать",
+      onConfirm: () => {
+        try {
+          const ids = affected.map(u => u.id);
+          const toRemove = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(BACKUP_PREFIX) && ids.some(id => k.endsWith("_" + id))) toRemove.push(k);
+          }
+          toRemove.forEach(k => localStorage.removeItem(k));
+          keys.forEach(k => localStorage.setItem(k, data[k]));
+        } catch { showToast("Импорт не удался — возможно, переполнено хранилище"); return; }
+        // Перезагружаем, чтобы DATA-кэш и экраны переинициализировались с чистого листа.
+        location.reload();
+      },
+    });
+  };
+  reader.onerror = () => showToast("Не удалось прочитать файл");
+  reader.readAsText(file);
+});
+
 /* ==========================================================================
    Modal helpers
    ========================================================================== */
@@ -1058,6 +1185,40 @@ function openModal(backdrop)  { backdrop.classList.add("open"); }
 function closeModal(backdrop) { backdrop.classList.remove("open"); }
 document.querySelectorAll(".modal-backdrop").forEach(b => {
   b.addEventListener("click", e => { if (e.target === b) closeModal(b); });
+});
+
+/* ==========================================================================
+   Доступность оверлеев: Escape закрывает, Tab держит фокус внутри (#8).
+   Единый обработчик на все оверлеи — статические и создаваемые на лету.
+   ========================================================================== */
+function topmostOverlay() {
+  const list = document.querySelectorAll(
+    ".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open"
+  );
+  return list.length ? list[list.length - 1] : null;
+}
+document.addEventListener("keydown", e => {
+  const overlay = topmostOverlay();
+  if (!overlay) return;
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    // Все оверлеи закрываются по клику в подложку (e.target === backdrop) —
+    // переиспользуем это, имитируя такой клик.
+    overlay.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    return;
+  }
+
+  if (e.key === "Tab") {
+    const focusables = Array.from(overlay.querySelectorAll(
+      'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])'
+    )).filter(el => !el.disabled && el.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0], last = focusables[focusables.length - 1];
+    if (!overlay.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
 });
 
 /* ==========================================================================
@@ -1193,6 +1354,7 @@ function initWorkoutScreen({ resume = false } = {}) {
   if (!_workout) return;
 
   $("workout-name-input").value = _workout.name || "Силовая тренировка";
+  endRest(false);            // отдых не переживает навигацию — прячем пилюлю
   startWorkoutTimer();
   renderExerciseList();
   updateSummaryBar();
@@ -1215,6 +1377,50 @@ function startWorkoutTimer() {
   tick();
   _timerInt = setInterval(tick, 500);
 }
+
+/* — Таймер отдыха между подходами —
+   Запускается после отметки подхода «выполнено». Считает обратный отсчёт от
+   90 c (можно крутить ±15), а фактически отдохнутое суммируется в
+   _workout.restSec — общее время отдыха за тренировку (видно при завершении и
+   в детальном просмотре). */
+const REST_DEFAULT_SEC = 90;
+let _restInt = null;
+let _restStartTs = 0;
+let _restDurationSec = REST_DEFAULT_SEC;
+
+function restRemaining() {
+  return Math.max(0, _restDurationSec - Math.floor((Date.now() - _restStartTs) / 1000));
+}
+function renderRest() { $("rest-time").textContent = formatDuration(restRemaining()); }
+
+// Завершить отдых. commit=true — зачесть фактически отдохнутые секунды в total.
+function endRest(commit) {
+  if (_restInt) { clearInterval(_restInt); _restInt = null; }
+  if (commit && _restStartTs && _workout) {
+    const rested = Math.min(_restDurationSec, Math.floor((Date.now() - _restStartTs) / 1000));
+    _workout.restSec = (_workout.restSec || 0) + rested;
+    saveWorkoutState();
+  }
+  _restStartTs = 0;
+  $("rest-timer").hidden = true;
+}
+function startRest() {
+  endRest(true);                  // если отдых уже шёл — зачесть его и начать заново
+  _restDurationSec = REST_DEFAULT_SEC;
+  _restStartTs = Date.now();
+  $("rest-timer").hidden = false;
+  renderRest();
+  _restInt = setInterval(() => {
+    if (restRemaining() <= 0) { haptic(40); endRest(true); return; }
+    renderRest();
+  }, 250);
+}
+$("rest-minus").addEventListener("click", () => {
+  _restDurationSec = Math.max(0, _restDurationSec - 15);
+  if (restRemaining() <= 0) endRest(true); else renderRest();
+});
+$("rest-plus").addEventListener("click", () => { _restDurationSec += 15; renderRest(); });
+$("rest-skip").addEventListener("click", () => endRest(true));
 
 // Фоновая синхронизация (sync.js) пишет в ту же персистентную активную
 // тренировку отдельно от экрана (создаёт удалённый bin и проставляет его id).
@@ -1239,6 +1445,7 @@ function saveWorkoutState() {
 
 /* — Кнопки шапки — */
 $("workout-back-btn").addEventListener("click", () => {
+  endRest(true);      // зачесть текущий отдых, прежде чем уйти с экрана
   saveWorkoutState();
   stopWorkoutTimer(); // секундомер на кнопке меню сам покажет время активной тренировки
   goToScreen("menu");
@@ -1249,6 +1456,7 @@ $("finish-workout-btn").addEventListener("click", finishWorkout);
 
 function finishWorkout() {
   if (!_workout) return;
+  endRest(true); // зачесть текущий отдых в общий итог до показа сводки
   const exCount = (_workout.exercises || []).length;
   const doneSets = (_workout.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
 
@@ -1289,9 +1497,16 @@ function doFinishWorkout() {
 
 function discardActiveWorkout() {
   const userId = DATA.getCurrentUser();
+  endRest(false);
+  // Если за сессию успел создаться удалённый бин (добавляли подходы дольше
+  // дебаунса) — убираем его, чтобы отменённые тренировки не копились на JSONBin.
+  const binId = _workout && _workout._remoteBinId;
+  if (binId) Storage.deleteBin(binId).catch(e => console.warn("deleteBin failed", e));
   DATA.clearActiveWorkout(userId);
   stopWorkoutTimer();
   _workout = null;
+  // Снять указатель на активную тренировку в пользовательском бине.
+  SyncQueue.push("user:update", {});
   showToast("Тренировка удалена");
   goToScreen("menu");
 }
@@ -1312,6 +1527,7 @@ function openFinishConfirmModal(exCount, doneSets) {
         <div class="finish-summary-row"><span>Подходов</span><b>${doneSets}</b></div>
         ${volume ? `<div class="finish-summary-row"><span>Тоннаж</span><b>${volume.toLocaleString("ru-RU")} кг</b></div>` : ""}
         <div class="finish-summary-row"><span>Время</span><b>${formatDuration(durationSec)}</b></div>
+        ${_workout.restSec ? `<div class="finish-summary-row"><span>Отдых</span><b>${formatDuration(_workout.restSec)}</b></div>` : ""}
       </div>
       <div class="modal-form-actions">
         <button class="btn-chip" id="finish-confirm-cancel">Отмена</button>
@@ -1544,7 +1760,7 @@ function renderSetsInBlock(block, ex, lastWorkout) {
       <span class="set-num">${sIdx + 1}</span>
       <div class="set-field"><input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : "кг"}" value="${set.weight || ""}" step="0.5" ${prev ? 'class="has-prev"' : ""}></div>
       <div class="set-field"><input type="number" inputmode="numeric" placeholder="${prev ? prev.reps : "повт"}" value="${set.reps || ""}" ${prev ? 'class="has-prev"' : ""}></div>
-      <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}">${set.rpe || "—"}</button>
+      <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe || "—"}</button>
       <button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
       </button>
@@ -1577,6 +1793,7 @@ function renderSetsInBlock(block, ex, lastWorkout) {
       ex.sets[sIdx].weight = parseFloat(weightInput.value) || 0;
       ex.sets[sIdx].reps   = parseInt(repsInput.value) || 0;
       ex.sets[sIdx].done   = !ex.sets[sIdx].done;
+      if (ex.sets[sIdx].done) startRest(); // подход выполнен — пошёл отдых
       saveWorkoutState();
       renderSetsInBlock(block, ex, lastWorkout);
       updateSummaryBar();
@@ -1592,7 +1809,7 @@ function updateSummaryBar() {
   const volume   = exs.reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
   $("sum-exercises").textContent = exs.length;
   $("sum-sets").textContent = doneSets;
-  $("sum-volume").textContent = volume;
+  $("sum-volume").textContent = volume.toLocaleString("ru-RU"); // как в модалке завершения и статистике
 }
 
 /* — Добавить упражнение — */
@@ -1885,16 +2102,16 @@ function renderExercisesList(query) {
       if (b.dataset.act === "delete") {
         b.addEventListener("click", () => {
           const ex = allExs.find(e => e.id === id);
-          openConfirmModal({
-            title: "Удалить упражнение?",
-            message: `Вы точно хотите удалить это упражнение${ex ? ` — «${ex.name}»` : ""}? Отменить нельзя.`,
-            confirmLabel: "Удалить",
-            onConfirm: () => {
-              DATA.deleteOwnExercise(userId, id);
-              SyncQueue.push("exercise:delete", { id });
-              showToast("Упражнение удалено");
-              renderExercisesList(exercisesSearch.value);
-            },
+          // Удаляем сразу и предлагаем «Отменить» (вместо модалки-подтверждения).
+          const snapshot = [...DATA.getOwnExercises(userId)];
+          DATA.deleteOwnExercise(userId, id);
+          SyncQueue.push("exercise:delete", { id });
+          renderExercisesList(exercisesSearch.value);
+          showUndoToast(`Упражнение${ex ? ` «${ex.name}»` : ""} удалено`, () => {
+            DATA.saveOwnExercises(userId, snapshot);
+            SyncQueue.push("exercise:create", {}); // вернуть в пользовательский бин
+            renderExercisesList(exercisesSearch.value);
+            showToast("Восстановлено");
           });
         });
       }
@@ -2101,8 +2318,9 @@ function openDetailScreen(workout, returnScreen = "menu") {
       <div class="detail-stats">
         <div class="detail-stat"><div class="detail-stat-num">${(workout.exercises || []).length}</div><div class="detail-stat-label">Упражнений</div></div>
         <div class="detail-stat"><div class="detail-stat-num">${totalSets}</div><div class="detail-stat-label">Подходов</div></div>
-        <div class="detail-stat"><div class="detail-stat-num">${volume}</div><div class="detail-stat-label">Кг объём</div></div>
+        <div class="detail-stat"><div class="detail-stat-num">${volume.toLocaleString("ru-RU")}</div><div class="detail-stat-label">Кг объём</div></div>
         ${workout.durationSec ? `<div class="detail-stat"><div class="detail-stat-num">${formatDuration(workout.durationSec)}</div><div class="detail-stat-label">Длительность</div></div>` : ""}
+        ${workout.restSec ? `<div class="detail-stat"><div class="detail-stat-num">${formatDuration(workout.restSec)}</div><div class="detail-stat-label">Отдых</div></div>` : ""}
       </div>
       ${(workout.exercises || []).map(ex => {
         const exDef = exercises.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
@@ -2127,13 +2345,32 @@ function openDetailScreen(workout, returnScreen = "menu") {
   goToScreen("detail");
 
   $("detail-delete-btn").onclick = () => {
-    if (!confirm("Удалить эту тренировку? Отменить нельзя.")) return;
     const userId = DATA.getCurrentUser();
+    // Снимок истории и индекса для отката.
+    const histSnap = [...DATA.getWorkoutHistory(userId)];
+    const idxSnap  = [...DATA.getWorkoutIndex(userId)];
+    const binId = workout._remoteBinId; // удалим и сам бин на JSONBin (если не отменят)
     DATA.deleteWorkout(userId, workout.id);
     SyncQueue.push("workout:delete", {});
     renderHistory(userId);
     goToScreen("menu");
-    showToast("Тренировка удалена");
+
+    // Удаление бина откладываем до конца окна отмены: если нажмут «Отменить»,
+    // бин останется цел и восстановление обойдётся без пересоздания.
+    let undone = false;
+    const purgeTimer = setTimeout(() => {
+      if (!undone && binId) Storage.deleteBin(binId).catch(e => console.warn("deleteBin failed", e));
+    }, 6000);
+
+    showUndoToast("Тренировка удалена", () => {
+      undone = true;
+      clearTimeout(purgeTimer);
+      DATA.saveWorkoutHistory(userId, histSnap);
+      DATA.saveWorkoutIndex(userId, idxSnap);
+      SyncQueue.push("workout:delete", {}); // повторно зальёт восстановленный индекс
+      renderHistory(userId);
+      showToast("Восстановлено");
+    });
   };
 
   $("detail-edit-btn").onclick = () => openDetailEditMode(workout);
@@ -2259,38 +2496,10 @@ let _statsPeriod = "30d";          // "30d" | "all"
 let _statsSelectedExId = null;      // ID выбранного упражнения
 let _statsGraphMode = "weight";    // "weight" | "volume"
 
-const DAY_MS = 86400000;
+// DAY_MS, statsStartOfDay, computeStreak — в lib.js (чистая логика, тестируется).
 
 function statsPeriodStart() {
   return _statsPeriod === "all" ? 0 : Date.now() - 30 * DAY_MS;
-}
-
-function statsStartOfDay(ts) {
-  const d = new Date(ts); d.setHours(0,0,0,0); return d.getTime();
-}
-
-// ── Серия (streak) ──
-function computeStreak(workouts) {
-  if (!workouts.length) return { current: 0, best: 0 };
-  const daySet = new Set(workouts.map(w => statsStartOfDay(w.startedAt)));
-  const days = Array.from(daySet).sort((a,b) => b - a);
-  const todayStart = statsStartOfDay(Date.now());
-  const yest = todayStart - DAY_MS;
-  let current = 0;
-  if (days[0] === todayStart || days[0] === yest) {
-    for (let i = 0; i < days.length; i++) {
-      if (days[i] === days[0] - i * DAY_MS) current++;
-      else break;
-    }
-  }
-  let best = 0, run = 1;
-  for (let i = 1; i < days.length; i++) {
-    if (days[i-1] - days[i] === DAY_MS) run++;
-    else { if (run > best) best = run; run = 1; }
-  }
-  if (run > best) best = run;
-  if (current > best) best = current;
-  return { current, best };
 }
 
 // ── Календарь: диапазон ──
@@ -2967,13 +3176,19 @@ $("template-rename-btn").addEventListener("click", () => {
   });
 });
 
-/* — Удаление шаблона — */
+/* — Удаление шаблона (с возможностью отмены) — */
 $("template-delete-btn").addEventListener("click", () => {
   const userId = DATA.getCurrentUser();
+  const snapshot = [...DATA.getTemplates(userId)];
   DATA.deleteTemplate(userId, _templateId);
   SyncQueue.push("template:delete", { templateId: _templateId });
-  showToast("Шаблон удалён");
   goToScreen("templates");
+  showUndoToast("Шаблон удалён", () => {
+    DATA.saveTemplates(userId, snapshot);
+    SyncQueue.push("template:create", {}); // повторно зальёт список шаблонов
+    goToScreen("templates");
+    showToast("Восстановлено");
+  });
 });
 
 /* — «Поделиться» = независимая копия у другого пользователя (раздел 5) — */
@@ -3044,38 +3259,8 @@ function openSaveAsTemplateModal(workout) {
 /* ==========================================================================
    Utils
    ========================================================================== */
-function formatDuration(totalSec) {
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-}
-
-function parseDurationToSec(str) {
-  const parts = str.split(":").map(Number);
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  return parts[0] || 0;
-}
-
-function fmtDate(ts) {
-  const d = new Date(ts);
-  const day = String(d.getDate()).padStart(2,"0");
-  const mon = String(d.getMonth() + 1).padStart(2,"0");
-  return `${day}.${mon}.${d.getFullYear()}`;
-}
-
-// Темп хранится в тренировке строкой "м:сс" (раздел 7 спеки) — для графиков нужно число секунд и обратно.
-function paceStrToSec(str) {
-  const [m, s] = String(str).split(":").map(Number);
-  return (m || 0) * 60 + (s || 0);
-}
-function secToPaceStr(totalSec) {
-  const m = Math.floor(totalSec / 60);
-  const s = Math.round(totalSec % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
+// formatDuration, parseDurationToSec, fmtDate, paceStrToSec, secToPaceStr —
+// вынесены в lib.js (чистые форматтеры, покрыты тестами в tests.html).
 
 /* ==========================================================================
    PWA: регистрация service worker — каркас приложения кэшируется и работает
@@ -3088,10 +3273,12 @@ if ("serviceWorker" in navigator) {
         const newWorker = reg.installing;
         if (!newWorker) return;
         newWorker.addEventListener("statechange", () => {
-          // Новая версия каркаса встала на смену уже работавшей — обновление тихое,
-          // подхватится при следующем открытии. Сообщаем, если человек сейчас в приложении.
+          // Новая версия каркаса установлена поверх уже работавшей. Предлагаем
+          // обновиться одним тапом (перезагрузка подтянет новый index.html/app.js
+          // из свежего кэша). Тост висит, пока не нажмут — чтобы не пропал, если
+          // человек сейчас в середине подхода.
           if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-            showToast("Доступна новая версия — обновите вкладку");
+            showActionToast("Доступна новая версия", "Обновить", () => location.reload(), 0);
           }
         });
       });

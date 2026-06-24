@@ -17,7 +17,7 @@
  * каркаса, чтобы activate-обработчик подчистил старые записи.
  */
 
-const CACHE_VERSION = "train-shell-v27";
+const CACHE_VERSION = "train-shell-v29";
 
 // Эти пути — относительно расположения sw.js (корень GitHub Pages).
 // manifest.json намеренно НЕ кэшируем: он не подключён в index.html (см.
@@ -29,6 +29,7 @@ const APP_SHELL = [
   "./config.js",
   "./storage.js",
   "./sync.js",
+  "./lib.js",
   "./app.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -64,10 +65,13 @@ self.addEventListener("fetch", event => {
   // Чужие источники (например, будущий JSONBin API) тоже не кэшируем здесь.
   if (new URL(req.url).origin !== self.location.origin) return;
 
-  // Навигация (открытие приложения / обновление страницы) — всегда должна
-  // получить каркас, даже если сети нет вообще.
+  // Навигация. Корень/index — отдаём каркас даже офлайн (index.html-фолбэк).
+  // Прочие реальные страницы (например tests.html) обслуживаем как есть, не
+  // подменяя на index.html, иначе их нельзя открыть при активном SW.
   if (req.mode === "navigate") {
-    event.respondWith(staleWhileRevalidate(req, "./index.html"));
+    const path = new URL(req.url).pathname;
+    const isRoot = path.endsWith("/") || path.endsWith("/index.html");
+    event.respondWith(staleWhileRevalidate(req, isRoot ? "./index.html" : null));
     return;
   }
 

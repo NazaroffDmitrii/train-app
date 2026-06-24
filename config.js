@@ -31,7 +31,7 @@ const CONFIG = {
   // TODO(безопасность): заменить на ОТДЕЛЬНЫЙ ограниченный Access Key и
   // ротировать значение ниже — сейчас здесь лежит мастер-ключ, что небезопасно
   // для публичного деплоя (см. шапку файла).
-  ACCESS_KEY: "$2a$10$wwsyAW9FYruodlpoQGQeNOGA74gcoSrzdNml22zkkGb58IBJYqgIO",
+  ACCESS_KEY: "$2a$10$DzKMwzEZKpvZKpqb20L9ze6yNFy4H2CPta22yK37Pv5qjy2PmSJxa",
 
   // В ДЕПЛОЕ держи пустым. Заполняется только локально в setup.html для
   // первичного создания бинов. Если пусто — storage.js шлёт X-Access-Key.

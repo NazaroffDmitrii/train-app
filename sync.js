@@ -58,6 +58,10 @@ const Sync = (() => {
   // Какие действия из index.html (см. вызовы SyncQueue.push) затрагивают какие бины.
   function scopesForAction(type, payload, currentUserId) {
     switch (type) {
+      case "user:update":
+        // Общая синхронизация пользовательского бина (видимость/упражнения/
+        // рекорды/указатель активной тренировки) — например после отмены.
+        return [`user:${currentUserId}`];
       case "workout:update":
       case "run:update":
         return [`workout:${payload.workoutId}`];
@@ -318,14 +322,32 @@ const Sync = (() => {
   async function hydrateMissingWorkouts(userId, remoteIndex, cap = HYDRATE_WORKOUT_CAP) {
     const localIds = new Set(DATA.getWorkoutHistory(userId).map(w => w.id));
     const missing = remoteIndex.filter(e => e.binId && e.finishedAt && !localIds.has(e.id)).slice(0, cap);
+    let fetched = 0;
     for (const entry of missing) {
       try {
         const w = await Storage.readBin(entry.binId);
         if (!w) continue;
         w._remoteBinId = entry.binId;
         DATA.saveWorkout(userId, w);
+        fetched++;
       } catch (e) { console.warn("Sync: pull workout failed", entry.id, e); }
     }
+    return fetched;
+  }
+
+  // Сколько тренировок есть в индексе, но ещё не подтянуто в локальную историю
+  // (хвост старше лимита гидратации). Для кнопки «Загрузить ещё».
+  function missingWorkoutCount(userId) {
+    const localIds = new Set(DATA.getWorkoutHistory(userId).map(w => w.id));
+    return DATA.getWorkoutIndex(userId).filter(e => e.binId && e.finishedAt && !localIds.has(e.id)).length;
+  }
+
+  // Догрузить следующую пачку старых тренировок по запросу (кнопка в истории).
+  // Возвращает число реально подтянутых. Индекс уже целиком локален (его бин
+  // маленький и тянется при входе), поэтому берём недостающие прямо из него.
+  async function loadMoreWorkouts(userId, batch = HYDRATE_WORKOUT_CAP) {
+    if (!Storage.isEnabled() || !navigator.onLine) return 0;
+    return await hydrateMissingWorkouts(userId, DATA.getWorkoutIndex(userId), batch);
   }
 
   // «Поделиться» шаблоном пишет в бин ДРУГОГО пользователя — если просто
@@ -358,5 +380,5 @@ const Sync = (() => {
     return result;
   }
 
-  return { push, flush: flushAll, size: pendingCount, lastError: getLastError, hydrateUser, shareTemplate, shareExercise };
+  return { push, flush: flushAll, size: pendingCount, lastError: getLastError, hydrateUser, shareTemplate, shareExercise, loadMoreWorkouts, missingWorkoutCount };
 })();

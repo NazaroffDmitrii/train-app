@@ -117,5 +117,19 @@ const Storage = (() => {
     return json?.record ?? json;
   }
 
-  return { configure, isEnabled, createBin, readBin, updateBin };
+  // Удалить bin безвозвратно. Нужно, чтобы удалённые/отменённые тренировки не
+  // копились мусором на JSONBin. ВАЖНО: у Access Key должно быть право Delete
+  // (Update и так позволяет перезаписать данные, так что это не расширяет риск).
+  // 404 считаем успехом — бин уже удалён.
+  async function deleteBin(binId) {
+    if (!isEnabled() || !binId) return;
+    const res = await fetch(`${cfg.baseUrl}/b/${binId}`, {
+      method: "DELETE",
+      keepalive: true,
+      headers: authHeaders(),
+    });
+    if (!res.ok && res.status !== 404) await throwHttpError(res, "Storage.deleteBin");
+  }
+
+  return { configure, isEnabled, createBin, readBin, updateBin, deleteBin };
 })();

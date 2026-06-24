@@ -505,6 +505,23 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   padding: 16px 16px calc(40px + var(--safe-bottom));
 }
 
+/* ============ Rest timer ============ */
+.rest-timer {
+  position: absolute; left: 50%; bottom: calc(20px + var(--safe-bottom));
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel-raised); border: 1px solid var(--border-strong);
+  border-radius: 999px; padding: 8px 10px 8px 12px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.45); z-index: 30;
+}
+.rest-timer[hidden] { display: none; }
+.rest-main { text-align: center; min-width: 60px; }
+.rest-time { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.rest-label { font-size: 9.5px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px; }
+.rest-adj { font-size: 13px; font-weight: 700; color: var(--accent-bright); padding: 8px 6px; border-radius: 10px; }
+.rest-skip { display: flex; padding: 8px; color: var(--text-secondary); }
+.rest-skip svg { width: 18px; height: 18px; }
+
 /* ============ Exercise block ============ */
 .ex-block {
   background: var(--panel);
@@ -885,8 +902,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
   white-space: nowrap;
+  display: flex; align-items: center; gap: 16px;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.actionable { pointer-events: auto; }
+.toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 13.5px; padding: 2px 2px; white-space: nowrap; }
 /* ============ Screen 5: exercises ============ */
 .screen-exercises { display: flex; flex-direction: column; background: var(--bg-base); }
 
@@ -1309,6 +1329,19 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
         Добавить упражнение
       </button>
     </div>
+
+    <!-- Таймер отдыха между подходами (появляется после отметки «выполнено») -->
+    <div class="rest-timer" id="rest-timer" hidden>
+      <button class="rest-adj" id="rest-minus" title="−15 секунд">−15</button>
+      <div class="rest-main">
+        <div class="rest-time" id="rest-time">1:30</div>
+        <div class="rest-label">отдых</div>
+      </div>
+      <button class="rest-adj" id="rest-plus" title="+15 секунд">+15</button>
+      <button class="rest-skip" id="rest-skip" title="Пропустить отдых">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
   </section>
 
   <!-- ===== ЭКРАН 4: пробежка ===== -->
@@ -1573,6 +1606,23 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
         </span>
         <span>Сменить профиль</span>
       </button>
+      <button class="modal-option" id="export-data-btn">
+        <span class="modal-option-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M12 3v13"/><path d="M7 11l5 5 5-5"/>
+          </svg>
+        </span>
+        <span>Экспорт данных</span>
+      </button>
+      <button class="modal-option" id="import-data-btn">
+        <span class="modal-option-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M12 16V3"/><path d="M7 8l5-5 5 5"/>
+          </svg>
+        </span>
+        <span>Импорт данных</span>
+      </button>
+      <input type="file" id="import-data-input" accept="application/json,.json" hidden>
       <button class="modal-cancel" id="settings-close">Закрыть</button>
     </div>
   </div>
@@ -1632,6 +1682,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 <script src="config.js"></script>
 <script src="storage.js"></script>
 <script src="sync.js"></script>
+<script src="lib.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
