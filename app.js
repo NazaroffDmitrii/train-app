@@ -846,73 +846,6 @@ function goToScreen(name, opts = {}) {
   if (name === "templates") { initTemplatesScreen(); }
 }
 
-/* Свайп вправо от левого края экрана — возврат назад (как нативный жест на телефоне).
-   Триггерит ту же логику, что и кнопка «Назад», чтобы не обходить её обработчики. */
-function enableSwipeBack(screen, onBack) {
-  let startX = 0, startY = 0, dx = 0, dy = 0, tracking = false, mode = "";
-  screen.addEventListener("touchstart", e => {
-    if (e.touches.length !== 1) { tracking = false; return; }
-    const t = e.touches[0];
-    if (t.clientX > 40) { tracking = false; return; } // только от левого края
-    startX = t.clientX; startY = t.clientY; dx = 0; dy = 0; tracking = true; mode = "";
-  }, { passive: true });
-  screen.addEventListener("touchmove", e => {
-    if (!tracking) return;
-    const t = e.touches[0];
-    dx = t.clientX - startX; dy = t.clientY - startY;
-    if (!mode) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      mode = (dx > Math.abs(dy)) ? "back" : "ignore";
-      if (mode === "back") screen.style.transition = "none";
-      else { tracking = false; return; }
-    }
-    const off = Math.max(0, dx);
-    screen.style.transform = `translateX(${off}px)`;
-    screen.style.opacity = String(Math.max(0.4, 1 - off / window.innerWidth));
-  }, { passive: true });
-  const finish = () => {
-    if (!tracking) return;
-    tracking = false;
-    if (mode !== "back") return;
-    if (dx > 90 || dx > window.innerWidth * 0.28) {
-      // Мгновенно скрываем уходящий экран — без анимации обратно в позицию 0.
-      screen.style.transition = "none";
-      screen.style.opacity = "0";
-      onBack(); // goToScreen: переключает active
-      // Подавляем анимацию появления у входящего экрана — он уже должен быть на месте.
-      const incoming = Object.values(SCREENS).find(s => s !== screen && s.classList.contains("active"));
-      if (incoming) incoming.style.transition = "none";
-      requestAnimationFrame(() => {
-        screen.style.transition = "";
-        screen.style.transform = "";
-        screen.style.opacity = "";
-        if (incoming) incoming.style.transition = "";
-      });
-    } else {
-      // Короткий свайп — возвращаем экран на место.
-      screen.style.transition = "";
-      screen.style.transform = "";
-      screen.style.opacity = "";
-    }
-  };
-  screen.addEventListener("touchend", finish);
-  screen.addEventListener("touchcancel", finish);
-}
-
-// Подключаем свайп-назад ко всем экранам-«подстраницам» (вызываем клик их кнопки «Назад»).
-[
-  ["screen-stats", "stats-back-btn"],
-  ["screen-exercises", "exercises-back-btn"],
-  ["screen-history", "history-back-btn"],
-  ["screen-stat-chart", "stat-chart-back-btn"],
-  ["screen-templates", "templates-back-btn"],
-  ["screen-template-detail", "template-detail-back-btn"],
-  ["screen-detail", "detail-back-btn"],
-].forEach(([scrId, btnId]) => {
-  const scr = $(scrId), btn = $(btnId);
-  if (scr && btn) enableSwipeBack(scr, () => btn.click());
-});
-
 /* ==========================================================================
    Screen 1: profile
    ========================================================================== */
@@ -968,22 +901,15 @@ $("profile-chip").addEventListener("click", () => {
 const HISTORY_SVG_STRENGTH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
 const HISTORY_SVG_RUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="14.5" cy="5.5" r="1.6"/><path d="M9.5 8.5l2.5 1.5 1 3.5-3 2.5M14.5 7l2.5 4.5-3 1.5"/><path d="M6 20l2.5-4"/></svg>`;
 
-function pluralSets(n) {
-  const mod10 = n % 10, mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "подход";
-  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "подхода";
-  return "подходов";
-}
-
 // Разметка одной карточки тренировки — общая для превью-шторки и экрана «История».
 function historyItemHtml(w) {
   const isRun = w.type === "run";
   const meta = isRun
     ? [w.distance ? `${w.distance} км` : null, w.pace ? `${w.pace} мин/км` : null].filter(Boolean).join(" · ")
     : (() => {
-        const exCnt = (w.exercises || []).filter(ex => ex.sets.some(s => s.done)).length;
-        const sets  = (w.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
-        return [exCnt ? `${exCnt} ${pluralExercises(exCnt)}` : null, sets ? `${sets} ${pluralSets(sets)}` : null].filter(Boolean).join(" · ");
+        const sets = (w.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
+        const vol  = (w.exercises || []).reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
+        return [sets ? `${sets} подх` : null, vol ? `${vol} кг` : null].filter(Boolean).join(" · ");
       })();
   const duration = w.durationSec ? formatDuration(w.durationSec) : "";
 
@@ -1746,8 +1672,124 @@ function refreshReorderButtons() {
   });
 }
 
+/* ============================================================
+   Режим перестановки упражнений «как ярлыки на iOS».
+   Долгое нажатие на блок → джиггл + крестик удаления + перетаскивание
+   вверх/вниз для смены порядка. Крестик → подтверждение → удаление.
+   ============================================================ */
+let _exEdit = false;       // активен ли режим редактирования списка
+let _exDrag = null;        // состояние текущего перетаскивания
+const EX_GAP = 12;         // margin-bottom между блоками (для расчёта смещения)
+
+function enterExEditMode() {
+  if (_exEdit) return;
+  _exEdit = true;
+  $("workout-scroll").classList.add("ex-editing");
+  if (!$("ex-edit-done")) {
+    const btn = document.createElement("button");
+    btn.id = "ex-edit-done";
+    btn.className = "ex-edit-done";
+    btn.textContent = "Готово";
+    btn.addEventListener("click", exitExEditMode);
+    document.getElementById("screen-workout").appendChild(btn);
+  }
+}
+function exitExEditMode() {
+  _exDrag = null;
+  if (!_exEdit) return;
+  _exEdit = false;
+  $("workout-scroll").classList.remove("ex-editing");
+  const btn = $("ex-edit-done");
+  if (btn) btn.remove();
+}
+
+// Навешивает на блок обработчики долгого нажатия и перетаскивания.
+function wireExBlockGestures(block, ex) {
+  const LONG_PRESS_MS = 450;
+  let lpTimer = null, sx = 0, sy = 0;
+  const clearLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+
+  block.addEventListener("pointerdown", (e) => {
+    if (!_exEdit) {
+      // вне режима — не мешаем вводу и кнопкам; ждём долгое нажатие
+      if (e.target.closest("input, textarea, button")) return;
+      sx = e.clientX; sy = e.clientY;
+      clearLP();
+      lpTimer = setTimeout(() => { lpTimer = null; enterExEditMode(); haptic(30); }, LONG_PRESS_MS);
+    } else {
+      // в режиме — старт перетаскивания (кроме клика по крестику)
+      if (e.target.closest(".ex-del-badge")) return;
+      try { block.setPointerCapture(e.pointerId); } catch {}
+      _exDrag = { block, ex, startY: e.clientY };
+      block.classList.add("dragging");
+      haptic(15);
+    }
+  });
+
+  block.addEventListener("pointermove", (e) => {
+    if (lpTimer) {
+      if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) clearLP();
+      return;
+    }
+    if (_exDrag && _exDrag.block === block) {
+      try { e.preventDefault(); } catch {}
+      block.style.transform = `translateY(${e.clientY - _exDrag.startY}px) scale(1.03)`;
+      maybeReorder(block, ex, e.clientY);
+    }
+  });
+
+  const endDrag = () => {
+    clearLP();
+    if (_exDrag && _exDrag.block === block) {
+      block.classList.remove("dragging");
+      block.style.transition = "transform 0.18s ease";
+      block.style.transform = "";
+      setTimeout(() => { block.style.transition = ""; }, 200);
+      _exDrag = null;
+      saveWorkoutState();
+    }
+  };
+  block.addEventListener("pointerup", endDrag);
+  block.addEventListener("pointercancel", endDrag);
+}
+
+// Меняет блок местами с соседом, когда палец перешёл его середину.
+// startY подправляем на высоту соседа, чтобы блок оставался под пальцем.
+function maybeReorder(block, ex, pointerY) {
+  const arr = _workout.exercises;
+  const prev = block.previousElementSibling;
+  if (prev && prev.classList.contains("ex-block")) {
+    const r = prev.getBoundingClientRect();
+    if (pointerY < r.top + r.height / 2) {
+      const i = arr.indexOf(ex);
+      if (i > 0) {
+        [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]];
+        block.parentNode.insertBefore(block, prev);
+        _exDrag.startY -= r.height + EX_GAP;
+        block.style.transform = `translateY(${pointerY - _exDrag.startY}px) scale(1.03)`;
+        return;
+      }
+    }
+  }
+  const next = block.nextElementSibling;
+  if (next && next.classList.contains("ex-block")) {
+    const r = next.getBoundingClientRect();
+    if (pointerY > r.top + r.height / 2) {
+      const i = arr.indexOf(ex);
+      if (i < arr.length - 1) {
+        [arr[i + 1], arr[i]] = [arr[i], arr[i + 1]];
+        block.parentNode.insertBefore(next, block);
+        _exDrag.startY += r.height + EX_GAP;
+        block.style.transform = `translateY(${pointerY - _exDrag.startY}px) scale(1.03)`;
+        return;
+      }
+    }
+  }
+}
+
 function renderExerciseList() {
   const scroll = $("workout-scroll");
+  exitExEditMode();          // любой перерендер сбрасывает режим редактирования
   const addBtn = scroll.querySelector(".add-ex-btn");
   // Удаляем старые блоки
   scroll.querySelectorAll(".ex-block").forEach(el => el.remove());
@@ -1768,13 +1810,13 @@ function renderExerciseList() {
     const lastExData  = lastWorkout ? lastWorkout.exercises.find(e => e.exerciseId === ex.exerciseId) : null;
     const lastSets    = lastExData  ? lastExData.sets.filter(s => s.done && (s.weight || s.reps)) : [];
 
-    // PR строка — только рекорд веса (рекорд повторов убран, п.11)
-    let prHtml = "";
+    // Рекорд веса — компактный бейдж в шапке (как в макете 03).
+    let prChip = "";
     if (rec && rec.maxWeight > 0) {
-      const b1 = `${rec.maxWeight} кг × ${rec.repsAtMaxWeight}`;
-      prHtml = `<div class="ex-block-pr">
-        <span class="ex-block-pr-badge">${b1}</span>
-      </div>`;
+      prChip = `<span class="ex-pr-chip" title="Рекорд: ${rec.maxWeight} кг × ${rec.repsAtMaxWeight}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 17l-6.3 4.4L8 14 2 9.4h7.6z"/></svg>
+        ${rec.maxWeight} кг
+      </span>`;
     }
 
     // Прошлая тренировка
@@ -1790,25 +1832,15 @@ function renderExerciseList() {
     const block = document.createElement("div");
     block.className = "ex-block";
 
-    const canUp   = idx > 0;
-    const canDown = idx < _workout.exercises.length - 1;
-
     block.innerHTML = `
+      <button class="ex-del-badge" title="Удалить упражнение" aria-label="Удалить упражнение">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
       <div class="ex-block-header">
         <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
-        <div class="ex-reorder">
-          <button class="ex-reorder-btn" data-dir="up" ${canUp ? "" : "disabled"} title="Переместить вверх">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
-          </button>
-          <button class="ex-reorder-btn" data-dir="down" ${canDown ? "" : "disabled"} title="Переместить вниз">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-          </button>
-        </div>
-        <button class="ex-remove-btn" title="Удалить упражнение">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+        ${prChip}
       </div>
-      ${prHtml}
+      <div class="ex-divider"></div>
       ${prevHtml}
       <div class="sets-table">
         <div class="sets-header"><span>#</span><span>Вес</span><span>Повт</span><span>RPE</span><span></span></div>
@@ -1829,34 +1861,26 @@ function renderExerciseList() {
     // Render sets
     renderSetsInBlock(block, ex, lastWorkout);
 
-    // Reorder — переставляем один узел на месте, без полного ре-рендера.
-    // Индекс берём живым (indexOf по ссылке на ex), т.к. захваченный idx
-    // устаревает после первой же перестановки.
-    block.querySelectorAll(".ex-reorder-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const arr = _workout.exercises;
-        const i = arr.indexOf(ex);
-        const dir = btn.dataset.dir === "up" ? -1 : 1;
-        const j = i + dir;
-        if (i < 0 || j < 0 || j >= arr.length) return;
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-        if (dir === -1) block.parentNode.insertBefore(block, block.previousElementSibling);
-        else            block.parentNode.insertBefore(block.nextElementSibling, block);
-        saveWorkoutState();
-        refreshReorderButtons();
-        updateSummaryBar();
+    // Удаление (крестик в режиме редактирования) — с подтверждением.
+    block.querySelector(".ex-del-badge").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openConfirmModal({
+        title: "Удалить упражнение?",
+        message: `«${exDef.name}» и все его подходы будут удалены из тренировки.`,
+        confirmLabel: "Удалить",
+        onConfirm: () => {
+          const i = _workout.exercises.indexOf(ex);
+          if (i !== -1) _workout.exercises.splice(i, 1);
+          block.remove();
+          saveWorkoutState();
+          updateSummaryBar();
+          if (!_workout.exercises.length) exitExEditMode();
+        }
       });
     });
 
-    // Remove — удаляем один узел, без перетряхивания всего списка.
-    block.querySelector(".ex-remove-btn").addEventListener("click", () => {
-      const i = _workout.exercises.indexOf(ex);
-      if (i !== -1) _workout.exercises.splice(i, 1);
-      block.remove();
-      saveWorkoutState();
-      refreshReorderButtons();
-      updateSummaryBar();
-    });
+    // Зажатие (long-press) → режим перестановки; в нём блок тащится вверх/вниз.
+    wireExBlockGestures(block, ex);
 
     // Add set
     block.querySelector(".add-set-btn").addEventListener("click", () => {
@@ -1960,9 +1984,7 @@ function updateSummaryBar() {
 }
 
 /* — Добавить упражнение — */
-[$("add-ex-btn"), $("add-ex-header-btn")].forEach(btn => {
-  btn.addEventListener("click", () => openExercisePicker(addExerciseToWorkout));
-});
+$("add-ex-btn").addEventListener("click", () => openExercisePicker(addExerciseToWorkout));
 
 let _pickerOnSelect = addExerciseToWorkout;
 
@@ -2819,13 +2841,15 @@ function initStatsScreen() {
     });
   }
 
-  // Прогресс за период — отдельной ячейкой под графиком
+  // Прогресс за период
   const gpInPeriod = graphPoints.filter(p=>p.ts>=ps);
-  let progTxt = "—", progValCls = "";
-  if (gpInPeriod.length>=2 && gpInPeriod[0].maxWeight>0) {
+  let progressBadge = "";
+  if (gpInPeriod.length>=2) {
     const pct = Math.round((gpInPeriod[gpInPeriod.length-1].maxWeight - gpInPeriod[0].maxWeight)/gpInPeriod[0].maxWeight*100);
-    progTxt = pct>0?`+${pct}%`:`${pct}%`;
-    progValCls = pct>0?" up":pct<0?" down":"";
+    const cls = pct>0?"s-prog-up":pct<0?"s-prog-down":"s-prog-flat";
+    const txt = pct>0?`+${pct}%`:pct<0?`${pct}%`:"без изменений";
+    const arrow = pct > 0 ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M7 17L17 7M17 7H9M17 7v8"/></svg>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M7 7L17 17M17 17H9M17 17v-8"/></svg>`;
+    progressBadge = `<div class="s-prog-badge ${cls}">${arrow}${txt}</div>`;
   }
 
   // Время по типам (для карточек)
@@ -2839,7 +2863,7 @@ function initStatsScreen() {
 
   scroll.innerHTML = `
     <div class="s-period-seg">
-      ${[["week","Неделя"],["month","Месяц"],["3month","3 месяца"],["year","Год"],["all","Всё"]].map(([p,l]) =>
+      ${[["week","Неделя"],["month","Месяц"],["3month","3 мес"],["year","Год"],["all","Всё"]].map(([p,l]) =>
         `<button class="s-period-btn${_statsPeriod===p?" active":""}" data-p="${p}">${l}</button>`
       ).join("")}
     </div>
@@ -2887,10 +2911,13 @@ function initStatsScreen() {
     ${_statsSelectedExId ? `
     <div class="s-ex-card">
       <div class="s-ex-header">
-        <div class="s-ex-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(selEx?.name||_statsSelectedExId)}</div>
-        <button class="s-ex-pick-btn" id="stats-ex-pick-btn" title="Изменить упражнение">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
+        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:7px;">
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(selEx?.name||_statsSelectedExId)}</div>
+          <button class="s-ex-pick-btn" id="stats-ex-pick-btn" title="Изменить упражнение">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        </div>
+        <div style="flex:none;">${progressBadge}</div>
       </div>
       <div class="s-ex-body">
         <div class="s-chart-frame" id="s-graph-wrap">${renderStatsGraph(gpInPeriod, _statsGraphMode)}</div>
@@ -2902,10 +2929,6 @@ function initStatsScreen() {
           <div class="s-ex-rec">
             <div class="s-ex-rec-val">${oneRM ? `${oneRM} кг` : "—"}</div>
             <div class="s-ex-rec-label">1ПМ расчёт</div>
-          </div>
-          <div class="s-ex-rec">
-            <div class="s-ex-rec-val${progValCls}">${progTxt}</div>
-            <div class="s-ex-rec-label">прогресс</div>
           </div>
         </div>
       </div>
@@ -2957,43 +2980,7 @@ function openStatsExPicker(exWithHist, allEx, userId) {
   backdrop.appendChild(sheet);
   document.body.appendChild(backdrop);
   requestAnimationFrame(() => backdrop.classList.add("open"));
-
-  const closeSheet = () => { backdrop.classList.remove("open"); setTimeout(()=>backdrop.remove(),250); };
-  backdrop.addEventListener("click", e => { if(e.target===backdrop) closeSheet(); });
-
-  // Свайп вниз по шторке — закрыть (drag-to-dismiss)
-  let sy = 0, sdy = 0, sdragging = false;
-  sheet.addEventListener("touchstart", e => {
-    if (e.touches.length !== 1) return;
-    sy = e.touches[0].clientY; sdy = 0; sdragging = true;
-    sheet.style.transition = "none";
-  }, { passive: true });
-  sheet.addEventListener("touchmove", e => {
-    if (!sdragging) return;
-    const dy = e.touches[0].clientY - sy;
-    // тянем шторку только вниз и только когда список прокручен к началу
-    if (dy > 0 && list.scrollTop <= 0) {
-      sdy = dy;
-      sheet.style.transform = `translateY(${dy}px)`;
-    } else {
-      sdy = 0;
-      sheet.style.transform = "";
-    }
-  }, { passive: true });
-  const sheetEnd = () => {
-    if (!sdragging) return;
-    sdragging = false;
-    if (sdy > 80) {
-      sheet.style.transition = "transform 0.22s ease";
-      sheet.style.transform = `translateY(${sheet.offsetHeight}px)`;
-      closeSheet();
-    } else {
-      sheet.style.transition = "";
-      sheet.style.transform = "";
-    }
-  };
-  sheet.addEventListener("touchend", sheetEnd);
-  sheet.addEventListener("touchcancel", sheetEnd);
+  backdrop.addEventListener("click", e => { if(e.target===backdrop) { backdrop.classList.remove("open"); setTimeout(()=>backdrop.remove(),250); }});
 }
 
 $("stats-back-btn").addEventListener("click", () => goToScreen("menu"));
