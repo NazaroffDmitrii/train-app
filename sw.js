@@ -1,11 +1,11 @@
 /*
  * train. — Service Worker
  *
- * Кэширует каркас приложения (раздел 8 спецификации): сейчас это один файл
- * index.html (HTML/CSS/JS вместе) + manifest.json + иконки. Цель — чтобы
+ * Кэширует каркас приложения (раздел 8 спецификации): index.html (HTML+CSS) +
+ * вынесенные скрипты (config/storage/sync/app.js) + иконки. Цель — чтобы
  * приложение открывалось и работало вообще без сети, а не только данные
  * тренировок (данные уже офлайн-устойчивы сами по себе — см. модуль DATA
- * в index.html, пишет в localStorage синхронно при каждом действии).
+ * в app.js, пишет в localStorage синхронно при каждом действии).
  *
  * Стратегия: stale-while-revalidate.
  *   - Если каркас уже в кэше — отдаём его мгновенно, без ожидания сети.
@@ -17,16 +17,19 @@
  * каркаса, чтобы activate-обработчик подчистил старые записи.
  */
 
-const CACHE_VERSION = "train-shell-v26";
+const CACHE_VERSION = "train-shell-v27";
 
 // Эти пути — относительно расположения sw.js (корень GitHub Pages).
+// manifest.json намеренно НЕ кэшируем: он не подключён в index.html (см.
+// комментарий в <head> про чёрную полосу на iOS) — кэшировать неиспользуемый
+// файл нет смысла.
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./manifest.json",
   "./config.js",
   "./storage.js",
   "./sync.js",
+  "./app.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-512-maskable.png",
