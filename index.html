@@ -1090,9 +1090,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .s-ex-name { font-size:15px; font-weight:700; color:var(--text-primary); }
 .s-ex-pick-btn { display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:600; color:var(--text-tertiary); background:var(--panel-raised); border:1px solid var(--border-subtle); border-radius:9px; padding:5px 9px; }
 .s-ex-body { padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
-.s-ex-recs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-.s-ex-rec { background:var(--panel-raised); border:1px solid var(--border-subtle); border-radius:10px; padding:9px 11px; }
+.s-ex-recs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.s-ex-rec { background:var(--panel-raised); border:1px solid var(--border-subtle); border-radius:10px; padding:9px 8px; }
 .s-ex-rec-val { font-size:14px; font-weight:700; color:var(--text-primary); line-height:1; }
+.s-ex-rec-val.up { color:var(--green); }
+.s-ex-rec-val.down { color:var(--red); }
 .s-ex-rec-label { font-size:10px; font-weight:600; color:var(--text-tertiary); margin-top:4px; text-transform:uppercase; letter-spacing:0.06em; }
 .s-graph-toggle { display:flex; background:var(--panel-raised); border:1px solid var(--border-subtle); border-radius:10px; padding:3px; gap:3px; }
 .s-graph-btn { flex:1; text-align:center; padding:6px; border-radius:8px; font-size:12px; font-weight:600; color:var(--text-tertiary); transition:background 0.15s,color 0.15s; }
@@ -1112,10 +1114,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .s-sub-stats { display: flex; justify-content: space-around; gap: 4px; }
 .s-sub-val { font-size: 14px; font-weight: 700; color: var(--text-primary); line-height: 1; }
 .s-sub-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); margin-top: 3px; }
-/* Period seg — прокручивается при 5 вкладках */
-.s-period-seg { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex-wrap: nowrap; }
-.s-period-seg::-webkit-scrollbar { display: none; }
-.s-period-btn { white-space: nowrap; flex: none; }
+/* Period seg — 5 вкладок равномерно по всей ширине */
+.s-period-seg { flex-wrap: nowrap; }
+.s-period-btn { white-space: nowrap; flex: 1 1 0; min-width: 0; padding: 8px 4px; font-size: 12px; letter-spacing: -0.01em; }
 /* Кнопка редактирования упражнения — иконка-карандаш */
 .s-ex-pick-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--panel-raised); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 5px 6px; color: var(--text-tertiary); flex: none; transition: background 0.15s; }
 .s-ex-pick-btn:active { background: var(--panel-hi); }

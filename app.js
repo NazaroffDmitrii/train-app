@@ -846,6 +846,57 @@ function goToScreen(name, opts = {}) {
   if (name === "templates") { initTemplatesScreen(); }
 }
 
+/* Свайп вправо от левого края экрана — возврат назад (как нативный жест на телефоне).
+   Триггерит ту же логику, что и кнопка «Назад», чтобы не обходить её обработчики. */
+function enableSwipeBack(screen, onBack) {
+  let startX = 0, startY = 0, dx = 0, dy = 0, tracking = false, mode = "";
+  screen.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1) { tracking = false; return; }
+    const t = e.touches[0];
+    if (t.clientX > 40) { tracking = false; return; } // только от левого края
+    startX = t.clientX; startY = t.clientY; dx = 0; dy = 0; tracking = true; mode = "";
+  }, { passive: true });
+  screen.addEventListener("touchmove", e => {
+    if (!tracking) return;
+    const t = e.touches[0];
+    dx = t.clientX - startX; dy = t.clientY - startY;
+    if (!mode) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      mode = (dx > Math.abs(dy)) ? "back" : "ignore";
+      if (mode === "back") screen.style.transition = "none";
+      else { tracking = false; return; }
+    }
+    const off = Math.max(0, dx);
+    screen.style.transform = `translateX(${off}px)`;
+    screen.style.opacity = String(Math.max(0.4, 1 - off / window.innerWidth));
+  }, { passive: true });
+  const finish = () => {
+    if (!tracking) return;
+    tracking = false;
+    if (mode !== "back") return;
+    screen.style.transition = "";
+    screen.style.transform = "";
+    screen.style.opacity = "";
+    if (dx > 90 || dx > window.innerWidth * 0.28) onBack();
+  };
+  screen.addEventListener("touchend", finish);
+  screen.addEventListener("touchcancel", finish);
+}
+
+// Подключаем свайп-назад ко всем экранам-«подстраницам» (вызываем клик их кнопки «Назад»).
+[
+  ["screen-stats", "stats-back-btn"],
+  ["screen-exercises", "exercises-back-btn"],
+  ["screen-history", "history-back-btn"],
+  ["screen-stat-chart", "stat-chart-back-btn"],
+  ["screen-templates", "templates-back-btn"],
+  ["screen-template-detail", "template-detail-back-btn"],
+  ["screen-detail", "detail-back-btn"],
+].forEach(([scrId, btnId]) => {
+  const scr = $(scrId), btn = $(btnId);
+  if (scr && btn) enableSwipeBack(scr, () => btn.click());
+});
+
 /* ==========================================================================
    Screen 1: profile
    ========================================================================== */
@@ -2745,15 +2796,13 @@ function initStatsScreen() {
     });
   }
 
-  // Прогресс за период
+  // Прогресс за период — отдельной ячейкой под графиком
   const gpInPeriod = graphPoints.filter(p=>p.ts>=ps);
-  let progressBadge = "";
-  if (gpInPeriod.length>=2) {
+  let progTxt = "—", progValCls = "";
+  if (gpInPeriod.length>=2 && gpInPeriod[0].maxWeight>0) {
     const pct = Math.round((gpInPeriod[gpInPeriod.length-1].maxWeight - gpInPeriod[0].maxWeight)/gpInPeriod[0].maxWeight*100);
-    const cls = pct>0?"s-prog-up":pct<0?"s-prog-down":"s-prog-flat";
-    const txt = pct>0?`+${pct}%`:pct<0?`${pct}%`:"без изменений";
-    const arrow = pct > 0 ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M7 17L17 7M17 7H9M17 7v8"/></svg>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M7 7L17 17M17 17H9M17 17v-8"/></svg>`;
-    progressBadge = `<div class="s-prog-badge ${cls}">${arrow}${txt}</div>`;
+    progTxt = pct>0?`+${pct}%`:`${pct}%`;
+    progValCls = pct>0?" up":pct<0?" down":"";
   }
 
   // Время по типам (для карточек)
@@ -2767,7 +2816,7 @@ function initStatsScreen() {
 
   scroll.innerHTML = `
     <div class="s-period-seg">
-      ${[["week","Неделя"],["month","Месяц"],["3month","3 мес"],["year","Год"],["all","Всё"]].map(([p,l]) =>
+      ${[["week","Неделя"],["month","Месяц"],["3month","3 месяца"],["year","Год"],["all","Всё"]].map(([p,l]) =>
         `<button class="s-period-btn${_statsPeriod===p?" active":""}" data-p="${p}">${l}</button>`
       ).join("")}
     </div>
@@ -2815,13 +2864,10 @@ function initStatsScreen() {
     ${_statsSelectedExId ? `
     <div class="s-ex-card">
       <div class="s-ex-header">
-        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:7px;">
-          <div style="font-size:15px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(selEx?.name||_statsSelectedExId)}</div>
-          <button class="s-ex-pick-btn" id="stats-ex-pick-btn" title="Изменить упражнение">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </button>
-        </div>
-        <div style="flex:none;">${progressBadge}</div>
+        <div class="s-ex-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(selEx?.name||_statsSelectedExId)}</div>
+        <button class="s-ex-pick-btn" id="stats-ex-pick-btn" title="Изменить упражнение">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
       </div>
       <div class="s-ex-body">
         <div class="s-chart-frame" id="s-graph-wrap">${renderStatsGraph(gpInPeriod, _statsGraphMode)}</div>
@@ -2833,6 +2879,10 @@ function initStatsScreen() {
           <div class="s-ex-rec">
             <div class="s-ex-rec-val">${oneRM ? `${oneRM} кг` : "—"}</div>
             <div class="s-ex-rec-label">1ПМ расчёт</div>
+          </div>
+          <div class="s-ex-rec">
+            <div class="s-ex-rec-val${progValCls}">${progTxt}</div>
+            <div class="s-ex-rec-label">прогресс</div>
           </div>
         </div>
       </div>
@@ -2884,7 +2934,43 @@ function openStatsExPicker(exWithHist, allEx, userId) {
   backdrop.appendChild(sheet);
   document.body.appendChild(backdrop);
   requestAnimationFrame(() => backdrop.classList.add("open"));
-  backdrop.addEventListener("click", e => { if(e.target===backdrop) { backdrop.classList.remove("open"); setTimeout(()=>backdrop.remove(),250); }});
+
+  const closeSheet = () => { backdrop.classList.remove("open"); setTimeout(()=>backdrop.remove(),250); };
+  backdrop.addEventListener("click", e => { if(e.target===backdrop) closeSheet(); });
+
+  // Свайп вниз по шторке — закрыть (drag-to-dismiss)
+  let sy = 0, sdy = 0, sdragging = false;
+  sheet.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1) return;
+    sy = e.touches[0].clientY; sdy = 0; sdragging = true;
+    sheet.style.transition = "none";
+  }, { passive: true });
+  sheet.addEventListener("touchmove", e => {
+    if (!sdragging) return;
+    const dy = e.touches[0].clientY - sy;
+    // тянем шторку только вниз и только когда список прокручен к началу
+    if (dy > 0 && list.scrollTop <= 0) {
+      sdy = dy;
+      sheet.style.transform = `translateY(${dy}px)`;
+    } else {
+      sdy = 0;
+      sheet.style.transform = "";
+    }
+  }, { passive: true });
+  const sheetEnd = () => {
+    if (!sdragging) return;
+    sdragging = false;
+    if (sdy > 80) {
+      sheet.style.transition = "transform 0.22s ease";
+      sheet.style.transform = `translateY(${sheet.offsetHeight}px)`;
+      closeSheet();
+    } else {
+      sheet.style.transition = "";
+      sheet.style.transform = "";
+    }
+  };
+  sheet.addEventListener("touchend", sheetEnd);
+  sheet.addEventListener("touchcancel", sheetEnd);
 }
 
 $("stats-back-btn").addEventListener("click", () => goToScreen("menu"));
