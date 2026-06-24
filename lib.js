@@ -43,6 +43,15 @@ function secToPaceStr(totalSec) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// Оценка одноповторного максимума (1ПМ) по формуле Эпли: w·(1 + повторы/30).
+// При 1 повторе это и есть сам вес (формула Эпли его слегка завышает, поэтому
+// 1 повтор обрабатываем отдельно). Возвращает целое число килограммов.
+function estimate1RM(weight, reps) {
+  if (!weight || !reps || reps < 1) return 0;
+  if (reps === 1) return Math.round(weight);
+  return Math.round(weight * (1 + reps / 30));
+}
+
 // Начало дня (локальная полночь) для метки ts.
 function statsStartOfDay(ts) {
   const d = new Date(ts); d.setHours(0,0,0,0); return d.getTime();

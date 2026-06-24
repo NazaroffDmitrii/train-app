@@ -343,6 +343,31 @@ const DATA = (() => {
     getExerciseRecord(userId, exerciseId) {
       return (ls(`train_records_${userId}`, {}))[exerciseId] || null;
     },
+    // Полный пересчёт рекордов из истории — после удаления/правки тренировки,
+    // иначе рекорд от удалённой тренировки висел бы вечно (updateRecords только
+    // повышает максимумы). Вызывать ТОЛЬКО когда локальная история полная
+    // (Sync.missingWorkoutCount === 0): иначе можно занизить настоящий рекорд из
+    // ещё не подтянутой старой тренировки. Гейт — на стороне вызова.
+    recomputeRecords(userId) {
+      const recs = {};
+      this.getWorkoutHistory(userId).forEach(w => {
+        if (w.type !== "strength") return;
+        (w.exercises || []).forEach(ex => {
+          ex.sets.filter(s => s.done && s.weight > 0 && s.reps > 0).forEach(s => {
+            if (!recs[ex.exerciseId]) recs[ex.exerciseId] = { maxWeight: 0, repsAtMaxWeight: 0, maxReps: 0, weightAtMaxReps: 0 };
+            const r = recs[ex.exerciseId];
+            if (s.weight > r.maxWeight || (s.weight === r.maxWeight && s.reps > r.repsAtMaxWeight)) { r.maxWeight = s.weight; r.repsAtMaxWeight = s.reps; }
+            if (s.reps > r.maxReps || (s.reps === r.maxReps && s.weight > r.weightAtMaxReps)) { r.maxReps = s.reps; r.weightAtMaxReps = s.weight; }
+          });
+        });
+      });
+      this.saveRecords(userId, recs);
+      return recs;
+    },
+
+    // Дефолт таймера отдыха — девайс-настройка, запоминается между тренировками.
+    getRestDefault() { const v = ls("train_rest_default", 90); return (typeof v === "number" && v > 0) ? v : 90; },
+    setRestDefault(sec) { lsSet("train_rest_default", sec); },
 
     // Последняя тренировка, в которой встречалось данное упражнение
     getLastWorkoutForExercise(userId, exerciseId) {
@@ -1383,10 +1408,45 @@ function startWorkoutTimer() {
    90 c (можно крутить ±15), а фактически отдохнутое суммируется в
    _workout.restSec — общее время отдыха за тренировку (видно при завершении и
    в детальном просмотре). */
-const REST_DEFAULT_SEC = 90;
 let _restInt = null;
 let _restStartTs = 0;
-let _restDurationSec = REST_DEFAULT_SEC;
+let _restDurationSec = 90;     // подхватывается из DATA.getRestDefault() при старте
+let _restNotifAsked = false;
+
+// Сигнал окончания отдыха. На iOS Vibration API нет (navigator.vibrate
+// отсутствует) — поэтому основной сигнал это звук (Web Audio). AudioContext
+// создаём/возобновляем в обработчике тапа (жест пользователя), иначе iOS не
+// даст воспроизвести звук.
+let _audioCtx = null;
+function ensureAudio() {
+  try {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === "suspended") _audioCtx.resume();
+  } catch {}
+}
+function playRestDoneSound() {
+  if (!_audioCtx) return;
+  try {
+    const now = _audioCtx.currentTime;
+    [880, 1175].forEach((freq, i) => {           // две короткие ноты
+      const osc = _audioCtx.createOscillator();
+      const gain = _audioCtx.createGain();
+      osc.type = "sine"; osc.frequency.value = freq;
+      const t = now + i * 0.18;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      osc.connect(gain); gain.connect(_audioCtx.destination);
+      osc.start(t); osc.stop(t + 0.18);
+    });
+  } catch {}
+}
+function notifyRestDone() {
+  // Если приложение свёрнуто и есть разрешение — системное уведомление.
+  if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+    try { new Notification("train.", { body: "Отдых окончен 💪", tag: "rest-done" }); } catch {}
+  }
+}
 
 function restRemaining() {
   return Math.max(0, _restDurationSec - Math.floor((Date.now() - _restStartTs) / 1000));
@@ -1406,20 +1466,33 @@ function endRest(commit) {
 }
 function startRest() {
   endRest(true);                  // если отдых уже шёл — зачесть его и начать заново
-  _restDurationSec = REST_DEFAULT_SEC;
+  ensureAudio();                  // в контексте тапа — чтобы звук потом сработал
+  // Один раз (в жесте) спросим разрешение на уведомления — для сигнала, когда
+  // приложение свёрнуто.
+  if (!_restNotifAsked && "Notification" in window && Notification.permission === "default") {
+    _restNotifAsked = true;
+    try { Notification.requestPermission(); } catch {}
+  }
+  _restDurationSec = DATA.getRestDefault();   // запомненный пользователем дефолт
   _restStartTs = Date.now();
   $("rest-timer").hidden = false;
   renderRest();
   _restInt = setInterval(() => {
-    if (restRemaining() <= 0) { haptic(40); endRest(true); return; }
+    if (restRemaining() <= 0) { haptic(40); playRestDoneSound(); notifyRestDone(); endRest(true); return; }
     renderRest();
   }, 250);
 }
+// ± меняют и текущий отдых, и запомненный дефолт (на следующие тренировки).
 $("rest-minus").addEventListener("click", () => {
-  _restDurationSec = Math.max(0, _restDurationSec - 15);
+  _restDurationSec = Math.max(15, _restDurationSec - 15);
+  DATA.setRestDefault(_restDurationSec);
   if (restRemaining() <= 0) endRest(true); else renderRest();
 });
-$("rest-plus").addEventListener("click", () => { _restDurationSec += 15; renderRest(); });
+$("rest-plus").addEventListener("click", () => {
+  _restDurationSec += 15;
+  DATA.setRestDefault(_restDurationSec);
+  renderRest();
+});
 $("rest-skip").addEventListener("click", () => endRest(true));
 
 // Фоновая синхронизация (sync.js) пишет в ту же персистентную активную
@@ -2346,12 +2419,21 @@ function openDetailScreen(workout, returnScreen = "menu") {
 
   $("detail-delete-btn").onclick = () => {
     const userId = DATA.getCurrentUser();
-    // Снимок истории и индекса для отката.
+    // Снимки для отката.
     const histSnap = [...DATA.getWorkoutHistory(userId)];
     const idxSnap  = [...DATA.getWorkoutIndex(userId)];
+    const recSnap  = JSON.parse(JSON.stringify(DATA.getRecords(userId)));
     const binId = workout._remoteBinId; // удалим и сам бин на JSONBin (если не отменят)
     DATA.deleteWorkout(userId, workout.id);
+
+    // Пересчитать рекорды: рекорд удалённой тренировки не должен остаться.
+    // Только если локальная история полная — иначе можно занизить настоящий
+    // рекорд из ещё не подтянутой старой тренировки.
+    const recsRecomputed = Sync.missingWorkoutCount(userId) === 0;
+    if (recsRecomputed) DATA.recomputeRecords(userId);
+
     SyncQueue.push("workout:delete", {});
+    if (recsRecomputed) SyncQueue.push("user:update", {}); // рекорды в пользовательском бине
     renderHistory(userId);
     goToScreen("menu");
 
@@ -2367,6 +2449,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
       clearTimeout(purgeTimer);
       DATA.saveWorkoutHistory(userId, histSnap);
       DATA.saveWorkoutIndex(userId, idxSnap);
+      if (recsRecomputed) { DATA.saveRecords(userId, recSnap); SyncQueue.push("user:update", {}); }
       SyncQueue.push("workout:delete", {}); // повторно зальёт восстановленный индекс
       renderHistory(userId);
       showToast("Восстановлено");
@@ -2468,9 +2551,13 @@ function openDetailEditMode(workout) {
 }
 
 function saveEditedWorkout(workout, userId) {
-  DATA.updateRecords(userId, workout);
-  DATA.updateWorkout(userId, workout);
+  DATA.updateWorkout(userId, workout); // сначала записываем правку в историю
+  // Если история полная — пересчитываем рекорды (правка веса вниз тоже должна
+  // опускать рекорд). Иначе только повышаем (updateRecords), чтобы не занизить.
+  if (Sync.missingWorkoutCount(userId) === 0) DATA.recomputeRecords(userId);
+  else DATA.updateRecords(userId, workout);
   SyncQueue.push("workout:edit", { workoutId: workout.id });
+  SyncQueue.push("user:update", {}); // рекорды могли измениться
   renderHistory(userId);
   openDetailScreen(workout, _detailReturnScreen);
   showToast("Тренировка сохранена");
@@ -2837,9 +2924,11 @@ function openStatChartScreen(exerciseId) {
   $("stat-chart-title").textContent = ex.name;
   $("stat-chart-meta").textContent  = `${points.length} ${pluralWorkouts(points.length)}`;
 
+  const oneRM = rec ? estimate1RM(rec.maxWeight, rec.repsAtMaxWeight) : 0;
   const recordsHtml = rec ? `
     <div class="detail-stats">
-      <div class="detail-stat" style="grid-column:1/-1"><div class="detail-stat-num">${rec.maxWeight} кг</div><div class="detail-stat-label">Макс. вес, × ${rec.repsAtMaxWeight}</div></div>
+      <div class="detail-stat"><div class="detail-stat-num">${rec.maxWeight} кг</div><div class="detail-stat-label">Макс. вес, × ${rec.repsAtMaxWeight}</div></div>
+      ${oneRM ? `<div class="detail-stat"><div class="detail-stat-num">${oneRM} кг</div><div class="detail-stat-label">Оценка 1ПМ</div></div>` : ""}
     </div>` : "";
 
   const chartHtml = `
