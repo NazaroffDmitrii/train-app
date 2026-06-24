@@ -249,7 +249,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .menu-center {
   flex: 1; display: flex; align-items: center; justify-content: center;
   position: relative; z-index: 1;
-  padding-bottom: calc(96px + var(--safe-bottom));
+  /* Кнопка центрируется в свободном пространстве между навигацией и видимой
+     «шапкой» свёрнутой шторки. Высоту этой шапки (peek) знает только JS —
+     он измеряет её и кладёт в --sheet-peek (см. setupSheetDrag). До первого
+     замера используем приблизительный фолбэк. */
+  padding-bottom: var(--sheet-peek, calc(116px + var(--safe-bottom)));
 }
 
 /* ── Центральная кнопка (покой + активная тренировка) ── */
@@ -315,18 +319,27 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 /* ============ Bottom sheet (history) ============ */
 .sheet {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
-  height: 78dvh;
+  /* Высота подстраивается под содержимое (шапка + превью истории), а не
+     зашита в 78dvh — раскрытая шторка садится ровно по контенту, как на
+     макете, без пустого «хвоста» внизу. Сверху ограничена, чтобы на низких
+     экранах превратиться в прокручиваемую. */
+  height: auto;
+  max-height: 86dvh;
   background: var(--panel);
   border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg);
   border-top: 1px solid var(--border-subtle);
   box-shadow: 0 -8px 30px rgba(0,0,0,0.35);
   /* Стартовый «пик» до того, как JS пересчитает точную позицию по высоте
      карточки. JS сразу перекрывает это inline-трансформом (см. setupSheetDrag). */
-  transform: translateY(calc(100% - 96px - var(--safe-bottom)));
+  transform: translateY(calc(100% - 116px - var(--safe-bottom)));
   transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   display: flex; flex-direction: column;
 }
 .sheet.dragging { transition: none; }
+/* no-anim — мгновенная установка позиции без анимации: используется при
+   первичном позиционировании и при программном пересчёте (reposition),
+   чтобы шторка не «выезжала» на старте экрана (см. п.6). */
+.sheet.no-anim { transition: none; }
 .sheet.expanded { transform: translateY(0); }
 
 .sheet-drag-area {
@@ -345,7 +358,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 
 .sheet-body {
-  flex: 1; overflow-y: auto;
+  flex: 1; min-height: 0; overflow-y: auto;
   padding: 4px 20px calc(24px + var(--safe-bottom));
   -webkit-overflow-scrolling: touch;
 }
@@ -977,6 +990,18 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .ex-row-action-btn.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
 .ex-row-action-btn.active-state { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
 
+/* Кнопки действий у упражнений видны только в режиме редактирования
+   (тумблер «карандаш» в шапке) — обычный список остаётся чистым (п.9). */
+.exercises-scroll:not(.editing) .ex-row-actions { display: none; }
+.exercises-edit-btn {
+  flex: none; width: 38px; height: 38px; border-radius: 12px;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  color: var(--text-secondary); display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.exercises-edit-btn svg { width: 18px; height: 18px; }
+.exercises-edit-btn.active { background: var(--accent); border-color: transparent; color: #fff; }
+
 /* Edit/create exercise modal */
 .ex-form-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
 .ex-form-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
@@ -1051,7 +1076,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .s-graph-toggle { display:flex; background:var(--panel-raised); border:1px solid var(--border-subtle); border-radius:10px; padding:3px; gap:3px; }
 .s-graph-btn { flex:1; text-align:center; padding:6px; border-radius:8px; font-size:12px; font-weight:600; color:var(--text-tertiary); transition:background 0.15s,color 0.15s; }
 .s-graph-btn.active { background:var(--panel-hi,var(--panel)); color:var(--text-primary); border:1px solid var(--border-subtle); }
-.s-graph-wrap { height:80px; position:relative; }
+.s-graph-wrap { height:150px; position:relative; }
 .s-prog-badge { display:inline-flex; align-items:center; font-size:12px; font-weight:700; border-radius:8px; padding:4px 9px; }
 .s-prog-up { background:rgba(52,211,153,0.12); border:1px solid rgba(52,211,153,0.2); color:var(--green); }
 .s-prog-down { background:rgba(248,113,113,0.12); border:1px solid rgba(248,113,113,0.2); color:var(--red,#f87171); }
@@ -1234,7 +1259,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       </button>
     </main>
 
-    <div class="sheet" id="history-sheet">
+    <div class="sheet no-anim" id="history-sheet">
       <div class="sheet-drag-area" id="sheet-drag-area">
         <div class="sheet-handle"></div>
         <div class="sheet-header">
@@ -1335,6 +1360,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
         Назад
       </button>
       <div class="exercises-header-title">Упражнения</div>
+      <button class="exercises-edit-btn" id="exercises-edit-btn" title="Редактировать список">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
       <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
@@ -1407,6 +1435,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
         Назад
       </button>
       <div class="exercises-header-title">Шаблоны</div>
+      <button class="exercises-add-btn" id="templates-add-btn" title="Новый шаблон">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
     </div>
     <div class="exercises-scroll" id="templates-scroll"></div>
   </section>
@@ -1687,45 +1718,53 @@ const DATA = (() => {
     getOwnExercises(userId) { return ls(`train_own_exercises_${userId}`, []); },
     saveOwnExercises(userId, list) { lsSet(`train_own_exercises_${userId}`, list); },
 
-    // Кастомные категории — личная, несинхронизируемая настройка (раздел 4:
-    // общий пул упражнений и так не редактируется через UI, чтобы не
-    // расходиться между Димой и Нателой при синке — см. README. По той же
-    // причине переименование/удаление категорий ниже работает только для
-    // кастомных категорий и только переносит cat у СОБСТВЕННЫХ упражнений
-    // пользователя — общий пул не трогаем).
-    getCustomCategories(userId) { return ls(`train_custom_categories_${userId}`, []); },
-    saveCustomCategories(userId, list) { lsSet(`train_custom_categories_${userId}`, list); },
+    // Категории упражнений — личный, полностью редактируемый пользователем
+    // список (п.5: цель — настроить приложение целиком под себя, включая
+    // встроенные категории). При первом обращении список инициализируется
+    // встроенным набором плюс ранее добавленные кастомные категории из старого
+    // формата, дальше живёт как обычный массив. Настройка локальная и не
+    // синхронизируется между профилями — у каждого своя база упражнений,
+    // поэтому расхождений между Димой и Нателой не возникает.
     getAllCategories(userId) {
-      const custom = this.getCustomCategories(userId);
-      return [...EXERCISE_CATEGORIES, ...custom.filter(c => !EXERCISE_CATEGORIES.includes(c))];
+      const key = `train_categories_${userId}`;
+      const stored = ls(key, null);
+      if (Array.isArray(stored)) return stored;
+      const legacyCustom = ls(`train_custom_categories_${userId}`, []);
+      const init = [...EXERCISE_CATEGORIES, ...legacyCustom.filter(c => !EXERCISE_CATEGORIES.includes(c))];
+      lsSet(key, init);
+      return init;
     },
+    saveAllCategories(userId, list) { lsSet(`train_categories_${userId}`, list); },
     addCategory(userId, name) {
       name = (name || "").trim();
       if (!name) return null;
-      const list = this.getCustomCategories(userId);
-      if (EXERCISE_CATEGORIES.includes(name) || list.includes(name)) return name;
-      list.push(name);
-      this.saveCustomCategories(userId, list);
+      const list = this.getAllCategories(userId);
+      if (!list.includes(name)) { list.push(name); this.saveAllCategories(userId, list); }
       return name;
     },
     renameCategory(userId, oldName, newName) {
       newName = (newName || "").trim();
-      if (!newName || EXERCISE_CATEGORIES.includes(oldName)) return false;
-      const list = this.getCustomCategories(userId);
+      if (!newName || newName === oldName) return false;
+      const list = this.getAllCategories(userId);
       const idx = list.indexOf(oldName);
       if (idx === -1) return false;
-      list[idx] = newName;
-      this.saveCustomCategories(userId, list);
+      // Если такое имя уже есть — сливаем (убираем дубликат), иначе переименовываем.
+      if (list.includes(newName)) list.splice(idx, 1);
+      else list[idx] = newName;
+      this.saveAllCategories(userId, list);
       const own = this.getOwnExercises(userId);
       own.forEach(e => { if (e.cat === oldName) e.cat = newName; });
       this.saveOwnExercises(userId, own);
       return true;
     },
     deleteCategory(userId, name) {
-      if (EXERCISE_CATEGORIES.includes(name)) return false;
-      this.saveCustomCategories(userId, this.getCustomCategories(userId).filter(c => c !== name));
+      const list = this.getAllCategories(userId).filter(c => c !== name);
+      this.saveAllCategories(userId, list);
+      // Упражнения из удалённой категории переносим в существующий фолбэк,
+      // чтобы они не выпали из фильтров.
+      const fallback = list.includes("Другое") ? "Другое" : (list[0] || "Другое");
       const own = this.getOwnExercises(userId);
-      own.forEach(e => { if (e.cat === name) e.cat = "Другое"; });
+      own.forEach(e => { if (e.cat === name) e.cat = fallback; });
       this.saveOwnExercises(userId, own);
       return true;
     },
@@ -2000,6 +2039,22 @@ const DATA = (() => {
       return tpl;
     },
 
+    // Создать пустой шаблон с нуля (п.7) — состав упражнений добавляется потом
+    // на экране редактирования шаблона.
+    createBlankTemplate(userId, name) {
+      const list = this.getTemplates(userId);
+      const tpl = {
+        id: `t_${Date.now()}`,
+        name: (name || "").trim() || "Новый шаблон",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        exercises: [],
+      };
+      list.unshift(tpl);
+      this.saveTemplates(userId, list);
+      return tpl;
+    },
+
     renameTemplate(userId, templateId, name) {
       const list = this.getTemplates(userId);
       const tpl = list.find(t => t.id === templateId);
@@ -2114,7 +2169,10 @@ const startBtn      = $("start-btn");
     if (document.hidden) { requestAnimationFrame(drawOrbit); return; }
     const W = canvas.width, H = canvas.height;
     const cx = W/2, cy = H/2;
-    const rx = W/2 - 8, ry = H/2 - 8;
+    // Точки идут по самому контуру кнопки (её рамка — на r≈W/2), а не по
+    // окружности глубоко внутри (п.3). Небольшой отступ 2.5px — чтобы точка
+    // целиком оставалась в пределах круглого канваса и не срезалась краем.
+    const rx = W/2 - 2.5, ry = H/2 - 2.5;
     ctx.clearRect(0, 0, W, H);
     orbitAngle += 0.004;
     const isActive = startBtn.classList.contains("active-workout");
@@ -2141,10 +2199,12 @@ const startBtn      = $("start-btn");
       t += 0.016;
       const ease = p => 1 - Math.pow(1 - p, 3);
       const p1 = (t % 2) / 2, p2 = ((t + 1) % 2) / 2;
-      r1.style.transform = `translate(-50%,-50%) scale(${0.88 + 0.22 * ease(p1)})`;
-      r1.style.opacity   = 1 - ease(p1);
-      r2.style.transform = `translate(-50%,-50%) scale(${0.88 + 0.22 * ease(p2)})`;
-      r2.style.opacity   = 1 - ease(p2);
+      // Кольцо стартует ровно на контуре кнопки (scale 1.0) и расходится
+      // наружу, угасая — пульсация «от края», а не из глубины кнопки (п.3).
+      r1.style.transform = `translate(-50%,-50%) scale(${(1 + 0.45 * ease(p1)).toFixed(3)})`;
+      r1.style.opacity   = (0.5 * (1 - ease(p1))).toFixed(3);
+      r2.style.transform = `translate(-50%,-50%) scale(${(1 + 0.45 * ease(p2)).toFixed(3)})`;
+      r2.style.opacity   = (0.5 * (1 - ease(p2))).toFixed(3);
       requestAnimationFrame(tick);
     }
     // Центрирование колец задано в CSS (.start-pulse-ring) — здесь его больше
@@ -2334,14 +2394,12 @@ function goToScreen(name, opts = {}) {
 function renderProfiles() {
   profileList.innerHTML = "";
   DATA.USERS.forEach(user => {
-    const count = DATA.getWorkoutHistory(user.id).length;
     const card = document.createElement("button");
     card.className = "profile-card";
     card.innerHTML = `
       <span class="avatar ${user.avatarClass}">${user.initial}</span>
       <span class="profile-info">
         <span class="profile-name">${user.name}</span>
-        <span class="profile-meta">${count} тренировок</span>
       </span>
       <span class="profile-chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
     `;
@@ -2637,6 +2695,7 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
   function settle(expand) {
     sheet.classList.toggle("expanded", expand);
     sheet.classList.remove("dragging");
+    sheet.classList.remove("no-anim"); // жест пользователя — всегда с анимацией
     // Блокируем клики в body на время анимации — иначе iOS отправляет
     // синтетический click через ~350мс и он попадает в карточку истории,
     // которая успела съехать под палец пока шторка анимировалась.
@@ -2678,7 +2737,18 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
   // ресайз окна), если шторку сейчас никто не тащит и она не раскрыта.
   function reposition() {
     if (dragging || sheet.classList.contains("expanded")) return;
-    sheet.style.transform = `translateY(${getCollapsedTranslate()}px)`;
+    const collapsed = getCollapsedTranslate();
+    // Программный пересчёт — это коррекция позиции, а не жест пользователя:
+    // ставим её мгновенно, без transition, иначе при заходе на экран и при
+    // поздней догрузке последней тренировки шторка заметно «выезжает» (п.6).
+    sheet.classList.add("no-anim");
+    sheet.style.transform = `translateY(${collapsed}px)`;
+    // Высота видимой шапки шторки (peek) → в CSS-переменную, чтобы по ней
+    // центрировалась главная кнопка (п.2).
+    const peek = Math.round(sheet.getBoundingClientRect().height - collapsed);
+    screenMenu.style.setProperty("--sheet-peek", peek + "px");
+    void sheet.offsetHeight; // фиксируем кадр до повторного включения анимации
+    requestAnimationFrame(() => sheet.classList.remove("no-anim"));
   }
   window.addEventListener("resize", reposition);
   // На старте PWA на iOS высота dvh «плавает» первые кадры — из-за этого
@@ -2858,6 +2928,27 @@ function openEmptyWorkoutModal() {
   backdrop.addEventListener("click", e => { if (e.target === backdrop) backdrop.remove(); });
 }
 
+/* Универсальная модалка-подтверждение опасного действия (удаление и т.п.). */
+function openConfirmModal({ title, message, confirmLabel = "Удалить", cancelLabel = "Отмена", danger = true, onConfirm }) {
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop open";
+  backdrop.innerHTML = `
+    <div class="modal modal-form">
+      <h2 class="modal-title">${escHtml(title || "Подтвердите действие")}</h2>
+      ${message ? `<p style="font-size:14px;color:var(--text-secondary);margin:0;line-height:1.5;">${escHtml(message)}</p>` : ""}
+      <div class="modal-form-actions">
+        <button class="btn-chip" data-act="cancel">${escHtml(cancelLabel)}</button>
+        <button class="btn-chip ${danger ? "danger" : "primary"}" data-act="ok">${escHtml(confirmLabel)}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => backdrop.remove();
+  backdrop.querySelector('[data-act="cancel"]').addEventListener("click", close);
+  backdrop.querySelector('[data-act="ok"]').addEventListener("click", () => { close(); onConfirm && onConfirm(); });
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
+}
+
 /* — Список упражнений — */
 function renderExerciseList() {
   const scroll = $("workout-scroll");
@@ -2877,15 +2968,12 @@ function renderExerciseList() {
       ex.sets = lastSets.map(() => ({ weight: 0, reps: 0, rpe: 0, done: false }));
     }
 
-    // PR строка
+    // PR строка — только рекорд веса (рекорд повторов убран, п.11)
     let prHtml = "";
-    if (rec) {
+    if (rec && rec.maxWeight > 0) {
       const b1 = `${rec.maxWeight} кг × ${rec.repsAtMaxWeight}`;
-      const b2 = `${rec.weightAtMaxReps} кг × ${rec.maxReps}`;
       prHtml = `<div class="ex-block-pr">
         <span class="ex-block-pr-badge">${b1}</span>
-        <span class="ex-block-pr-sep"></span>
-        <span class="ex-block-pr-badge">${b2}</span>
       </div>`;
     }
 
@@ -3251,11 +3339,23 @@ const exerciseFormCatGroup  = $("exercise-form-cat-group");
 let _editingExerciseId = null; // null = создание нового; иначе id редактируемого личного упражнения
 let _exercisesCatFilter = "all";
 let _exercisesShowHidden = false;
+let _exercisesEditMode = false; // режим редактирования списка: показывать кнопки действий (п.9)
+
+function setExercisesEditMode(on) {
+  _exercisesEditMode = !!on;
+  exercisesScroll.classList.toggle("editing", _exercisesEditMode);
+  const btn = $("exercises-edit-btn");
+  if (btn) {
+    btn.classList.toggle("active", _exercisesEditMode);
+    btn.title = _exercisesEditMode ? "Готово" : "Редактировать список";
+  }
+}
 
 function initExercisesScreen() {
   exercisesSearch.value = "";
   _exercisesCatFilter = "all";
   _exercisesShowHidden = false;
+  setExercisesEditMode(false); // каждый заход — чистый список без кнопок
   const userId = DATA.getCurrentUser();
   if (DATA.ensureExercisesSeeded(userId)) SyncQueue.push("exercise:create", {});
   renderExercisesList("");
@@ -3264,6 +3364,7 @@ function initExercisesScreen() {
 $("exercises-back-btn").addEventListener("click", () => goToScreen("menu"));
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
 $("ex-cat-manage-btn").addEventListener("click", () => openCategoryManager());
+$("exercises-edit-btn").addEventListener("click", () => setExercisesEditMode(!_exercisesEditMode));
 
 function renderCatTabs(userId, presentCats) {
   const tabsEl = $("ex-cat-tabs");
@@ -3326,10 +3427,18 @@ function renderExercisesList(query) {
       }
       if (b.dataset.act === "delete") {
         b.addEventListener("click", () => {
-          DATA.deleteOwnExercise(userId, id);
-          SyncQueue.push("exercise:delete", { id });
-          showToast("Упражнение удалено");
-          renderExercisesList(exercisesSearch.value);
+          const ex = allExs.find(e => e.id === id);
+          openConfirmModal({
+            title: "Удалить упражнение?",
+            message: `Вы точно хотите удалить это упражнение${ex ? ` — «${ex.name}»` : ""}? Отменить нельзя.`,
+            confirmLabel: "Удалить",
+            onConfirm: () => {
+              DATA.deleteOwnExercise(userId, id);
+              SyncQueue.push("exercise:delete", { id });
+              showToast("Упражнение удалено");
+              renderExercisesList(exercisesSearch.value);
+            },
+          });
         });
       }
       if (b.dataset.act === "share" && otherUser) {
@@ -3346,7 +3455,7 @@ function renderExercisesList(query) {
   });
 }
 
-/* — Управление категориями (только кастомные — см. комментарий в DATA.renameCategory) — */
+/* — Управление категориями: все категории редактируются и удаляются (п.5) — */
 function openCategoryManager() {
   const userId = DATA.getCurrentUser();
   const existing = $("cat-manager-backdrop");
@@ -3357,26 +3466,18 @@ function openCategoryManager() {
   backdrop.className = "modal-backdrop open";
 
   function render() {
-    const custom = DATA.getCustomCategories(userId);
+    const cats = DATA.getAllCategories(userId);
     backdrop.innerHTML = `
       <div class="modal modal-form">
         <h2 class="modal-title">Категории</h2>
-        <p style="font-size:13px;color:var(--text-tertiary);margin:-6px 0 4px;">
-          Встроенные категории общие для обоих профилей и не редактируются.
-          Свои категории можно добавлять, переименовывать и удалять — они
-          применяются к твоим личным упражнениям.
-        </p>
-        <div class="ex-form-chip-group" style="margin-bottom:4px;">
-          ${DATA.EXERCISE_CATEGORIES.map(c => `<span class="ex-form-chip" style="opacity:.55;pointer-events:none;">${c}</span>`).join("")}
-        </div>
-        ${custom.length ? custom.map(c => `
+        ${cats.length ? cats.map(c => `
           <div style="display:flex;gap:8px;align-items:center;">
             <input class="ex-form-input cat-rename-input" data-old="${escHtml(c)}" value="${escHtml(c)}" style="flex:1;">
             <button class="ex-row-action-btn danger cat-delete-btn" data-cat="${escHtml(c)}" title="Удалить">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
-        `).join("") : `<p style="font-size:13px;color:var(--text-tertiary);">Своих категорий пока нет.</p>`}
+        `).join("") : `<p style="font-size:13px;color:var(--text-tertiary);">Категорий пока нет — добавь первую.</p>`}
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="ex-form-input" id="cat-new-input" placeholder="Новая категория" style="flex:1;">
           <button class="ex-row-action-btn" id="cat-add-btn" title="Добавить">
@@ -3402,9 +3503,17 @@ function openCategoryManager() {
     });
     backdrop.querySelectorAll(".cat-delete-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        DATA.deleteCategory(userId, btn.dataset.cat);
-        renderExercisesList(exercisesSearch.value);
-        render();
+        const cat = btn.dataset.cat;
+        openConfirmModal({
+          title: "Удалить категорию?",
+          message: `Категория «${cat}» будет удалена. Упражнения из неё перейдут в «Другое».`,
+          confirmLabel: "Удалить",
+          onConfirm: () => {
+            DATA.deleteCategory(userId, cat);
+            renderExercisesList(exercisesSearch.value);
+            render();
+          },
+        });
       });
     });
     $("cat-add-btn").addEventListener("click", () => {
@@ -3817,19 +3926,16 @@ function statsExWithHistory(workouts) {
 }
 
 // ── График прогресса SVG ──
-function renderStatsGraph(points, mode, containerW) {
+function renderStatsGraph(points, mode, containerW, containerH) {
   if (points.length < 2) return `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:13px;color:var(--text-tertiary);font-style:italic">${points.length===0?"Нет данных за период":"Нужно минимум 2 тренировки"}</div>`;
   const vals = points.map(p => mode === "weight" ? p.maxWeight : p.volume);
   const minV = Math.min(...vals), maxV = Math.max(...vals);
   const minTs = points[0].ts, maxTs = points[points.length-1].ts;
-  // W берётся из реальной измеренной ширины контейнера (см. вызов ниже) —
-  // раньше тут был зашит фиксированный W=280, который потом растягивался
-  // через preserveAspectRatio="none" под фактическую ширину карточки.
-  // При заметно более широком контейнере (например, на десктопе/широком
-  // окне) это растягивало точки и подписи месяцев непропорционально по X,
-  // визуально «сплющивая» график. Теперь 1 единица viewBox = 1 css-пиксель,
-  // искажения нет в принципе.
-  const W = containerW || 280, H = 80, px = 16, py = 10;
+  // W и H берутся из реальных измеренных размеров контейнера (см. вызов ниже),
+  // чтобы 1 единица viewBox = 1 css-пиксель и график не растягивался/сплющивался
+  // под форму карточки. H заметно увеличен — раньше было 80px, график выглядел
+  // сжатым (п.10).
+  const W = containerW || 280, H = containerH || 150, px = 16, py = 18;
   const gW=W-px*2, gH=H-py*2;
   const rangeV = maxV-minV||1, rangeTs = maxTs-minTs||1;
   const xOf = ts => px + (ts-minTs)/rangeTs*gW;
@@ -3840,7 +3946,7 @@ function renderStatsGraph(points, mode, containerW) {
     `${xOf(points[points.length-1].ts).toFixed(1)},${H-py}`
   ].join(" ");
   const line = points.map((p,i)=>`${xOf(p.ts).toFixed(1)},${yOf(vals[i]).toFixed(1)}`).join(" ");
-  const dots = points.map((p,i)=>`<circle cx="${xOf(p.ts).toFixed(1)}" cy="${yOf(vals[i]).toFixed(1)}" r="3" fill="var(--accent)"/>`).join("");
+  const dots = points.map((p,i)=>`<circle cx="${xOf(p.ts).toFixed(1)}" cy="${yOf(vals[i]).toFixed(1)}" r="3.6" fill="var(--accent)"/>`).join("");
   // Метки месяцев — x зажат внутрь поля графика, чтобы text-anchor="middle"
   // не выталкивал часть подписи за пределы SVG (там она обрезалась рамкой
   // карточки с overflow:hidden — например «июнь» превращался в «юнь»/«люнь»).
@@ -3851,12 +3957,12 @@ function renderStatsGraph(points, mode, containerW) {
       monthsSeen.add(key);
       const lbl = d.toLocaleString("ru-RU",{month:"short"}).replace(".","");
       const lx = Math.min(Math.max(xOf(p.ts), 14), W-14);
-      monthLabels += `<text x="${lx.toFixed(1)}" y="${H-1}" font-size="8" fill="rgba(255,255,255,0.22)" text-anchor="middle">${lbl}</text>`;
+      monthLabels += `<text x="${lx.toFixed(1)}" y="${H-4}" font-size="10.5" fill="rgba(255,255,255,0.3)" text-anchor="middle">${lbl}</text>`;
     }
   });
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%">
     <polygon points="${area}" fill="rgba(124,108,230,0.07)"/>
-    <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+    <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
     ${dots}${monthLabels}
   </svg>`;
 }
@@ -3982,13 +4088,9 @@ function initStatsScreen() {
       </div>
       <div class="s-ex-body">
         <div class="s-ex-recs">
-          <div class="s-ex-rec">
+          <div class="s-ex-rec" style="grid-column:1/-1">
             <div class="s-ex-rec-val">${selRec?`${selRec.maxWeight} кг × ${selRec.repsAtMaxWeight}`:"—"}</div>
             <div class="s-ex-rec-label">рекорд веса · всё время</div>
-          </div>
-          <div class="s-ex-rec">
-            <div class="s-ex-rec-val">${selRec?`${selRec.weightAtMaxReps} кг × ${selRec.maxReps}`:"—"}</div>
-            <div class="s-ex-rec-label">рекорд повторов · всё время</div>
           </div>
         </div>
         <div class="s-graph-toggle">
@@ -4008,7 +4110,8 @@ function initStatsScreen() {
   const graphWrap = $("s-graph-wrap");
   if (graphWrap) {
     const realW = Math.round(graphWrap.getBoundingClientRect().width);
-    if (realW > 0) graphWrap.innerHTML = renderStatsGraph(gpInPeriod, _statsGraphMode, realW);
+    const realH = Math.round(graphWrap.getBoundingClientRect().height);
+    if (realW > 0) graphWrap.innerHTML = renderStatsGraph(gpInPeriod, _statsGraphMode, realW, realH);
   }
 
   // Переключатель периода
@@ -4067,8 +4170,7 @@ function openStatChartScreen(exerciseId) {
 
   const recordsHtml = rec ? `
     <div class="detail-stats">
-      <div class="detail-stat"><div class="detail-stat-num">${rec.maxWeight} кг</div><div class="detail-stat-label">Макс. вес, × ${rec.repsAtMaxWeight}</div></div>
-      <div class="detail-stat"><div class="detail-stat-num">${rec.maxReps}</div><div class="detail-stat-label">Макс. повторов, на ${rec.weightAtMaxReps} кг</div></div>
+      <div class="detail-stat" style="grid-column:1/-1"><div class="detail-stat-num">${rec.maxWeight} кг</div><div class="detail-stat-label">Макс. вес, × ${rec.repsAtMaxWeight}</div></div>
     </div>` : "";
 
   const chartHtml = `
@@ -4111,8 +4213,8 @@ function renderProgressChart(points, opts = {}) {
     return `<div class="stat-chart-empty">Пока одна тренировка: <b>${val}</b><br>график появится после второй</div>`;
   }
 
-  const width = 600, height = 168;
-  const padL = 12, padR = 12, padT = 14, padB = 24;
+  const width = 600, height = 230; // выше прежнего (168) — график не такой сжатый (п.10)
+  const padL = 12, padR = 12, padT = 16, padB = 28;
   const innerW = width - padL - padR, innerH = height - padT - padB;
 
   const xs = points.map(p => p.x), ys = points.map(p => p.y);
@@ -4184,7 +4286,7 @@ function renderTemplatesList() {
   const list = DATA.getTemplates(userId);
 
   if (!list.length) {
-    templatesScroll.innerHTML = `<p class="empty-state">Пока нет шаблонов — заверши силовую тренировку и сохрани её как шаблон (кнопка в детальном просмотре истории), чтобы быстро повторять её снова.</p>`;
+    templatesScroll.innerHTML = `<p class="empty-state">Пока нет шаблонов. Создай свой кнопкой «+» сверху, или заверши силовую тренировку и сохрани её как шаблон из детального просмотра истории.</p>`;
     return;
   }
 
@@ -4207,6 +4309,21 @@ function renderTemplatesList() {
 }
 
 $("templates-back-btn").addEventListener("click", () => goToScreen("menu"));
+
+/* — Создание пользовательского шаблона с нуля (п.7) — */
+$("templates-add-btn").addEventListener("click", () => {
+  openNameModal({
+    title: "Новый шаблон",
+    placeholder: "Например, День спины",
+    confirmLabel: "Создать",
+    onConfirm: name => {
+      const userId = DATA.getCurrentUser();
+      const tpl = DATA.createBlankTemplate(userId, name);
+      SyncQueue.push("template:create", { templateId: tpl.id });
+      openTemplateDetail(tpl.id); // сразу открываем для добавления упражнений
+    },
+  });
+});
 
 /* — Экран шаблона: просмотр и редактирование состава — */
 function openTemplateDetail(templateId) {
