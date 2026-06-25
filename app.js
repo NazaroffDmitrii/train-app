@@ -3126,7 +3126,7 @@ function initStatsScreen() {
   let strengthMs = 0, runMs = 0;
   strength.forEach(w => { if (w.finishedAt && w.startedAt) strengthMs += w.finishedAt - w.startedAt; });
   runs.forEach(w => { if (w.finishedAt && w.startedAt) runMs += w.finishedAt - w.startedAt; });
-  const _hrsStr = ms => { const h = ms / 3600000; return h < 1 ? `${Math.round(h * 60)} мин` : `${Math.round(h * 10) / 10}`; };
+  const _hrsStr = ms => { const h = ms / 3600000; return h < 1 ? `${Math.round(h * 60)} мин` : `${Math.round(h * 10) / 10} ч`; };
   const strengthHrs = strengthMs > 0 ? _hrsStr(strengthMs) : "—";
   const runHrs = runMs > 0 ? _hrsStr(runMs) : "—";
   const oneRM = selRec && typeof estimate1RM === "function" ? estimate1RM(selRec.maxWeight, selRec.repsAtMaxWeight) : 0;
@@ -3148,11 +3148,11 @@ function initStatsScreen() {
         <div class="s-sub-stats">
           <div>
             <div class="s-sub-val">${strengthHrs}</div>
-            <div class="s-sub-label">Время, ч</div>
+            <div class="s-sub-label">Время</div>
           </div>
           <div>
-            <div class="s-sub-val">${volume > 0 ? volume.toLocaleString("ru-RU") : "—"}</div>
-            <div class="s-sub-label">Тоннаж, кг</div>
+            <div class="s-sub-val">${volume > 0 ? `${volume.toLocaleString("ru-RU")} кг` : "—"}</div>
+            <div class="s-sub-label">Тоннаж</div>
           </div>
         </div>
       </div>
@@ -3165,11 +3165,11 @@ function initStatsScreen() {
         <div class="s-sub-stats">
           <div>
             <div class="s-sub-val">${runHrs}</div>
-            <div class="s-sub-label">Время, ч</div>
+            <div class="s-sub-label">Время</div>
           </div>
           <div>
-            <div class="s-sub-val">${totalDist > 0 ? Math.round(totalDist*10)/10 : "—"}</div>
-            <div class="s-sub-label">Дист., км</div>
+            <div class="s-sub-val">${totalDist > 0 ? `${Math.round(totalDist*10)/10} км` : "—"}</div>
+            <div class="s-sub-label">Дист.</div>
           </div>
         </div>
       </div>
@@ -3197,7 +3197,7 @@ function initStatsScreen() {
             <div class="s-ex-rec-val">${oneRM ? `${oneRM} кг` : "—"}</div>
             <div class="s-ex-rec-label">1ПМ расчёт</div>
           </div>
-          <div class="s-ex-rec">
+          <div class="s-ex-rec${progValCls === ' up' ? ' prog-up' : ''}">
             <div class="s-ex-rec-val${progValCls}">${progTxt}</div>
             <div class="s-ex-rec-label">прогресс</div>
           </div>
