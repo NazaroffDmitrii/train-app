@@ -2432,22 +2432,37 @@ function activeRunType() {
 function updatePace() {
   const distVal  = parseFloat($("run-distance").value);
   const totalSec = getRunDurSec();
-  if (!distVal || !totalSec) { $("run-pace").textContent = "—"; updateRunHighlights(); return; }
+  const paceEl   = $("run-pace");
+  const paceField = $("run-field-pace");
+  if (!distVal || !totalSec) {
+    // Show prev pace as dim hint when no data
+    if (_runPrev?.pace) {
+      paceEl.textContent = _runPrev.pace;
+      paceField.classList.add("pace-hint");
+    } else {
+      paceEl.textContent = "—";
+      paceField.classList.remove("pace-hint");
+    }
+    updateRunHighlights();
+    return;
+  }
   const paceSec = totalSec / distVal;
   const m = Math.floor(paceSec / 60);
   const s = Math.round(paceSec % 60);
-  $("run-pace").textContent = `${m}:${String(s).padStart(2, "0")}`;
+  paceEl.textContent = `${m}:${String(s).padStart(2, "0")}`;
+  paceField.classList.remove("pace-hint");
   updateRunHighlights();
 }
 
 // --- Green highlighting ---
 function updateRunHighlights() {
-  const curDurSec  = getRunDurSec();
-  const curDist    = parseFloat($("run-distance").value);
-  const curPaceTxt = $("run-pace").textContent;
-  const curPaceSec = curPaceTxt !== "—" ? paceStrToSec(curPaceTxt) : null;
-  const curCad     = parseInt($("run-cadence").value) || 0;
-  const curHR      = parseInt($("run-hr").value) || 0;
+  const curDurSec   = getRunDurSec();
+  const curDist     = parseFloat($("run-distance").value);
+  const isPaceHint  = $("run-field-pace")?.classList.contains("pace-hint");
+  const curPaceTxt  = isPaceHint ? null : $("run-pace").textContent;
+  const curPaceSec  = (curPaceTxt && curPaceTxt !== "—") ? paceStrToSec(curPaceTxt) : null;
+  const curCad      = parseInt($("run-cadence").value) || 0;
+  const curHR       = parseInt($("run-hr").value) || 0;
   const b = _runBests;
 
   const mark = (id, isBest) => { const el = $(id); if (el) el.classList.toggle("val-best", isBest); };
@@ -2458,19 +2473,36 @@ function updateRunHighlights() {
   mark("run-field-hr",   curHR      > 0 && b.hr       != null && curHR      <= b.hr);
 }
 
-// --- Ghost prev values ---
+// --- Placeholder ghost values from prev run ---
 function refreshRunContext() {
   const userId  = DATA.getCurrentUser();
   const runType = activeRunType();
   _runBests = getRunBests(userId, runType);
   _runPrev  = getPrevRunOfType(userId, runType);
   const p = _runPrev;
-  const setPrev = (id, val) => { const el = $(id); if (el) el.textContent = val ? `пред. ${val}` : ""; };
-  setPrev("run-dur-prev",  p?.duration  ? p.duration : null);
-  setPrev("run-dist-prev", p?.distance  ? `${p.distance} км` : null);
-  setPrev("run-pace-prev", p?.pace      ? `${p.pace} мин/км` : null);
-  setPrev("run-cad-prev",  p?.cadence   ? String(p.cadence) : null);
-  setPrev("run-hr-prev",   p?.heartRate ? String(p.heartRate) : null);
+
+  // Set input placeholders to previous run values (visible until user starts typing)
+  if (p?.duration) {
+    const parts = String(p.duration).split(":").map(Number);
+    if (parts.length === 3) {
+      const h = $("run-dur-h"); if (h) h.placeholder = String(parts[0]).padStart(2,"0");
+      const m = $("run-dur-m"); if (m) m.placeholder = String(parts[1]).padStart(2,"0");
+      const s = $("run-dur-s"); if (s) s.placeholder = String(parts[2]).padStart(2,"0");
+    } else if (parts.length === 2) {
+      const h = $("run-dur-h"); if (h) h.placeholder = "00";
+      const m = $("run-dur-m"); if (m) m.placeholder = String(parts[0]).padStart(2,"0");
+      const s = $("run-dur-s"); if (s) s.placeholder = String(parts[1]).padStart(2,"0");
+    }
+  } else {
+    const h = $("run-dur-h"); if (h) h.placeholder = "00";
+    const m = $("run-dur-m"); if (m) m.placeholder = "00";
+    const s = $("run-dur-s"); if (s) s.placeholder = "00";
+  }
+  const distEl = $("run-distance"); if (distEl) distEl.placeholder = p?.distance ? String(p.distance) : "10.5";
+  const cadEl  = $("run-cadence");  if (cadEl)  cadEl.placeholder  = p?.cadence  ? String(p.cadence)  : "170";
+  const hrEl   = $("run-hr");       if (hrEl)   hrEl.placeholder   = p?.heartRate ? String(p.heartRate) : "152";
+
+  updatePace(); // also updates the pace hint
   updateRunHighlights();
 }
 
@@ -2489,13 +2521,13 @@ document.querySelectorAll(".run-type-tab").forEach(btn => {
   const ids = ["run-dur-h", "run-dur-m", "run-dur-s"];
   ids.forEach((id, i) => {
     const el = $(id);
+    if (!el) return; // guard: old HTML cached by SW
     el.addEventListener("focus", () => el.select());
     el.addEventListener("input", () => {
       el.value = el.value.replace(/\D/g, "").slice(0, 2);
       if (el.value.length >= 2 && i < ids.length - 1) {
         const next = $(ids[i + 1]);
-        next.focus();
-        next.select();
+        if (next) { next.focus(); next.select(); }
       }
       updatePace();
     });
@@ -2503,8 +2535,7 @@ document.querySelectorAll(".run-type-tab").forEach(btn => {
       if (e.key === "Backspace" && el.value === "" && i > 0) {
         e.preventDefault();
         const prev = $(ids[i - 1]);
-        prev.focus();
-        prev.setSelectionRange(prev.value.length, prev.value.length);
+        if (prev) { prev.focus(); prev.setSelectionRange(prev.value.length, prev.value.length); }
       }
     });
   });
@@ -2551,7 +2582,8 @@ function saveRunState() {
   _run.duration  = getRunDurStr() || null;
   _run.cadence   = parseInt($("run-cadence").value) || null;
   _run.heartRate = parseInt($("run-hr").value) || null;
-  _run.pace      = $("run-pace").textContent !== "—" ? $("run-pace").textContent : null;
+  const _paceIsHint = $("run-field-pace")?.classList.contains("pace-hint");
+  _run.pace      = (!_paceIsHint && $("run-pace").textContent !== "—") ? $("run-pace").textContent : null;
   carryRemoteBinId(_run, DATA.getCurrentUser());
   DATA.saveActiveWorkout(DATA.getCurrentUser(), _run);
   SyncQueue.push("run:update", { workoutId: _run.id });
