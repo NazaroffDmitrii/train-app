@@ -3251,7 +3251,42 @@ function openStatsExPicker(exWithHist, allEx, userId) {
   backdrop.appendChild(sheet);
   document.body.appendChild(backdrop);
   requestAnimationFrame(() => backdrop.classList.add("open"));
-  backdrop.addEventListener("click", e => { if(e.target===backdrop) { backdrop.classList.remove("open"); setTimeout(()=>backdrop.remove(),250); }});
+
+  const closeSheet = () => { backdrop.classList.remove("open"); setTimeout(() => backdrop.remove(), 250); };
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) closeSheet(); });
+
+  // Свайп вниз по шторке — drag-to-dismiss
+  let sy = 0, sdy = 0, sdragging = false;
+  sheet.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1) return;
+    sy = e.touches[0].clientY; sdy = 0; sdragging = true;
+    sheet.style.transition = "none";
+  }, { passive: true });
+  sheet.addEventListener("touchmove", e => {
+    if (!sdragging) return;
+    const dy = e.touches[0].clientY - sy;
+    if (dy > 0 && list.scrollTop <= 0) {
+      sdy = dy;
+      sheet.style.transform = `translateY(${dy}px)`;
+    } else {
+      sdy = 0;
+      sheet.style.transform = "";
+    }
+  }, { passive: true });
+  const onSheetEnd = () => {
+    if (!sdragging) return;
+    sdragging = false;
+    if (sdy > 80) {
+      sheet.style.transition = "transform 0.22s ease";
+      sheet.style.transform = `translateY(${sheet.offsetHeight}px)`;
+      closeSheet();
+    } else {
+      sheet.style.transition = "";
+      sheet.style.transform = "";
+    }
+  };
+  sheet.addEventListener("touchend", onSheetEnd);
+  sheet.addEventListener("touchcancel", onSheetEnd);
 }
 
 $("stats-back-btn").addEventListener("click", () => goToScreen("menu"));
