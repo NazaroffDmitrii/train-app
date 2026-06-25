@@ -506,9 +506,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   transition: padding-bottom 0.2s ease;
 }
 /* Когда показана пилюля отдыха — резервируем место снизу, чтобы кнопку
-   «Добавить упражнение» можно было доскроллить выше пилюли (п.2). */
+   «Добавить упражнение» можно было доскроллить выше пилюли, причём зазор НАД
+   пилюлей был равен зазору ПОД ней. Пилюля стоит на 20px+safe от низа, поэтому
+   и сверху резервируем эти же 20px+safe → в padding идут два safe-bottom. */
 .workout-scroll.rest-active {
-  padding-bottom: calc(var(--rest-reserve, 104px) + var(--safe-bottom));
+  padding-bottom: calc(var(--rest-reserve, 104px) + 2 * var(--safe-bottom));
 }
 
 /* ============ Rest timer ============ */
@@ -683,6 +685,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--text-tertiary);
+  text-align: center;   /* названия столбцов по центру — как значения под ними */
 }
 
 .set-row {
@@ -787,7 +790,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   background: var(--border-subtle);
   border-radius: 14px; overflow: hidden;
   border: 1px solid var(--border-subtle);
-  margin: 0 16px 12px;
+  margin: 16px 16px 12px;   /* верхний отступ от шапки — как в макете */
   flex: none;
 }
 .sum-item {
