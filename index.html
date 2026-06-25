@@ -505,12 +505,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   padding: 16px 16px calc(40px + var(--safe-bottom));
   transition: padding-bottom 0.2s ease;
 }
-/* Когда показана пилюля отдыха — резервируем место снизу, чтобы кнопку
-   «Добавить упражнение» можно было доскроллить выше пилюли, причём зазор НАД
-   пилюлей был равен зазору ПОД ней. Пилюля стоит на 20px+safe от низа, поэтому
-   и сверху резервируем эти же 20px+safe → в padding идут два safe-bottom. */
+/* Когда показана пилюля отдыха и список длинный — резервируем место снизу, чтобы
+   «Добавить упражнение» доскролливалось выше пилюли, причём зазор НАД пилюлей
+   равен зазору ПОД ней. Готовое значение (с учётом 2·safe-bottom) кладёт JS в
+   --rest-reserve (см. positionRestTimer). */
 .workout-scroll.rest-active {
-  padding-bottom: calc(var(--rest-reserve, 104px) + 2 * var(--safe-bottom));
+  padding-bottom: var(--rest-reserve, 104px);
 }
 
 /* ============ Rest timer ============ */
@@ -790,7 +790,10 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   background: var(--border-subtle);
   border-radius: 14px; overflow: hidden;
   border: 1px solid var(--border-subtle);
-  margin: 16px 16px 12px;   /* верхний отступ от шапки — как в макете */
+  /* Блок внутри прокрутки: по бокам отступ даёт padding самого скролла (16px),
+     сверху — его же padding-top (16px), снизу 16px — чтобы зазор после статистики
+     был равен зазору перед ней (между ней и шапкой). */
+  margin: 0 0 16px;
   flex: none;
 }
 .sum-item {
@@ -1468,13 +1471,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       </div>
     </div>
 
-    <div class="summary-bar" id="summary-bar">
-      <div class="sum-item"><div class="sum-num" id="sum-exercises">0</div><div class="sum-label">упр</div></div>
-      <div class="sum-item"><div class="sum-num" id="sum-sets">0</div><div class="sum-label">подх ✓</div></div>
-      <div class="sum-item"><div class="sum-num" id="sum-volume">0</div><div class="sum-label">кг объём</div></div>
-    </div>
-
     <div class="workout-scroll" id="workout-scroll">
+      <div class="summary-bar" id="summary-bar">
+        <div class="sum-item"><div class="sum-num" id="sum-exercises">0</div><div class="sum-label">упр</div></div>
+        <div class="sum-item"><div class="sum-num" id="sum-sets">0</div><div class="sum-label">подх ✓</div></div>
+        <div class="sum-item"><div class="sum-num" id="sum-volume">0</div><div class="sum-label">кг объём</div></div>
+      </div>
       <button class="add-ex-btn" id="add-ex-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Добавить упражнение

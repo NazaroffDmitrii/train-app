@@ -1463,9 +1463,60 @@ function endRest(commit) {
     saveWorkoutState();
   }
   _restStartTs = 0;
-  $("rest-timer").hidden = true;
+  const timer = $("rest-timer");
+  timer.hidden = true;
+  timer.style.bottom = "";                              // сбросить вычисленную позицию
   $("workout-scroll").classList.remove("rest-active");  // вернуть обычный нижний отступ
 }
+
+// Высота нижней safe-area (home-indicator). env() из JS напрямую не прочитать —
+// меряем зондом.
+function getSafeBottom() {
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;left:0;bottom:0;width:0;height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none;";
+  document.body.appendChild(probe);
+  const h = probe.getBoundingClientRect().height || 0;
+  probe.remove();
+  return h;
+}
+
+// Размещение пилюли отдыха:
+//  • если все упражнения помещаются на экране — центрируем пилюлю в свободном
+//    месте под последним блоком (зазор сверху = зазору снизу);
+//  • если список длинный (есть прокрутка) — пилюля у низа, а под неё в прокрутке
+//    резервируется место, чтобы «Добавить упражнение» можно было доскроллить
+//    выше пилюли.
+function positionRestTimer() {
+  const timer = $("rest-timer");
+  if (timer.hidden) return;
+  const scroll = $("workout-scroll");
+  const addBtn = scroll.querySelector(".add-ex-btn");
+  const th = timer.getBoundingClientRect().height || 56;
+  const safe = getSafeBottom();
+
+  // Запас места под пилюлю при длинном списке: верхний зазор (20+safe) + высота
+  // пилюли + нижний зазор (20+safe) − margin кнопки (16) = th + 24 + 2·safe.
+  // Кладём готовое px-значение: умножение env() на число внутри calc Chrome
+  // считает невалидным и сбрасывает всё правило (поэтому safe учитываем тут).
+  scroll.style.setProperty("--rest-reserve", Math.round(th + 24 + 2 * safe) + "px");
+
+  // помещается ли контент без прокрутки (считаем без зарезервированного отступа)
+  scroll.classList.remove("rest-active");
+  const fits = addBtn && scroll.scrollHeight <= scroll.clientHeight + 1;
+
+  const screenH = window.innerHeight;
+  const freeTop = addBtn ? addBtn.getBoundingClientRect().bottom : 0;
+  const freeBottom = screenH - safe;
+
+  if (fits && (freeBottom - freeTop) >= th + 40) {
+    const center = (freeTop + freeBottom) / 2;          // центр свободного места
+    timer.style.bottom = Math.max(20 + safe, screenH - (center + th / 2)) + "px";
+  } else {
+    timer.style.bottom = "";                            // CSS-дефолт: 20px + safe
+    scroll.classList.add("rest-active");                // резерв места под пилюлю
+  }
+}
+
 function startRest() {
   endRest(true);                  // если отдых уже шёл — зачесть его и начать заново
   ensureAudio();                  // в контексте тапа — чтобы звук потом сработал
@@ -1477,16 +1528,8 @@ function startRest() {
   }
   _restDurationSec = DATA.getRestDefault();   // запомненный пользователем дефолт
   _restStartTs = Date.now();
-  const timer = $("rest-timer");
-  timer.hidden = false;
-  // Резервируем место снизу так, чтобы зазор НАД пилюлей был равен зазору ПОД
-  // ней (20px из CSS bottom), и «Добавить упражнение» доскролливалось над
-  // таймером (п.2). padding = верхний_зазор(20) + высота_пилюли + нижний(20) −
-  // margin кнопки(16) = высота + 24; safe-bottom добавляется в CSS.
-  const scroll = $("workout-scroll");
-  const th = Math.round(timer.getBoundingClientRect().height) || 52;
-  scroll.style.setProperty("--rest-reserve", (th + 24) + "px");
-  scroll.classList.add("rest-active");
+  $("rest-timer").hidden = false;
+  positionRestTimer();            // центрирует пилюлю в свободном месте либо ставит у низа
   renderRest();
   _restInt = setInterval(() => {
     if (restRemaining() <= 0) { haptic(40); playRestDoneSound(); notifyRestDone(); endRest(true); return; }
@@ -1505,6 +1548,11 @@ $("rest-plus").addEventListener("click", () => {
   renderRest();
 });
 $("rest-skip").addEventListener("click", () => endRest(true));
+
+// Изменение размеров вьюпорта (поворот, адресная строка, клавиатура) — если
+// идёт отдых, пересчитать положение пилюли.
+window.addEventListener("resize", () => { if (!$("rest-timer").hidden) positionRestTimer(); });
+if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (!$("rest-timer").hidden) positionRestTimer(); });
 
 // Фоновая синхронизация (sync.js) пишет в ту же персистентную активную
 // тренировку отдельно от экрана (создаёт удалённый bin и проставляет его id).
@@ -2104,6 +2152,9 @@ function updateSummaryBar() {
   $("sum-exercises").textContent = exs.length;
   $("sum-sets").textContent = doneSets;
   $("sum-volume").textContent = volume.toLocaleString("ru-RU"); // как в модалке завершения и статистике
+  // Контент мог изменить высоту (добавили/удалили подход/упражнение) — если идёт
+  // отдых, пересчитать положение пилюли.
+  if (!$("rest-timer").hidden) positionRestTimer();
 }
 
 /* — Добавить упражнение — */
