@@ -875,16 +875,16 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 .run-header {
   flex: none;
-  padding: calc(var(--safe-top) + 16px) 20px 16px;
+  padding: calc(var(--safe-top) + 16px) 20px 14px;
   background: var(--panel); border-bottom: 1px solid var(--border-subtle);
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: center; gap: 8px;
 }
-.run-header-title { flex: 1; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.run-header-title { flex: 1; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; text-align: center; }
 
 .run-scroll {
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 20px 20px calc(40px + var(--safe-bottom));
-  display: flex; flex-direction: column; gap: 14px;
+  padding: 16px 16px calc(32px + var(--safe-bottom));
+  display: flex; flex-direction: column; gap: 10px;
 }
 
 .run-field-group {
@@ -893,9 +893,10 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 .run-field {
   background: var(--panel); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md); padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 4px;
-  transition: border-color 0.15s ease;
+  border-radius: var(--radius-md); padding: 14px 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 .run-field:focus-within { border-color: var(--accent); }
 .run-field.full-width { grid-column: 1 / -1; }
@@ -905,25 +906,15 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .run-field input, .run-field-val {
   font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
-  background: none; width: 100%; padding: 0;
+  background: none; width: 100%; padding: 0; text-align: center;
   color: var(--text-primary);
 }
-.run-field-val { color: var(--accent-bright); }
-.run-field-unit { font-size: 13px; color: var(--text-tertiary); font-weight: 600; margin-top: 2px; }
-
-.run-save-btn {
-  width: 100%; padding: 16px;
-  border-radius: var(--radius-md);
-  background: var(--accent); color: #fff;
-  font-size: 16px; font-weight: 700;
-  border: none;
-  transition: transform 0.15s ease, opacity 0.15s ease;
-}
-.run-save-btn:active { transform: scale(0.98); opacity: 0.85; }
+.run-field-val { color: var(--text-primary); }
+.run-field-unit { font-size: 12px; color: var(--text-tertiary); font-weight: 600; }
 
 /* Run type tabs */
 .run-type-tabs {
-  display: flex; gap: 8px; padding: 10px 20px;
+  display: flex; gap: 8px; padding: 10px 16px;
   background: var(--panel); border-bottom: 1px solid var(--border-subtle);
   flex: none;
 }
@@ -941,7 +932,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 
 /* HH:MM:SS split input */
-.run-time-wrap { display: flex; align-items: baseline; gap: 1px; }
+.run-time-wrap { display: flex; align-items: baseline; justify-content: center; gap: 1px; }
 .run-time-part {
   font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
   background: none; color: var(--text-primary);
@@ -955,18 +946,14 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   user-select: none; line-height: 1;
 }
 
-/* Pace cell — permanent green tint (computed, not typed) */
-.run-field.pace-field {
-  border-color: rgba(52,211,153,0.35);
-  background: rgba(52,211,153,0.06);
-}
-/* Pace hint (prev value shown when no data) */
-.run-field.pace-field.pace-hint .run-field-val { color: var(--text-tertiary); font-style: italic; }
+/* Pace hint (prev value shown when no data yet) */
+.run-field.pace-hint .run-field-val { color: var(--text-tertiary); font-style: italic; }
 
-/* Best value — digit turns green */
-.run-field.val-best .run-field-val { color: var(--green); }
-.run-field.val-best .run-time-part,
-.run-field.val-best input { color: var(--green); }
+/* Best value — green cell highlight */
+.run-field.val-best {
+  border-color: rgba(52,211,153,0.45);
+  background: rgba(52,211,153,0.07);
+}
 
 /* ============ Exercise picker ============ */
 .picker-backdrop {
@@ -1552,11 +1539,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   <!-- ===== ЭКРАН 4: пробежка ===== -->
   <section id="screen-run" class="screen screen-run slide-right">
     <div class="run-header">
-      <div class="run-header-title">Пробежка</div>
       <button class="btn-chip" id="run-back-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
         Назад
       </button>
+      <div class="run-header-title">Пробежка</div>
+      <button class="btn-chip primary" id="run-save-btn">Завершить</button>
     </div>
 
     <div class="run-type-tabs">
@@ -1583,7 +1571,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
           <input class="run-field-input" id="run-distance" type="number" step="0.01" placeholder="10.5" inputmode="decimal">
           <div class="run-field-unit">км</div>
         </div>
-        <div class="run-field pace-field" id="run-field-pace">
+        <div class="run-field" id="run-field-pace">
           <div class="run-field-label">Темп</div>
           <div class="run-field-val" id="run-pace">—</div>
           <div class="run-field-unit">мин / км</div>
@@ -1599,7 +1587,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
           <div class="run-field-unit">уд / мин</div>
         </div>
       </div>
-      <button class="run-save-btn" id="run-save-btn">Сохранить пробежку</button>
     </div>
   </section>
 

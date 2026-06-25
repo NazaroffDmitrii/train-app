@@ -2367,6 +2367,8 @@ rpeBackdrop.addEventListener("click", e => { if (e.target === rpeBackdrop) rpeBa
 let _run = null;
 let _runBests = {};
 let _runPrev  = null;
+// Per-tab field drafts — cleared on fresh start, persisted across tab switches
+const _runTabData = { easy: null, long: null, hard: null };
 
 const RUN_TYPE_NAMES = { easy: "Лёгкая пробежка", long: "Длинная пробежка", hard: "Тяжёлая пробежка" };
 
@@ -2428,20 +2430,38 @@ function activeRunType() {
   return document.querySelector(".run-type-tab.active")?.dataset.type || "easy";
 }
 
+// --- Save / restore per-tab field values ---
+function saveCurrentTabData() {
+  const type = activeRunType();
+  _runTabData[type] = {
+    h: $("run-dur-h")?.value || "",
+    m: $("run-dur-m")?.value || "",
+    s: $("run-dur-s")?.value || "",
+    distance: $("run-distance")?.value || "",
+    cadence:  $("run-cadence")?.value  || "",
+    hr:       $("run-hr")?.value       || "",
+  };
+}
+function restoreTabData(type) {
+  const d = _runTabData[type];
+  const set = (id, v) => { const el = $(id); if (el) el.value = v || ""; };
+  set("run-dur-h", d?.h); set("run-dur-m", d?.m); set("run-dur-s", d?.s);
+  set("run-distance", d?.distance); set("run-cadence", d?.cadence); set("run-hr", d?.hr);
+}
+
 // --- Update pace (reads from split inputs) ---
 function updatePace() {
-  const distVal  = parseFloat($("run-distance").value);
-  const totalSec = getRunDurSec();
-  const paceEl   = $("run-pace");
+  const distVal   = parseFloat($("run-distance").value);
+  const totalSec  = getRunDurSec();
+  const paceEl    = $("run-pace");
   const paceField = $("run-field-pace");
   if (!distVal || !totalSec) {
-    // Show prev pace as dim hint when no data
     if (_runPrev?.pace) {
       paceEl.textContent = _runPrev.pace;
-      paceField.classList.add("pace-hint");
+      if (paceField) paceField.classList.add("pace-hint");
     } else {
       paceEl.textContent = "—";
-      paceField.classList.remove("pace-hint");
+      if (paceField) paceField.classList.remove("pace-hint");
     }
     updateRunHighlights();
     return;
@@ -2450,27 +2470,29 @@ function updatePace() {
   const m = Math.floor(paceSec / 60);
   const s = Math.round(paceSec % 60);
   paceEl.textContent = `${m}:${String(s).padStart(2, "0")}`;
-  paceField.classList.remove("pace-hint");
+  if (paceField) paceField.classList.remove("pace-hint");
   updateRunHighlights();
 }
 
-// --- Green highlighting ---
+// --- Green cell highlighting ---
 function updateRunHighlights() {
-  const curDurSec   = getRunDurSec();
-  const curDist     = parseFloat($("run-distance").value);
-  const isPaceHint  = $("run-field-pace")?.classList.contains("pace-hint");
-  const curPaceTxt  = isPaceHint ? null : $("run-pace").textContent;
-  const curPaceSec  = (curPaceTxt && curPaceTxt !== "—") ? paceStrToSec(curPaceTxt) : null;
-  const curCad      = parseInt($("run-cadence").value) || 0;
-  const curHR       = parseInt($("run-hr").value) || 0;
+  const isPaceHint = $("run-field-pace")?.classList.contains("pace-hint");
+  const curPaceTxt = isPaceHint ? null : $("run-pace")?.textContent;
+  const curPaceSec = (curPaceTxt && curPaceTxt !== "—") ? paceStrToSec(curPaceTxt) : null;
+  const curDist    = parseFloat($("run-distance")?.value);
+  const curCad     = parseInt($("run-cadence")?.value)  || 0;
+  const curHR      = parseInt($("run-hr")?.value)       || 0;
   const b = _runBests;
 
-  const mark = (id, isBest) => { const el = $(id); if (el) el.classList.toggle("val-best", isBest); };
-  mark("run-field-dur",  curDurSec  > 0 && b.durSec  != null && curDurSec  <= b.durSec);
-  mark("run-field-dist", curDist    > 0 && b.dist     != null && curDist    >= b.dist);
-  mark("run-field-pace", curPaceSec != null && b.paceSec != null && curPaceSec <= b.paceSec);
-  mark("run-field-cad",  curCad     > 0 && b.cad      != null && curCad     >= b.cad);
-  mark("run-field-hr",   curHR      > 0 && b.hr       != null && curHR      <= b.hr);
+  // Pace is best = both time and pace cells highlight (time alone has no independent meaning without dist context)
+  const paceBest = curPaceSec != null && b.paceSec != null && curPaceSec <= b.paceSec;
+
+  const mark = (id, on) => { const el = $(id); if (el) el.classList.toggle("val-best", on); };
+  mark("run-field-dur",  paceBest);
+  mark("run-field-dist", curDist > 0 && b.dist  != null && curDist >= b.dist);
+  mark("run-field-pace", paceBest);
+  mark("run-field-cad",  curCad  > 0 && b.cad   != null && curCad  >= b.cad);
+  mark("run-field-hr",   curHR   > 0 && b.hr    != null && curHR   <= b.hr);
 }
 
 // --- Placeholder ghost values from prev run ---
@@ -2481,7 +2503,7 @@ function refreshRunContext() {
   _runPrev  = getPrevRunOfType(userId, runType);
   const p = _runPrev;
 
-  // Set input placeholders to previous run values (visible until user starts typing)
+  // Set input placeholders to previous run values for this category
   if (p?.duration) {
     const parts = String(p.duration).split(":").map(Number);
     if (parts.length === 3) {
@@ -2498,20 +2520,23 @@ function refreshRunContext() {
     const m = $("run-dur-m"); if (m) m.placeholder = "00";
     const s = $("run-dur-s"); if (s) s.placeholder = "00";
   }
-  const distEl = $("run-distance"); if (distEl) distEl.placeholder = p?.distance ? String(p.distance) : "10.5";
-  const cadEl  = $("run-cadence");  if (cadEl)  cadEl.placeholder  = p?.cadence  ? String(p.cadence)  : "170";
+  const distEl = $("run-distance"); if (distEl) distEl.placeholder = p?.distance  ? String(p.distance)  : "10.5";
+  const cadEl  = $("run-cadence");  if (cadEl)  cadEl.placeholder  = p?.cadence   ? String(p.cadence)   : "170";
   const hrEl   = $("run-hr");       if (hrEl)   hrEl.placeholder   = p?.heartRate ? String(p.heartRate) : "152";
 
-  updatePace(); // also updates the pace hint
-  updateRunHighlights();
+  updatePace();
 }
 
 // --- Tab switching ---
 document.querySelectorAll(".run-type-tab").forEach(btn => {
   btn.addEventListener("click", () => {
+    if (btn.classList.contains("active")) return;
+    saveCurrentTabData();                   // save current tab's fields
     document.querySelectorAll(".run-type-tab").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    if (_run) { _run.runType = btn.dataset.type; _run.name = RUN_TYPE_NAMES[btn.dataset.type] || "Пробежка"; }
+    const newType = btn.dataset.type;
+    if (_run) { _run.runType = newType; _run.name = RUN_TYPE_NAMES[newType] || "Пробежка"; }
+    restoreTabData(newType);               // restore new tab's fields (empty if not visited)
     refreshRunContext();
   });
 });
@@ -2549,21 +2574,32 @@ function initRunScreen({ resume = false } = {}) {
   const userId = DATA.getCurrentUser();
   _run = DATA.getActiveWorkout(userId);
 
-  // Clear fields
-  $("run-dur-h").value = ""; $("run-dur-m").value = ""; $("run-dur-s").value = "";
-  $("run-distance").value = ""; $("run-cadence").value = ""; $("run-hr").value = "";
-  $("run-pace").textContent = "—";
+  if (!resume) {
+    // Fresh start — clear all per-tab drafts
+    _runTabData.easy = null; _runTabData.long = null; _runTabData.hard = null;
+  }
+
+  // Clear visible fields
+  const clr = id => { const el = $(id); if (el) el.value = ""; };
+  clr("run-dur-h"); clr("run-dur-m"); clr("run-dur-s");
+  clr("run-distance"); clr("run-cadence"); clr("run-hr");
+  const paceEl = $("run-pace"); if (paceEl) paceEl.textContent = "—";
+  const paceField = $("run-field-pace"); if (paceField) paceField.classList.remove("pace-hint");
 
   // Set active tab from saved runType (default easy)
   const savedType = _run?.runType || "easy";
   document.querySelectorAll(".run-type-tab").forEach(b => b.classList.toggle("active", b.dataset.type === savedType));
 
   if (resume && _run) {
-    if (_run.distance)  $("run-distance").value = _run.distance;
+    if (_run.distance)  { const el = $("run-distance"); if (el) el.value = _run.distance; }
     if (_run.duration)  setRunDurFromStr(_run.duration);
-    if (_run.cadence)   $("run-cadence").value  = _run.cadence;
-    if (_run.heartRate) $("run-hr").value        = _run.heartRate;
-    updatePace();
+    if (_run.cadence)   { const el = $("run-cadence");  if (el) el.value = _run.cadence; }
+    if (_run.heartRate) { const el = $("run-hr");       if (el) el.value = _run.heartRate; }
+    // Restore resumed tab data so switching away and back preserves values
+    _runTabData[savedType] = {
+      h: $("run-dur-h")?.value || "", m: $("run-dur-m")?.value || "", s: $("run-dur-s")?.value || "",
+      distance: $("run-distance")?.value || "", cadence: $("run-cadence")?.value || "", hr: $("run-hr")?.value || "",
+    };
   }
 
   refreshRunContext();
