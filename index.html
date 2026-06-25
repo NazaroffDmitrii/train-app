@@ -1211,18 +1211,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .ex-row-action-btn.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
 .ex-row-action-btn.active-state { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
 
-/* Кнопки действий у упражнений видны только в режиме редактирования
-   (тумблер «карандаш» в шапке) — обычный список остаётся чистым (п.9). */
-.exercises-scroll:not(.editing) .ex-row-actions { display: none; }
-.exercises-edit-btn {
-  flex: none; width: 38px; height: 38px; border-radius: 12px;
-  background: var(--panel-raised); border: 1px solid var(--border-subtle);
-  color: var(--text-secondary); display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-.exercises-edit-btn svg { width: 18px; height: 18px; }
-.exercises-edit-btn.active { background: var(--accent); border-color: transparent; color: #fff; }
-
 /* Edit/create exercise modal */
 .ex-form-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
 .ex-form-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
@@ -1240,8 +1228,94 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .ex-form-chip.selected { background: var(--accent); border-color: transparent; color: #fff; }
 .modal.modal-form { align-items: stretch; text-align: left; gap: 14px; }
+.modal.modal-form.modal-scroll { max-width: 380px; max-height: 84vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .modal-form-actions { display: flex; gap: 8px; margin-top: 6px; }
 .modal-form-actions .btn-chip { flex: 1; justify-content: center; padding: 13px; font-size: 14.5px; }
+
+/* ── Сгруппированный по категориям пул упражнений (заголовок с цветной меткой) ── */
+.ex-group { display: flex; align-items: center; gap: 8px; padding: 16px 6px 8px; }
+.ex-group:first-child { padding-top: 4px; }
+.ex-group-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.ex-group-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); }
+.ex-group-count { font-size: 11px; font-weight: 700; color: var(--text-tertiary); opacity: 0.65; }
+.ex-row.tappable { cursor: pointer; transition: background 0.12s ease; }
+.ex-row.tappable:active { background: var(--panel-raised); }
+.ex-row-chevron { flex: none; display: flex; color: var(--text-tertiary); }
+.ex-row-chevron svg { width: 18px; height: 18px; }
+
+/* ── Экран деталей упражнения ── */
+.exd-cat-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.exd-media {
+  width: 100%; aspect-ratio: 16 / 10; border-radius: var(--radius-md); overflow: hidden;
+  background: repeating-linear-gradient(135deg, #1a1a26 0 12px, #16161f 12px 24px);
+  border: 1px solid var(--border-subtle);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
+}
+.exd-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.exd-media-placeholder { color: var(--text-tertiary); font-size: 13px; letter-spacing: 0.06em; text-transform: lowercase; }
+.exd-video-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  padding: 12px; border-radius: var(--radius-sm); margin-bottom: 14px;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  color: var(--accent-bright); font-size: 14px; font-weight: 600;
+}
+.exd-video-btn svg { width: 16px; height: 16px; }
+.exd-section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); margin: 20px 0 12px; }
+.exd-muscle-role { margin-bottom: 12px; }
+.exd-muscle-role:last-child { margin-bottom: 0; }
+.exd-muscle-role-name { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 7px; }
+.exd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.exd-chip { padding: 5px 11px; border-radius: 9px; background: var(--panel-raised); border: 1px solid var(--border-subtle); font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.exd-chip.primary { background: var(--accent-soft); border-color: transparent; color: var(--accent-bright); }
+.exd-step { display: flex; gap: 12px; margin-bottom: 14px; }
+.exd-step-num { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-bright); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.exd-step-text { font-size: 14.5px; line-height: 1.5; color: var(--text-primary); }
+.exd-tip { margin-top: 18px; padding: 14px 16px; border-radius: var(--radius-md); background: rgba(251,191,36,0.07); border: 1px solid rgba(251,191,36,0.22); font-size: 14px; line-height: 1.5; color: var(--text-secondary); display: flex; gap: 10px; }
+.exd-tip-icon { flex: none; font-size: 16px; line-height: 1.3; }
+.exd-tip b { color: var(--amber); }
+.exd-empty { color: var(--text-tertiary); font-size: 14px; padding: 8px 0; }
+.exd-footer {
+  flex: none; display: flex; gap: 8px;
+  padding: 12px 16px calc(12px + var(--safe-bottom));
+  background: var(--panel); border-top: 1px solid var(--border-subtle);
+}
+.exd-footer .btn-chip { padding: 13px; }
+.exd-footer-edit { flex: 1; justify-content: center; font-size: 15px; }
+.exd-footer-icon { width: 50px; flex: none; justify-content: center; }
+.exd-footer-icon svg { width: 17px; height: 17px; }
+
+/* ── Нижний лист «Категории» ── */
+.cat-sheet { max-height: 82vh; display: flex; flex-direction: column; }
+.cat-sheet-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+.cat-sheet-title { font-size: 20px; font-weight: 700; }
+.cat-sheet-count { font-size: 13px; color: var(--text-tertiary); font-weight: 600; }
+.cat-sheet-list { overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.cat-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--panel-raised); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.cat-item-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.cat-item-name { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600; background: transparent; border: none; color: var(--text-primary); padding: 2px 0; }
+.cat-item-name:focus { outline: none; border-bottom: 1px solid var(--accent); }
+.cat-item-count { font-size: 13px; color: var(--text-tertiary); font-weight: 600; flex: none; }
+.cat-item-btn { width: 30px; height: 30px; border-radius: 9px; flex: none; background: var(--panel); border: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); }
+.cat-item-btn svg { width: 15px; height: 15px; }
+.cat-item-btn.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
+.cat-colors { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 8px; }
+.cat-color-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; box-sizing: border-box; }
+.cat-color-swatch.selected { border-color: var(--text-primary); transform: scale(1.08); }
+.cat-add-row { display: flex; gap: 8px; align-items: center; }
+.cat-add-row input { flex: 1; }
+.cat-add-btn { flex: none; display: flex; align-items: center; gap: 6px; padding: 12px 16px; border-radius: var(--radius-sm); background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; }
+.cat-add-btn svg { width: 15px; height: 15px; }
+
+/* ── Редактор техники в форме упражнения ── */
+.ex-form-textarea { min-height: 64px; resize: vertical; line-height: 1.45; font-family: inherit; }
+.ex-steps-list { display: flex; flex-direction: column; gap: 8px; }
+.ex-step-edit-row { display: flex; gap: 8px; align-items: flex-start; }
+.ex-step-edit-row .ex-form-input { flex: 1; min-height: 44px; resize: vertical; line-height: 1.4; font-family: inherit; }
+.ex-step-del { flex: none; width: 38px; height: 44px; border-radius: var(--radius-sm); background: var(--red-soft); border: 1px solid rgba(248,113,113,0.2); color: var(--red); display: flex; align-items: center; justify-content: center; }
+.ex-step-del svg { width: 15px; height: 15px; }
+.ex-add-step-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 11px; border-radius: var(--radius-sm); background: var(--panel-raised); border: 1px dashed var(--border-strong); color: var(--text-secondary); font-size: 13.5px; font-weight: 600; }
+.ex-add-step-btn svg { width: 15px; height: 15px; }
+.ex-form-group-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin: 8px 0 2px; }
 
 .finish-summary {
   display: flex; flex-direction: column; gap: 8px;
@@ -1640,9 +1714,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
         Назад
       </button>
       <div class="exercises-header-title">Упражнения</div>
-      <button class="exercises-edit-btn" id="exercises-edit-btn" title="Редактировать список">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-      </button>
       <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
@@ -1778,7 +1849,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
   <!-- ===== Модалка: добавить/редактировать упражнение ===== -->
   <div class="modal-backdrop" id="exercise-form-backdrop">
-    <div class="modal modal-form">
+    <div class="modal modal-form modal-scroll">
       <h2 class="modal-title" id="exercise-form-title">Новое упражнение</h2>
       <div class="ex-form-field">
         <span class="ex-form-label">Название</span>
@@ -1795,6 +1866,41 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
         <span class="ex-form-label">Категория</span>
         <div class="ex-form-chip-group" id="exercise-form-cat-group"></div>
       </div>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Ссылка на фото / гиф / видео</span>
+        <input class="ex-form-input" id="exercise-form-media" type="url" inputmode="url" placeholder="https://…">
+      </div>
+
+      <div class="ex-form-group-label">Рабочие мышцы</div>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Агонисты (главные)</span>
+        <input class="ex-form-input" id="exercise-form-m-agonists" type="text" placeholder="Через запятую">
+      </div>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Синергисты</span>
+        <input class="ex-form-input" id="exercise-form-m-synergists" type="text" placeholder="Через запятую">
+      </div>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Стабилизаторы</span>
+        <input class="ex-form-input" id="exercise-form-m-stabilizers" type="text" placeholder="Через запятую">
+      </div>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Распределители усилий</span>
+        <input class="ex-form-input" id="exercise-form-m-distributors" type="text" placeholder="Через запятую">
+      </div>
+
+      <div class="ex-form-group-label">Техника выполнения</div>
+      <div class="ex-steps-list" id="exercise-form-steps"></div>
+      <button class="ex-add-step-btn" id="exercise-form-add-step" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Добавить шаг
+      </button>
+
+      <div class="ex-form-field">
+        <span class="ex-form-label">Совет (необязательно)</span>
+        <textarea class="ex-form-input ex-form-textarea" id="exercise-form-tip" placeholder="Короткая подсказка по технике"></textarea>
+      </div>
+
       <div class="modal-form-actions">
         <button class="btn-chip" id="exercise-form-cancel">Отмена</button>
         <button class="btn-chip primary" id="exercise-form-save">Сохранить</button>
@@ -1921,6 +2027,33 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       </button>
     </div>
     <div class="detail-screen-body" id="detail-screen-body"></div>
+  </section>
+
+  <!-- ===== ЭКРАН: детали упражнения (техника, мышцы, медиа) ===== -->
+  <section id="screen-exercise-detail" class="screen screen-detail slide-right">
+    <div class="detail-screen-header">
+      <button class="btn-chip" id="exd-back-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        Назад
+      </button>
+      <div style="flex:1;min-width:0;">
+        <div class="detail-screen-title" id="exd-title">Упражнение</div>
+        <div class="detail-screen-meta" id="exd-meta"></div>
+      </div>
+    </div>
+    <div class="detail-screen-body" id="exd-body"></div>
+    <div class="exd-footer">
+      <button class="btn-chip exd-footer-edit" id="exd-edit-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        Править
+      </button>
+      <button class="btn-chip exd-footer-icon" id="exd-share-btn" title="Поделиться">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </button>
+      <button class="btn-chip exd-footer-icon danger" id="exd-delete-btn" title="Удалить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </button>
+    </div>
   </section>
 
   <div class="toast" id="toast"></div>
