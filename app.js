@@ -2171,8 +2171,11 @@ let _pickerOnSelect = addExerciseToWorkout;
 
 let _pickerCat = "Все";   // активная вкладка-категория пикера
 
-function openExercisePicker(onSelect) {
+let _pickerSelectedId = null;
+
+function openExercisePicker(onSelect, selectedId) {
   _pickerOnSelect = onSelect || addExerciseToWorkout;
+  _pickerSelectedId = selectedId || null;
   _pickerCat = "Все";
   pickerSearch.value = "";
   renderPickerTabs();
@@ -2232,9 +2235,11 @@ function renderPickerList(query) {
     return;
   }
 
+  const SVG_CHECK = `<svg class="picker-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>`;
   const itemHtml = e => `
-    <div class="picker-item" data-id="${escHtml(e.id)}">
+    <div class="picker-item${e.id === _pickerSelectedId ? " selected" : ""}" data-id="${escHtml(e.id)}">
       <div><div class="picker-item-name">${escHtml(e.name)}</div></div>
+      ${e.id === _pickerSelectedId ? SVG_CHECK : ""}
     </div>`;
 
   if (!q && _pickerCat !== "Все") {
@@ -3133,7 +3138,7 @@ function initStatsScreen() {
 
   scroll.innerHTML = `
     <div class="s-period-seg">
-      ${[["week","Неделя"],["month","Месяц"],["3month","3 месяца"],["year","Год"],["all","Всё"]].map(([p,l]) =>
+      ${[["week","Неделя"],["month","Месяц"],["3month","3 месяца"],["year","Год"],["all","Все"]].map(([p,l]) =>
         `<button class="s-period-btn${_statsPeriod===p?" active":""}" data-p="${p}">${l}</button>`
       ).join("")}
     </div>
@@ -3219,9 +3224,11 @@ function initStatsScreen() {
   scroll.querySelectorAll(".s-period-btn").forEach(btn => {
     btn.addEventListener("click", () => { _statsPeriod = btn.dataset.p; initStatsScreen(); });
   });
-  // Выбор упражнения
+  // Выбор упражнения — используем общий пикер с категориями и поиском
   const pickBtn = $("stats-ex-pick-btn");
-  if (pickBtn) pickBtn.addEventListener("click", () => openStatsExPicker(exWithHist, allEx, userId));
+  if (pickBtn) pickBtn.addEventListener("click", () => {
+    openExercisePicker(id => { _statsSelectedExId = id; initStatsScreen(); }, _statsSelectedExId);
+  });
 }
 
 function openStatsExPicker(exWithHist, allEx, userId) {
