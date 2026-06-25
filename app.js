@@ -2825,14 +2825,16 @@ $("ex-cat-manage-btn").addEventListener("click", () => openCategoryManager());
 
 function renderCatTabs(userId, presentCats) {
   const tabsEl = $("ex-cat-tabs");
-  // Показываем встроенные + кастомные категории пользователя, а также любые
-  // cat-значения, реально встречающиеся в видимом списке (на случай старых
-  // данных с произвольной строкой категории).
   const cats = Array.from(new Set([...DATA.getAllCategories(userId), ...presentCats]));
   const tabs = ["all", ...cats];
-  tabsEl.innerHTML = tabs.map(c => `
-    <button class="ex-cat-tab ${_exercisesCatFilter === c ? "active" : ""}" data-cat="${escHtml(c)}">${c === "all" ? "Все" : escHtml(c)}</button>
-  `).join("");
+  tabsEl.innerHTML = tabs.map(c => {
+    const active = _exercisesCatFilter === c ? " active" : "";
+    if (c === "all") {
+      return `<button class="ex-cat-tab${active}" data-cat="all">Все</button>`;
+    }
+    const color = DATA.getCategoryColor(userId, c);
+    return `<button class="ex-cat-tab${active}" data-cat="${escHtml(c)}"><span class="ex-cat-tab-dot" style="background:${escHtml(color)}"></span>${escHtml(c)}</button>`;
+  }).join("");
   tabsEl.querySelectorAll(".ex-cat-tab").forEach(btn => {
     btn.addEventListener("click", () => {
       _exercisesCatFilter = btn.dataset.cat;
@@ -2873,22 +2875,24 @@ function renderExercisesList(query) {
 
   const SVG_CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`;
 
+  const isFiltered = _exercisesCatFilter !== "all";
   exercisesScroll.innerHTML = orderedCats.map(cat => {
     const color = DATA.getCategoryColor(userId, cat);
+    const accentStyle = isFiltered ? ` style="border-left: 3px solid ${color};"` : "";
     const rows = groups.get(cat).map(ex => `
-      <div class="ex-row tappable" data-id="${escHtml(ex.id)}">
+      <div class="ex-row tappable" data-id="${escHtml(ex.id)}"${accentStyle}>
         <span class="ex-row-body">
           <span class="ex-row-name">${escHtml(ex.name)}</span>
         </span>
         <span class="ex-row-chevron">${SVG_CHEVRON}</span>
       </div>`).join("");
-    return `
+    const header = isFiltered ? "" : `
       <div class="ex-group">
         <span class="ex-group-dot" style="background:${escHtml(color)}"></span>
         <span class="ex-group-name">${escHtml(cat)}</span>
         <span class="ex-group-count">${groups.get(cat).length}</span>
-      </div>
-      ${rows}`;
+      </div>`;
+    return header + rows;
   }).join("");
 
   exercisesScroll.querySelectorAll(".ex-row").forEach(row => {
@@ -2919,19 +2923,16 @@ function openExerciseDetail(exerciseId) {
   const color = DATA.getCategoryColor(userId, ex.cat);
   $("exd-title").textContent = ex.name;
   $("exd-meta").innerHTML =
-    `<span class="exd-cat-dot" style="background:${escHtml(color)}"></span>${escHtml(ex.cat)} · ${ex.owner === userId ? "Моё" : "Общее"}`;
+    `<span class="exd-cat-dot" style="background:${escHtml(color)}"></span>${escHtml(ex.cat)}`;
 
   const media = (ex.media || "").trim();
-  let mediaHtml;
+  let mediaHtml = "";
   if (isImageUrl(media)) {
     mediaHtml = `<div class="exd-media"><img src="${escHtml(media)}" alt="${escHtml(ex.name)}" loading="lazy"></div>`;
-  } else {
-    mediaHtml = `<div class="exd-media"><span class="exd-media-placeholder">техника · фото или гиф</span></div>`;
-    if (isHttpUrl(media)) {
-      mediaHtml += `<a class="exd-video-btn" href="${escHtml(media)}" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        Смотреть видео</a>`;
-    }
+  } else if (isHttpUrl(media)) {
+    mediaHtml = `<a class="exd-video-btn" href="${escHtml(media)}" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Смотреть видео</a>`;
   }
 
   const muscles = ex.muscles || {};
@@ -3000,30 +3001,278 @@ function openExerciseDetail(exerciseId) {
 
 $("exd-back-btn").addEventListener("click", () => goToScreen("exercises"));
 
-/* — Управление категориями: нижний лист с цветными метками (п.5) — */
+/* — Управление категориями v2: свайп-удаление, долгое нажатие = редактирование/перестановка — */
 function openCategoryManager() {
   const userId = DATA.getCurrentUser();
   const existing = $("cat-manager-backdrop");
   if (existing) existing.remove();
 
-  let openColorFor = null; // имя категории, у которой раскрыт выбор цвета
+  let catEditMode = false;
+  let catDrag = null;
 
   const backdrop = document.createElement("div");
   backdrop.id = "cat-manager-backdrop";
   backdrop.className = "bottom-sheet-backdrop";
+  // iOS: click не стреляет по non-interactive div без cursor:pointer
+  backdrop.style.cursor = "pointer";
 
   function close() {
     backdrop.classList.remove("open");
     setTimeout(() => backdrop.remove(), 300);
   }
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
 
-  const SVG_DEL  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
-  const SVG_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+  const SVG_DEL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
+
+  function getListEl() { return backdrop.querySelector(".cat-sheet-list"); }
+
+  function enterEditMode() {
+    if (catEditMode) return;
+    catEditMode = true;
+    haptic(22);
+    const list = getListEl();
+    if (list) list.classList.add("cat-editing");
+    const doneBtn = backdrop.querySelector(".cat-done-btn");
+    if (doneBtn) doneBtn.hidden = false;
+  }
+
+  function exitEditMode() {
+    if (!catEditMode) return;
+    catEditMode = false;
+    const list = getListEl();
+    if (list) list.classList.remove("cat-editing");
+    const doneBtn = backdrop.querySelector(".cat-done-btn");
+    if (doneBtn) doneBtn.hidden = true;
+  }
+
+  function saveCatOrder() {
+    const list = getListEl();
+    if (!list) return;
+    const newOrder = [...list.querySelectorAll(".cat-item-wrap[data-cat]")].map(w => w.dataset.cat);
+    DATA.saveAllCategories(userId, newOrder);
+    renderExercisesList(exercisesSearch.value);
+  }
+
+  function removeCategory(cat) {
+    openConfirmModal({
+      title: "Удалить категорию?",
+      message: `Категория «${cat}» будет удалена. Упражнения из неё перейдут в «Другое».`,
+      confirmLabel: "Удалить",
+      onConfirm: () => {
+        DATA.deleteCategory(userId, cat);
+        renderExercisesList(exercisesSearch.value);
+        render();
+      },
+    });
+  }
+
+  function openAddCatModal() {
+    const addBd = document.createElement("div");
+    addBd.className = "modal-backdrop open";
+    addBd.innerHTML = `
+      <div class="modal modal-form">
+        <h2 class="modal-title">Новая категория</h2>
+        <div class="ex-form-field">
+          <input class="ex-form-input" id="cat-new-name-inp" type="text" placeholder="Например, Растяжка">
+        </div>
+        <div class="modal-form-actions">
+          <button class="btn-chip" data-act="cancel">Отмена</button>
+          <button class="btn-chip primary" data-act="ok">Сохранить</button>
+        </div>
+      </div>`;
+    document.body.appendChild(addBd);
+    const inp = addBd.querySelector("input");
+    const closeMod = () => addBd.remove();
+    const save = () => {
+      const v = inp.value.trim();
+      if (!v) return;
+      DATA.addCategory(userId, v);
+      renderExercisesList(exercisesSearch.value);
+      render();
+      closeMod();
+    };
+    addBd.querySelector('[data-act="cancel"]').addEventListener("click", closeMod);
+    addBd.querySelector('[data-act="ok"]').addEventListener("click", save);
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") save(); });
+    addBd.addEventListener("click", e => { if (e.target === addBd) closeMod(); });
+    setTimeout(() => inp.focus(), 50);
+  }
+
+  function startCatRename(wrap, cat, nameEl) {
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.value = cat;
+    inp.className = "cat-item-name";
+    nameEl.replaceWith(inp);
+    inp.focus(); inp.select();
+    const commit = () => {
+      const next = inp.value.trim();
+      if (next && next !== cat) {
+        DATA.renameCategory(userId, cat, next);
+        renderExercisesList(exercisesSearch.value);
+        wrap.dataset.cat = next;
+        const catItem = wrap.querySelector(".cat-item");
+        if (catItem) catItem.dataset.cat = next;
+      }
+      const span = document.createElement("span");
+      span.className = "cat-item-name-text";
+      span.title = next || cat;
+      span.textContent = next || cat;
+      inp.replaceWith(span);
+      wireNameClick(wrap, next || cat, span);
+    };
+    inp.addEventListener("blur", commit);
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+  }
+
+  function wireNameClick(wrap, cat, nameEl) {
+    nameEl.addEventListener("click", e => {
+      if (!catEditMode) return;
+      e.stopPropagation();
+      startCatRename(wrap, cat, nameEl);
+    });
+  }
+
+  function wireCatSwipe(wrap, item, cat) {
+    let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
+    const MAX = 100, DEL = 72;
+    item.addEventListener("pointerdown", e => {
+      if (e.target.closest("input")) return;
+      sx = e.clientX; sy = e.clientY; dx = 0;
+      active = true; decided = false; horiz = false; swiped = false;
+      item.style.transition = "";
+    });
+    item.addEventListener("pointermove", e => {
+      if (!active) return;
+      const mx = e.clientX - sx, my = e.clientY - sy;
+      if (!decided) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        decided = true;
+        horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+        if (!horiz) { active = false; return; }
+        wrap.classList.add("swiping");
+        try { item.setPointerCapture(e.pointerId); } catch {}
+      }
+      if (!horiz) return;
+      dx = Math.max(-MAX, Math.min(0, mx));
+      if (dx < -4) swiped = true;
+      item.style.transform = `translateX(${dx}px)`;
+      wrap.classList.toggle("will-delete", dx <= -DEL);
+    });
+    const settle = () => {
+      if (!active) return;
+      active = false;
+      if (!horiz) return;
+      if (dx <= -DEL) {
+        item.style.transition = "transform 0.16s ease";
+        item.style.transform = "translateX(-110%)";
+        wrap.style.height = wrap.offsetHeight + "px";
+        requestAnimationFrame(() => {
+          wrap.style.transition = "height 0.16s ease, opacity 0.16s ease";
+          wrap.style.height = "0"; wrap.style.opacity = "0";
+        });
+        setTimeout(() => removeCategory(cat), 180);
+      } else {
+        item.style.transition = "transform 0.18s ease";
+        item.style.transform = "";
+        wrap.classList.remove("will-delete");
+        setTimeout(() => wrap.classList.remove("swiping"), 200);
+      }
+    };
+    item.addEventListener("pointerup", settle);
+    item.addEventListener("pointercancel", settle);
+    item.addEventListener("click", e => {
+      if (swiped) { e.stopPropagation(); e.preventDefault(); swiped = false; }
+    }, true);
+  }
+
+  function wireCatGesture(wrap, cat) {
+    let holdTimer = null, sx = 0, sy = 0, moved = false, dragStarted = false;
+    const DELAY = () => catEditMode ? 150 : 430;
+    const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+
+    const begin = (x, y, target) => {
+      if (target && target.closest("input")) return;
+      moved = false; dragStarted = false; sx = x; sy = y;
+      clearHold();
+      holdTimer = setTimeout(() => {
+        holdTimer = null;
+        if (moved) return;
+        if (!catEditMode) { enterEditMode(); return; }
+        dragStarted = true;
+        startCatDrag(wrap, cat, y);
+      }, DELAY());
+    };
+    const move = (x, y, e) => {
+      if (catDrag && catDrag.wrap === wrap) {
+        if (e && e.cancelable) e.preventDefault();
+        moveCatDrag(y); return;
+      }
+      if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); }
+    };
+    const finish = () => {
+      clearHold();
+      if (catDrag && catDrag.wrap === wrap) endCatDrag();
+    };
+
+    wrap.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
+    wrap.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
+    wrap.addEventListener("touchend", finish);
+    wrap.addEventListener("mousedown", e => begin(e.clientX, e.clientY, e.target));
+    wrap.addEventListener("mousemove", e => { if (catDrag) move(e.clientX, e.clientY, null); });
+    wrap.addEventListener("mouseup", finish);
+    // Suppress click if drag happened
+    wrap.addEventListener("click", e => {
+      if (dragStarted) { e.stopPropagation(); dragStarted = false; }
+    }, true);
+  }
+
+  function startCatDrag(wrap, cat, pointerY) {
+    if (catDrag) return;
+    const top = wrap.getBoundingClientRect().top;
+    catDrag = { wrap, cat, grabDy: pointerY - top, ty: 0, pointerY };
+    wrap.style.transition = "none";
+    wrap.classList.add("dragging");
+    haptic(18);
+  }
+
+  function moveCatDrag(pointerY) {
+    const d = catDrag; if (!d) return;
+    d.pointerY = pointerY;
+    const list = getListEl(); if (!list) return;
+    const h = d.wrap.getBoundingClientRect().height;
+    const center = (pointerY - d.grabDy) + h / 2;
+    const prev = d.wrap.previousElementSibling;
+    if (prev && prev.classList.contains("cat-item-wrap")) {
+      const r = prev.getBoundingClientRect();
+      if (center < r.top + r.height / 2) { list.insertBefore(d.wrap, prev); }
+    }
+    const next = d.wrap.nextElementSibling;
+    if (next && next.classList.contains("cat-item-wrap")) {
+      const r = next.getBoundingClientRect();
+      if (center > r.top + r.height / 2) { list.insertBefore(next, d.wrap); }
+    }
+    const rect = d.wrap.getBoundingClientRect();
+    const naturalTop = rect.top - d.ty;
+    d.ty = (pointerY - d.grabDy) - naturalTop;
+    d.wrap.style.transform = `translateY(${d.ty}px)`;
+  }
+
+  function endCatDrag() {
+    const d = catDrag; if (!d) return;
+    catDrag = null;
+    d.wrap.style.transition = "transform 0.18s ease";
+    d.wrap.style.transform = "";
+    d.wrap.classList.remove("dragging");
+    setTimeout(() => { d.wrap.style.transition = ""; }, 200);
+    saveCatOrder();
+  }
 
   function render() {
     const cats = DATA.getAllCategories(userId);
     const counts = {};
     DATA.getVisibleExercises(userId).forEach(e => { counts[e.cat] = (counts[e.cat] || 0) + 1; });
+    const editingClass = catEditMode ? " cat-editing" : "";
 
     backdrop.innerHTML = `
       <div class="bottom-sheet cat-sheet">
@@ -3032,92 +3281,41 @@ function openCategoryManager() {
           <span class="cat-sheet-title">Категории</span>
           <span class="cat-sheet-count">${cats.length} шт</span>
         </div>
-        <div class="cat-sheet-list">
+        <div class="cat-sheet-list${editingClass}">
           ${cats.length ? cats.map(c => {
             const color = DATA.getCategoryColor(userId, c);
-            const picker = openColorFor === c ? `
-              <div class="cat-colors" data-cat="${escHtml(c)}">
-                ${DATA.CATEGORY_PALETTE.map(col => `
-                  <button class="cat-color-swatch ${col.toLowerCase() === color.toLowerCase() ? "selected" : ""}" data-color="${escHtml(col)}" style="background:${escHtml(col)}"></button>
-                `).join("")}
-              </div>` : "";
             return `
-              <div class="cat-item">
-                <button class="cat-item-dot-btn" data-dot="${escHtml(c)}" title="Цвет метки" style="all:unset;cursor:pointer;flex:none;">
+              <div class="cat-item-wrap" data-cat="${escHtml(c)}">
+                <div class="cat-item-delete">${SVG_DEL} Удалить</div>
+                <div class="cat-item" data-cat="${escHtml(c)}">
                   <span class="cat-item-dot" style="background:${escHtml(color)}"></span>
-                </button>
-                <input class="cat-item-name cat-rename-input" data-old="${escHtml(c)}" value="${escHtml(c)}">
-                <span class="cat-item-count">${counts[c] || 0}</span>
-                <button class="cat-item-btn cat-color-btn" data-cat="${escHtml(c)}" title="Цвет метки">${SVG_EDIT}</button>
-                <button class="cat-item-btn danger cat-delete-btn" data-cat="${escHtml(c)}" title="Удалить">${SVG_DEL}</button>
-              </div>
-              ${picker}`;
-          }).join("") : `<p class="exd-empty">Категорий пока нет — добавь первую.</p>`}
+                  <span class="cat-item-name-text" title="${escHtml(c)}">${escHtml(c)}</span>
+                  <span class="cat-item-count">${counts[c] || 0}</span>
+                </div>
+              </div>`;
+          }).join("") : `<p class="exd-empty">Категорий пока нет.</p>`}
         </div>
-        <div class="cat-add-row">
-          <input class="ex-form-input" id="cat-new-input" placeholder="Новая категория…">
-          <button class="cat-add-btn" id="cat-add-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Добавить
-          </button>
-        </div>
+        <button class="cat-done-btn"${catEditMode ? "" : " hidden"}>Готово</button>
+        <button class="cat-item-add">Добавить новую категорию</button>
       </div>
     `;
 
-    backdrop.querySelectorAll(".cat-rename-input").forEach(inp => {
-      inp.addEventListener("change", () => {
-        const old = inp.dataset.old;
-        const next = inp.value.trim();
-        if (next && next !== old) {
-          DATA.renameCategory(userId, old, next);
-          if (openColorFor === old) openColorFor = next;
-          renderExercisesList(exercisesSearch.value);
-        }
-        render();
-      });
+    backdrop.querySelectorAll(".cat-item-wrap[data-cat]").forEach(wrap => {
+      const cat = wrap.dataset.cat;
+      const item = wrap.querySelector(".cat-item");
+      const nameEl = wrap.querySelector(".cat-item-name-text");
+      wireCatSwipe(wrap, item, cat);
+      wireCatGesture(wrap, cat);
+      wireNameClick(wrap, cat, nameEl);
     });
-    backdrop.querySelectorAll("[data-dot], .cat-color-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const cat = btn.dataset.dot || btn.dataset.cat;
-        openColorFor = openColorFor === cat ? null : cat;
-        render();
-      });
-    });
-    backdrop.querySelectorAll(".cat-color-swatch").forEach(sw => {
-      sw.addEventListener("click", () => {
-        const cat = sw.closest(".cat-colors").dataset.cat;
-        DATA.setCategoryColor(userId, cat, sw.dataset.color);
-        openColorFor = null;
-        renderExercisesList(exercisesSearch.value);
-        render();
-      });
-    });
-    backdrop.querySelectorAll(".cat-delete-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const cat = btn.dataset.cat;
-        openConfirmModal({
-          title: "Удалить категорию?",
-          message: `Категория «${cat}» будет удалена. Упражнения из неё перейдут в «Другое».`,
-          confirmLabel: "Удалить",
-          onConfirm: () => {
-            DATA.deleteCategory(userId, cat);
-            renderExercisesList(exercisesSearch.value);
-            render();
-          },
-        });
-      });
-    });
-    $("cat-add-btn").addEventListener("click", () => {
-      const inp = $("cat-new-input");
-      const v = inp.value.trim();
-      if (!v) return;
-      DATA.addCategory(userId, v);
-      renderExercisesList(exercisesSearch.value);
-      render();
-    });
+
+    const doneBtn = backdrop.querySelector(".cat-done-btn");
+    if (doneBtn) doneBtn.addEventListener("click", () => { exitEditMode(); });
+
+    const addBtn = backdrop.querySelector(".cat-item-add");
+    if (addBtn) addBtn.addEventListener("click", openAddCatModal);
   }
 
-  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
   document.body.appendChild(backdrop);
   render();
   requestAnimationFrame(() => backdrop.classList.add("open"));
