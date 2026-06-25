@@ -60,6 +60,9 @@ const DATA = (() => {
   const CATEGORY_PALETTE = [
     "#9c8bff", "#34d399", "#fbbf24", "#60a5fa", "#f472b6",
     "#22d3ee", "#a3e635", "#fb923c", "#c084fc", "#f87171",
+    "#38bdf8", "#4ade80", "#facc15", "#a78bfa", "#fb7185",
+    "#2dd4bf", "#86efac", "#fde68a", "#818cf8", "#f9a8d4",
+    "#67e8f9", "#bef264", "#fed7aa", "#e879f9", "#fca5a5",
   ];
 
   const RPE_LABELS = {
@@ -2801,7 +2804,7 @@ let _exercisesShowHidden = false;
 
 // Роли рабочих мышц — фиксированный порядок и подписи для деталей/формы.
 const MUSCLE_ROLES = [
-  { key: "agonists",     label: "Агонисты (главные)", primary: true },
+  { key: "agonists",     label: "Агонисты", primary: true },
   { key: "synergists",   label: "Синергисты" },
   { key: "stabilizers",  label: "Стабилизаторы" },
   { key: "distributors", label: "Распределители усилий" },

@@ -417,6 +417,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   padding: 24px;
 }
 .modal-backdrop.open { opacity: 1; pointer-events: auto; }
+.modal-backdrop { overflow: hidden; }
 
 .modal {
   width: 100%; max-width: 340px;
@@ -1114,8 +1115,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   flex: none;
   padding: calc(var(--safe-top) + 16px) 20px 14px;
   background: var(--panel); border-bottom: 1px solid var(--border-subtle);
-  display: flex; align-items: center; gap: 12px;
+  display: flex; flex-direction: column; gap: 12px;
 }
+.exercises-header-top { display: flex; align-items: center; gap: 12px; }
 .exercises-header-title { flex: 1; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
 .exercises-add-btn {
   flex: none; width: 38px; height: 38px; border-radius: 12px;
@@ -1124,7 +1126,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .exercises-add-btn svg { width: 18px; height: 18px; }
 
-.exercises-search-wrap { flex: none; padding: 14px 20px 4px; background: var(--panel); border-bottom: 1px solid var(--border-subtle); }
 .exercises-search {
   width: 100%; padding: 11px 16px;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
@@ -1146,9 +1147,10 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   flex: none; padding: 7px 13px; border-radius: 14px;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
   color: var(--text-secondary); font-size: 13px; font-weight: 600;
-  white-space: nowrap;
+  white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
 }
 .ex-cat-tab.active { background: var(--accent); border-color: transparent; color: #fff; }
+.ex-cat-tab-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 
 /* Второй ряд фильтров «Истории» (период) — без верхней границы, плотнее к первому */
 .history-period-wrap { padding-top: 2px; border-top: none; }
@@ -1228,7 +1230,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .ex-form-chip.selected { background: var(--accent); border-color: transparent; color: #fff; }
 .modal.modal-form { align-items: stretch; text-align: left; gap: 14px; }
-.modal.modal-form.modal-scroll { max-width: 380px; max-height: 84vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.modal.modal-form { overflow-x: hidden; }
+.modal.modal-form.modal-scroll { max-width: min(380px, calc(100vw - 32px)); max-height: 84vh; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
 .modal-form-actions { display: flex; gap: 8px; margin-top: 6px; }
 .modal-form-actions .btn-chip { flex: 1; justify-content: center; padding: 13px; font-size: 14.5px; }
 
@@ -1305,6 +1308,49 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .cat-add-row input { flex: 1; }
 .cat-add-btn { flex: none; display: flex; align-items: center; gap: 6px; padding: 12px 16px; border-radius: var(--radius-sm); background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; }
 .cat-add-btn svg { width: 15px; height: 15px; }
+
+/* ── Категории v2: свайп-удаление, режим редактирования, фантомная карточка ── */
+.cat-item-wrap { position: relative; overflow: hidden; border-radius: var(--radius-md); }
+.cat-item-delete {
+  position: absolute; inset: 0; z-index: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  padding-right: 16px; border-radius: var(--radius-md);
+  background: var(--red); color: #fff; font-size: 13px; font-weight: 700; opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.cat-item-delete svg { width: 17px; height: 17px; }
+.cat-item-wrap.swiping .cat-item-delete { opacity: 0.9; }
+.cat-item-wrap.will-delete .cat-item-delete { opacity: 1; }
+.cat-item { position: relative; z-index: 1; }
+.cat-item-name-text {
+  flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600;
+  color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cat-sheet-list.cat-editing .cat-item-wrap:not(.dragging) {
+  animation: catJiggle 0.3s ease-in-out infinite;
+}
+.cat-sheet-list.cat-editing .cat-item-wrap:nth-child(even):not(.dragging) { animation-delay: -0.15s; }
+@keyframes catJiggle {
+  0%   { transform: rotate(-0.55deg); }
+  50%  { transform: rotate(0.55deg); }
+  100% { transform: rotate(-0.55deg); }
+}
+.cat-item-wrap.dragging { animation: none !important; z-index: 20; box-shadow: 0 8px 24px rgba(0,0,0,0.45); }
+.cat-done-btn {
+  width: 100%; padding: 13px; border-radius: var(--radius-sm);
+  background: var(--accent); color: #fff;
+  font-size: 14.5px; font-weight: 700; cursor: pointer; margin-bottom: 8px;
+  transition: opacity 0.15s ease;
+}
+.cat-done-btn:active { opacity: 0.85; }
+.cat-item-add {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; padding: 14px 16px;
+  background: transparent; border: 1.5px dashed var(--border-strong); border-radius: var(--radius-md);
+  color: var(--text-tertiary); font-size: 14.5px; font-style: italic; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.cat-item-add:active { background: rgba(255,255,255,0.03); }
 
 /* ── Редактор техники в форме упражнения ── */
 .ex-form-textarea { min-height: 64px; resize: vertical; line-height: 1.45; font-family: inherit; }
@@ -1709,16 +1755,16 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   <!-- ===== ЭКРАН 5: упражнения ===== -->
   <section id="screen-exercises" class="screen screen-exercises slide-right">
     <div class="exercises-header">
-      <button class="btn-chip" id="exercises-back-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-        Назад
-      </button>
-      <div class="exercises-header-title">Упражнения</div>
-      <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
-    </div>
-    <div class="exercises-search-wrap">
+      <div class="exercises-header-top">
+        <button class="btn-chip" id="exercises-back-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          Назад
+        </button>
+        <div class="exercises-header-title">Упражнения</div>
+        <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
       <input class="exercises-search" id="exercises-search" placeholder="Поиск упражнения…" type="text">
     </div>
     <div class="ex-cat-tabs-wrap">
