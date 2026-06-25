@@ -2524,6 +2524,14 @@ function refreshRunContext() {
   const cadEl  = $("run-cadence");  if (cadEl)  cadEl.placeholder  = p?.cadence   ? String(p.cadence)   : "170";
   const hrEl   = $("run-hr");       if (hrEl)   hrEl.placeholder   = p?.heartRate ? String(p.heartRate) : "152";
 
+  // Best-record badges (gold star + value)
+  const b = _runBests;
+  const setBadge = (id, val) => { const el = $(id); if (el) el.textContent = val != null ? `★ ${val}` : ""; };
+  setBadge("run-best-dist", b.dist     != null ? `${b.dist} км` : null);
+  setBadge("run-best-pace", b.paceSec  != null ? secToPaceStr(b.paceSec) : null);
+  setBadge("run-best-cad",  b.cad      != null ? String(b.cad) : null);
+  setBadge("run-best-hr",   b.hr       != null ? String(b.hr) : null);
+
   updatePace();
 }
 
@@ -2625,10 +2633,43 @@ function saveRunState() {
   SyncQueue.push("run:update", { workoutId: _run.id });
 }
 
+function discardActiveRun() {
+  const userId = DATA.getCurrentUser();
+  const binId = _run?._remoteBinId;
+  if (binId) Storage.deleteBin(binId).catch(e => console.warn("deleteBin failed", e));
+  DATA.clearActiveWorkout(userId);
+  SyncQueue.push("user:update", {});
+  _run = null;
+  showToast("Пробежка удалена");
+  goToScreen("menu");
+}
+
+function openEmptyRunModal() {
+  if (document.getElementById("empty-run-continue-btn")) return;
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop open";
+  backdrop.innerHTML = `
+    <div class="modal modal-form">
+      <h2 class="modal-title">Пустая пробежка</h2>
+      <p style="font-size:14px;color:var(--text-secondary);margin:0;line-height:1.5;">
+        Время и дистанция не заполнены — похоже на случайное нажатие. Можно вернуться и заполнить данные или удалить пробежку.
+      </p>
+      <div class="modal-form-actions">
+        <button class="btn-chip" id="empty-run-continue-btn">Продолжить</button>
+        <button class="btn-chip danger" id="empty-run-discard-btn">Удалить</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  document.getElementById("empty-run-continue-btn").addEventListener("click", () => backdrop.remove());
+  document.getElementById("empty-run-discard-btn").addEventListener("click", () => { backdrop.remove(); discardActiveRun(); });
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) backdrop.remove(); });
+}
+
 $("run-save-btn").addEventListener("click", () => {
   const dist   = parseFloat($("run-distance").value);
   const durSec = getRunDurSec();
-  if (!dist || !durSec) { showToast("Заполни время и дистанцию"); return; }
+  if (!dist || !durSec) { openEmptyRunModal(); return; }
 
   saveRunState();
   const userId = DATA.getCurrentUser();
