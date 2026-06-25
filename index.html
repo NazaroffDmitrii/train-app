@@ -921,6 +921,57 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .run-save-btn:active { transform: scale(0.98); opacity: 0.85; }
 
+/* Run type tabs */
+.run-type-tabs {
+  display: flex; gap: 8px; padding: 10px 20px;
+  background: var(--panel); border-bottom: 1px solid var(--border-subtle);
+  flex: none;
+}
+.run-type-tab {
+  flex: 1; padding: 8px 0; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600;
+  background: var(--bg-base); border: 1.5px solid var(--border-subtle);
+  color: var(--text-secondary);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.run-type-tab.active {
+  background: var(--green-soft); border-color: rgba(52,211,153,0.45);
+  color: var(--green);
+}
+
+/* HH:MM:SS split input */
+.run-time-wrap { display: flex; align-items: baseline; gap: 1px; }
+.run-time-part {
+  font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
+  background: none; color: var(--text-primary);
+  width: 2ch; text-align: center; padding: 0;
+  -moz-appearance: textfield;
+}
+.run-time-part::-webkit-outer-spin-button,
+.run-time-part::-webkit-inner-spin-button { display: none; }
+.run-time-sep {
+  font-size: 26px; font-weight: 700; color: var(--text-secondary);
+  user-select: none; line-height: 1;
+}
+
+/* Pace cell — permanent green tint (computed, not typed) */
+.run-field.pace-field {
+  border-color: rgba(52,211,153,0.35);
+  background: rgba(52,211,153,0.06);
+}
+
+/* Best value — digit turns green */
+.run-field.val-best .run-field-val { color: var(--green); }
+.run-field.val-best .run-time-part,
+.run-field.val-best input.run-field-input { color: var(--green); }
+
+/* Previous run ghost text */
+.run-field-prev {
+  font-size: 11px; color: var(--text-tertiary);
+  margin-top: 4px; min-height: 14px;
+  font-style: italic;
+}
+
 /* ============ Exercise picker ============ */
 .picker-backdrop {
   position: fixed; inset: 0;
@@ -1512,32 +1563,49 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       </button>
     </div>
 
+    <div class="run-type-tabs">
+      <button class="run-type-tab active" data-type="easy">Лёгкая</button>
+      <button class="run-type-tab" data-type="long">Лонг</button>
+      <button class="run-type-tab" data-type="hard">Тяжёлая</button>
+    </div>
+
     <div class="run-scroll">
       <div class="run-field-group">
-        <div class="run-field">
+        <div class="run-field" id="run-field-dur">
           <div class="run-field-label">Время</div>
-          <input class="run-field-input" id="run-duration" type="text" placeholder="1:02:30" inputmode="numeric">
-          <div class="run-field-unit">чч:мм:сс</div>
+          <div class="run-time-wrap">
+            <input class="run-time-part" id="run-dur-h" inputmode="numeric" maxlength="2" placeholder="00">
+            <span class="run-time-sep">:</span>
+            <input class="run-time-part" id="run-dur-m" inputmode="numeric" maxlength="2" placeholder="00">
+            <span class="run-time-sep">:</span>
+            <input class="run-time-part" id="run-dur-s" inputmode="numeric" maxlength="2" placeholder="00">
+          </div>
+          <div class="run-field-unit">чч : мм : сс</div>
+          <div class="run-field-prev" id="run-dur-prev"></div>
         </div>
-        <div class="run-field">
+        <div class="run-field" id="run-field-dist">
           <div class="run-field-label">Дистанция</div>
           <input class="run-field-input" id="run-distance" type="number" step="0.01" placeholder="10.5" inputmode="decimal">
           <div class="run-field-unit">км</div>
+          <div class="run-field-prev" id="run-dist-prev"></div>
         </div>
-        <div class="run-field">
+        <div class="run-field pace-field" id="run-field-pace">
           <div class="run-field-label">Темп</div>
           <div class="run-field-val" id="run-pace">—</div>
           <div class="run-field-unit">мин / км</div>
+          <div class="run-field-prev" id="run-pace-prev"></div>
         </div>
-        <div class="run-field">
+        <div class="run-field" id="run-field-cad">
           <div class="run-field-label">Каденс</div>
           <input class="run-field-input" id="run-cadence" type="number" placeholder="170" inputmode="numeric">
           <div class="run-field-unit">шаг / мин</div>
+          <div class="run-field-prev" id="run-cad-prev"></div>
         </div>
-        <div class="run-field full-width">
+        <div class="run-field full-width" id="run-field-hr">
           <div class="run-field-label">Средний пульс</div>
           <input class="run-field-input" id="run-hr" type="number" placeholder="152" inputmode="numeric">
           <div class="run-field-unit">уд / мин</div>
+          <div class="run-field-prev" id="run-hr-prev"></div>
         </div>
       </div>
       <button class="run-save-btn" id="run-save-btn">Сохранить пробежку</button>

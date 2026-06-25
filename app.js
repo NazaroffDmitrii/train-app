@@ -2365,45 +2365,178 @@ rpeBackdrop.addEventListener("click", e => { if (e.target === rpeBackdrop) rpeBa
    Screen 4: Run
    ========================================================================== */
 let _run = null;
+let _runBests = {};
+let _runPrev  = null;
+
+const RUN_TYPE_NAMES = { easy: "Лёгкая пробежка", long: "Длинная пробежка", hard: "Тяжёлая пробежка" };
+
+// --- Duration helpers (split HH:MM:SS) ---
+function getRunDurSec() {
+  const h = parseInt($("run-dur-h").value) || 0;
+  const m = parseInt($("run-dur-m").value) || 0;
+  const s = parseInt($("run-dur-s").value) || 0;
+  return h * 3600 + m * 60 + s;
+}
+function getRunDurStr() {
+  const h = parseInt($("run-dur-h").value) || 0;
+  const m = parseInt($("run-dur-m").value) || 0;
+  const s = parseInt($("run-dur-s").value) || 0;
+  if (!h && !m && !s) return "";
+  return `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+function setRunDurFromStr(str) {
+  if (!str) { $("run-dur-h").value = ""; $("run-dur-m").value = ""; $("run-dur-s").value = ""; return; }
+  const parts = String(str).split(":").map(Number);
+  if (parts.length === 3) {
+    $("run-dur-h").value = String(parts[0]).padStart(2,"0");
+    $("run-dur-m").value = String(parts[1]).padStart(2,"0");
+    $("run-dur-s").value = String(parts[2]).padStart(2,"0");
+  } else if (parts.length === 2) {
+    $("run-dur-h").value = "00";
+    $("run-dur-m").value = String(parts[0]).padStart(2,"0");
+    $("run-dur-s").value = String(parts[1]).padStart(2,"0");
+  }
+}
+
+// --- Best / prev helpers ---
+function getRunBests(userId, runType) {
+  const history = DATA.getWorkoutHistory(userId)
+    .filter(w => w.type === "run" && w.runType === runType);
+  if (!history.length) return {};
+  let bestPaceSec = Infinity, bestDurSec = Infinity, bestDist = -Infinity, bestCad = -Infinity, bestHR = Infinity;
+  history.forEach(w => {
+    if (w.pace) { const ps = paceStrToSec(w.pace); if (ps > 0 && ps < bestPaceSec) bestPaceSec = ps; }
+    if (w.durationSec && w.durationSec < bestDurSec) bestDurSec = w.durationSec;
+    const d = parseFloat(w.distance); if (d > 0 && d > bestDist) bestDist = d;
+    if (w.cadence && w.cadence > bestCad) bestCad = w.cadence;
+    if (w.heartRate && w.heartRate < bestHR) bestHR = w.heartRate;
+  });
+  return {
+    paceSec: bestPaceSec === Infinity ? null : bestPaceSec,
+    durSec:  bestDurSec  === Infinity ? null : bestDurSec,
+    dist:    bestDist    === -Infinity ? null : bestDist,
+    cad:     bestCad     === -Infinity ? null : bestCad,
+    hr:      bestHR      === Infinity  ? null : bestHR,
+  };
+}
+function getPrevRunOfType(userId, runType) {
+  return DATA.getWorkoutHistory(userId).find(w => w.type === "run" && w.runType === runType) || null;
+}
+
+// --- Active tab ---
+function activeRunType() {
+  return document.querySelector(".run-type-tab.active")?.dataset.type || "easy";
+}
+
+// --- Update pace (reads from split inputs) ---
+function updatePace() {
+  const distVal  = parseFloat($("run-distance").value);
+  const totalSec = getRunDurSec();
+  if (!distVal || !totalSec) { $("run-pace").textContent = "—"; updateRunHighlights(); return; }
+  const paceSec = totalSec / distVal;
+  const m = Math.floor(paceSec / 60);
+  const s = Math.round(paceSec % 60);
+  $("run-pace").textContent = `${m}:${String(s).padStart(2, "0")}`;
+  updateRunHighlights();
+}
+
+// --- Green highlighting ---
+function updateRunHighlights() {
+  const curDurSec  = getRunDurSec();
+  const curDist    = parseFloat($("run-distance").value);
+  const curPaceTxt = $("run-pace").textContent;
+  const curPaceSec = curPaceTxt !== "—" ? paceStrToSec(curPaceTxt) : null;
+  const curCad     = parseInt($("run-cadence").value) || 0;
+  const curHR      = parseInt($("run-hr").value) || 0;
+  const b = _runBests;
+
+  const mark = (id, isBest) => { const el = $(id); if (el) el.classList.toggle("val-best", isBest); };
+  mark("run-field-dur",  curDurSec  > 0 && b.durSec  != null && curDurSec  <= b.durSec);
+  mark("run-field-dist", curDist    > 0 && b.dist     != null && curDist    >= b.dist);
+  mark("run-field-pace", curPaceSec != null && b.paceSec != null && curPaceSec <= b.paceSec);
+  mark("run-field-cad",  curCad     > 0 && b.cad      != null && curCad     >= b.cad);
+  mark("run-field-hr",   curHR      > 0 && b.hr       != null && curHR      <= b.hr);
+}
+
+// --- Ghost prev values ---
+function refreshRunContext() {
+  const userId  = DATA.getCurrentUser();
+  const runType = activeRunType();
+  _runBests = getRunBests(userId, runType);
+  _runPrev  = getPrevRunOfType(userId, runType);
+  const p = _runPrev;
+  const setPrev = (id, val) => { const el = $(id); if (el) el.textContent = val ? `пред. ${val}` : ""; };
+  setPrev("run-dur-prev",  p?.duration  ? p.duration : null);
+  setPrev("run-dist-prev", p?.distance  ? `${p.distance} км` : null);
+  setPrev("run-pace-prev", p?.pace      ? `${p.pace} мин/км` : null);
+  setPrev("run-cad-prev",  p?.cadence   ? String(p.cadence) : null);
+  setPrev("run-hr-prev",   p?.heartRate ? String(p.heartRate) : null);
+  updateRunHighlights();
+}
+
+// --- Tab switching ---
+document.querySelectorAll(".run-type-tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".run-type-tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    if (_run) { _run.runType = btn.dataset.type; _run.name = RUN_TYPE_NAMES[btn.dataset.type] || "Пробежка"; }
+    refreshRunContext();
+  });
+});
+
+// --- Split time input: auto-advance & digit-only ---
+(function setupTimeParts() {
+  const ids = ["run-dur-h", "run-dur-m", "run-dur-s"];
+  ids.forEach((id, i) => {
+    const el = $(id);
+    el.addEventListener("focus", () => el.select());
+    el.addEventListener("input", () => {
+      el.value = el.value.replace(/\D/g, "").slice(0, 2);
+      if (el.value.length >= 2 && i < ids.length - 1) {
+        const next = $(ids[i + 1]);
+        next.focus();
+        next.select();
+      }
+      updatePace();
+    });
+    el.addEventListener("keydown", e => {
+      if (e.key === "Backspace" && el.value === "" && i > 0) {
+        e.preventDefault();
+        const prev = $(ids[i - 1]);
+        prev.focus();
+        prev.setSelectionRange(prev.value.length, prev.value.length);
+      }
+    });
+  });
+})();
+
+$("run-distance").addEventListener("input", updatePace);
+$("run-cadence").addEventListener("input", updateRunHighlights);
+$("run-hr").addEventListener("input", updateRunHighlights);
 
 function initRunScreen({ resume = false } = {}) {
   const userId = DATA.getCurrentUser();
   _run = DATA.getActiveWorkout(userId);
 
   // Clear fields
-  ["run-duration", "run-distance", "run-cadence", "run-hr"].forEach(id => { $(id).value = ""; });
+  $("run-dur-h").value = ""; $("run-dur-m").value = ""; $("run-dur-s").value = "";
+  $("run-distance").value = ""; $("run-cadence").value = ""; $("run-hr").value = "";
   $("run-pace").textContent = "—";
+
+  // Set active tab from saved runType (default easy)
+  const savedType = _run?.runType || "easy";
+  document.querySelectorAll(".run-type-tab").forEach(b => b.classList.toggle("active", b.dataset.type === savedType));
 
   if (resume && _run) {
     if (_run.distance)  $("run-distance").value = _run.distance;
-    if (_run.duration)  $("run-duration").value = _run.duration;
+    if (_run.duration)  setRunDurFromStr(_run.duration);
     if (_run.cadence)   $("run-cadence").value  = _run.cadence;
     if (_run.heartRate) $("run-hr").value        = _run.heartRate;
     updatePace();
   }
+
+  refreshRunContext();
 }
-
-function updatePace() {
-  const distVal = parseFloat($("run-distance").value);
-  const timeStr = $("run-duration").value.trim();
-  if (!distVal || !timeStr) { $("run-pace").textContent = "—"; return; }
-
-  // parse h:mm:ss or mm:ss
-  const parts = timeStr.split(":").map(Number);
-  let totalSec = 0;
-  if (parts.length === 3)      totalSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
-  else if (parts.length === 2) totalSec = parts[0] * 60 + parts[1];
-  else                         totalSec = parts[0];
-
-  if (!totalSec || !distVal) { $("run-pace").textContent = "—"; return; }
-
-  const paceSec = totalSec / distVal;
-  const m = Math.floor(paceSec / 60);
-  const s = Math.round(paceSec % 60);
-  $("run-pace").textContent = `${m}:${String(s).padStart(2, "0")}`;
-}
-
-["run-duration", "run-distance"].forEach(id => $(id).addEventListener("input", updatePace));
 
 $("run-back-btn").addEventListener("click", () => {
   saveRunState();
@@ -2412,8 +2545,10 @@ $("run-back-btn").addEventListener("click", () => {
 
 function saveRunState() {
   if (!_run) return;
+  _run.runType   = activeRunType();
+  _run.name      = RUN_TYPE_NAMES[_run.runType] || "Пробежка";
   _run.distance  = parseFloat($("run-distance").value) || null;
-  _run.duration  = $("run-duration").value || null;
+  _run.duration  = getRunDurStr() || null;
   _run.cadence   = parseInt($("run-cadence").value) || null;
   _run.heartRate = parseInt($("run-hr").value) || null;
   _run.pace      = $("run-pace").textContent !== "—" ? $("run-pace").textContent : null;
@@ -2423,14 +2558,14 @@ function saveRunState() {
 }
 
 $("run-save-btn").addEventListener("click", () => {
-  const dist = parseFloat($("run-distance").value);
-  const dur  = $("run-duration").value.trim();
-  if (!dist || !dur) { showToast("Заполни время и дистанцию"); return; }
+  const dist   = parseFloat($("run-distance").value);
+  const durSec = getRunDurSec();
+  if (!dist || !durSec) { showToast("Заполни время и дистанцию"); return; }
 
   saveRunState();
   const userId = DATA.getCurrentUser();
-  _run.finishedAt = Date.now();
-  _run.durationSec = parseDurationToSec(dur);
+  _run.finishedAt  = Date.now();
+  _run.durationSec = durSec;
 
   // Как и в силовой: не очищаем активную, пока запись в историю не подтверждена.
   if (!DATA.saveWorkout(userId, _run)) {
