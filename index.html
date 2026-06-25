@@ -894,7 +894,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .run-field {
   background: var(--panel); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md); padding: 14px 12px;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   text-align: center;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -965,18 +965,19 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .run-best-badge:empty { display: none; }
 
 /* Inline record star (shown when user beats the current record) */
-.run-field-val-row { position: relative; width: 100%; }
+.run-field-val-row {
+  display: flex; align-items: baseline; justify-content: center; gap: 4px; width: 100%;
+}
 .run-record-star {
-  display: none;
-  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
-  font-size: 20px; font-weight: 700; color: var(--amber);
-  line-height: 1; pointer-events: none;
+  display: none; font-size: 26px; font-weight: 700;
+  color: var(--amber); line-height: 1; flex: none;
 }
 .run-field.val-new-record { border-color: rgba(251,191,36,0.45); background: rgba(251,191,36,0.07); }
+/* Badge collapses; justify-content:center re-centers label/value/unit as a group */
 .run-field.val-new-record .run-best-badge { display: none; }
-.run-field.val-new-record .run-record-star { display: block; }
-.run-field.val-new-record input.run-field-input,
-.run-field.val-new-record .run-field-val { color: var(--amber); }
+.run-field.val-new-record .run-record-star { display: inline; }
+.run-field.val-new-record input.run-field-input { color: var(--amber); }
+.run-field.val-new-record .run-field-val-row .run-field-val { color: var(--amber); width: auto; }
 .run-field.val-new-record .run-time-part,
 .run-field.val-new-record .run-time-sep { color: var(--amber); }
 

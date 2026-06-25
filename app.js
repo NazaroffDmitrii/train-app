@@ -2482,29 +2482,51 @@ function updateRunHighlights() {
   const curDist    = parseFloat($("run-distance")?.value);
   const curCad     = parseInt($("run-cadence")?.value)  || 0;
   const curHR      = parseInt($("run-hr")?.value)       || 0;
-  const b = _runBests;
 
-  // Pace is best = both time and pace cells highlight (time alone has no independent meaning without dist context)
-  const paceBest = curPaceSec != null && b.paceSec != null && curPaceSec <= b.paceSec;
-  const paceNew  = curPaceSec != null && b.paceSec != null && curPaceSec < b.paceSec;
-  const distNew  = curDist > 0 && b.dist != null && curDist > b.dist;
-  const cadNew   = curCad  > 0 && b.cad  != null && curCad  > b.cad;
-  const hrNew    = curHR   > 0 && b.hr   != null && curHR   < b.hr;
+  const b = _runBests;  // all-time bests (gold)
+  const p = _runPrev;   // previous run (green)
+
+  const prevPaceSec = p?.pace      ? paceStrToSec(p.pace)     : null;
+  const prevDist    = p?.distance  != null ? parseFloat(p.distance)  : null;
+  const prevCad     = p?.cadence   != null ? parseInt(p.cadence)     : null;
+  const prevHR      = p?.heartRate != null ? parseInt(p.heartRate)   : null;
+
+  // Gold: strictly beat all-time record
+  const paceNew = curPaceSec != null && b.paceSec != null && curPaceSec < b.paceSec;
+  const distNew = curDist > 0 && b.dist != null && curDist > b.dist;
+  const cadNew  = curCad  > 0 && b.cad  != null && curCad  > b.cad;
+  const hrNew   = curHR   > 0 && b.hr   != null && curHR   < b.hr;
+
+  // Green: beat previous run (only when not already gold)
+  const pacePrev = !paceNew && curPaceSec != null && prevPaceSec != null && curPaceSec < prevPaceSec;
+  const distPrev = !distNew && curDist > 0 && prevDist != null && curDist > prevDist;
+  const cadPrev  = !cadNew  && curCad  > 0 && prevCad  != null && curCad  > prevCad;
+  const hrPrev   = !hrNew   && curHR   > 0 && prevHR   != null && curHR   < prevHR;
 
   const mark    = (id, on) => { const el = $(id); if (el) el.classList.toggle("val-best",       on); };
   const markNew = (id, on) => { const el = $(id); if (el) el.classList.toggle("val-new-record", on); };
 
-  mark("run-field-dur",  paceBest);
-  mark("run-field-dist", curDist > 0 && b.dist  != null && curDist >= b.dist);
-  mark("run-field-pace", paceBest);
-  mark("run-field-cad",  curCad  > 0 && b.cad   != null && curCad  >= b.cad);
-  mark("run-field-hr",   curHR   > 0 && b.hr    != null && curHR   <= b.hr);
+  mark("run-field-dur",  pacePrev);
+  mark("run-field-dist", distPrev);
+  mark("run-field-pace", pacePrev);
+  mark("run-field-cad",  cadPrev);
+  mark("run-field-hr",   hrPrev);
 
   markNew("run-field-dur",  paceNew);
   markNew("run-field-dist", distNew);
   markNew("run-field-pace", paceNew);
   markNew("run-field-cad",  cadNew);
   markNew("run-field-hr",   hrNew);
+
+  // Resize inputs to content width when star is shown so ☆ sits tight next to the number
+  const fitInput = (inputId, on) => {
+    const el = $(inputId);
+    if (!el) return;
+    el.style.width = on ? Math.max(el.value.length, 2) + "ch" : "";
+  };
+  fitInput("run-distance", distNew);
+  fitInput("run-cadence",  cadNew);
+  fitInput("run-hr",       hrNew);
 }
 
 // --- Placeholder ghost values from prev run ---
