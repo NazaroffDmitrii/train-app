@@ -902,15 +902,22 @@ $("profile-chip").addEventListener("click", () => {
 const HISTORY_SVG_STRENGTH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
 const HISTORY_SVG_RUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="14.5" cy="5.5" r="1.6"/><path d="M9.5 8.5l2.5 1.5 1 3.5-3 2.5M14.5 7l2.5 4.5-3 1.5"/><path d="M6 20l2.5-4"/></svg>`;
 
+function pluralSets(n) {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "подход";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "подхода";
+  return "подходов";
+}
+
 // Разметка одной карточки тренировки — общая для превью-шторки и экрана «История».
 function historyItemHtml(w) {
   const isRun = w.type === "run";
   const meta = isRun
     ? [w.distance ? `${w.distance} км` : null, w.pace ? `${w.pace} мин/км` : null].filter(Boolean).join(" · ")
     : (() => {
-        const sets = (w.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
-        const vol  = (w.exercises || []).reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
-        return [sets ? `${sets} подх` : null, vol ? `${vol} кг` : null].filter(Boolean).join(" · ");
+        const exCnt = (w.exercises || []).filter(ex => ex.sets.some(s => s.done)).length;
+        const sets  = (w.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
+        return [exCnt ? `${exCnt} ${pluralExercises(exCnt)}` : null, sets ? `${sets} ${pluralSets(sets)}` : null].filter(Boolean).join(" · ");
       })();
   const duration = w.durationSec ? formatDuration(w.durationSec) : "";
 
@@ -3106,15 +3113,13 @@ function initStatsScreen() {
     });
   }
 
-  // Прогресс за период
+  // Прогресс за период — отдельной ячейкой под графиком
   const gpInPeriod = graphPoints.filter(p=>p.ts>=ps);
-  let progressBadge = "";
-  if (gpInPeriod.length>=2) {
+  let progTxt = "—", progValCls = "";
+  if (gpInPeriod.length>=2 && gpInPeriod[0].maxWeight>0) {
     const pct = Math.round((gpInPeriod[gpInPeriod.length-1].maxWeight - gpInPeriod[0].maxWeight)/gpInPeriod[0].maxWeight*100);
-    const cls = pct>0?"s-prog-up":pct<0?"s-prog-down":"s-prog-flat";
-    const txt = pct>0?`+${pct}%`:pct<0?`${pct}%`:"без изменений";
-    const arrow = pct > 0 ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M7 17L17 7M17 7H9M17 7v8"/></svg>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><path d="M7 7L17 17M17 17H9M17 17v-8"/></svg>`;
-    progressBadge = `<div class="s-prog-badge ${cls}">${arrow}${txt}</div>`;
+    progTxt = pct>0?`+${pct}%`:`${pct}%`;
+    progValCls = pct>0?" up":pct<0?" down":"";
   }
 
   // Время по типам (для карточек)
@@ -3128,7 +3133,7 @@ function initStatsScreen() {
 
   scroll.innerHTML = `
     <div class="s-period-seg">
-      ${[["week","Неделя"],["month","Месяц"],["3month","3 мес"],["year","Год"],["all","Всё"]].map(([p,l]) =>
+      ${[["week","Неделя"],["month","Месяц"],["3month","3 месяца"],["year","Год"],["all","Всё"]].map(([p,l]) =>
         `<button class="s-period-btn${_statsPeriod===p?" active":""}" data-p="${p}">${l}</button>`
       ).join("")}
     </div>
@@ -3176,13 +3181,10 @@ function initStatsScreen() {
     ${_statsSelectedExId ? `
     <div class="s-ex-card">
       <div class="s-ex-header">
-        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:7px;">
-          <div style="font-size:15px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(selEx?.name||_statsSelectedExId)}</div>
-          <button class="s-ex-pick-btn" id="stats-ex-pick-btn" title="Изменить упражнение">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </button>
-        </div>
-        <div style="flex:none;">${progressBadge}</div>
+        <div class="s-ex-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(selEx?.name||_statsSelectedExId)}</div>
+        <button class="s-ex-pick-btn" id="stats-ex-pick-btn" title="Изменить упражнение">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
       </div>
       <div class="s-ex-body">
         <div class="s-chart-frame" id="s-graph-wrap">${renderStatsGraph(gpInPeriod, _statsGraphMode)}</div>
@@ -3194,6 +3196,10 @@ function initStatsScreen() {
           <div class="s-ex-rec">
             <div class="s-ex-rec-val">${oneRM ? `${oneRM} кг` : "—"}</div>
             <div class="s-ex-rec-label">1ПМ расчёт</div>
+          </div>
+          <div class="s-ex-rec">
+            <div class="s-ex-rec-val${progValCls}">${progTxt}</div>
+            <div class="s-ex-rec-label">прогресс</div>
           </div>
         </div>
       </div>
