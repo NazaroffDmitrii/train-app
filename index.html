@@ -508,7 +508,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 /* Когда показана пилюля отдыха — резервируем место снизу, чтобы кнопку
    «Добавить упражнение» можно было доскроллить выше пилюли (п.2). */
 .workout-scroll.rest-active {
-  padding-bottom: calc(104px + var(--safe-bottom));
+  padding-bottom: calc(var(--rest-reserve, 104px) + var(--safe-bottom));
 }
 
 /* ============ Rest timer ============ */
@@ -689,20 +689,23 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   padding: 3px 0;
   position: relative; z-index: 1;
   background: var(--panel);
-  touch-action: pan-y; will-change: transform;
+  touch-action: pan-y;
 }
 
-/* Свайп-удаление подхода (п.7): строка едет влево, открывая красную зону. */
+/* Свайп-удаление подхода (п.7): строка едет влево, открывая красную зону.
+   Подложка скрыта по умолчанию (opacity:0) и показывается только во время
+   свайпа (.swiping) — иначе при резком скролле мелькала красная зона (п.1). */
 .set-row-wrap { position: relative; overflow: hidden; }
 .set-row-delete {
   position: absolute; inset: 3px 0; z-index: 0;
   display: flex; align-items: center; justify-content: flex-end; gap: 7px;
   padding-right: 16px; border-radius: 10px;
   background: var(--red); color: #fff;
-  font-size: 13px; font-weight: 700; opacity: 0.9;
+  font-size: 13px; font-weight: 700; opacity: 0;
   transition: opacity 0.12s ease;
 }
 .set-row-delete svg { width: 18px; height: 18px; }
+.set-row-wrap.swiping .set-row-delete { opacity: 0.9; }
 .set-row-wrap.will-delete .set-row-delete { opacity: 1; }
 
 .set-num {

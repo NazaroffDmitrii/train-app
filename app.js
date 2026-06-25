@@ -1477,10 +1477,16 @@ function startRest() {
   }
   _restDurationSec = DATA.getRestDefault();   // запомненный пользователем дефолт
   _restStartTs = Date.now();
-  $("rest-timer").hidden = false;
-  // Зарезервировать место снизу скролла, чтобы пилюля таймера не накрывала
-  // кнопку «Добавить упражнение» (её можно доскроллить над пилюлей) — п.2.
-  $("workout-scroll").classList.add("rest-active");
+  const timer = $("rest-timer");
+  timer.hidden = false;
+  // Резервируем место снизу так, чтобы зазор НАД пилюлей был равен зазору ПОД
+  // ней (20px из CSS bottom), и «Добавить упражнение» доскролливалось над
+  // таймером (п.2). padding = верхний_зазор(20) + высота_пилюли + нижний(20) −
+  // margin кнопки(16) = высота + 24; safe-bottom добавляется в CSS.
+  const scroll = $("workout-scroll");
+  const th = Math.round(timer.getBoundingClientRect().height) || 52;
+  scroll.style.setProperty("--rest-reserve", (th + 24) + "px");
+  scroll.classList.add("rest-active");
   renderRest();
   _restInt = setInterval(() => {
     if (restRemaining() <= 0) { haptic(40); playRestDoneSound(); notifyRestDone(); endRest(true); return; }
@@ -1855,8 +1861,8 @@ function renderExerciseList() {
     const exDef = visible.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
     const rec = DATA.getExerciseRecord(userId, ex.exerciseId);
     const lastWorkout = findLast(ex.exerciseId);
-    const lastExData  = lastWorkout ? lastWorkout.exercises.find(e => e.exerciseId === ex.exerciseId) : null;
-    const lastSets    = lastExData  ? lastExData.sets.filter(s => s.done && (s.weight || s.reps)) : [];
+    // «Прошлый раз» больше не выводим отдельной строкой — прошлые значения
+    // показываются только подсказкой-тенью в пустых полях (см. renderSetsInBlock), п.4.
 
     // Рекорд веса — компактный бейдж в шапке (как в макете 03).
     let prChip = "";
@@ -1865,16 +1871,6 @@ function renderExerciseList() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 17l-6.3 4.4L8 14 2 9.4h7.6z"/></svg>
         ${rec.maxWeight} кг
       </span>`;
-    }
-
-    // Прошлая тренировка
-    let prevHtml = "";
-    if (lastSets.length) {
-      const setsStr = lastSets.map(s => `<span class="ex-block-prev-set">${s.weight} × ${s.reps}</span>`).join("");
-      prevHtml = `<div class="ex-block-prev">
-        <div class="ex-block-prev-label">Прошлый раз · ${fmtDate(lastWorkout.startedAt)}</div>
-        <div class="ex-block-prev-sets">${setsStr}</div>
-      </div>`;
     }
 
     const block = document.createElement("div");
@@ -1889,9 +1885,8 @@ function renderExerciseList() {
         ${prChip}
       </div>
       <div class="ex-divider"></div>
-      ${prevHtml}
       <div class="sets-table">
-        <div class="sets-header"><span>#</span><span>Вес</span><span>Повт</span><span>RPE</span><span></span></div>
+        <div class="sets-header"><span>#</span><span>Кг</span><span>Повт</span><span>RPE</span><span></span></div>
         <div class="sets-body"></div>
       </div>
       <textarea class="set-note-input" placeholder="Заметка к тренировке…" rows="2">${ex.note || ""}</textarea>
@@ -1946,8 +1941,9 @@ function renderExerciseList() {
     const noteInput = block.querySelector(".set-note-input");
     if (ex.note) noteInput.classList.add("visible");
     noteBtn.addEventListener("click", () => {
-      const visible = noteInput.classList.toggle("visible");
-      if (visible) { noteInput.focus(); }
+      // Не фокусируем поле автоматически — чтобы клавиатура не выскакивала,
+      // когда пользователь просто хочет посмотреть уже записанную заметку (п.3).
+      noteInput.classList.toggle("visible");
     });
     noteInput.addEventListener("input", () => {
       ex.note = noteInput.value;
@@ -2057,10 +2053,14 @@ function wireSetRowSwipe(wrap, row, onDelete) {
     if (!active) return;
     const mx = e.clientX - sx, my = e.clientY - sy;
     if (!decided) {
-      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
       decided = true;
-      horiz = Math.abs(mx) > Math.abs(my) + 2;
-      if (!horiz) { active = false; return; }       // вертикаль — отдаём скроллу
+      // Только явный свайп ВЛЕВО; при любом намёке на вертикаль отдаём скроллу —
+      // иначе при резком скролле мелькала красная зона удаления (п.1).
+      horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+      if (!horiz) { active = false; return; }
+      wrap.classList.add("swiping");                 // показать подложку только сейчас
+      row.style.willChange = "transform";
       try { row.setPointerCapture(e.pointerId); } catch {}
     }
     dx = Math.max(-MAX, Math.min(0, mx));            // тянем только влево
@@ -2085,6 +2085,7 @@ function wireSetRowSwipe(wrap, row, onDelete) {
       row.style.transition = "transform 0.18s ease";
       row.style.transform = "";
       wrap.classList.remove("will-delete");
+      setTimeout(() => { wrap.classList.remove("swiping"); row.style.willChange = ""; }, 200);
     }
   };
   row.addEventListener("pointerup", settle);
