@@ -2267,19 +2267,21 @@ function renderPickerList(query) {
 (function setupPickerSwipe() {
   const sheet = pickerBackdrop.querySelector(".picker-sheet");
   if (!sheet) return;
-  let startY = 0, dy = 0, active = false, decided = false, vert = false, onList = false;
-  const down = (y, target) => {
-    active = true; decided = false; vert = false; dy = 0; startY = y;
+  let startY = 0, startX = 0, dy = 0, active = false, decided = false, vert = false, onList = false;
+  const down = (y, x, target) => {
+    active = true; decided = false; vert = false; dy = 0; startY = y; startX = x;
     onList = !!(target.closest && target.closest(".picker-list"));
     sheet.style.transition = "none";
   };
-  const moveTo = (y, e) => {
+  const moveTo = (y, x, e) => {
     if (!active) return;
     const d = y - startY;
+    const dx = x - startX;
     if (!decided) {
-      if (Math.abs(d) < 6) return;
+      if (Math.abs(d) < 6 && Math.abs(dx) < 6) return;
       decided = true;
-      vert = d > 0 && (!onList || pickerList.scrollTop <= 0);
+      const horiz = Math.abs(dx) > Math.abs(d);
+      vert = !horiz && d > 0 && (!onList || pickerList.scrollTop <= 0);
       if (!vert) { active = false; sheet.style.transition = ""; return; }   // отдаём прокрутке
     }
     dy = Math.max(0, d);
@@ -2294,13 +2296,13 @@ function renderPickerList(query) {
     sheet.style.transform = "";              // снимаем inline → дальше рулит CSS
     if (dy > 110) closeExercisePicker();     // .open снимется → лист уезжает вниз
   };
-  sheet.addEventListener("touchstart", e => down(e.touches[0].clientY, e.target), { passive: true });
-  sheet.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) moveTo(t.clientY, e); }, { passive: false });
+  sheet.addEventListener("touchstart", e => down(e.touches[0].clientY, e.touches[0].clientX, e.target), { passive: true });
+  sheet.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) moveTo(t.clientY, t.clientX, e); }, { passive: false });
   sheet.addEventListener("touchend", up);
   sheet.addEventListener("touchcancel", up);
   sheet.addEventListener("mousedown", e => {
-    down(e.clientY, e.target);
-    const mm = ev => moveTo(ev.clientY, ev);
+    down(e.clientY, e.clientX, e.target);
+    const mm = ev => moveTo(ev.clientY, ev.clientX, ev);
     const mu = () => { up(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); };
     window.addEventListener("mousemove", mm);
     window.addEventListener("mouseup", mu);
@@ -3099,10 +3101,10 @@ function initStatsScreen() {
 
   // Упражнение
   const exWithHist = statsExWithHistory(workouts);
-  if (!_statsSelectedExId || !exWithHist.find(e=>e.id===_statsSelectedExId)) {
+  const allEx = DATA.getVisibleExercises(userId);
+  if (!_statsSelectedExId || !allEx.find(e=>e.id===_statsSelectedExId)) {
     _statsSelectedExId = exWithHist[0]?.id || null;
   }
-  const allEx = DATA.getVisibleExercises(userId);
   const selEx = allEx.find(e=>e.id===_statsSelectedExId);
   const selRec = _statsSelectedExId ? DATA.getExerciseRecord(userId, _statsSelectedExId) : null;
 
