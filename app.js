@@ -891,7 +891,7 @@ window.addEventListener("pagehide", () => SyncQueue.flush());
 const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), templateDetail: $("screen-template-detail") };
 
 function goToScreen(name, opts = {}) {
-  Object.values(SCREENS).forEach(s => s.classList.remove("active"));
+  Object.values(SCREENS).forEach(s => s && s.classList.remove("active"));
   const target = SCREENS[name];
   if (!target) return;
   target.classList.add("active");
