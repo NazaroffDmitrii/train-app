@@ -2486,13 +2486,25 @@ function updateRunHighlights() {
 
   // Pace is best = both time and pace cells highlight (time alone has no independent meaning without dist context)
   const paceBest = curPaceSec != null && b.paceSec != null && curPaceSec <= b.paceSec;
+  const paceNew  = curPaceSec != null && b.paceSec != null && curPaceSec < b.paceSec;
+  const distNew  = curDist > 0 && b.dist != null && curDist > b.dist;
+  const cadNew   = curCad  > 0 && b.cad  != null && curCad  > b.cad;
+  const hrNew    = curHR   > 0 && b.hr   != null && curHR   < b.hr;
 
-  const mark = (id, on) => { const el = $(id); if (el) el.classList.toggle("val-best", on); };
+  const mark    = (id, on) => { const el = $(id); if (el) el.classList.toggle("val-best",       on); };
+  const markNew = (id, on) => { const el = $(id); if (el) el.classList.toggle("val-new-record", on); };
+
   mark("run-field-dur",  paceBest);
   mark("run-field-dist", curDist > 0 && b.dist  != null && curDist >= b.dist);
   mark("run-field-pace", paceBest);
   mark("run-field-cad",  curCad  > 0 && b.cad   != null && curCad  >= b.cad);
   mark("run-field-hr",   curHR   > 0 && b.hr    != null && curHR   <= b.hr);
+
+  markNew("run-field-dur",  paceNew);
+  markNew("run-field-dist", distNew);
+  markNew("run-field-pace", paceNew);
+  markNew("run-field-cad",  cadNew);
+  markNew("run-field-hr",   hrNew);
 }
 
 // --- Placeholder ghost values from prev run ---
@@ -2526,7 +2538,7 @@ function refreshRunContext() {
 
   // Best-record badges (gold star + value)
   const b = _runBests;
-  const setBadge = (id, val) => { const el = $(id); if (el) el.textContent = val != null ? `★ ${val}` : ""; };
+  const setBadge = (id, val) => { const el = $(id); if (el) el.textContent = val != null ? `☆ ${val}` : ""; };
   setBadge("run-best-dist", b.dist     != null ? `${b.dist} км` : null);
   setBadge("run-best-pace", b.paceSec  != null ? secToPaceStr(b.paceSec) : null);
   setBadge("run-best-cad",  b.cad      != null ? String(b.cad) : null);

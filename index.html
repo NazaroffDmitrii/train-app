@@ -955,20 +955,30 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   background: rgba(52,211,153,0.07);
 }
 
-/* Label row with optional record badge */
-.run-field-label-row {
-  display: flex; align-items: center; justify-content: center;
-  gap: 5px; flex-wrap: wrap;
-}
 .run-best-badge {
-  display: inline-flex; align-items: center;
-  font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em;
-  color: #d97706;
-  background: rgba(245,158,11,0.14);
-  border-radius: 5px; padding: 1px 5px;
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  border-radius: 8px; padding: 3px 8px;
+  font-size: 11.5px; font-weight: 700; color: var(--amber);
   white-space: nowrap;
 }
 .run-best-badge:empty { display: none; }
+
+/* Inline record star (shown when user beats the current record) */
+.run-field-val-row { position: relative; width: 100%; }
+.run-record-star {
+  display: none;
+  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+  font-size: 20px; font-weight: 700; color: var(--amber);
+  line-height: 1; pointer-events: none;
+}
+.run-field.val-new-record { border-color: rgba(251,191,36,0.45); background: rgba(251,191,36,0.07); }
+.run-field.val-new-record .run-best-badge { display: none; }
+.run-field.val-new-record .run-record-star { display: block; }
+.run-field.val-new-record input.run-field-input,
+.run-field.val-new-record .run-field-val { color: var(--amber); }
+.run-field.val-new-record .run-time-part,
+.run-field.val-new-record .run-time-sep { color: var(--amber); }
 
 /* ============ Exercise picker ============ */
 .picker-backdrop {
@@ -1582,35 +1592,39 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
           <div class="run-field-unit">чч : мм : сс</div>
         </div>
         <div class="run-field" id="run-field-dist">
-          <div class="run-field-label-row">
-            <span class="run-field-label">Дистанция</span>
-            <span class="run-best-badge" id="run-best-dist"></span>
+          <div class="run-field-label">Дистанция</div>
+          <span class="run-best-badge" id="run-best-dist"></span>
+          <div class="run-field-val-row">
+            <span class="run-record-star">☆</span>
+            <input class="run-field-input" id="run-distance" type="number" step="0.01" placeholder="10.5" inputmode="decimal">
           </div>
-          <input class="run-field-input" id="run-distance" type="number" step="0.01" placeholder="10.5" inputmode="decimal">
           <div class="run-field-unit">км</div>
         </div>
         <div class="run-field" id="run-field-pace">
-          <div class="run-field-label-row">
-            <span class="run-field-label">Темп</span>
-            <span class="run-best-badge" id="run-best-pace"></span>
+          <div class="run-field-label">Темп</div>
+          <span class="run-best-badge" id="run-best-pace"></span>
+          <div class="run-field-val-row">
+            <span class="run-record-star">☆</span>
+            <div class="run-field-val" id="run-pace">—</div>
           </div>
-          <div class="run-field-val" id="run-pace">—</div>
           <div class="run-field-unit">мин / км</div>
         </div>
         <div class="run-field" id="run-field-cad">
-          <div class="run-field-label-row">
-            <span class="run-field-label">Каденс</span>
-            <span class="run-best-badge" id="run-best-cad"></span>
+          <div class="run-field-label">Каденс</div>
+          <span class="run-best-badge" id="run-best-cad"></span>
+          <div class="run-field-val-row">
+            <span class="run-record-star">☆</span>
+            <input class="run-field-input" id="run-cadence" type="number" placeholder="170" inputmode="numeric">
           </div>
-          <input class="run-field-input" id="run-cadence" type="number" placeholder="170" inputmode="numeric">
           <div class="run-field-unit">шаг / мин</div>
         </div>
         <div class="run-field" id="run-field-hr">
-          <div class="run-field-label-row">
-            <span class="run-field-label">Средний пульс</span>
-            <span class="run-best-badge" id="run-best-hr"></span>
+          <div class="run-field-label">Средний пульс</div>
+          <span class="run-best-badge" id="run-best-hr"></span>
+          <div class="run-field-val-row">
+            <span class="run-record-star">☆</span>
+            <input class="run-field-input" id="run-hr" type="number" placeholder="152" inputmode="numeric">
           </div>
-          <input class="run-field-input" id="run-hr" type="number" placeholder="152" inputmode="numeric">
           <div class="run-field-unit">уд / мин</div>
         </div>
       </div>
