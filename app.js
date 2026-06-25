@@ -1780,6 +1780,7 @@ function openConfirmModal({ title, message, confirmLabel = "Удалить", can
     </div>
   `;
   document.body.appendChild(backdrop);
+  backdrop.style.zIndex = "30";
   const close = () => backdrop.remove();
   backdrop.querySelector('[data-act="cancel"]').addEventListener("click", close);
   backdrop.querySelector('[data-act="ok"]').addEventListener("click", () => { close(); onConfirm && onConfirm(); });
@@ -2874,17 +2875,22 @@ function renderExercisesList(query) {
   ];
 
   const SVG_CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`;
+  const SVG_DEL_EX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 
   const isFiltered = _exercisesCatFilter !== "all";
   exercisesScroll.innerHTML = orderedCats.map(cat => {
     const color = DATA.getCategoryColor(userId, cat);
     const accentStyle = isFiltered ? ` style="border-left: 3px solid ${color};"` : "";
-    const rows = groups.get(cat).map(ex => `
-      <div class="ex-row tappable" data-id="${escHtml(ex.id)}"${accentStyle}>
-        <span class="ex-row-body">
-          <span class="ex-row-name">${escHtml(ex.name)}</span>
-        </span>
-        <span class="ex-row-chevron">${SVG_CHEVRON}</span>
+    const sorted = [...groups.get(cat)].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    const rows = sorted.map(ex => `
+      <div class="ex-row-wrap">
+        <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
+        <div class="ex-row tappable" data-id="${escHtml(ex.id)}"${accentStyle}>
+          <span class="ex-row-body">
+            <span class="ex-row-name">${escHtml(ex.name)}</span>
+          </span>
+          <span class="ex-row-chevron">${SVG_CHEVRON}</span>
+        </div>
       </div>`).join("");
     const header = isFiltered ? "" : `
       <div class="ex-group">
@@ -2897,6 +2903,79 @@ function renderExercisesList(query) {
 
   exercisesScroll.querySelectorAll(".ex-row").forEach(row => {
     row.addEventListener("click", () => openExerciseDetail(row.dataset.id));
+  });
+
+  exercisesScroll.querySelectorAll(".ex-row-wrap").forEach(wrap => {
+    wireExRowSwipe(wrap);
+  });
+}
+
+function wireExRowSwipe(wrap) {
+  const row = wrap.querySelector(".ex-row");
+  const delZone = wrap.querySelector(".ex-row-delete");
+  if (!row || !delZone) return;
+  const exId = row.dataset.id;
+  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
+  const MAX = 100, DEL_THRESHOLD = 72;
+
+  row.addEventListener("pointerdown", e => {
+    sx = e.clientX; sy = e.clientY; dx = 0;
+    active = true; decided = false; horiz = false; swiped = false;
+    row.style.transition = "";
+    row.setPointerCapture(e.pointerId);
+  });
+  row.addEventListener("pointermove", e => {
+    if (!active) return;
+    const cx = e.clientX - sx, cy = e.clientY - sy;
+    if (!decided && (Math.abs(cx) > 5 || Math.abs(cy) > 5)) {
+      decided = true;
+      horiz = Math.abs(cx) > Math.abs(cy);
+      if (!horiz) active = false;
+    }
+    if (!horiz) return;
+    dx = Math.max(-MAX, Math.min(0, cx));
+    row.style.transform = `translateX(${dx}px)`;
+    swiped = dx < -DEL_THRESHOLD;
+  });
+  row.addEventListener("pointerup", e => {
+    if (!active) return;
+    active = false;
+    if (swiped) {
+      row.style.transition = "transform .15s ease";
+      row.style.transform = `translateX(-${DEL_THRESHOLD}px)`;
+    } else {
+      row.style.transition = "transform .2s ease";
+      row.style.transform = "translateX(0)";
+    }
+  });
+  row.addEventListener("pointercancel", () => {
+    active = false;
+    row.style.transition = "transform .2s ease";
+    row.style.transform = "translateX(0)";
+  });
+
+  delZone.addEventListener("click", () => {
+    const userId = DATA.getCurrentUser();
+    const allExs = DATA.getVisibleExercises(userId);
+    const ex = allExs.find(e => e.id === exId);
+    if (!ex) { wrap.remove(); return; }
+    openConfirmModal({
+      title: "Удалить упражнение?",
+      message: `«${ex.name}» будет удалено навсегда.`,
+      confirmLabel: "Удалить",
+      onConfirm: () => {
+        const snapshot = [...DATA.getOwnExercises(userId)];
+        DATA.deleteOwnExercise(userId, exId);
+        SyncQueue.push("exercise:delete", { id: exId });
+        renderExercisesList(exercisesSearch.value);
+        showUndoToast(`Упражнение «${ex.name}» удалено`, () => {
+          DATA.saveOwnExercises(userId, snapshot);
+          SyncQueue.push("exercise:create", {});
+          renderExercisesList(exercisesSearch.value);
+          showToast("Восстановлено");
+        });
+      },
+    });
   });
 }
 
@@ -2983,19 +3062,6 @@ function openExerciseDetail(exerciseId) {
     if (result === "not_found") showToast("Упражнение не найдено");
   };
 
-  $("exd-delete-btn").onclick = () => {
-    const snapshot = [...DATA.getOwnExercises(userId)];
-    DATA.deleteOwnExercise(userId, exerciseId);
-    SyncQueue.push("exercise:delete", { id: exerciseId });
-    goToScreen("exercises");
-    showUndoToast(`Упражнение «${ex.name}» удалено`, () => {
-      DATA.saveOwnExercises(userId, snapshot);
-      SyncQueue.push("exercise:create", {}); // вернуть в пользовательский бин
-      renderExercisesList(exercisesSearch.value);
-      showToast("Восстановлено");
-    });
-  };
-
   goToScreen("exerciseDetail");
 }
 
@@ -3021,6 +3087,7 @@ function openCategoryManager() {
     setTimeout(() => backdrop.remove(), 300);
   }
   backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
+  backdrop.addEventListener("touchend", e => { if (e.target === backdrop) close(); });
 
   const SVG_DEL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 
@@ -3081,6 +3148,7 @@ function openCategoryManager() {
         </div>
       </div>`;
     document.body.appendChild(addBd);
+    addBd.style.zIndex = "30";
     const inp = addBd.querySelector("input");
     const closeMod = () => addBd.remove();
     const save = () => {
@@ -3296,7 +3364,7 @@ function openCategoryManager() {
           }).join("") : `<p class="exd-empty">Категорий пока нет.</p>`}
         </div>
         <button class="cat-done-btn"${catEditMode ? "" : " hidden"}>Готово</button>
-        <button class="cat-item-add">Добавить новую категорию</button>
+        <button class="cat-item-add">+ Добавить новую категорию</button>
       </div>
     `;
 
@@ -3314,6 +3382,9 @@ function openCategoryManager() {
 
     const addBtn = backdrop.querySelector(".cat-item-add");
     if (addBtn) addBtn.addEventListener("click", openAddCatModal);
+
+    const handle = backdrop.querySelector(".bottom-sheet-handle");
+    if (handle) handle.addEventListener("click", close);
   }
 
   document.body.appendChild(backdrop);

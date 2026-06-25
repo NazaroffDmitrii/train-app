@@ -1098,12 +1098,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   position: fixed; left: 50%; bottom: calc(28px + var(--safe-bottom));
   transform: translate(-50%, 12px);
   background: var(--panel-raised); border: 1px solid var(--border-strong);
-  color: var(--text-primary); padding: 12px 18px; border-radius: 999px;
+  color: var(--text-primary); padding: 12px 18px; border-radius: 20px;
   font-size: 13.5px; font-weight: 600; z-index: 50;
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
-  white-space: nowrap;
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: center; gap: 12px;
+  max-width: calc(100vw - 32px); white-space: normal; text-align: left;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.actionable { pointer-events: auto; }
@@ -1136,7 +1136,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 .ex-cat-tabs-wrap {
   flex: none; display: flex; align-items: center; gap: 8px;
-  padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border-subtle);
+  padding: 10px 14px;
 }
 .ex-cat-tabs {
   flex: 1; min-width: 0; display: flex; gap: 6px;
@@ -1180,12 +1180,23 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .exercises-section-label:first-child { padding-top: 4px; }
 
+.ex-row-wrap { position: relative; overflow: hidden; border-radius: var(--radius-md); margin-bottom: 8px; }
+.ex-row-delete {
+  position: absolute; inset: 0; z-index: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  padding-right: 16px; border-radius: var(--radius-md);
+  background: var(--red); color: #fff; font-size: 13px; font-weight: 700; opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ex-row-delete svg { width: 17px; height: 17px; }
+.ex-row-wrap.swiping .ex-row-delete { opacity: 0.9; }
+.ex-row-wrap.will-delete .ex-row-delete { opacity: 1; }
 .ex-row {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 14px;
   background: var(--panel); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  margin-bottom: 8px;
+  margin-bottom: 0; position: relative; z-index: 1;
 }
 .ex-row.is-hidden { opacity: 0.5; }
 .ex-row-icon {
@@ -1310,7 +1321,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .cat-add-btn svg { width: 15px; height: 15px; }
 
 /* ── Категории v2: свайп-удаление, режим редактирования, фантомная карточка ── */
-.cat-item-wrap { position: relative; overflow: hidden; border-radius: var(--radius-md); }
+.cat-item-wrap {
+  position: relative; overflow: hidden; border-radius: var(--radius-md);
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
+.cat-item-wrap input { -webkit-user-select: text; user-select: text; }
 .cat-item-delete {
   position: absolute; inset: 0; z-index: 0;
   display: flex; align-items: center; justify-content: flex-end; gap: 6px;
@@ -2095,9 +2110,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       </button>
       <button class="btn-chip exd-footer-icon" id="exd-share-btn" title="Поделиться">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-      </button>
-      <button class="btn-chip exd-footer-icon danger" id="exd-delete-btn" title="Удалить">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
       </button>
     </div>
   </section>
