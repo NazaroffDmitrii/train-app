@@ -299,6 +299,9 @@ const DATA = (() => {
       this.saveOwnExercises(userId, list.filter(e => e.id !== exerciseId));
     },
 
+    getExerciseOrder(userId) { return ls(`train_ex_order_${userId}`, null); },
+    saveExerciseOrder(userId, ids) { lsSet(`train_ex_order_${userId}`, ids); },
+
     // Скрыть/показать общее упражнение у конкретного пользователя (не удаляет у других — раздел 3).
     hideExercise(userId, exerciseId) {
       const hidden = this.getHiddenIds(userId);
@@ -2802,6 +2805,8 @@ const exerciseFormCatGroup  = $("exercise-form-cat-group");
 let _editingExerciseId = null; // null = создание нового; иначе id редактируемого личного упражнения
 let _exercisesCatFilter = "all";
 let _exercisesShowHidden = false;
+let _exListEditMode = false;
+let _exListDrag = null;
 
 // Роли рабочих мышц — фиксированный порядок и подписи для деталей/формы.
 const MUSCLE_ROLES = [
@@ -2815,12 +2820,15 @@ function initExercisesScreen() {
   exercisesSearch.value = "";
   _exercisesCatFilter = "all";
   _exercisesShowHidden = false;
+  _exListEditMode = false;
+  const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.hidden = true;
+  const addBtn  = $("exercises-add-btn");  if (addBtn)  addBtn.hidden  = false;
   const userId = DATA.getCurrentUser();
   if (DATA.ensureExercisesSeeded(userId)) SyncQueue.push("exercise:create", {});
   renderExercisesList("");
 }
 
-$("exercises-back-btn").addEventListener("click", () => goToScreen("menu"));
+$("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goToScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
 $("ex-cat-manage-btn").addEventListener("click", () => openCategoryManager());
 
@@ -2878,12 +2886,27 @@ function renderExercisesList(query) {
   const SVG_DEL_EX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 
   const isFiltered = _exercisesCatFilter !== "all";
+  const customOrder = DATA.getExerciseOrder(userId);
+
+  if (_exListEditMode) exercisesScroll.classList.add("ex-list-editing");
+  else exercisesScroll.classList.remove("ex-list-editing");
+
   exercisesScroll.innerHTML = orderedCats.map(cat => {
     const color = DATA.getCategoryColor(userId, cat);
     const accentStyle = isFiltered ? ` style="border-left: 3px solid ${color};"` : "";
-    const sorted = [...groups.get(cat)].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    const sorted = [...groups.get(cat)].sort((a, b) => {
+      if (customOrder) {
+        const ia = customOrder.indexOf(a.id), ib = customOrder.indexOf(b.id);
+        if (ia !== -1 || ib !== -1) {
+          if (ia === -1) return 1;
+          if (ib === -1) return -1;
+          return ia - ib;
+        }
+      }
+      return a.name.localeCompare(b.name, "ru");
+    });
     const rows = sorted.map(ex => `
-      <div class="ex-row-wrap">
+      <div class="ex-row-wrap" data-id="${escHtml(ex.id)}">
         <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
         <div class="ex-row tappable" data-id="${escHtml(ex.id)}"${accentStyle}>
           <span class="ex-row-body">
@@ -2893,7 +2916,7 @@ function renderExercisesList(query) {
         </div>
       </div>`).join("");
     const header = isFiltered ? "" : `
-      <div class="ex-group">
+      <div class="ex-group" data-cat="${escHtml(cat)}">
         <span class="ex-group-dot" style="background:${escHtml(color)}"></span>
         <span class="ex-group-name">${escHtml(cat)}</span>
         <span class="ex-group-count">${groups.get(cat).length}</span>
@@ -2902,82 +2925,196 @@ function renderExercisesList(query) {
   }).join("");
 
   exercisesScroll.querySelectorAll(".ex-row").forEach(row => {
-    row.addEventListener("click", () => openExerciseDetail(row.dataset.id));
+    row.addEventListener("click", () => {
+      if (_exListEditMode) return;
+      openExerciseDetail(row.dataset.id);
+    });
   });
 
   exercisesScroll.querySelectorAll(".ex-row-wrap").forEach(wrap => {
-    wireExRowSwipe(wrap);
+    wireExRowSwipe(wrap, userId);
+    wireExRowGesture(wrap, userId);
   });
 }
 
-function wireExRowSwipe(wrap) {
+function wireExRowSwipe(wrap, userId) {
   const row = wrap.querySelector(".ex-row");
-  const delZone = wrap.querySelector(".ex-row-delete");
-  if (!row || !delZone) return;
+  if (!row) return;
   const exId = row.dataset.id;
-  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
-  const MAX = 100, DEL_THRESHOLD = 72;
+  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, didSwipe = false;
+  const MAX = 110, DEL = 80;
 
   row.addEventListener("pointerdown", e => {
+    if (_exListEditMode) return;
+    if (e.target.closest("button")) return;
     sx = e.clientX; sy = e.clientY; dx = 0;
-    active = true; decided = false; horiz = false; swiped = false;
+    active = true; decided = false; horiz = false; didSwipe = false;
     row.style.transition = "";
-    row.setPointerCapture(e.pointerId);
   });
   row.addEventListener("pointermove", e => {
     if (!active) return;
-    const cx = e.clientX - sx, cy = e.clientY - sy;
-    if (!decided && (Math.abs(cx) > 5 || Math.abs(cy) > 5)) {
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!decided) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
       decided = true;
-      horiz = Math.abs(cx) > Math.abs(cy);
-      if (!horiz) active = false;
+      horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+      if (!horiz) { active = false; return; }
+      wrap.classList.add("swiping");
+      try { row.setPointerCapture(e.pointerId); } catch {}
     }
     if (!horiz) return;
-    dx = Math.max(-MAX, Math.min(0, cx));
+    dx = Math.max(-MAX, Math.min(0, mx));
+    if (dx < -4) didSwipe = true;
     row.style.transform = `translateX(${dx}px)`;
-    swiped = dx < -DEL_THRESHOLD;
+    wrap.classList.toggle("will-delete", dx <= -DEL);
   });
-  row.addEventListener("pointerup", e => {
+  const settle = () => {
     if (!active) return;
     active = false;
-    if (swiped) {
-      row.style.transition = "transform .15s ease";
-      row.style.transform = `translateX(-${DEL_THRESHOLD}px)`;
-    } else {
-      row.style.transition = "transform .2s ease";
-      row.style.transform = "translateX(0)";
-    }
-  });
-  row.addEventListener("pointercancel", () => {
-    active = false;
-    row.style.transition = "transform .2s ease";
-    row.style.transform = "translateX(0)";
-  });
-
-  delZone.addEventListener("click", () => {
-    const userId = DATA.getCurrentUser();
-    const allExs = DATA.getVisibleExercises(userId);
-    const ex = allExs.find(e => e.id === exId);
-    if (!ex) { wrap.remove(); return; }
-    openConfirmModal({
-      title: "Удалить упражнение?",
-      message: `«${ex.name}» будет удалено навсегда.`,
-      confirmLabel: "Удалить",
-      onConfirm: () => {
+    if (!horiz) return;
+    if (dx <= -DEL) {
+      row.style.transition = "transform 0.16s ease";
+      row.style.transform = "translateX(-110%)";
+      wrap.style.height = wrap.offsetHeight + "px";
+      requestAnimationFrame(() => {
+        wrap.style.transition = "height 0.18s ease, opacity 0.18s ease";
+        wrap.style.height = "0"; wrap.style.opacity = "0";
+      });
+      setTimeout(() => {
+        const allExs = DATA.getVisibleExercises(userId);
+        const ex = allExs.find(e => e.id === exId);
+        const exName = ex ? ex.name : exId;
         const snapshot = [...DATA.getOwnExercises(userId)];
         DATA.deleteOwnExercise(userId, exId);
         SyncQueue.push("exercise:delete", { id: exId });
         renderExercisesList(exercisesSearch.value);
-        showUndoToast(`Упражнение «${ex.name}» удалено`, () => {
+        showUndoToast(`Упражнение «${exName}» удалено`, () => {
           DATA.saveOwnExercises(userId, snapshot);
           SyncQueue.push("exercise:create", {});
           renderExercisesList(exercisesSearch.value);
           showToast("Восстановлено");
         });
-      },
-    });
-  });
+      }, 200);
+    } else {
+      row.style.transition = "transform 0.18s ease";
+      row.style.transform = "";
+      wrap.classList.remove("will-delete");
+      setTimeout(() => wrap.classList.remove("swiping"), 200);
+    }
+  };
+  row.addEventListener("pointerup", settle);
+  row.addEventListener("pointercancel", settle);
+  row.addEventListener("click", e => {
+    if (didSwipe) { e.stopPropagation(); e.preventDefault(); didSwipe = false; }
+  }, true);
 }
+
+function enterExListEditMode() {
+  if (_exListEditMode) return;
+  _exListEditMode = true;
+  haptic(22);
+  exercisesScroll.classList.add("ex-list-editing");
+  const doneBtn = $("exercises-done-btn");
+  const addBtn  = $("exercises-add-btn");
+  if (doneBtn) doneBtn.hidden = false;
+  if (addBtn)  addBtn.hidden  = true;
+}
+
+function exitExListEditMode() {
+  if (!_exListEditMode) return;
+  _exListEditMode = false;
+  exercisesScroll.classList.remove("ex-list-editing");
+  const doneBtn = $("exercises-done-btn");
+  const addBtn  = $("exercises-add-btn");
+  if (doneBtn) doneBtn.hidden = true;
+  if (addBtn)  addBtn.hidden  = false;
+  saveExOrder();
+}
+
+function saveExOrder() {
+  const ids = [...exercisesScroll.querySelectorAll(".ex-row-wrap[data-id]")].map(w => w.dataset.id);
+  if (ids.length) DATA.saveExerciseOrder(DATA.getCurrentUser(), ids);
+}
+
+function wireExRowGesture(wrap, userId) {
+  let holdTimer = null, sx = 0, sy = 0, moved = false, dragStarted = false;
+  const DELAY = () => _exListEditMode ? 150 : 430;
+  const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+
+  const begin = (x, y, target) => {
+    if (target && target.closest("button")) return;
+    moved = false; dragStarted = false; sx = x; sy = y;
+    clearHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      if (moved) return;
+      if (!_exListEditMode) { enterExListEditMode(); return; }
+      dragStarted = true;
+      startExDrag(wrap, y);
+    }, DELAY());
+  };
+  const move = (x, y, e) => {
+    if (_exListDrag && _exListDrag.wrap === wrap) {
+      if (e && e.cancelable) e.preventDefault();
+      moveExDrag(y); return;
+    }
+    if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); }
+  };
+  const finish = () => {
+    clearHold();
+    if (_exListDrag && _exListDrag.wrap === wrap) endExDrag();
+  };
+
+  wrap.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
+  wrap.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
+  wrap.addEventListener("touchend",   finish);
+  wrap.addEventListener("mousedown",  e => begin(e.clientX, e.clientY, e.target));
+  wrap.addEventListener("mousemove",  e => { if (_exListDrag) move(e.clientX, e.clientY, null); });
+  wrap.addEventListener("mouseup",    finish);
+  wrap.addEventListener("click", e => {
+    if (dragStarted) { e.stopPropagation(); dragStarted = false; }
+  }, true);
+}
+
+function startExDrag(wrap, pointerY) {
+  if (_exListDrag) return;
+  const top = wrap.getBoundingClientRect().top;
+  _exListDrag = { wrap, grabDy: pointerY - top, ty: 0 };
+  wrap.style.transition = "none";
+  wrap.classList.add("ex-dragging");
+  haptic(18);
+}
+
+function moveExDrag(pointerY) {
+  const d = _exListDrag; if (!d) return;
+  const h = d.wrap.getBoundingClientRect().height;
+  const center = (pointerY - d.grabDy) + h / 2;
+  const prev = d.wrap.previousElementSibling;
+  if (prev && prev.classList.contains("ex-row-wrap")) {
+    const r = prev.getBoundingClientRect();
+    if (center < r.top + r.height / 2) exercisesScroll.insertBefore(d.wrap, prev);
+  }
+  const next = d.wrap.nextElementSibling;
+  if (next && next.classList.contains("ex-row-wrap")) {
+    const r = next.getBoundingClientRect();
+    if (center > r.top + r.height / 2) exercisesScroll.insertBefore(next, d.wrap);
+  }
+  const rect = d.wrap.getBoundingClientRect();
+  const naturalTop = rect.top - d.ty;
+  d.ty = (pointerY - d.grabDy) - naturalTop;
+  d.wrap.style.transform = `translateY(${d.ty}px)`;
+}
+
+function endExDrag() {
+  const d = _exListDrag; if (!d) return;
+  _exListDrag = null;
+  d.wrap.style.transition = "transform 0.18s ease";
+  d.wrap.style.transform = "";
+  d.wrap.classList.remove("ex-dragging");
+  setTimeout(() => { d.wrap.style.transition = ""; }, 200);
+}
+
+$("exercises-done-btn").addEventListener("click", exitExListEditMode);
 
 /* — Экран деталей упражнения: медиа, рабочие мышцы, техника, действия — */
 let _detailExerciseId = null;
@@ -3087,7 +3224,11 @@ function openCategoryManager() {
     setTimeout(() => backdrop.remove(), 300);
   }
   backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
-  backdrop.addEventListener("touchend", e => { if (e.target === backdrop) close(); });
+  backdrop.addEventListener("touchend", e => {
+    const t = e.changedTouches[0];
+    const el = t && document.elementFromPoint(t.clientX, t.clientY);
+    if (el && !el.closest(".bottom-sheet")) close();
+  });
 
   const SVG_DEL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 
@@ -3121,15 +3262,17 @@ function openCategoryManager() {
   }
 
   function removeCategory(cat) {
-    openConfirmModal({
-      title: "Удалить категорию?",
-      message: `Категория «${cat}» будет удалена. Упражнения из неё перейдут в «Другое».`,
-      confirmLabel: "Удалить",
-      onConfirm: () => {
-        DATA.deleteCategory(userId, cat);
-        renderExercisesList(exercisesSearch.value);
-        render();
-      },
+    const catSnapshot = [...DATA.getAllCategories(userId)];
+    const exSnapshot  = [...DATA.getOwnExercises(userId)];
+    DATA.deleteCategory(userId, cat);
+    renderExercisesList(exercisesSearch.value);
+    render();
+    showUndoToast(`Категория «${cat}» удалена`, () => {
+      DATA.saveAllCategories(userId, catSnapshot);
+      DATA.saveOwnExercises(userId, exSnapshot);
+      renderExercisesList(exercisesSearch.value);
+      render();
+      showToast("Восстановлено");
     });
   }
 
@@ -3389,7 +3532,36 @@ function openCategoryManager() {
 
   document.body.appendChild(backdrop);
   render();
-  requestAnimationFrame(() => backdrop.classList.add("open"));
+  requestAnimationFrame(() => {
+    backdrop.classList.add("open");
+    // Свайп вниз по шторке → закрыть (аналог главной шторки истории)
+    const sheetEl = backdrop.querySelector(".bottom-sheet");
+    if (!sheetEl) return;
+    let sy = 0, sdy = 0, sdragging = false;
+    sheetEl.addEventListener("touchstart", e => {
+      sy = e.touches[0].clientY; sdy = 0; sdragging = true;
+      sheetEl.style.transition = "none";
+    }, { passive: true });
+    sheetEl.addEventListener("touchmove", e => {
+      if (!sdragging) return;
+      const list = sheetEl.querySelector(".cat-sheet-list");
+      const dy = e.touches[0].clientY - sy;
+      if (dy > 0 && (!list || list.scrollTop <= 0)) {
+        sdy = dy;
+        sheetEl.style.transform = `translateY(${dy}px)`;
+      } else { sdy = 0; sheetEl.style.transform = ""; }
+    }, { passive: true });
+    const onSheetEnd = () => {
+      if (!sdragging) return; sdragging = false;
+      if (sdy > 80) {
+        sheetEl.style.transition = "transform 0.22s ease";
+        sheetEl.style.transform = `translateY(${sheetEl.offsetHeight}px)`;
+        close();
+      } else { sheetEl.style.transition = ""; sheetEl.style.transform = ""; }
+    };
+    sheetEl.addEventListener("touchend",   onSheetEnd);
+    sheetEl.addEventListener("touchcancel", onSheetEnd);
+  });
 }
 
 /* — Форма добавления / редактирования личного упражнения — */
