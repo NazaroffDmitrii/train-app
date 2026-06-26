@@ -894,7 +894,7 @@ window.addEventListener("pagehide", () => SyncQueue.flush());
 /* ==========================================================================
    Screen switching
    ========================================================================== */
-const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), templateDetail: $("screen-template-detail") };
+const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), templateDetail: $("screen-template-detail"), templateEdit: $("screen-template-edit") };
 
 function goToScreen(name, opts = {}) {
   Object.values(SCREENS).forEach(s => s && s.classList.remove("active"));
@@ -4464,40 +4464,74 @@ function pluralExercises(n) {
   return "упражнений";
 }
 
-/* — Список шаблонов — */
+function pluralSets(n) {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "подход";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "подхода";
+  return "подходов";
+}
+
+function pluralDays(n) {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "день";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "дня";
+  return "дней";
+}
+
+// Иконка штанги для плиток/иконок шаблонов
+const TPL_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
+
+// Сводная статистика шаблона: всего подходов и грубая оценка времени
+function templateStats(tpl) {
+  const sets = tpl.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+  // ~2.75 мин на подход (работа + отдых), округляем до 5 минут
+  const minutes = sets ? Math.max(5, Math.round(sets * 2.75 / 5) * 5) : 0;
+  return { sets, minutes };
+}
+
+// «N дней назад» по времени последнего изменения шаблона
+function relativeUpdated(ts) {
+  if (!ts) return { value: "—", unit: "", label: "обновлён" };
+  const days = Math.floor((Date.now() - ts) / 86400000);
+  if (days <= 0) return { value: "сегодня", unit: "", label: "обновлён" };
+  if (days < 7) return { value: String(days), unit: pluralDays(days), label: "назад" };
+  const weeks = Math.floor(days / 7);
+  return { value: String(weeks), unit: weeks === 1 ? "нед" : "нед", label: "назад" };
+}
+
+/* — Список шаблонов: сетка плиток — */
 function initTemplatesScreen() { renderTemplatesList(); }
 
 function renderTemplatesList() {
   const userId = DATA.getCurrentUser();
   const list = DATA.getTemplates(userId);
 
-  if (!list.length) {
-    templatesScroll.innerHTML = `<p class="empty-state">Пока нет шаблонов. Создай свой кнопкой «+» сверху, или заверши силовую тренировку и сохрани её как шаблон из детального просмотра истории.</p>`;
-    return;
-  }
-
-  templatesScroll.innerHTML = list.map(t => `
-    <div class="ex-row tpl-row" data-id="${t.id}">
-      <span class="ex-row-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>
-      </span>
-      <span class="ex-row-body">
-        <span class="ex-row-name">${escHtml(t.name)}</span>
-        <span class="tpl-row-meta">${t.exercises.length} ${pluralExercises(t.exercises.length)}</span>
-      </span>
-      <span class="profile-chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
-    </div>
+  const tiles = list.map(t => `
+    <button class="tpl-tile" data-id="${t.id}">
+      <span class="tpl-tile-icon">${TPL_ICON_SVG}</span>
+      <span class="tpl-tile-name">${escHtml(t.name)}</span>
+      <span class="tpl-tile-meta">${t.exercises.length} ${pluralExercises(t.exercises.length)}</span>
+    </button>
   `).join("");
 
-  templatesScroll.querySelectorAll(".tpl-row").forEach(row => {
-    row.addEventListener("click", () => openTemplateDetail(row.dataset.id));
+  const newTile = `
+    <button class="tpl-tile tpl-tile-new" id="tpl-new-tile">
+      <span class="tpl-tile-plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      <span class="tpl-tile-new-label">Новый</span>
+    </button>`;
+
+  templatesScroll.innerHTML = `<div class="tpl-grid">${tiles}${newTile}</div>`;
+
+  templatesScroll.querySelectorAll(".tpl-tile[data-id]").forEach(tile => {
+    tile.addEventListener("click", () => openTemplateDetail(tile.dataset.id));
   });
+  $("tpl-new-tile").addEventListener("click", createNewTemplate);
 }
 
 $("templates-back-btn").addEventListener("click", () => goToScreen("menu"));
 
 /* — Создание пользовательского шаблона с нуля (п.7) — */
-$("templates-add-btn").addEventListener("click", () => {
+function createNewTemplate() {
   openNameModal({
     title: "Новый шаблон",
     placeholder: "Например, День спины",
@@ -4506,12 +4540,12 @@ $("templates-add-btn").addEventListener("click", () => {
       const userId = DATA.getCurrentUser();
       const tpl = DATA.createBlankTemplate(userId, name);
       SyncQueue.push("template:create", { templateId: tpl.id });
-      openTemplateDetail(tpl.id); // сразу открываем для добавления упражнений
+      openTemplateEdit(tpl.id); // сразу открываем редактор для добавления упражнений
     },
   });
-});
+}
 
-/* — Экран шаблона: просмотр и редактирование состава — */
+/* — Экран шаблона: просмотр (только чтение) — */
 function openTemplateDetail(templateId) {
   _templateId = templateId;
   renderTemplateDetail();
@@ -4524,15 +4558,74 @@ function renderTemplateDetail() {
   if (!tpl) { goToScreen("templates"); return; }
 
   $("template-detail-title").textContent = tpl.name;
-  $("template-detail-meta").textContent = `${tpl.exercises.length} ${pluralExercises(tpl.exercises.length)}`;
+  $("template-detail-meta").textContent = `Шаблон · ${tpl.exercises.length} ${pluralExercises(tpl.exercises.length)}`;
 
+  // Сводка
+  const { sets, minutes } = templateStats(tpl);
+  const rel = relativeUpdated(tpl.updatedAt || tpl.createdAt);
+  $("template-stats").innerHTML = `
+    <div class="tpl-stat highlight">
+      <div class="tpl-stat-value">${sets}</div>
+      <div class="tpl-stat-label">${pluralSets(sets)}</div>
+    </div>
+    <div class="tpl-stat">
+      <div class="tpl-stat-value">~${minutes}<span class="tpl-stat-unit">мин</span></div>
+      <div class="tpl-stat-label">время</div>
+    </div>
+    <div class="tpl-stat">
+      <div class="tpl-stat-value">${rel.value}${rel.unit ? `<span class="tpl-stat-unit">${rel.unit}</span>` : ""}</div>
+      <div class="tpl-stat-label">${rel.label}</div>
+    </div>`;
+
+  renderTemplateViewBlocks(tpl);
+}
+
+// Состав в режиме просмотра — упражнения с целевыми подходами в виде чипов
+function renderTemplateViewBlocks(tpl) {
+  const wrap = $("template-view-blocks");
+  if (!tpl.exercises.length) {
+    wrap.innerHTML = `<p class="empty-state">В шаблоне пока нет упражнений. Нажми карандаш, чтобы добавить состав.</p>`;
+    return;
+  }
+  const exercisesLib = DATA.getVisibleExercises(DATA.getCurrentUser());
+  wrap.innerHTML = tpl.exercises.map(ex => {
+    const exDef = exercisesLib.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
+    const chips = ex.sets.map(s => {
+      const label = (s.weight > 0) ? `${s.weight}×${s.reps || 0}` : (s.reps > 0 ? `${s.reps}` : "—");
+      return `<span class="tpl-set-chip">${label}</span>`;
+    }).join("");
+    return `
+      <div class="tpl-view-ex">
+        <div class="tpl-view-ex-head">
+          <span class="tpl-view-ex-dot"></span>
+          <span class="tpl-view-ex-name">${escHtml(exDef.name)}</span>
+          <span class="tpl-view-ex-sets">${ex.sets.length} ${pluralSets(ex.sets.length)}</span>
+        </div>
+        <div class="tpl-view-ex-chips">${chips}</div>
+      </div>`;
+  }).join("");
+}
+
+/* — Экран шаблона: редактирование состава — */
+function openTemplateEdit(templateId) {
+  _templateId = templateId;
+  renderTemplateEditScreen();
+  goToScreen("templateEdit");
+}
+
+function renderTemplateEditScreen() {
+  const userId = DATA.getCurrentUser();
+  const tpl = DATA.getTemplate(userId, _templateId);
+  if (!tpl) { goToScreen("templates"); return; }
+  $("template-edit-title").textContent = tpl.name;
+  $("template-edit-meta").textContent = `${tpl.exercises.length} ${pluralExercises(tpl.exercises.length)}`;
   renderTemplateBlocks(tpl);
 }
 
 function persistTemplateExercises(tpl) {
   DATA.updateTemplateExercises(DATA.getCurrentUser(), tpl.id, tpl.exercises);
   SyncQueue.push("template:update", { templateId: tpl.id });
-  $("template-detail-meta").textContent = `${tpl.exercises.length} ${pluralExercises(tpl.exercises.length)}`;
+  $("template-edit-meta").textContent = `${tpl.exercises.length} ${pluralExercises(tpl.exercises.length)}`;
 }
 
 function renderTemplateBlocks(tpl) {
@@ -4650,6 +4743,16 @@ function renderTemplateSets(block, tpl, exIdx) {
 
 $("template-detail-back-btn").addEventListener("click", () => goToScreen("templates"));
 
+/* — Переход в редактирование состава (карандаш в шапке и на нижней панели) — */
+$("template-head-edit-btn").addEventListener("click", () => openTemplateEdit(_templateId));
+$("template-edit-btn").addEventListener("click", () => openTemplateEdit(_templateId));
+
+/* — Возврат из редактирования к просмотру — */
+$("template-edit-back-btn").addEventListener("click", () => {
+  renderTemplateDetail();
+  goToScreen("templateDetail");
+});
+
 $("template-add-ex-btn").addEventListener("click", () => {
   openExercisePicker(exerciseId => {
     const userId = DATA.getCurrentUser();
@@ -4687,7 +4790,7 @@ $("template-rename-btn").addEventListener("click", () => {
     onConfirm: value => {
       DATA.renameTemplate(userId, _templateId, value);
       SyncQueue.push("template:rename", { templateId: _templateId });
-      renderTemplateDetail();
+      $("template-edit-title").textContent = value;
       showToast("Шаблон переименован");
     },
   });
