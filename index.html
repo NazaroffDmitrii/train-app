@@ -390,13 +390,16 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   transition: background 0.15s ease, transform 0.12s ease;
 }
 .history-item:active { transform: scale(0.985); }
-/* Заливка по типу тренировки — в стилистике карточек статистики (.s-card-blue/green) */
+/* Заливка по типу тренировки — в стилистике карточек статистики (.s-card-blue/green).
+   Тинт накладываем поверх непрозрачной чёрной подложки (--bg-base), а не просто
+   полупрозрачным цветом: так ячейка выглядит одинаково на любом фоне (в шторке на
+   чёрном и в модалке на сером), а не зависит от того, что под ней. */
 .history-item--strength {
-  background: rgba(124, 108, 230, 0.06);
+  background: linear-gradient(rgba(124, 108, 230, 0.06), rgba(124, 108, 230, 0.06)), var(--bg-base);
   border-color: rgba(124, 108, 230, 0.22);
 }
 .history-item--run {
-  background: rgba(52, 211, 153, 0.05);
+  background: linear-gradient(rgba(52, 211, 153, 0.05), rgba(52, 211, 153, 0.05)), var(--bg-base);
   border-color: rgba(52, 211, 153, 0.18);
 }
 .history-item-body { flex: 1; min-width: 0; }
@@ -462,11 +465,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 /* Выбор типа тренировки — ячейки в стилистике карточек истории, надпись по центру */
 .modal-option--strength, .modal-option--run { justify-content: center; text-align: center; }
 .modal-option--strength, .modal-option--strength:active {
-  background: rgba(124, 108, 230, 0.06);
+  background: linear-gradient(rgba(124, 108, 230, 0.06), rgba(124, 108, 230, 0.06)), var(--bg-base);
   border-color: rgba(124, 108, 230, 0.22);
 }
 .modal-option--run, .modal-option--run:active {
-  background: rgba(52, 211, 153, 0.05);
+  background: linear-gradient(rgba(52, 211, 153, 0.05), rgba(52, 211, 153, 0.05)), var(--bg-base);
   border-color: rgba(52, 211, 153, 0.18);
 }
 .modal-cancel { margin-top: 6px; padding: 12px; text-align: center; color: var(--text-secondary); font-size: 14px; font-weight: 600; }
