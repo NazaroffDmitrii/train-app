@@ -45,6 +45,29 @@ const Sync = (() => {
   const timers = new Map();
   let lastError = null;
 
+  // Версия пользовательского бина: монотонно растёт при каждом нашем push.
+  // Нужна, чтобы при гидратации отличить «сервер реально новее» (правка с
+  // другого устройства) от «сервер вернул устаревшую копию сразу после нашей
+  // же записи» (read-after-write у JSONBin). Во втором случае remote.rev <
+  // localRev — и мы НЕ накатываем remote поверх своих свежих упражнений, иначе
+  // только что созданное на тренировке упражнение исчезает, а тренировки,
+  // ссылающиеся на его id, показывают «Упражнение недоступно».
+  function revKey(userId) { return `train_user_rev_${userId}`; }
+  function getLocalRev(userId) {
+    const v = Number(localStorage.getItem(revKey(userId)));
+    return Number.isFinite(v) ? v : 0;
+  }
+  function setLocalRev(userId, v) {
+    try { localStorage.setItem(revKey(userId), String(v)); } catch {}
+  }
+  // max(now, prev+1) — монотонно даже при двух push в одну миллисекунду и при
+  // перекошенных часах другого устройства.
+  function nextRev(userId) {
+    const v = Math.max(Date.now(), getLocalRev(userId) + 1);
+    setLocalRev(userId, v);
+    return v;
+  }
+
   /* ----- вспомогательные ключи/бины ----- */
   function binIdForUser(userId)          { return CONFIG.BINS[`user_${userId}`]; }
   function binIdForTemplates(userId)     { return CONFIG.BINS[`templates_${userId}`]; }
@@ -127,6 +150,7 @@ const Sync = (() => {
   function buildUserPayload(userId) {
     const active = DATA.getActiveWorkout(userId);
     return {
+      rev: nextRev(userId), // версия для защиты от read-after-write при pull
       hidden: DATA.getHiddenIds(userId),
       own: DATA.getOwnExercises(userId),
       records: DATA.getRecords(userId),
@@ -279,17 +303,22 @@ const Sync = (() => {
       await pushIfDirty(`user:${userId}`);
       const remote = await Storage.readBin(binIdForUser(userId));
       if (remote) {
-        // Если локальные правки пользовательского бина так и не уехали на
-        // сервер (push упал/прервался — scope остался dirty после pushIfDirty),
-        // НЕ накатываем remote поверх own/hidden/records: устаревшая серверная
-        // копия иначе затрёт несинхронизированные локальные упражнения, а
-        // тренировки, ссылающиеся на их id, начнут показывать сырой e_own_…
-        // вместо имени (потеря данных). Применяем remote только когда локальное
-        // состояние действительно синхронизировано.
-        if (!dirty.has(`user:${userId}`)) {
+        // Накатываем remote поверх own/hidden/records ТОЛЬКО когда выполнены оба
+        // условия:
+        //  1) локальные правки уже синхронизированы (scope не dirty) — иначе
+        //     push упал/прервался и устаревшая серверная копия затёрла бы
+        //     несинхронизированные локальные упражнения;
+        //  2) сервер не старше нашего последнего push (remote.rev >= localRev) —
+        //     иначе это read-after-write: JSONBin вернул копию ДО нашей записи,
+        //     и накат стёр бы только что созданное локально упражнение (тогда
+        //     тренировки начинают показывать сырой e_own_… вместо имени).
+        const remoteRev = typeof remote.rev === "number" ? remote.rev : 0;
+        const localRev  = getLocalRev(userId);
+        if (!dirty.has(`user:${userId}`) && remoteRev >= localRev) {
           if (Array.isArray(remote.hidden)) DATA.saveHiddenIds(userId, remote.hidden);
           if (Array.isArray(remote.own)) DATA.saveOwnExercises(userId, remote.own);
           if (remote.records) DATA.saveRecords(userId, remote.records);
+          setLocalRev(userId, remoteRev); // догнали серверную версию
         }
 
         // Тренировка, начатая на другом устройстве и ещё не завершённая.
