@@ -2839,10 +2839,11 @@ function renderCatTabs(userId, presentCats) {
   tabsEl.innerHTML = tabs.map(c => {
     const active = _exercisesCatFilter === c ? " active" : "";
     if (c === "all") {
-      return `<button class="ex-cat-tab${active}" data-cat="all">Все</button>`;
+      // "Все" — обводка цветом accent (через CSS-переменную)
+      return `<button class="ex-cat-tab${active}" data-cat="all" style="--tab-color:var(--accent)">Все</button>`;
     }
     const color = DATA.getCategoryColor(userId, c);
-    return `<button class="ex-cat-tab${active}" data-cat="${escHtml(c)}"><span class="ex-cat-tab-dot" style="background:${escHtml(color)}"></span>${escHtml(c)}</button>`;
+    return `<button class="ex-cat-tab${active}" data-cat="${escHtml(c)}" style="--tab-color:${escHtml(color)}">${escHtml(c)}</button>`;
   }).join("");
   tabsEl.querySelectorAll(".ex-cat-tab").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -2926,14 +2927,16 @@ function renderExercisesList(query) {
         <span class="ex-group-dot" style="background:${escHtml(color)}"></span>
         <span class="ex-group-name">${escHtml(cat)}</span>
         ${!isEmpty ? `<span class="ex-group-count">${catExs.length}</span>` : ""}
-      </div>
-      ${isEmpty ? `<div class="ex-group-drop-hint">Перетащи сюда упражнение</div>` : ""}`;
+      </div>`;
     return header + rows;
   }).join("");
 
   exercisesScroll.querySelectorAll(".ex-row").forEach(row => {
     row.addEventListener("click", () => {
-      if (_exListEditMode) return;
+      if (_exListEditMode) {
+        startExNameEdit(row.closest(".ex-row-wrap"), row.dataset.id, userId);
+        return;
+      }
       openExerciseDetail(row.dataset.id);
     });
   });
@@ -2942,6 +2945,44 @@ function renderExercisesList(query) {
     wireExRowSwipe(wrap, userId);
     wireExRowGesture(wrap, userId);
   });
+}
+
+function startExNameEdit(wrap, exId, userId) {
+  if (!wrap) return;
+  const nameEl = wrap.querySelector(".ex-row-name");
+  if (!nameEl || wrap.dataset.editing) return;
+  wrap.dataset.editing = "1";
+
+  const current = nameEl.textContent;
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = current;
+  inp.className = "ex-row-name-input";
+  nameEl.replaceWith(inp);
+  inp.focus();
+  inp.select();
+
+  const commit = () => {
+    if (!wrap.dataset.editing) return;
+    delete wrap.dataset.editing;
+    const next = inp.value.trim();
+    if (next && next !== current) {
+      DATA.updateOwnExercise(userId, exId, { name: next });
+      SyncQueue.push("exercise:update", { id: exId });
+    }
+    const span = document.createElement("span");
+    span.className = "ex-row-name";
+    span.textContent = next || current;
+    inp.replaceWith(span);
+  };
+
+  inp.addEventListener("blur", commit);
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); inp.blur(); }
+    if (e.key === "Escape") { inp.value = current; inp.blur(); }
+  });
+  // Не даём нажатию на input запустить drag-hold
+  inp.addEventListener("pointerdown", e => e.stopPropagation());
 }
 
 function wireExRowSwipe(wrap, userId) {
@@ -3097,19 +3138,16 @@ function moveExDrag(pointerY) {
   const h = d.wrap.getBoundingClientRect().height;
   const center = (pointerY - d.grabDy) + h / 2;
 
-  // Ищем позицию вставки: первый элемент (не drag-сам и не drop-hint), чей центр выше нашего
+  // Ищем позицию вставки: первый элемент (не сам drag), чей центр выше нашего
   let insertBeforeEl = null;
   for (const child of exercisesScroll.children) {
-    if (child === d.wrap || child.classList.contains("ex-group-drop-hint")) continue;
+    if (child === d.wrap) continue;
     const r = child.getBoundingClientRect();
     if (r.top + r.height / 2 > center) { insertBeforeEl = child; break; }
   }
 
   const curNext = d.wrap.nextElementSibling;
-  // Пропускаем drop-hint при сравнении — он не считается «следующим значимым»
-  const effectiveNext = (curNext && curNext.classList.contains("ex-group-drop-hint"))
-    ? curNext.nextElementSibling : curNext;
-  if (insertBeforeEl !== effectiveNext && insertBeforeEl !== d.wrap) {
+  if (insertBeforeEl !== curNext && insertBeforeEl !== d.wrap) {
     exercisesScroll.insertBefore(d.wrap, insertBeforeEl); // null → в конец
   }
 
