@@ -1080,6 +1080,16 @@ function wireHistoryItemSwipe(wrap, rerender) {
     row.style.transform = `translateX(${dx}px)`;
     wrap.classList.toggle("will-delete", dx <= -DEL);
   });
+  // Пока идёт горизонтальный свайп-удаление — глушим нативный вертикальный скролл,
+  // чтобы карточка не «ездила» вверх-вниз во время удаления (п.2).
+  row.addEventListener("touchmove", e => {
+    if (!active) return;
+    const t = e.touches[0]; if (!t) return;
+    const mx = t.clientX - sx, my = t.clientY - sy;
+    if (horiz || (Math.abs(mx) >= 8 && mx < 0 && Math.abs(mx) > Math.abs(my))) {
+      if (e.cancelable) e.preventDefault();
+    }
+  }, { passive: false });
   const settle = () => {
     if (!active) return;
     active = false;
@@ -2387,6 +2397,15 @@ function wireSetRowSwipe(wrap, row, onDelete) {
     row.style.transform = `translateX(${dx}px)`;
     wrap.classList.toggle("will-delete", dx <= -DEL);
   });
+  // Во время горизонтального свайпа гасим вертикальный скролл (п.2).
+  row.addEventListener("touchmove", (e) => {
+    if (!active) return;
+    const t = e.touches[0]; if (!t) return;
+    const mx = t.clientX - sx, my = t.clientY - sy;
+    if (horiz || (Math.abs(mx) >= 10 && mx < 0 && Math.abs(mx) > Math.abs(my))) {
+      if (e.cancelable) e.preventDefault();
+    }
+  }, { passive: false });
   const settle = () => {
     if (!active) return;
     active = false;
@@ -2467,9 +2486,12 @@ function pickerCategories() {
 
 function renderPickerTabs() {
   if (!pickerTabs) return;
-  pickerTabs.innerHTML = pickerCategories().map(c =>
-    `<button class="picker-tab ${c === _pickerCat ? "active" : ""}" data-cat="${escHtml(c)}">${escHtml(c)}</button>`
-  ).join("");
+  const userId = DATA.getCurrentUser();
+  pickerTabs.innerHTML = pickerCategories().map(c => {
+    const active = c === _pickerCat ? " active" : "";
+    const color = c === "Все" ? "var(--accent)" : DATA.getCategoryColor(userId, c);
+    return `<button class="picker-tab${active}" data-cat="${escHtml(c)}" style="--tab-color:${escHtml(color)}">${escHtml(c)}</button>`;
+  }).join("");
   pickerTabs.querySelectorAll(".picker-tab").forEach(tab => {
     tab.addEventListener("click", () => {
       _pickerCat = tab.dataset.cat;
@@ -2499,23 +2521,29 @@ function renderPickerList(query) {
     return;
   }
 
+  const userId = DATA.getCurrentUser();
   const SVG_CHECK = `<svg class="picker-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>`;
-  const itemHtml = e => `
-    <div class="picker-item${e.id === _pickerSelectedId ? " selected" : ""}" data-id="${escHtml(e.id)}">
-      <div><div class="picker-item-name">${escHtml(e.name)}</div></div>
-      ${e.id === _pickerSelectedId ? SVG_CHECK : ""}
+  const itemHtml = e => {
+    const sel = e.id === _pickerSelectedId;
+    const color = DATA.getCategoryColor(userId, e.cat);
+    return `
+    <div class="picker-item${sel ? " selected" : ""}" data-id="${escHtml(e.id)}" style="--cat-color:${escHtml(color)}">
+      <span class="picker-item-name">${escHtml(e.name)}</span>
+      ${sel ? SVG_CHECK : ""}
     </div>`;
+  };
 
   if (!q && _pickerCat !== "Все") {
     // Конкретная категория — плоский список без повторного заголовка.
     pickerList.innerHTML = filtered.map(itemHtml).join("");
   } else {
-    // «Все»/поиск — с разбивкой по категориям.
+    // «Все»/поиск — с разбивкой по категориям (заголовок с цветной точкой).
     const groups = {};
     filtered.forEach(e => { (groups[e.cat] = groups[e.cat] || []).push(e); });
-    pickerList.innerHTML = Object.entries(groups).map(([cat, exs]) =>
-      `<div class="picker-section-label">${escHtml(cat)}</div>${exs.map(itemHtml).join("")}`
-    ).join("");
+    pickerList.innerHTML = Object.entries(groups).map(([cat, exs]) => {
+      const color = DATA.getCategoryColor(userId, cat);
+      return `<div class="picker-section-label"><span class="picker-section-dot" style="background:${escHtml(color)}"></span>${escHtml(cat)}<span class="picker-section-count">${exs.length}</span></div>${exs.map(itemHtml).join("")}`;
+    }).join("");
   }
 
   pickerList.querySelectorAll(".picker-item").forEach(item => {
@@ -3218,6 +3246,15 @@ function wireExRowSwipe(wrap, userId) {
     row.style.transform = `translateX(${dx}px)`;
     wrap.classList.toggle("will-delete", dx <= -DEL);
   });
+  // Во время горизонтального свайпа гасим вертикальный скролл (п.2).
+  row.addEventListener("touchmove", e => {
+    if (!active) return;
+    const t = e.touches[0]; if (!t) return;
+    const mx = t.clientX - sx, my = t.clientY - sy;
+    if (horiz || (Math.abs(mx) >= 8 && mx < 0 && Math.abs(mx) > Math.abs(my))) {
+      if (e.cancelable) e.preventDefault();
+    }
+  }, { passive: false });
   const settle = () => {
     if (!active) return;
     active = false;
@@ -3650,6 +3687,15 @@ function openCategoryManager() {
       item.style.transform = `translateX(${dx}px)`;
       wrap.classList.toggle("will-delete", dx <= -DEL);
     });
+    // Во время горизонтального свайпа гасим вертикальный скролл (п.2).
+    item.addEventListener("touchmove", e => {
+      if (!active) return;
+      const t = e.touches[0]; if (!t) return;
+      const mx = t.clientX - sx, my = t.clientY - sy;
+      if (horiz || (Math.abs(mx) >= 8 && mx < 0 && Math.abs(mx) > Math.abs(my))) {
+        if (e.cancelable) e.preventDefault();
+      }
+    }, { passive: false });
     const settle = () => {
       if (!active) return;
       active = false;
@@ -3778,8 +3824,7 @@ function openCategoryManager() {
             return `
               <div class="cat-item-wrap" data-cat="${escHtml(c)}">
                 <div class="cat-item-delete">${SVG_DEL} Удалить</div>
-                <div class="cat-item" data-cat="${escHtml(c)}">
-                  <span class="cat-item-dot" style="background:${escHtml(color)}"></span>
+                <div class="cat-item" data-cat="${escHtml(c)}" style="--cat-color:${escHtml(color)}">
                   <span class="cat-item-name-text" title="${escHtml(c)}">${escHtml(c)}</span>
                   <span class="cat-item-count">${counts[c] || 0}</span>
                 </div>

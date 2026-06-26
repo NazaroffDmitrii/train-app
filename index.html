@@ -1071,39 +1071,50 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   -webkit-overflow-scrolling: touch; scrollbar-width: none;
 }
 .picker-tabs::-webkit-scrollbar { display: none; }
+/* Табы пикера — как вкладки-категории во вкладке «Упражнения» (обводка цветом). */
 .picker-tab {
   flex: none; white-space: nowrap;
-  padding: 7px 14px; border-radius: 999px;
-  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  padding: 7px 13px; border-radius: 14px;
+  background: var(--panel-raised); border: 1.5px solid var(--tab-color, var(--border-subtle));
   color: var(--text-secondary); font-size: 13px; font-weight: 600;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
-.picker-tab.active {
-  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright);
+.picker-tab.active { background: var(--accent); border-color: transparent; color: #fff; }
+
+.picker-list {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  padding: 6px 16px calc(16px + var(--safe-bottom));
 }
 
-.picker-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-
+/* Заголовок группы — как .ex-group во вкладке «Упражнения» (цветная точка). */
 .picker-section-label {
-  padding: 10px 16px 4px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 16px 6px 8px;
   font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.1em; color: var(--text-tertiary);
 }
+.picker-section-label:first-child { padding-top: 4px; }
+.picker-section-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.picker-section-count { font-size: 11px; font-weight: 700; color: var(--text-tertiary); opacity: 0.65; }
+
+/* Строка пикера — как карточка .ex-row (цветная левая полоса категории). */
 .picker-item {
   display: flex; align-items: center; gap: 12px;
-  padding: 13px 16px; cursor: pointer;
-  border-bottom: 1px solid var(--border-subtle);
-  transition: background 0.1s ease;
+  padding: 12px 14px; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--cat-color, transparent);
+  border-radius: var(--radius-md); margin-bottom: 8px;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
-.picker-item:last-child { border-bottom: none; }
 .picker-item:active { background: var(--panel-raised); }
 .picker-item-icon {
   width: 34px; height: 34px; border-radius: 10px; flex: none;
   background: var(--accent-soft); color: var(--accent-bright);
   display: flex; align-items: center; justify-content: center; font-size: 15px;
 }
-.picker-item-name { font-size: 15px; font-weight: 600; }
+.picker-item-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; }
 .picker-item-cat { font-size: 12px; color: var(--text-tertiary); margin-top: 1px; }
+.picker-item.selected { border-color: var(--accent); background: var(--accent-soft); }
 .picker-item.selected .picker-item-name { color: var(--accent-bright); }
 .picker-item-check { margin-left: auto; flex: none; color: var(--accent-bright); }
 
@@ -1285,6 +1296,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 }
 .exercises-add-btn svg { width: 18px; height: 18px; }
 
+.exercises-search-wrap { flex: none; padding: 12px 20px 2px; }
 .exercises-search {
   width: 100%; padding: 11px 16px;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
@@ -1535,7 +1547,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .cat-sheet-title { font-size: 20px; font-weight: 700; }
 .cat-sheet-count { font-size: 13px; color: var(--text-tertiary); font-weight: 600; }
 .cat-sheet-list { overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-.cat-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--panel-raised); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.cat-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--panel-raised); border: 1.5px solid var(--cat-color, var(--border-subtle)); border-radius: var(--radius-md); touch-action: pan-y; }
 .cat-item-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
 .cat-item-name { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600; background: transparent; border: none; color: var(--text-primary); padding: 2px 0; }
 .cat-item-name:focus { outline: none; border-bottom: 1px solid var(--accent); }
@@ -2086,6 +2098,8 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
       </div>
+    </div>
+    <div class="exercises-search-wrap">
       <input class="exercises-search" id="exercises-search" placeholder="Поиск упражнения…" type="text">
     </div>
     <div class="ex-cat-tabs-wrap">
@@ -2101,10 +2115,12 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   <!-- ===== ЭКРАН: полная история тренировок (доступен только из шторки) ===== -->
   <section id="screen-history" class="screen screen-exercises slide-right">
     <div class="exercises-header">
-      <button class="btn-chip" id="history-back-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-      </button>
-      <div class="exercises-header-title">История</div>
+      <div class="exercises-header-top">
+        <button class="btn-chip" id="history-back-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        </button>
+        <div class="exercises-header-title">История</div>
+      </div>
     </div>
     <div class="history-filters-row" id="history-filters-row">
       <div class="history-dd" id="history-type-dd"></div>
@@ -2116,10 +2132,12 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   <!-- ===== ЭКРАН: статистика и рекорды (раздел 9.2 спецификации) ===== -->
   <section id="screen-stats" class="screen screen-stats slide-right">
     <div class="exercises-header">
-      <button class="btn-chip" id="stats-back-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-      </button>
-      <div class="exercises-header-title">Статистика</div>
+      <div class="exercises-header-top">
+        <button class="btn-chip" id="stats-back-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        </button>
+        <div class="exercises-header-title">Статистика</div>
+      </div>
     </div>
     <div class="exercises-scroll" id="stats-scroll"></div>
   </section>
