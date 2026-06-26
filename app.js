@@ -937,10 +937,12 @@ function renderProfiles() {
     `;
     card.addEventListener("click", () => {
       DATA.setCurrentUser(user.id);
+      _menuHydrating = Storage.isEnabled() && navigator.onLine;
       goToScreen("menu");
       // Гидратация в фоне — переход на главный экран не ждёт сеть (раздел 8:
       // local-first). Если что-то подтянулось, тихо обновляем уже открытое меню.
       Sync.hydrateUser(user.id).then(() => {
+        _menuHydrating = false;
         if (screenMenu.classList.contains("active")) refreshMenu();
       });
     });
@@ -1113,12 +1115,35 @@ function wireHistoryItemSwipe(wrap, rerender) {
 // отдельном экране «История» по кнопке «Вся история».
 const HISTORY_PREVIEW_LIMIT = 5;
 
+// true, пока идёт первичная гидратация при заходе на меню. Нужно, чтобы при
+// пустой локальной истории (свежее устройство / чищеный кэш / последняя
+// тренировка была на другом устройстве) показать скелетон-карточку вместо
+// схлопнутой пустой шторки — иначе превью «подгружается» и ломает дизайн
+// (шторка стоит внизу пустая, потом прыгает вверх, когда данные приехали).
+let _menuHydrating = false;
+
+// Карточка-заглушка той же высоты, что реальная, — держит «пик» шторки на месте.
+function historySkeletonHtml() {
+  const card = `
+    <div class="history-item history-item--skeleton">
+      <span class="history-item-body">
+        <span class="sk-line sk-line-label"></span>
+        <span class="sk-line sk-line-meta"></span>
+      </span>
+      <span class="history-item-right"><span class="sk-line sk-line-date"></span></span>
+    </div>`;
+  return card.repeat(3);
+}
+
 function renderHistory(userId) {
   const history = DATA.getWorkoutHistory(userId);
   historyCount.textContent = history.length;
 
   if (!history.length) {
-    historyBody.innerHTML = `<p class="empty-state">Тренировок пока нет — начни первую, и она появится здесь.</p>`;
+    // Пока тянем данные — скелетон (держит дизайн шторки); иначе честная пустота.
+    historyBody.innerHTML = _menuHydrating
+      ? historySkeletonHtml()
+      : `<p class="empty-state">Тренировок пока нет — начни первую, и она появится здесь.</p>`;
     repositionCollapsedSheet();
     return;
   }
@@ -1343,8 +1368,10 @@ $("refresh-data-btn").addEventListener("click", () => {
   closeModal(settingsModalBackdrop);
   showToast("Синхронизируем данные…");
   SyncQueue.flush();
+  if (userId) _menuHydrating = Storage.isEnabled() && navigator.onLine;
   Promise.resolve(userId ? SyncQueue.hydrateUser(userId) : null)
     .then(() => {
+      _menuHydrating = false;
       if (screenMenu.classList.contains("active")) refreshMenu();
       updateOnlineStatus();
       showToast(SyncQueue.lastError() ? "Синхронизация не удалась" : "Данные обновлены");
@@ -5254,8 +5281,11 @@ function init() {
   updateOnlineStatus();
   const userId = DATA.getCurrentUser();
   if (userId) {
+    // Скелетон показываем только когда реально есть что тянуть (онлайн + sync).
+    _menuHydrating = Storage.isEnabled() && navigator.onLine;
     goToScreen("menu");
     Sync.hydrateUser(userId).then(() => {
+      _menuHydrating = false;
       if (screenMenu.classList.contains("active")) refreshMenu();
     });
   } else {
