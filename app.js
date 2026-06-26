@@ -337,7 +337,9 @@ const DATA = (() => {
     },
 
     // История тренировок
-    getWorkoutHistory(userId) { return ls(`train_history_${userId}`, []); },
+    // Всегда отдаём копию, отсортированную от новых к старым (по дате начала) —
+    // порядок отображения гарантирован везде, где читают историю.
+    getWorkoutHistory(userId) { return [...ls(`train_history_${userId}`, [])].sort((a, b) => b.startedAt - a.startedAt); },
     // Перезаписать историю целиком — для отката удаления (undo).
     saveWorkoutHistory(userId, list) { return lsSet(`train_history_${userId}`, list); },
     // Возвращает true/false — записалось ли. Вызывающий (doFinishWorkout)
@@ -964,8 +966,7 @@ $("profile-chip").addEventListener("click", () => {
   goToScreen("profile");
 });
 
-const HISTORY_SVG_STRENGTH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
-const HISTORY_SVG_RUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="14.5" cy="5.5" r="1.6"/><path d="M9.5 8.5l2.5 1.5 1 3.5-3 2.5M14.5 7l2.5 4.5-3 1.5"/><path d="M6 20l2.5-4"/></svg>`;
+const HISTORY_SVG_DEL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 
 function pluralSets(n) {
   const mod10 = n % 10, mod100 = n % 100;
@@ -987,17 +988,119 @@ function historyItemHtml(w) {
   const duration = w.durationSec ? formatDuration(w.durationSec) : "";
 
   return `
-    <div class="history-item history-item--${isRun ? "run" : "strength"}" data-id="${w.id}">
-      <span class="history-item-icon${isRun ? " run" : ""}">${isRun ? HISTORY_SVG_RUN : HISTORY_SVG_STRENGTH}</span>
-      <span class="history-item-body">
-        <span class="history-item-label">${escHtml(w.name || (isRun ? "Пробежка" : "Силовая"))}</span>
-        <span class="history-item-meta">${meta || "—"}</span>
-      </span>
-      <span class="history-item-right">
-        <span class="history-item-date">${fmtDate(w.startedAt)}</span>
-        ${duration ? `<span class="history-item-dur">${duration}</span>` : ""}
-      </span>
+    <div class="history-item-wrap" data-id="${w.id}">
+      <div class="history-item-delete">${HISTORY_SVG_DEL} Удалить</div>
+      <div class="history-item history-item--${isRun ? "run" : "strength"}" data-id="${w.id}">
+        <span class="history-item-body">
+          <span class="history-item-label">${escHtml(w.name || (isRun ? "Пробежка" : "Силовая"))}</span>
+          <span class="history-item-meta">${meta || "—"}</span>
+        </span>
+        <span class="history-item-right">
+          <span class="history-item-date">${fmtDate(w.startedAt)}</span>
+          ${duration ? `<span class="history-item-dur">${duration}</span>` : ""}
+        </span>
+      </div>
     </div>`;
+}
+
+// Удаление тренировки с возможностью отката (та же логика, что у кнопки удаления
+// в детальном экране) — переиспользуется свайпом по карточке истории. rerender —
+// колбэк перерисовки текущего списка (шторка или экран «История»).
+function deleteWorkoutWithUndo(workout, rerender) {
+  const userId = DATA.getCurrentUser();
+  // Снимки для отката.
+  const histSnap = [...DATA.getWorkoutHistory(userId)];
+  const idxSnap  = [...DATA.getWorkoutIndex(userId)];
+  const recSnap  = JSON.parse(JSON.stringify(DATA.getRecords(userId)));
+  const binId = workout._remoteBinId; // удалим и сам бин на JSONBin (если не отменят)
+  DATA.deleteWorkout(userId, workout.id);
+
+  // Пересчёт рекордов только при полной локальной истории (см. detail-delete-btn).
+  const recsRecomputed = Sync.missingWorkoutCount(userId) === 0;
+  if (recsRecomputed) DATA.recomputeRecords(userId);
+
+  SyncQueue.push("workout:delete", {});
+  if (recsRecomputed) SyncQueue.push("user:update", {});
+  rerender(userId);
+
+  let undone = false;
+  const purgeTimer = setTimeout(() => {
+    if (!undone && binId) Storage.deleteBin(binId).catch(e => console.warn("deleteBin failed", e));
+  }, 6000);
+
+  showUndoToast("Тренировка удалена", () => {
+    undone = true;
+    clearTimeout(purgeTimer);
+    DATA.saveWorkoutHistory(userId, histSnap);
+    DATA.saveWorkoutIndex(userId, idxSnap);
+    if (recsRecomputed) { DATA.saveRecords(userId, recSnap); SyncQueue.push("user:update", {}); }
+    SyncQueue.push("workout:delete", {}); // повторно зальёт восстановленный индекс
+    rerender(userId);
+    showToast("Восстановлено");
+  });
+}
+
+// Свайп влево по карточке истории → раскрыть зону «Удалить»; за порогом отпускания
+// тренировка удаляется (с откатом), иначе карточка возвращается. Вертикаль отдаём
+// скроллу. Аналогично свайпу строки упражнения (wireExRowSwipe).
+function wireHistoryItemSwipe(wrap, rerender) {
+  const row = wrap.querySelector(".history-item");
+  if (!row) return;
+  const wId = wrap.dataset.id;
+  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, didSwipe = false;
+  const MAX = 116, DEL = 84;
+
+  row.addEventListener("pointerdown", e => {
+    sx = e.clientX; sy = e.clientY; dx = 0;
+    active = true; decided = false; horiz = false; didSwipe = false;
+    row.style.transition = "";
+  });
+  row.addEventListener("pointermove", e => {
+    if (!active) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!decided) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      decided = true;
+      horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+      if (!horiz) { active = false; return; }
+      wrap.classList.add("swiping");
+      try { row.setPointerCapture(e.pointerId); } catch {}
+    }
+    if (!horiz) return;
+    dx = Math.max(-MAX, Math.min(0, mx));
+    if (dx < -4) didSwipe = true;
+    row.style.transform = `translateX(${dx}px)`;
+    wrap.classList.toggle("will-delete", dx <= -DEL);
+  });
+  const settle = () => {
+    if (!active) return;
+    active = false;
+    if (!horiz) return;
+    if (dx <= -DEL) {
+      row.style.transition = "transform 0.16s ease";
+      row.style.transform = "translateX(-110%)";
+      wrap.style.height = wrap.offsetHeight + "px";
+      requestAnimationFrame(() => {
+        wrap.style.transition = "height 0.18s ease, opacity 0.18s ease";
+        wrap.style.height = "0"; wrap.style.opacity = "0";
+      });
+      setTimeout(() => {
+        const w = DATA.getWorkoutHistory(DATA.getCurrentUser()).find(x => x.id === wId);
+        if (w) deleteWorkoutWithUndo(w, rerender);
+        else rerender(DATA.getCurrentUser());
+      }, 200);
+    } else {
+      row.style.transition = "transform 0.18s ease";
+      row.style.transform = "";
+      wrap.classList.remove("will-delete");
+      setTimeout(() => wrap.classList.remove("swiping"), 200);
+    }
+  };
+  row.addEventListener("pointerup", settle);
+  row.addEventListener("pointercancel", settle);
+  row.addEventListener("click", e => {
+    if (didSwipe) { e.stopPropagation(); e.preventDefault(); didSwipe = false; }
+  }, true);
 }
 
 // Сколько последних тренировок показываем в шторке-превью. Остальные — на
@@ -1032,6 +1135,8 @@ function renderHistory(userId) {
       if (w) openDetailScreen(w);
     });
   });
+  historyBody.querySelectorAll(".history-item-wrap").forEach(wrap =>
+    wireHistoryItemSwipe(wrap, () => renderHistory(DATA.getCurrentUser())));
 
   const allBtn = $("history-all-btn");
   if (allBtn) allBtn.addEventListener("click", () => {
@@ -1165,6 +1270,8 @@ function renderHistoryScreen() {
         if (w) openDetailScreen(w, "history");
       });
     });
+    listEl.querySelectorAll(".history-item-wrap").forEach(wrap =>
+      wireHistoryItemSwipe(wrap, () => renderHistoryScreen()));
   }
 
   const moreBtn = $("history-load-more");
@@ -3882,42 +3989,8 @@ function openDetailScreen(workout, returnScreen = "menu") {
   goToScreen("detail");
 
   $("detail-delete-btn").onclick = () => {
-    const userId = DATA.getCurrentUser();
-    // Снимки для отката.
-    const histSnap = [...DATA.getWorkoutHistory(userId)];
-    const idxSnap  = [...DATA.getWorkoutIndex(userId)];
-    const recSnap  = JSON.parse(JSON.stringify(DATA.getRecords(userId)));
-    const binId = workout._remoteBinId; // удалим и сам бин на JSONBin (если не отменят)
-    DATA.deleteWorkout(userId, workout.id);
-
-    // Пересчитать рекорды: рекорд удалённой тренировки не должен остаться.
-    // Только если локальная история полная — иначе можно занизить настоящий
-    // рекорд из ещё не подтянутой старой тренировки.
-    const recsRecomputed = Sync.missingWorkoutCount(userId) === 0;
-    if (recsRecomputed) DATA.recomputeRecords(userId);
-
-    SyncQueue.push("workout:delete", {});
-    if (recsRecomputed) SyncQueue.push("user:update", {}); // рекорды в пользовательском бине
-    renderHistory(userId);
+    deleteWorkoutWithUndo(workout, userId => renderHistory(userId));
     goToScreen("menu");
-
-    // Удаление бина откладываем до конца окна отмены: если нажмут «Отменить»,
-    // бин останется цел и восстановление обойдётся без пересоздания.
-    let undone = false;
-    const purgeTimer = setTimeout(() => {
-      if (!undone && binId) Storage.deleteBin(binId).catch(e => console.warn("deleteBin failed", e));
-    }, 6000);
-
-    showUndoToast("Тренировка удалена", () => {
-      undone = true;
-      clearTimeout(purgeTimer);
-      DATA.saveWorkoutHistory(userId, histSnap);
-      DATA.saveWorkoutIndex(userId, idxSnap);
-      if (recsRecomputed) { DATA.saveRecords(userId, recSnap); SyncQueue.push("user:update", {}); }
-      SyncQueue.push("workout:delete", {}); // повторно зальёт восстановленный индекс
-      renderHistory(userId);
-      showToast("Восстановлено");
-    });
   };
 
   $("detail-edit-btn").onclick = () => openDetailEditMode(workout);

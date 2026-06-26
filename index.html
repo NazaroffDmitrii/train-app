@@ -366,21 +366,39 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .empty-state { color: var(--text-tertiary); font-size: 14px; line-height: 1.5; padding-top: 18px; }
 .hidden { display: none !important; }
 
+/* Обёртка для свайпа-удаления: под карточкой — красная зона «Удалить» */
+.history-item-wrap {
+  position: relative; overflow: hidden; border-radius: var(--radius-md);
+  margin-bottom: 10px; -webkit-user-select: none; user-select: none;
+}
+.history-item-delete {
+  position: absolute; inset: 0; z-index: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  padding-right: 18px; border-radius: var(--radius-md);
+  background: var(--red); color: #fff; font-size: 13px; font-weight: 700; opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.history-item-delete svg { width: 17px; height: 17px; }
+.history-item-wrap.swiping .history-item-delete { opacity: 0.9; }
+.history-item-wrap.will-delete .history-item-delete { opacity: 1; }
+
 .history-item {
   display: flex; align-items: center; gap: 12px;
   padding: 14px; border-radius: var(--radius-md);
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
-  margin-bottom: 10px; cursor: pointer;
+  cursor: pointer; position: relative; z-index: 1; touch-action: pan-y;
   transition: background 0.15s ease, transform 0.12s ease;
 }
-.history-item:active { transform: scale(0.985); background: var(--panel-hi); }
-.history-item-icon {
-  flex: none; width: 38px; height: 38px; border-radius: 11px;
-  background: var(--accent-soft); color: var(--accent-bright);
-  display: flex; align-items: center; justify-content: center;
+.history-item:active { transform: scale(0.985); }
+/* Заливка по типу тренировки (силовая — фиолетовая, беговая — зелёная) */
+.history-item--strength {
+  background: linear-gradient(135deg, rgba(124, 108, 230, 0.22), rgba(124, 108, 230, 0.08));
+  border-color: rgba(124, 108, 230, 0.42);
 }
-.history-item-icon svg { width: 18px; height: 18px; }
-.history-item-icon.run { background: var(--green-soft); color: var(--green); }
+.history-item--run {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.20), rgba(52, 211, 153, 0.06));
+  border-color: rgba(52, 211, 153, 0.36);
+}
 .history-item-body { flex: 1; min-width: 0; }
 .history-item-label { display: block; font-size: 14.5px; font-weight: 600; }
 .history-item-meta { display: block; font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
@@ -1202,17 +1220,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   padding: 14px 4px 8px;
 }
 #history-screen-list > .history-month:first-child { padding-top: 4px; }
-
-/* ── Экран «История»: карточки с заливкой по типу (вместо иконок) ───────── */
-#history-screen-list .history-item-icon { display: none; }
-#history-screen-list .history-item--strength {
-  background: linear-gradient(135deg, rgba(124, 108, 230, 0.22), rgba(124, 108, 230, 0.08));
-  border-color: rgba(124, 108, 230, 0.42);
-}
-#history-screen-list .history-item--run {
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.20), rgba(52, 211, 153, 0.06));
-  border-color: rgba(52, 211, 153, 0.36);
-}
 .ex-cat-manage-btn {
   flex: none; width: 34px; height: 34px; border-radius: 12px;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
