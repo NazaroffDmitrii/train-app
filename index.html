@@ -1140,15 +1140,17 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   border-bottom-color: rgba(52,211,153,0.18);
 }
 
-/* Сводка 2×2: 4 ячейки в одном компактном блоке с тонкими разделителями. */
+/* Сводка 2×2: внешний блок, внутри — 4 обособленные ячейки с рамками. */
 .wd-statgrid {
-  display: grid; grid-template-columns: 1fr 1fr;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
-  border-radius: 14px; overflow: hidden; margin-bottom: 14px;
+  border-radius: 16px; padding: 8px; margin-bottom: 14px;
 }
-.wd-stat { text-align: center; padding: 10px 6px; }
-.wd-stat:nth-child(odd)  { border-right: 1px solid var(--border-subtle); }
-.wd-stat:nth-child(-n+2) { border-bottom: 1px solid var(--border-subtle); }
+.wd-stat {
+  text-align: center; padding: 11px 6px;
+  background: var(--panel-hi); border: 1px solid var(--border-subtle);
+  border-radius: 11px;
+}
 .wd-stat-val { line-height: 1; white-space: nowrap; }
 .wd-stat-num { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
 .wd-stat-unit { font-size: 10.5px; font-weight: 600; color: var(--text-secondary); margin-left: 3px; }
@@ -1219,14 +1221,16 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .de-ex-name.missing { border-color: rgba(248,113,113,0.45); color: var(--red); }
 .de-ex-name.missing svg { color: var(--red); }
 
-/* Кнопка «Сохранить как шаблон» — пунктирная, как «+ Добавить категорию». */
+/* Кнопка «+ Добавить в шаблоны» — пунктирная, акцентный цвет, как «+ Добавить упражнение». */
 .wd-add-btn {
-  width: 100%; margin-top: 8px; padding: 20px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; margin-top: 8px; padding: 18px;
   border-radius: 16px; background: transparent;
   border: 1.5px dashed var(--border-strong);
-  color: var(--text-tertiary); font-size: 15px; font-weight: 700; font-style: italic;
-  text-align: center; transition: background 0.15s ease, transform 0.12s ease;
+  color: var(--accent-bright); font-size: 15.5px; font-weight: 700;
+  transition: background 0.15s ease, transform 0.12s ease;
 }
+.wd-add-btn svg { width: 18px; height: 18px; flex: none; }
 .wd-add-btn:active { transform: scale(0.99); background: var(--panel-raised); }
 
 /* Кнопка «назад» — только иконка-стрелка (компактный квадрат). */

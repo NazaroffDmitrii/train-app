@@ -4046,7 +4046,10 @@ function openDetailScreen(workout, returnScreen = "menu") {
             </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
         </div>`;
       }).join("")}
-      <button class="wd-add-btn" id="save-as-template-btn">Сохранить как шаблон</button>
+      <button class="wd-add-btn" id="save-as-template-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Добавить в шаблоны
+      </button>
     `;
 
     $("save-as-template-btn").addEventListener("click", () => openSaveAsTemplateModal(workout));
@@ -4116,7 +4119,7 @@ function openDetailEditMode(workout) {
           <div class="wd-ex-head">
             <button class="de-ex-name${known ? "" : " missing"}" data-ex="${exIdx}">
               <span>${escHtml(def.name)}</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
           </div>
           ${doneSets.length ? `
@@ -4149,8 +4152,8 @@ function openDetailEditMode(workout) {
           </div>
           ${exRows}
           <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn-chip" id="de-cancel" style="flex:1">Отмена</button>
-            <button class="btn-chip primary" id="de-save" style="flex:1">Сохранить</button>
+            <button class="btn-chip" id="de-cancel" style="flex:1;justify-content:center">Отмена</button>
+            <button class="btn-chip primary" id="de-save" style="flex:1;justify-content:center">Сохранить</button>
           </div>
         </div>`;
 
