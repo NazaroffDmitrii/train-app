@@ -2821,7 +2821,7 @@ function initExercisesScreen() {
   _exercisesCatFilter = "all";
   _exercisesShowHidden = false;
   _exListEditMode = false;
-  const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.hidden = true;
+  const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.classList.remove("visible");
   const addBtn  = $("exercises-add-btn");  if (addBtn)  addBtn.hidden  = false;
   const userId = DATA.getCurrentUser();
   if (DATA.ensureExercisesSeeded(userId)) SyncQueue.push("exercise:create", {});
@@ -2888,13 +2888,19 @@ function renderExercisesList(query) {
   const isFiltered = _exercisesCatFilter !== "all";
   const customOrder = DATA.getExerciseOrder(userId);
 
+  // Пустые категории показываем только на вкладке "Все" и без поиска (для drag-to-category)
+  const emptyCats = (!isFiltered && !q) ? catOrder.filter(c => !groups.has(c)) : [];
+  const allOrderedCats = [...orderedCats, ...emptyCats];
+
   if (_exListEditMode) exercisesScroll.classList.add("ex-list-editing");
   else exercisesScroll.classList.remove("ex-list-editing");
 
-  exercisesScroll.innerHTML = orderedCats.map(cat => {
+  exercisesScroll.innerHTML = allOrderedCats.map(cat => {
     const color = DATA.getCategoryColor(userId, cat);
-    const accentStyle = isFiltered ? ` style="border-left: 3px solid ${color};"` : "";
-    const sorted = [...groups.get(cat)].sort((a, b) => {
+    const catExs = groups.get(cat) || [];
+    const isEmpty = catExs.length === 0;
+    const accentStyle = ` style="border-left-color:${escHtml(color)};"`;
+    const sorted = [...catExs].sort((a, b) => {
       if (customOrder) {
         const ia = customOrder.indexOf(a.id), ib = customOrder.indexOf(b.id);
         if (ia !== -1 || ib !== -1) {
@@ -2906,7 +2912,7 @@ function renderExercisesList(query) {
       return a.name.localeCompare(b.name, "ru");
     });
     const rows = sorted.map(ex => `
-      <div class="ex-row-wrap" data-id="${escHtml(ex.id)}">
+      <div class="ex-row-wrap" data-id="${escHtml(ex.id)}" data-cat="${escHtml(cat)}">
         <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
         <div class="ex-row tappable" data-id="${escHtml(ex.id)}"${accentStyle}>
           <span class="ex-row-body">
@@ -2916,11 +2922,12 @@ function renderExercisesList(query) {
         </div>
       </div>`).join("");
     const header = isFiltered ? "" : `
-      <div class="ex-group" data-cat="${escHtml(cat)}">
+      <div class="ex-group${isEmpty ? " ex-group-empty" : ""}" data-cat="${escHtml(cat)}">
         <span class="ex-group-dot" style="background:${escHtml(color)}"></span>
         <span class="ex-group-name">${escHtml(cat)}</span>
-        <span class="ex-group-count">${groups.get(cat).length}</span>
-      </div>`;
+        ${!isEmpty ? `<span class="ex-group-count">${catExs.length}</span>` : ""}
+      </div>
+      ${isEmpty ? `<div class="ex-group-drop-hint">Перетащи сюда упражнение</div>` : ""}`;
     return header + rows;
   }).join("");
 
@@ -3016,8 +3023,8 @@ function enterExListEditMode() {
   exercisesScroll.classList.add("ex-list-editing");
   const doneBtn = $("exercises-done-btn");
   const addBtn  = $("exercises-add-btn");
-  if (doneBtn) doneBtn.hidden = false;
-  if (addBtn)  addBtn.hidden  = true;
+  if (doneBtn) doneBtn.classList.add("visible");
+  if (addBtn)  addBtn.hidden = true;
 }
 
 function exitExListEditMode() {
@@ -3026,8 +3033,8 @@ function exitExListEditMode() {
   exercisesScroll.classList.remove("ex-list-editing");
   const doneBtn = $("exercises-done-btn");
   const addBtn  = $("exercises-add-btn");
-  if (doneBtn) doneBtn.hidden = true;
-  if (addBtn)  addBtn.hidden  = false;
+  if (doneBtn) doneBtn.classList.remove("visible");
+  if (addBtn)  addBtn.hidden = false;
   saveExOrder();
 }
 
@@ -3089,20 +3096,37 @@ function moveExDrag(pointerY) {
   const d = _exListDrag; if (!d) return;
   const h = d.wrap.getBoundingClientRect().height;
   const center = (pointerY - d.grabDy) + h / 2;
-  const prev = d.wrap.previousElementSibling;
-  if (prev && prev.classList.contains("ex-row-wrap")) {
-    const r = prev.getBoundingClientRect();
-    if (center < r.top + r.height / 2) exercisesScroll.insertBefore(d.wrap, prev);
+
+  // Ищем позицию вставки: первый элемент (не drag-сам и не drop-hint), чей центр выше нашего
+  let insertBeforeEl = null;
+  for (const child of exercisesScroll.children) {
+    if (child === d.wrap || child.classList.contains("ex-group-drop-hint")) continue;
+    const r = child.getBoundingClientRect();
+    if (r.top + r.height / 2 > center) { insertBeforeEl = child; break; }
   }
-  const next = d.wrap.nextElementSibling;
-  if (next && next.classList.contains("ex-row-wrap")) {
-    const r = next.getBoundingClientRect();
-    if (center > r.top + r.height / 2) exercisesScroll.insertBefore(next, d.wrap);
+
+  const curNext = d.wrap.nextElementSibling;
+  // Пропускаем drop-hint при сравнении — он не считается «следующим значимым»
+  const effectiveNext = (curNext && curNext.classList.contains("ex-group-drop-hint"))
+    ? curNext.nextElementSibling : curNext;
+  if (insertBeforeEl !== effectiveNext && insertBeforeEl !== d.wrap) {
+    exercisesScroll.insertBefore(d.wrap, insertBeforeEl); // null → в конец
   }
+
   const rect = d.wrap.getBoundingClientRect();
   const naturalTop = rect.top - d.ty;
   d.ty = (pointerY - d.grabDy) - naturalTop;
   d.wrap.style.transform = `translateY(${d.ty}px)`;
+}
+
+function _exDragGetCat(wrap) {
+  // Ищем ближайший предшествующий .ex-group, чтобы понять категорию
+  let el = wrap.previousElementSibling;
+  while (el) {
+    if (el.classList.contains("ex-group")) return el.dataset.cat || null;
+    el = el.previousElementSibling;
+  }
+  return null;
 }
 
 function endExDrag() {
@@ -3112,6 +3136,22 @@ function endExDrag() {
   d.wrap.style.transform = "";
   d.wrap.classList.remove("ex-dragging");
   setTimeout(() => { d.wrap.style.transition = ""; }, 200);
+
+  // Обновляем категорию упражнения если оно переместилось в другую группу
+  const userId = DATA.getCurrentUser();
+  const exId = d.wrap.dataset.id;
+  const newCat = _exDragGetCat(d.wrap);
+  if (newCat && newCat !== d.wrap.dataset.cat) {
+    DATA.updateOwnExercise(userId, exId, { cat: newCat });
+    SyncQueue.push("exercise:update", { id: exId, cat: newCat });
+    // Обновляем цвет акцента сразу без полного ре-рендера
+    const color = DATA.getCategoryColor(userId, newCat);
+    const row = d.wrap.querySelector(".ex-row");
+    if (row) row.style.borderLeftColor = color;
+    d.wrap.dataset.cat = newCat;
+  }
+
+  saveExOrder();
 }
 
 $("exercises-done-btn").addEventListener("click", exitExListEditMode);
