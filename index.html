@@ -1129,20 +1129,29 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .detail-set-rpe { color: var(--amber); font-weight: 700; font-size: 12px; }
 
 /* ===== Детали силовой тренировки (редизайн) ===== */
-/* Сводка 2×2: Упражнения | Подходы / Тоннаж | Время. Сетка, а не строка из 4 —
-   так тоннаж (может быть большим числом) не сплющивается в узкой колонке. */
-.wd-statgrid {
-  display: grid; grid-template-columns: 1fr 1fr;
-  background: var(--panel-raised); border: 1px solid var(--border-subtle);
-  border-radius: 14px; overflow: hidden; margin-bottom: 16px;
+/* Шапка: цвет фона совпадает с цветом карточки в истории. */
+.detail-header--strength {
+  background: linear-gradient(rgba(124,108,230,0.10), rgba(124,108,230,0.10)), var(--bg-base);
+  border-color: rgba(124,108,230,0.22);
 }
-.wd-statgrid .wd-stat { padding: 13px 8px; }
-.wd-statgrid .wd-stat:nth-child(odd)  { border-right: 1px solid var(--border-subtle); }
-.wd-statgrid .wd-stat:nth-child(-n+2) { border-bottom: 1px solid var(--border-subtle); }
-.wd-stat { text-align: center; }
+.detail-header--run {
+  background: linear-gradient(rgba(52,211,153,0.08), rgba(52,211,153,0.08)), var(--bg-base);
+  border-color: rgba(52,211,153,0.18);
+}
+
+/* Сводка 2×2: 4 обособленных «пилюли» в одном контейнере. */
+.wd-statgrid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin-bottom: 16px;
+}
+.wd-stat {
+  text-align: center; padding: 13px 8px;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+}
 .wd-stat-val { line-height: 1; white-space: nowrap; }
 .wd-stat-num { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
-.wd-stat-unit { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-left: 2px; }
+.wd-stat-unit { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-left: 3px; }
 .wd-stat-label { font-size: 9px; font-weight: 700; color: var(--text-tertiary); margin-top: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
 
 .wd-ex {
@@ -1152,6 +1161,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .wd-ex-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
 .wd-ex-name { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em; }
 .wd-ex-meta { font-size: 11.5px; color: var(--text-tertiary); flex: none; }
+.wd-ex-meta.pr { color: var(--amber); font-weight: 700; }
 .wd-ex-star { font-size: 11px; font-weight: 700; color: var(--amber); flex: none; }
 
 .wd-cols { display: flex; align-items: center; gap: 7px; padding-bottom: 6px; }

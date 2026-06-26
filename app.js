@@ -394,8 +394,9 @@ const DATA = (() => {
       if (workout.type !== "strength") return;
       const recs = ls(`train_records_${userId}`, {});
       (workout.exercises || []).forEach(ex => {
+        const exVol = ex.sets.filter(s => s.done).reduce((a, s) => a + (s.weight || 0) * (s.reps || 0), 0);
         ex.sets.filter(s => s.done && s.weight > 0 && s.reps > 0).forEach(s => {
-          if (!recs[ex.exerciseId]) recs[ex.exerciseId] = { maxWeight: 0, repsAtMaxWeight: 0, maxReps: 0, weightAtMaxReps: 0 };
+          if (!recs[ex.exerciseId]) recs[ex.exerciseId] = { maxWeight: 0, repsAtMaxWeight: 0, maxReps: 0, weightAtMaxReps: 0, maxVolume: 0 };
           const r = recs[ex.exerciseId];
           if (s.weight > r.maxWeight || (s.weight === r.maxWeight && s.reps > r.repsAtMaxWeight)) {
             r.maxWeight = s.weight; r.repsAtMaxWeight = s.reps;
@@ -404,6 +405,7 @@ const DATA = (() => {
             r.maxReps = s.reps; r.weightAtMaxReps = s.weight;
           }
         });
+        if (recs[ex.exerciseId]) recs[ex.exerciseId].maxVolume = Math.max(recs[ex.exerciseId].maxVolume || 0, exVol);
       });
       lsSet(`train_records_${userId}`, recs);
     },
@@ -420,12 +422,14 @@ const DATA = (() => {
       this.getWorkoutHistory(userId).forEach(w => {
         if (w.type !== "strength") return;
         (w.exercises || []).forEach(ex => {
+          const exVol = ex.sets.filter(s => s.done).reduce((a, s) => a + (s.weight || 0) * (s.reps || 0), 0);
           ex.sets.filter(s => s.done && s.weight > 0 && s.reps > 0).forEach(s => {
-            if (!recs[ex.exerciseId]) recs[ex.exerciseId] = { maxWeight: 0, repsAtMaxWeight: 0, maxReps: 0, weightAtMaxReps: 0 };
+            if (!recs[ex.exerciseId]) recs[ex.exerciseId] = { maxWeight: 0, repsAtMaxWeight: 0, maxReps: 0, weightAtMaxReps: 0, maxVolume: 0 };
             const r = recs[ex.exerciseId];
             if (s.weight > r.maxWeight || (s.weight === r.maxWeight && s.reps > r.repsAtMaxWeight)) { r.maxWeight = s.weight; r.repsAtMaxWeight = s.reps; }
             if (s.reps > r.maxReps || (s.reps === r.maxReps && s.weight > r.weightAtMaxReps)) { r.maxReps = s.reps; r.weightAtMaxReps = s.weight; }
           });
+          if (recs[ex.exerciseId]) recs[ex.exerciseId].maxVolume = Math.max(recs[ex.exerciseId].maxVolume || 0, exVol);
         });
       });
       this.saveRecords(userId, recs);
@@ -1284,7 +1288,12 @@ function renderHistoryScreen() {
   });
 }
 
-$("history-back-btn").addEventListener("click", () => goToScreen("menu"));
+$("history-back-btn").addEventListener("click", () => {
+  goToScreen("menu");
+  // Шторка была развёрнута когда мы ушли в историю (иначе кнопка «Вся история»
+  // была бы недоступна) — возвращаем её в открытое состояние.
+  if (window.settleSheet) window.settleSheet(true);
+});
 
 
 /* ==========================================================================
@@ -3928,11 +3937,12 @@ function openDetailScreen(workout, returnScreen = "menu") {
   _detailReturnScreen = returnScreen;
   const isRun = workout.type === "run";
 
-  const iconEl = $("detail-screen-icon");
-  iconEl.className = "detail-screen-icon" + (isRun ? " run" : "");
-  iconEl.innerHTML = isRun
-    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="14.5" cy="5.5" r="1.6"/><path d="M9.5 8.5l2.5 1.5 1 3.5-3 2.5M14.5 7l2.5 4.5-3 1.5"/><path d="M6 20l2.5-4"/></svg>`
-    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
+  // Цвет шапки совпадает с цветом карточки в истории (фиолетовый / зелёный).
+  const headerEl = $("detail-screen-icon").closest(".detail-screen-header");
+  headerEl.className = "detail-screen-header detail-header--" + (isRun ? "run" : "strength");
+
+  // Иконка гантели убрана — в шапке остаются только кнопки и текст.
+  $("detail-screen-icon").style.display = "none";
 
   $("detail-screen-title").textContent = workout.name || (isRun ? "Пробежка" : "Силовая");
   $("detail-screen-meta").textContent = fmtDate(workout.startedAt);
@@ -3967,8 +3977,8 @@ function openDetailScreen(workout, returnScreen = "menu") {
     const statTimeHTML = (sec) => {
       const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
       return h > 0
-        ? `<span class="wd-stat-num">${h}:${String(m).padStart(2, "0")}</span><span class="wd-stat-unit">ч</span>`
-        : `<span class="wd-stat-num">${m}</span><span class="wd-stat-unit">мин</span>`;
+        ? `<span class="wd-stat-num">${h}:${String(m).padStart(2, "0")}</span> <span class="wd-stat-unit">ч</span>`
+        : `<span class="wd-stat-num">${m}</span> <span class="wd-stat-unit">мин</span>`;
     };
     const dash = `<span class="wd-stat-num">—</span>`;
     // RPE-светофор: 0–6 — есть запас (зелёный), 7–8 — тяжело (оранжевый),
@@ -3983,7 +3993,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
       <div class="wd-statgrid">
         <div class="wd-stat"><div class="wd-stat-val"><span class="wd-stat-num">${allEx.length}</span></div><div class="wd-stat-label">Упражнения</div></div>
         <div class="wd-stat"><div class="wd-stat-val"><span class="wd-stat-num">${totalSets}</span></div><div class="wd-stat-label">Подходы</div></div>
-        <div class="wd-stat"><div class="wd-stat-val">${totalVol ? `<span class="wd-stat-num">${totalVol.toLocaleString("ru-RU")}</span><span class="wd-stat-unit">кг</span>` : dash}</div><div class="wd-stat-label">Тоннаж</div></div>
+        <div class="wd-stat"><div class="wd-stat-val">${totalVol ? `<span class="wd-stat-num">${totalVol.toLocaleString("ru-RU")}</span> <span class="wd-stat-unit">кг</span>` : dash}</div><div class="wd-stat-label">Тоннаж</div></div>
         <div class="wd-stat"><div class="wd-stat-val">${workout.durationSec ? statTimeHTML(workout.durationSec) : dash}</div><div class="wd-stat-label">Время</div></div>
       </div>
       ${allEx.map(ex => {
@@ -3992,6 +4002,8 @@ function openDetailScreen(workout, returnScreen = "menu") {
         const rec      = records[ex.exerciseId];
         const exVol    = doneSets.reduce((v, s) => v + (s.weight || 0) * (s.reps || 0), 0);
         const hasPr    = doneSets.some(s => isPrSet(rec, s));
+        // Тоннаж-рекорд: максимальный объём за одну тренировку для упражнения.
+        const volPr    = !!rec && exVol > 0 && exVol >= (rec.maxVolume || 0);
         const anyRpe   = doneSets.some(s => s.rpe);
         // Рекорд подсвечиваем только у ПЕРВОГО подхода с рекордным весом:
         // если следующие подходы повторяют тот же вес — это уже не рекорд.
@@ -3999,7 +4011,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
         return `<div class="wd-ex">
           <div class="wd-ex-head">
             <span class="wd-ex-name">${escHtml(exDef.name)}</span>
-            ${doneSets.length ? `<span class="wd-ex-meta">${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
+            ${doneSets.length ? `<span class="wd-ex-meta${volPr ? " pr" : ""}">${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
             ${hasPr ? `<span class="wd-ex-star" title="Личный рекорд">★</span>` : ""}
           </div>
           ${doneSets.length ? `
@@ -4033,7 +4045,17 @@ function openDetailScreen(workout, returnScreen = "menu") {
 
   // Удаление доступно из списка истории (свайп/долгое нажатие) — на экране
   // деталей оставляем только редактирование, чтобы не удалить случайно.
-  $("detail-edit-btn").onclick = () => openDetailEditMode(workout);
+  // Повторный тап по карандашу в режиме редактирования = отмена без сохранения.
+  $("detail-edit-btn").onclick = () => {
+    const editBtn = $("detail-edit-btn");
+    if (editBtn.dataset.editing === "1") {
+      delete editBtn.dataset.editing;
+      openDetailScreen(workout, _detailReturnScreen);
+    } else {
+      editBtn.dataset.editing = "1";
+      openDetailEditMode(workout);
+    }
+  };
 }
 
 function openDetailEditMode(workout) {
