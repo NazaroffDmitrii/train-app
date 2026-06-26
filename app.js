@@ -3956,28 +3956,67 @@ function openDetailScreen(workout, returnScreen = "menu") {
       </div>
     `;
   } else {
-    const exercises = DATA.getVisibleExercises(DATA.getCurrentUser());
-    const totalSets = (workout.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
+    const userId    = DATA.getCurrentUser();
+    const exercises = DATA.getVisibleExercises(userId);
+    const records   = DATA.getRecords(userId);
+    const allEx     = workout.exercises || [];
+    const totalSets = allEx.reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
+
+    // Длительность/отдых в компактном виде: до часа «52 мин», от часа «1:04 ч».
+    const statTimeHTML = (sec) => {
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+      return h > 0
+        ? `<span class="wd-stat-num">${h}:${String(m).padStart(2, "0")}</span><span class="wd-stat-unit">ч</span>`
+        : `<span class="wd-stat-num">${m}</span><span class="wd-stat-unit">мин</span>`;
+    };
+    const dash = `<span class="wd-stat-num">—</span>`;
+    // RPE-светофор: ≤7 — есть запас, 8 — тяжело, 9–10 — почти до отказа.
+    const rpeClass = (v) => v >= 9 ? "hi" : v >= 8 ? "mid" : "lo";
+    // Подход считается рекордным, если его вес×повторы совпадают с текущим
+    // личным максимумом по весу для этого упражнения.
+    const isPrSet = (rec, s) => !!rec && s.weight > 0 && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight;
 
     body.innerHTML = `
-      <div class="detail-stats">
-        <div class="detail-stat"><div class="detail-stat-num">${(workout.exercises || []).length}</div><div class="detail-stat-label">Упражнений</div></div>
-        <div class="detail-stat"><div class="detail-stat-num">${totalSets}</div><div class="detail-stat-label">Подходов</div></div>
-        ${workout.durationSec ? `<div class="detail-stat"><div class="detail-stat-num">${formatDuration(workout.durationSec)}</div><div class="detail-stat-label">Длительность</div></div>` : ""}
-        ${workout.restSec ? `<div class="detail-stat"><div class="detail-stat-num">${formatDuration(workout.restSec)}</div><div class="detail-stat-label">Отдых</div></div>` : ""}
+      <div class="wd-statbar">
+        <div class="wd-stat"><div class="wd-stat-val"><span class="wd-stat-num">${allEx.length}</span></div><div class="wd-stat-label">Упражнения</div></div>
+        <div class="wd-sep"></div>
+        <div class="wd-stat"><div class="wd-stat-val"><span class="wd-stat-num">${totalSets}</span></div><div class="wd-stat-label">Подходы</div></div>
+        <div class="wd-sep"></div>
+        <div class="wd-stat"><div class="wd-stat-val">${workout.durationSec ? statTimeHTML(workout.durationSec) : dash}</div><div class="wd-stat-label">Время</div></div>
+        <div class="wd-sep"></div>
+        <div class="wd-stat"><div class="wd-stat-val">${workout.restSec ? statTimeHTML(workout.restSec) : dash}</div><div class="wd-stat-label">Отдых</div></div>
       </div>
-      ${(workout.exercises || []).map(ex => {
-        const exDef = exercises.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
+      ${allEx.map(ex => {
+        const exDef    = exercises.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
         const doneSets = ex.sets.filter(s => s.done);
-        return `<div class="detail-ex">
-          <div class="detail-ex-name">${escHtml(exDef.name)}</div>
-          ${doneSets.map((s, i) => `
-            <div class="detail-set-row">
-              <span class="detail-set-num">${i + 1}</span>
-              <span class="detail-set-val">${s.weight} кг × ${s.reps} повт</span>
-              ${s.rpe ? `<span class="detail-set-rpe">RPE ${s.rpe}</span>` : ""}
-            </div>`).join("")}
-          ${!doneSets.length ? `<div style="padding:8px 14px;color:var(--text-tertiary);font-size:13px">Нет выполненных подходов</div>` : ""}
+        const rec      = records[ex.exerciseId];
+        const exVol    = doneSets.reduce((v, s) => v + (s.weight || 0) * (s.reps || 0), 0);
+        const hasPr    = doneSets.some(s => isPrSet(rec, s));
+        const anyRpe   = doneSets.some(s => s.rpe);
+        return `<div class="wd-ex">
+          <div class="wd-ex-head">
+            <span class="wd-ex-name">${escHtml(exDef.name)}</span>
+            ${doneSets.length ? `<span class="wd-ex-meta">${doneSets.length} × ${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
+            ${hasPr ? `<span class="wd-ex-star" title="Личный рекорд">★</span>` : ""}
+          </div>
+          ${doneSets.length ? `
+            <div class="wd-cols">
+              <span class="wd-col-idx">#</span>
+              <span class="wd-col">кг</span>
+              <span class="wd-col">повт</span>
+              ${anyRpe ? `<span class="wd-col wd-col-rpe">rpe</span>` : ""}
+            </div>
+            <div class="wd-sets">
+              ${doneSets.map((s, i) => {
+                const pr = isPrSet(rec, s);
+                return `<div class="wd-set">
+                  <span class="wd-set-num">${i + 1}</span>
+                  <div class="wd-cell${pr ? " pr" : ""}">${pr ? "★ " : ""}${s.weight || "—"}</div>
+                  <div class="wd-cell">${s.reps}</div>
+                  ${anyRpe ? `<div class="wd-cell wd-rpe ${s.rpe ? rpeClass(s.rpe) : "none"}">${s.rpe || "—"}</div>` : ""}
+                </div>`;
+              }).join("")}
+            </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
         </div>`;
       }).join("")}
       <button class="btn-chip btn-full" id="save-as-template-btn" style="margin-top:4px">Сохранить как шаблон</button>

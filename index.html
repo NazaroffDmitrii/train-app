@@ -1128,6 +1128,50 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .detail-set-val { color: var(--text-primary); font-weight: 600; flex: 1; }
 .detail-set-rpe { color: var(--amber); font-weight: 700; font-size: 12px; }
 
+/* ===== Детали силовой тренировки (редизайн) ===== */
+.wd-statbar {
+  display: flex; align-items: stretch;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  border-radius: 14px; padding: 11px 6px; margin-bottom: 16px;
+}
+.wd-stat { flex: 1; text-align: center; }
+.wd-stat-val { line-height: 1; white-space: nowrap; }
+.wd-stat-num { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.wd-stat-unit { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-left: 2px; }
+.wd-stat-label { font-size: 9px; font-weight: 700; color: var(--text-tertiary); margin-top: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.wd-sep { width: 1px; background: var(--border-subtle); flex: none; }
+
+.wd-ex {
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  border-radius: 16px; padding: 12px; margin-bottom: 9px;
+}
+.wd-ex-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.wd-ex-name { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em; }
+.wd-ex-meta { font-size: 11.5px; color: var(--text-tertiary); flex: none; }
+.wd-ex-star { font-size: 11px; font-weight: 700; color: var(--amber); flex: none; }
+
+.wd-cols { display: flex; align-items: center; gap: 7px; padding-bottom: 6px; }
+.wd-col-idx { width: 16px; flex: none; text-align: center; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--text-tertiary); }
+.wd-col { flex: 1; text-align: center; font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); }
+.wd-col-rpe { flex: 0.7; }
+
+.wd-sets { display: flex; flex-direction: column; gap: 6px; }
+.wd-set { display: flex; align-items: center; gap: 7px; }
+.wd-set-num { width: 16px; flex: none; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
+.wd-cell {
+  flex: 1; text-align: center; border-radius: 10px; padding: 7px 0;
+  font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+  background: var(--panel-hi); border: 1px solid var(--border-subtle); color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.wd-cell.pr { background: rgba(251,191,36,0.10); border-color: rgba(251,191,36,0.32); color: var(--amber); }
+.wd-rpe { flex: 0.7; font-size: 14px; }
+.wd-rpe.lo  { background: var(--green-soft); border-color: rgba(52,211,153,0.20); color: var(--green); }
+.wd-rpe.mid { background: rgba(251,191,36,0.12); border-color: rgba(251,191,36,0.22); color: var(--amber); }
+.wd-rpe.hi  { background: var(--red-soft); border-color: rgba(248,113,113,0.22); color: var(--red); }
+.wd-rpe.none { color: var(--text-tertiary); }
+.wd-empty { padding: 6px 2px; color: var(--text-tertiary); font-size: 13px; }
+
 /* ============ Toast ============ */
 .toast {
   position: fixed; left: 50%; bottom: calc(28px + var(--safe-bottom));
