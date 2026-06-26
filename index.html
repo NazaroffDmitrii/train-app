@@ -390,14 +390,14 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   transition: background 0.15s ease, transform 0.12s ease;
 }
 .history-item:active { transform: scale(0.985); }
-/* Заливка по типу тренировки (силовая — фиолетовая, беговая — зелёная) */
+/* Заливка по типу тренировки — в стилистике карточек статистики (.s-card-blue/green) */
 .history-item--strength {
-  background: linear-gradient(135deg, rgba(124, 108, 230, 0.22), rgba(124, 108, 230, 0.08));
-  border-color: rgba(124, 108, 230, 0.42);
+  background: rgba(124, 108, 230, 0.06);
+  border-color: rgba(124, 108, 230, 0.22);
 }
 .history-item--run {
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.20), rgba(52, 211, 153, 0.06));
-  border-color: rgba(52, 211, 153, 0.36);
+  background: rgba(52, 211, 153, 0.05);
+  border-color: rgba(52, 211, 153, 0.18);
 }
 .history-item-body { flex: 1; min-width: 0; }
 .history-item-label { display: block; font-size: 14.5px; font-weight: 600; }
@@ -462,12 +462,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 /* Выбор типа тренировки — ячейки в стилистике карточек истории, надпись по центру */
 .modal-option--strength, .modal-option--run { justify-content: center; text-align: center; }
 .modal-option--strength, .modal-option--strength:active {
-  background: linear-gradient(135deg, rgba(124, 108, 230, 0.22), rgba(124, 108, 230, 0.08));
-  border-color: rgba(124, 108, 230, 0.42);
+  background: rgba(124, 108, 230, 0.06);
+  border-color: rgba(124, 108, 230, 0.22);
 }
 .modal-option--run, .modal-option--run:active {
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.20), rgba(52, 211, 153, 0.06));
-  border-color: rgba(52, 211, 153, 0.36);
+  background: rgba(52, 211, 153, 0.05);
+  border-color: rgba(52, 211, 153, 0.18);
 }
 .modal-cancel { margin-top: 6px; padding: 12px; text-align: center; color: var(--text-secondary); font-size: 14px; font-weight: 600; }
 
