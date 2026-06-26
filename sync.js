@@ -279,11 +279,22 @@ const Sync = (() => {
       await pushIfDirty(`user:${userId}`);
       const remote = await Storage.readBin(binIdForUser(userId));
       if (remote) {
-        if (Array.isArray(remote.hidden)) DATA.saveHiddenIds(userId, remote.hidden);
-        if (Array.isArray(remote.own)) DATA.saveOwnExercises(userId, remote.own);
-        if (remote.records) DATA.saveRecords(userId, remote.records);
+        // Если локальные правки пользовательского бина так и не уехали на
+        // сервер (push упал/прервался — scope остался dirty после pushIfDirty),
+        // НЕ накатываем remote поверх own/hidden/records: устаревшая серверная
+        // копия иначе затрёт несинхронизированные локальные упражнения, а
+        // тренировки, ссылающиеся на их id, начнут показывать сырой e_own_…
+        // вместо имени (потеря данных). Применяем remote только когда локальное
+        // состояние действительно синхронизировано.
+        if (!dirty.has(`user:${userId}`)) {
+          if (Array.isArray(remote.hidden)) DATA.saveHiddenIds(userId, remote.hidden);
+          if (Array.isArray(remote.own)) DATA.saveOwnExercises(userId, remote.own);
+          if (remote.records) DATA.saveRecords(userId, remote.records);
+        }
 
         // Тренировка, начатая на другом устройстве и ещё не завершённая.
+        // Безопасно даже при dirty: блок только добавляет активную тренировку,
+        // когда локальной нет, и ничего не затирает.
         const localActive = DATA.getActiveWorkout(userId);
         if (!localActive && remote.activeWorkoutId && remote.activeWorkoutBinId) {
           const remoteWorkout = await Storage.readBin(remote.activeWorkoutBinId);

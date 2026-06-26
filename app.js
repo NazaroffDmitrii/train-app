@@ -596,6 +596,7 @@ const DATA = (() => {
       if (this.getActiveWorkout(userId)) return null;
       const tpl = this.getTemplate(userId, templateId);
       if (!tpl) return null;
+      const exNameById = new Map(this.getVisibleExercises(userId).map(e => [e.id, e.name]));
       const workout = {
         id: `w_${Date.now()}`,
         type: "strength",
@@ -603,6 +604,7 @@ const DATA = (() => {
         startedAt: Date.now(),
         exercises: tpl.exercises.map(ex => ({
           exerciseId: ex.exerciseId,
+          name: exNameById.get(ex.exerciseId), // снимок имени — устойчивость к потере справочника
           sets: ex.sets.length
             ? ex.sets.map(s => ({ weight: s.weight, reps: s.reps, rpe: 0, done: false }))
             : [{ weight: 0, reps: 0, rpe: 0, done: false }],
@@ -2143,7 +2145,11 @@ function renderExerciseList() {
       && (w.exercises || []).some(e => e.exerciseId === exId)) || null;
 
   (_workout.exercises || []).forEach((ex, idx) => {
-    const exDef = visible.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
+    // Имя берём из живого справочника; если упражнение пропало из личного
+    // списка — из снимка имени в самом блоке (ex.name), и лишь в крайнем
+    // случае показываем нейтральную заглушку вместо сырого e_own_… id.
+    const exDef = visible.find(e => e.id === ex.exerciseId)
+      || { name: ex.name || "Упражнение недоступно" };
     const rec = DATA.getExerciseRecord(userId, ex.exerciseId);
     const lastWorkout = findLast(ex.exerciseId);
     // «Прошлый раз» больше не выводим отдельной строкой — прошлые значения
@@ -2549,7 +2555,11 @@ function addExerciseToWorkout(exerciseId) {
   const sets = lastSets.length > 1
     ? lastSets.map(() => ({ weight: 0, reps: 0, rpe: 0, done: false }))
     : [{ weight: 0, reps: 0, rpe: 0, done: false }];
-  _workout.exercises.push({ exerciseId, sets });
+  // Снимок имени кладём в сам блок тренировки: если позже упражнение
+  // удалят/потеряют из личного списка (в т.ч. при гонке синхронизации),
+  // тренировка всё равно покажет имя, а не сырой id (см. рендер ниже).
+  const exName = DATA.getVisibleExercises(DATA.getCurrentUser()).find(e => e.id === exerciseId)?.name;
+  _workout.exercises.push({ exerciseId, name: exName, sets });
   saveWorkoutState();
   renderExerciseList();
   updateSummaryBar();
@@ -3997,7 +4007,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
         <div class="wd-stat"><div class="wd-stat-val">${workout.durationSec ? statTimeHTML(workout.durationSec) : dash}</div><div class="wd-stat-label">Время</div></div>
       </div>
       ${allEx.map(ex => {
-        const exDef    = exercises.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
+        const exDef    = exercises.find(e => e.id === ex.exerciseId) || { name: ex.name || "Упражнение недоступно" };
         const doneSets = ex.sets.filter(s => s.done);
         const rec      = records[ex.exerciseId];
         const exVol    = doneSets.reduce((v, s) => v + (s.weight || 0) * (s.reps || 0), 0);
@@ -4098,7 +4108,7 @@ function openDetailEditMode(workout) {
       // rpe), но без подсветки рекордов/RPE и без верхней сводки — так удобнее
       // править значения.
       const exRows = (draft.exercises || []).map((ex, exIdx) => {
-        const def = exDefs.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
+        const def = exDefs.find(e => e.id === ex.exerciseId) || { name: ex.name || "Упражнение недоступно" };
         const doneSets = ex.sets.map((s, si) => ({ ...s, _si: si })).filter(s => s.done);
         return `<div class="wd-ex">
           <div class="wd-ex-head"><span class="wd-ex-name">${escHtml(def.name)}</span></div>
@@ -4783,7 +4793,7 @@ function renderTemplateViewBlocks(tpl) {
   }
   const exercisesLib = DATA.getVisibleExercises(DATA.getCurrentUser());
   wrap.innerHTML = tpl.exercises.map(ex => {
-    const exDef = exercisesLib.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
+    const exDef = exercisesLib.find(e => e.id === ex.exerciseId) || { name: ex.name || "Упражнение недоступно" };
     const chips = ex.sets.map(s => {
       const label = (s.weight > 0) ? `${s.weight}×${s.reps || 0}` : (s.reps > 0 ? `${s.reps}` : "—");
       return `<span class="tpl-set-chip">${label}</span>`;
@@ -4832,7 +4842,7 @@ function renderTemplateBlocks(tpl) {
   templateBlocksEl.innerHTML = "";
 
   tpl.exercises.forEach((ex, idx) => {
-    const exDef = exercisesLib.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
+    const exDef = exercisesLib.find(e => e.id === ex.exerciseId) || { name: ex.name || "Упражнение недоступно" };
     const canUp = idx > 0, canDown = idx < tpl.exercises.length - 1;
 
     const block = document.createElement("div");
