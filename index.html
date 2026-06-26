@@ -1129,30 +1129,30 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .detail-set-rpe { color: var(--amber); font-weight: 700; font-size: 12px; }
 
 /* ===== Детали силовой тренировки (редизайн) ===== */
-/* Шапка: цвет фона совпадает с цветом карточки в истории. */
+/* Шапка: тинт ровно как у карточки в истории (тот же цвет поверх --bg-base),
+   чтобы совпадал 1-в-1. */
 .detail-header--strength {
-  background: linear-gradient(rgba(124,108,230,0.10), rgba(124,108,230,0.10)), var(--bg-base);
-  border-color: rgba(124,108,230,0.22);
+  background: linear-gradient(rgba(124,108,230,0.06), rgba(124,108,230,0.06)), var(--bg-base);
+  border-bottom-color: rgba(124,108,230,0.22);
 }
 .detail-header--run {
-  background: linear-gradient(rgba(52,211,153,0.08), rgba(52,211,153,0.08)), var(--bg-base);
-  border-color: rgba(52,211,153,0.18);
+  background: linear-gradient(rgba(52,211,153,0.05), rgba(52,211,153,0.05)), var(--bg-base);
+  border-bottom-color: rgba(52,211,153,0.18);
 }
 
-/* Сводка 2×2: 4 обособленных «пилюли» в одном контейнере. */
+/* Сводка 2×2: 4 ячейки в одном компактном блоке с тонкими разделителями. */
 .wd-statgrid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  margin-bottom: 16px;
-}
-.wd-stat {
-  text-align: center; padding: 13px 8px;
+  display: grid; grid-template-columns: 1fr 1fr;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: 14px; overflow: hidden; margin-bottom: 14px;
 }
+.wd-stat { text-align: center; padding: 10px 6px; }
+.wd-stat:nth-child(odd)  { border-right: 1px solid var(--border-subtle); }
+.wd-stat:nth-child(-n+2) { border-bottom: 1px solid var(--border-subtle); }
 .wd-stat-val { line-height: 1; white-space: nowrap; }
-.wd-stat-num { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
-.wd-stat-unit { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-left: 3px; }
-.wd-stat-label { font-size: 9px; font-weight: 700; color: var(--text-tertiary); margin-top: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.wd-stat-num { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.wd-stat-unit { font-size: 10.5px; font-weight: 600; color: var(--text-secondary); margin-left: 3px; }
+.wd-stat-label { font-size: 8.5px; font-weight: 700; color: var(--text-tertiary); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
 
 .wd-ex {
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
@@ -1205,6 +1205,19 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .wd-del-set:active { background: var(--red-soft); }
 .wd-del-set svg { width: 15px; height: 15px; }
+
+/* Название упражнения в режиме редактирования — кнопка для смены упражнения. */
+.de-ex-name {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 10px; border-radius: 10px;
+  background: var(--panel-hi); border: 1px solid var(--border-subtle);
+  color: var(--text-primary); font-size: 14.5px; font-weight: 700; text-align: left;
+}
+.de-ex-name span { flex: 1; min-width: 0; }
+.de-ex-name svg { width: 15px; height: 15px; flex: none; color: var(--text-tertiary); }
+.de-ex-name:active { transform: scale(0.99); }
+.de-ex-name.missing { border-color: rgba(248,113,113,0.45); color: var(--red); }
+.de-ex-name.missing svg { color: var(--red); }
 
 /* Кнопка «Сохранить как шаблон» — пунктирная, как «+ Добавить категорию». */
 .wd-add-btn {

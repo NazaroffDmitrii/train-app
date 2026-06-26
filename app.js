@@ -1290,12 +1290,9 @@ function renderHistoryScreen() {
   });
 }
 
-$("history-back-btn").addEventListener("click", () => {
-  goToScreen("menu");
-  // Шторка была развёрнута когда мы ушли в историю (иначе кнопка «Вся история»
-  // была бы недоступна) — возвращаем её в открытое состояние.
-  if (window.settleSheet) window.settleSheet(true);
-});
+// Шторка сохраняет своё (развёрнутое) состояние сама — клик по «назад» больше
+// не схлопывает её (см. document click-обработчик в setupSheetDrag).
+$("history-back-btn").addEventListener("click", () => goToScreen("menu"));
 
 
 /* ==========================================================================
@@ -1597,6 +1594,10 @@ document.addEventListener("keydown", e => {
   document.addEventListener("click", e => {
     if (!screenMenu.classList.contains("active")) return;
     if (!sheet.classList.contains("expanded")) return;
+    // Только клики ВНУТРИ экрана меню (хедер, кнопка «начать») сворачивают
+    // шторку. Иначе клик по кнопке «назад» на под-экране всплывает сюда уже
+    // после goToScreen("menu") и схлопывает только что открытую шторку (п.3).
+    if (!screenMenu.contains(e.target)) return;
     if (sheet.contains(e.target)) return;
     settle(false);
   });
@@ -4108,10 +4109,16 @@ function openDetailEditMode(workout) {
       // rpe), но без подсветки рекордов/RPE и без верхней сводки — так удобнее
       // править значения.
       const exRows = (draft.exercises || []).map((ex, exIdx) => {
-        const def = exDefs.find(e => e.id === ex.exerciseId) || { name: ex.name || "Упражнение недоступно" };
+        const known = exDefs.find(e => e.id === ex.exerciseId);
+        const def = known || { name: ex.name || "Упражнение недоступно" };
         const doneSets = ex.sets.map((s, si) => ({ ...s, _si: si })).filter(s => s.done);
         return `<div class="wd-ex">
-          <div class="wd-ex-head"><span class="wd-ex-name">${escHtml(def.name)}</span></div>
+          <div class="wd-ex-head">
+            <button class="de-ex-name${known ? "" : " missing"}" data-ex="${exIdx}">
+              <span>${escHtml(def.name)}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </button>
+          </div>
           ${doneSets.length ? `
             <div class="wd-cols">
               <span class="wd-col-idx">#</span>
@@ -4147,14 +4154,9 @@ function openDetailEditMode(workout) {
           </div>
         </div>`;
 
-      body.querySelectorAll(".de-del-set").forEach(btn => {
-        btn.addEventListener("click", () => {
-          draft.exercises[+btn.dataset.ex].sets[+btn.dataset.si].done = false;
-          renderEdit();
-        });
-      });
-
-      $("de-save").addEventListener("click", () => {
+      // Переносим текущие значения полей в draft, чтобы при перерисовке
+      // (удаление подхода, смена упражнения) не потерять только что введённое.
+      const syncDraft = () => {
         draft.name = $("de-name").value.trim() || draft.name;
         body.querySelectorAll(".de-set-row").forEach(row => {
           const exIdx = +row.dataset.ex, si = +row.dataset.si;
@@ -4163,6 +4165,32 @@ function openDetailEditMode(workout) {
           const rpeV = parseFloat(row.querySelector(".de-rpe").value);
           draft.exercises[exIdx].sets[si].rpe = (!isNaN(rpeV) && rpeV > 0) ? rpeV : null;
         });
+      };
+
+      body.querySelectorAll(".de-del-set").forEach(btn => {
+        btn.addEventListener("click", () => {
+          syncDraft();
+          draft.exercises[+btn.dataset.ex].sets[+btn.dataset.si].done = false;
+          renderEdit();
+        });
+      });
+
+      // Тап по названию упражнения — открыть пикер и переназначить упражнение
+      // (в т.ч. восстановить «Упражнение недоступно» на заново созданное).
+      body.querySelectorAll(".de-ex-name").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const exIdx = +btn.dataset.ex;
+          syncDraft();
+          openExercisePicker(newId => {
+            draft.exercises[exIdx].exerciseId = newId;
+            delete draft.exercises[exIdx].name; // стираем устаревший снимок имени
+            renderEdit(); // пикер закрывается сам после выбора
+          }, draft.exercises[exIdx].exerciseId);
+        });
+      });
+
+      $("de-save").addEventListener("click", () => {
+        syncDraft();
         saveEditedWorkout(draft, userId);
       });
       $("de-cancel").addEventListener("click", () => openDetailScreen(workout, _detailReturnScreen));
