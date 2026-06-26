@@ -1129,17 +1129,21 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .detail-set-rpe { color: var(--amber); font-weight: 700; font-size: 12px; }
 
 /* ===== Детали силовой тренировки (редизайн) ===== */
-.wd-statbar {
-  display: flex; align-items: stretch;
+/* Сводка 2×2: Упражнения | Подходы / Тоннаж | Время. Сетка, а не строка из 4 —
+   так тоннаж (может быть большим числом) не сплющивается в узкой колонке. */
+.wd-statgrid {
+  display: grid; grid-template-columns: 1fr 1fr;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
-  border-radius: 14px; padding: 11px 6px; margin-bottom: 16px;
+  border-radius: 14px; overflow: hidden; margin-bottom: 16px;
 }
-.wd-stat { flex: 1; text-align: center; }
+.wd-statgrid .wd-stat { padding: 13px 8px; }
+.wd-statgrid .wd-stat:nth-child(odd)  { border-right: 1px solid var(--border-subtle); }
+.wd-statgrid .wd-stat:nth-child(-n+2) { border-bottom: 1px solid var(--border-subtle); }
+.wd-stat { text-align: center; }
 .wd-stat-val { line-height: 1; white-space: nowrap; }
 .wd-stat-num { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 .wd-stat-unit { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-left: 2px; }
 .wd-stat-label { font-size: 9px; font-weight: 700; color: var(--text-tertiary); margin-top: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
-.wd-sep { width: 1px; background: var(--border-subtle); flex: none; }
 
 .wd-ex {
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
@@ -1167,10 +1171,44 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .wd-cell.pr { background: rgba(251,191,36,0.10); border-color: rgba(251,191,36,0.32); color: var(--amber); }
 .wd-rpe { flex: 0.7; font-size: 14px; }
 .wd-rpe.lo  { background: var(--green-soft); border-color: rgba(52,211,153,0.20); color: var(--green); }
-.wd-rpe.mid { background: rgba(251,191,36,0.12); border-color: rgba(251,191,36,0.22); color: var(--amber); }
+.wd-rpe.mid { background: rgba(251,146,60,0.14); border-color: rgba(251,146,60,0.26); color: #fb923c; }
 .wd-rpe.hi  { background: var(--red-soft); border-color: rgba(248,113,113,0.22); color: var(--red); }
 .wd-rpe.none { color: var(--text-tertiary); }
 .wd-empty { padding: 6px 2px; color: var(--text-tertiary); font-size: 13px; }
+
+/* Форма редактирования: те же крупные ячейки, но как поля ввода. */
+.wd-col-del { width: 30px; flex: none; }
+.wd-cell-input {
+  flex: 1; min-width: 0; width: 100%; text-align: center;
+  border-radius: 10px; padding: 8px 2px;
+  font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+  background: var(--panel-hi); border: 1px solid var(--border-subtle); color: var(--text-primary);
+  font-variant-numeric: tabular-nums; -moz-appearance: textfield;
+}
+.wd-cell-input::-webkit-outer-spin-button,
+.wd-cell-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.wd-cell-input:focus { outline: none; border-color: var(--accent); }
+.wd-cell-input.wd-rpe { flex: 0.7; }
+.wd-del-set {
+  flex: none; width: 30px; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; color: var(--red);
+}
+.wd-del-set:active { background: var(--red-soft); }
+.wd-del-set svg { width: 15px; height: 15px; }
+
+/* Кнопка «Сохранить как шаблон» — пунктирная, как «+ Добавить категорию». */
+.wd-add-btn {
+  width: 100%; margin-top: 8px; padding: 20px;
+  border-radius: 16px; background: transparent;
+  border: 1.5px dashed var(--border-strong);
+  color: var(--text-tertiary); font-size: 15px; font-weight: 700; font-style: italic;
+  text-align: center; transition: background 0.15s ease, transform 0.12s ease;
+}
+.wd-add-btn:active { transform: scale(0.99); background: var(--panel-raised); }
+
+/* Кнопка «назад» — только иконка-стрелка (компактный квадрат). */
+button[id$="back-btn"] { padding: 0; width: 38px; height: 38px; justify-content: center; flex: none; }
+button[id$="back-btn"] svg { width: 17px; height: 17px; }
 
 /* ============ Toast ============ */
 .toast {
@@ -1894,7 +1932,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       <div class="workout-header-actions">
         <button class="btn-chip" id="workout-back-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-          Назад
         </button>
         <button class="btn-chip primary" id="finish-workout-btn" style="flex:1; justify-content:center;">Завершить</button>
       </div>
@@ -1931,7 +1968,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
     <div class="run-header">
       <button class="btn-chip" id="run-back-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-        Назад
       </button>
       <div class="run-header-title">Пробежка</div>
       <button class="btn-chip primary" id="run-save-btn">Завершить</button>
@@ -2002,7 +2038,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       <div class="exercises-header-top">
         <button class="btn-chip" id="exercises-back-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-          Назад
         </button>
         <div class="exercises-header-title">Упражнения</div>
         <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
@@ -2026,7 +2061,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
     <div class="exercises-header">
       <button class="btn-chip" id="history-back-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-        Назад
       </button>
       <div class="exercises-header-title">История</div>
     </div>
@@ -2042,7 +2076,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
     <div class="exercises-header">
       <button class="btn-chip" id="stats-back-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-        Назад
       </button>
       <div class="exercises-header-title">Статистика</div>
     </div>
@@ -2054,7 +2087,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
     <div class="detail-screen-header">
       <button class="btn-chip" id="stat-chart-back-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-        Назад
       </button>
       <div class="detail-screen-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>
@@ -2073,7 +2105,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       <div class="exercises-header-top">
         <button class="btn-chip" id="templates-back-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-          Назад
         </button>
         <div class="exercises-header-title">Шаблоны</div>
       </div>
@@ -2086,7 +2117,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
     <div class="detail-screen-header tpl-view-header">
       <button class="btn-chip" id="template-detail-back-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-        Назад
       </button>
       <div class="tpl-view-head-text">
         <div class="detail-screen-title" id="template-detail-title">Шаблон</div>
@@ -2311,7 +2341,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
     <div class="detail-screen-header">
       <button class="btn-chip" id="detail-back-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-        Назад
       </button>
       <div id="detail-screen-icon" class="detail-screen-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -2327,9 +2356,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
       <button class="btn-chip" id="detail-edit-btn" title="Редактировать">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
       </button>
-      <button class="btn-chip" id="detail-delete-btn" title="Удалить" style="color:var(--red,#f87171)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-      </button>
     </div>
     <div class="detail-screen-body" id="detail-screen-body"></div>
   </section>
@@ -2339,7 +2365,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
     <div class="detail-screen-header">
       <button class="btn-chip" id="exd-back-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-        Назад
       </button>
       <div style="flex:1;min-width:0;">
         <div class="detail-screen-title" id="exd-title">Упражнение</div>

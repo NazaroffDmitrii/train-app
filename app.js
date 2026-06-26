@@ -3935,7 +3935,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
     : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
 
   $("detail-screen-title").textContent = workout.name || (isRun ? "Пробежка" : "Силовая");
-  $("detail-screen-meta").textContent = `${fmtDate(workout.startedAt)}${workout.durationSec ? "  ·  " + formatDuration(workout.durationSec) : ""}`;
+  $("detail-screen-meta").textContent = fmtDate(workout.startedAt);
 
   const body = $("detail-screen-body");
 
@@ -3961,8 +3961,9 @@ function openDetailScreen(workout, returnScreen = "menu") {
     const records   = DATA.getRecords(userId);
     const allEx     = workout.exercises || [];
     const totalSets = allEx.reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
+    const totalVol  = allEx.reduce((v, ex) => v + ex.sets.reduce((a, s) => a + (s.done ? (s.weight || 0) * (s.reps || 0) : 0), 0), 0);
 
-    // Длительность/отдых в компактном виде: до часа «52 мин», от часа «1:04 ч».
+    // Длительность в компактном виде: до часа «52 мин», от часа «1:04 ч».
     const statTimeHTML = (sec) => {
       const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
       return h > 0
@@ -3970,21 +3971,20 @@ function openDetailScreen(workout, returnScreen = "menu") {
         : `<span class="wd-stat-num">${m}</span><span class="wd-stat-unit">мин</span>`;
     };
     const dash = `<span class="wd-stat-num">—</span>`;
-    // RPE-светофор: ≤7 — есть запас, 8 — тяжело, 9–10 — почти до отказа.
-    const rpeClass = (v) => v >= 9 ? "hi" : v >= 8 ? "mid" : "lo";
+    // RPE-светофор: 0–6 — есть запас (зелёный), 7–8 — тяжело (оранжевый),
+    // 9–10 — почти до отказа (красный). Оранжевый, а не янтарь, чтобы не
+    // сливаться с золотом рекорда.
+    const rpeClass = (v) => v >= 9 ? "hi" : v >= 7 ? "mid" : "lo";
     // Подход считается рекордным, если его вес×повторы совпадают с текущим
     // личным максимумом по весу для этого упражнения.
     const isPrSet = (rec, s) => !!rec && s.weight > 0 && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight;
 
     body.innerHTML = `
-      <div class="wd-statbar">
+      <div class="wd-statgrid">
         <div class="wd-stat"><div class="wd-stat-val"><span class="wd-stat-num">${allEx.length}</span></div><div class="wd-stat-label">Упражнения</div></div>
-        <div class="wd-sep"></div>
         <div class="wd-stat"><div class="wd-stat-val"><span class="wd-stat-num">${totalSets}</span></div><div class="wd-stat-label">Подходы</div></div>
-        <div class="wd-sep"></div>
+        <div class="wd-stat"><div class="wd-stat-val">${totalVol ? `<span class="wd-stat-num">${totalVol.toLocaleString("ru-RU")}</span><span class="wd-stat-unit">кг</span>` : dash}</div><div class="wd-stat-label">Тоннаж</div></div>
         <div class="wd-stat"><div class="wd-stat-val">${workout.durationSec ? statTimeHTML(workout.durationSec) : dash}</div><div class="wd-stat-label">Время</div></div>
-        <div class="wd-sep"></div>
-        <div class="wd-stat"><div class="wd-stat-val">${workout.restSec ? statTimeHTML(workout.restSec) : dash}</div><div class="wd-stat-label">Отдых</div></div>
       </div>
       ${allEx.map(ex => {
         const exDef    = exercises.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
@@ -3993,10 +3993,13 @@ function openDetailScreen(workout, returnScreen = "menu") {
         const exVol    = doneSets.reduce((v, s) => v + (s.weight || 0) * (s.reps || 0), 0);
         const hasPr    = doneSets.some(s => isPrSet(rec, s));
         const anyRpe   = doneSets.some(s => s.rpe);
+        // Рекорд подсвечиваем только у ПЕРВОГО подхода с рекордным весом:
+        // если следующие подходы повторяют тот же вес — это уже не рекорд.
+        let prShown    = false;
         return `<div class="wd-ex">
           <div class="wd-ex-head">
             <span class="wd-ex-name">${escHtml(exDef.name)}</span>
-            ${doneSets.length ? `<span class="wd-ex-meta">${doneSets.length} × ${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
+            ${doneSets.length ? `<span class="wd-ex-meta">${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
             ${hasPr ? `<span class="wd-ex-star" title="Личный рекорд">★</span>` : ""}
           </div>
           ${doneSets.length ? `
@@ -4008,7 +4011,8 @@ function openDetailScreen(workout, returnScreen = "menu") {
             </div>
             <div class="wd-sets">
               ${doneSets.map((s, i) => {
-                const pr = isPrSet(rec, s);
+                const pr = !prShown && isPrSet(rec, s);
+                if (pr) prShown = true;
                 return `<div class="wd-set">
                   <span class="wd-set-num">${i + 1}</span>
                   <div class="wd-cell${pr ? " pr" : ""}">${pr ? "★ " : ""}${s.weight || "—"}</div>
@@ -4019,7 +4023,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
             </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
         </div>`;
       }).join("")}
-      <button class="btn-chip btn-full" id="save-as-template-btn" style="margin-top:4px">Сохранить как шаблон</button>
+      <button class="wd-add-btn" id="save-as-template-btn">Сохранить как шаблон</button>
     `;
 
     $("save-as-template-btn").addEventListener("click", () => openSaveAsTemplateModal(workout));
@@ -4027,11 +4031,8 @@ function openDetailScreen(workout, returnScreen = "menu") {
 
   goToScreen("detail");
 
-  $("detail-delete-btn").onclick = () => {
-    deleteWorkoutWithUndo(workout, userId => renderHistory(userId));
-    goToScreen("menu");
-  };
-
+  // Удаление доступно из списка истории (свайп/долгое нажатие) — на экране
+  // деталей оставляем только редактирование, чтобы не удалить случайно.
   $("detail-edit-btn").onclick = () => openDetailEditMode(workout);
 }
 
@@ -4071,23 +4072,34 @@ function openDetailEditMode(workout) {
       });
       $("de-cancel").addEventListener("click", () => openDetailScreen(workout, _detailReturnScreen));
     } else {
+      // Форма редактирования повторяет экран просмотра (крупные ячейки # кг повт
+      // rpe), но без подсветки рекордов/RPE и без верхней сводки — так удобнее
+      // править значения.
       const exRows = (draft.exercises || []).map((ex, exIdx) => {
         const def = exDefs.find(e => e.id === ex.exerciseId) || { name: ex.exerciseId };
         const doneSets = ex.sets.map((s, si) => ({ ...s, _si: si })).filter(s => s.done);
-        return `<div class="detail-ex">
-          <div class="detail-ex-name">${escHtml(def.name)}</div>
-          ${doneSets.map((s, i) => `
-            <div class="de-set-row" data-ex="${exIdx}" data-si="${s._si}" style="display:flex;align-items:center;gap:8px;padding:6px 14px">
-              <span class="detail-set-num">${i + 1}</span>
-              <input class="de-weight" type="number" step="0.5" value="${s.weight || 0}" style="width:56px;padding:4px 6px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--panel-raised);color:var(--text-primary);font-size:13px;text-align:center">
-              <span style="color:var(--text-tertiary);font-size:13px">кг ×</span>
-              <input class="de-reps" type="number" value="${s.reps || 0}" style="width:44px;padding:4px 6px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--panel-raised);color:var(--text-primary);font-size:13px;text-align:center">
-              <span style="color:var(--text-tertiary);font-size:13px">повт</span>
-              <button class="ex-row-action-btn danger de-del-set" data-ex="${exIdx}" data-si="${s._si}" title="Удалить подход" style="margin-left:auto;flex:none">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>`).join("")}
-          ${!doneSets.length ? `<div style="padding:6px 14px;color:var(--text-tertiary);font-size:13px">Нет выполненных подходов</div>` : ""}
+        return `<div class="wd-ex">
+          <div class="wd-ex-head"><span class="wd-ex-name">${escHtml(def.name)}</span></div>
+          ${doneSets.length ? `
+            <div class="wd-cols">
+              <span class="wd-col-idx">#</span>
+              <span class="wd-col">кг</span>
+              <span class="wd-col">повт</span>
+              <span class="wd-col wd-col-rpe">rpe</span>
+              <span class="wd-col-del"></span>
+            </div>
+            <div class="wd-sets">
+              ${doneSets.map((s, i) => `
+                <div class="wd-set de-set-row" data-ex="${exIdx}" data-si="${s._si}">
+                  <span class="wd-set-num">${i + 1}</span>
+                  <input class="wd-cell-input de-weight" type="number" inputmode="decimal" step="0.5" value="${s.weight || 0}">
+                  <input class="wd-cell-input de-reps" type="number" inputmode="numeric" value="${s.reps || 0}">
+                  <input class="wd-cell-input wd-rpe de-rpe" type="number" inputmode="numeric" min="0" max="10" value="${s.rpe || ""}" placeholder="—">
+                  <button class="wd-del-set de-del-set" data-ex="${exIdx}" data-si="${s._si}" title="Удалить подход">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>`).join("")}
+            </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
         </div>`;
       }).join("");
 
@@ -4116,6 +4128,8 @@ function openDetailEditMode(workout) {
           const exIdx = +row.dataset.ex, si = +row.dataset.si;
           draft.exercises[exIdx].sets[si].weight = parseFloat(row.querySelector(".de-weight").value) || 0;
           draft.exercises[exIdx].sets[si].reps   = parseInt(row.querySelector(".de-reps").value)   || 0;
+          const rpeV = parseFloat(row.querySelector(".de-rpe").value);
+          draft.exercises[exIdx].sets[si].rpe = (!isNaN(rpeV) && rpeV > 0) ? rpeV : null;
         });
         saveEditedWorkout(draft, userId);
       });
