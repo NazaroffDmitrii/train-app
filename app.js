@@ -987,7 +987,7 @@ function historyItemHtml(w) {
   const duration = w.durationSec ? formatDuration(w.durationSec) : "";
 
   return `
-    <div class="history-item" data-id="${w.id}">
+    <div class="history-item history-item--${isRun ? "run" : "strength"}" data-id="${w.id}">
       <span class="history-item-icon${isRun ? " run" : ""}">${isRun ? HISTORY_SVG_RUN : HISTORY_SVG_STRENGTH}</span>
       <span class="history-item-body">
         <span class="history-item-label">${escHtml(w.name || (isRun ? "Пробежка" : "Силовая"))}</span>
@@ -1072,29 +1072,66 @@ function initHistoryScreen() {
   renderHistoryScreen();
 }
 
+// Названия месяцев для заголовков-разделителей («ИЮНЬ 2026»).
+const HISTORY_MONTHS_RU = ["ЯНВАРЬ", "ФЕВРАЛЬ", "МАРТ", "АПРЕЛЬ", "МАЙ", "ИЮНЬ", "ИЮЛЬ", "АВГУСТ", "СЕНТЯБРЬ", "ОКТЯБРЬ", "НОЯБРЬ", "ДЕКАБРЬ"];
+function historyMonthLabel(ts) {
+  const d = new Date(ts);
+  return `${HISTORY_MONTHS_RU[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// Сборка одного фильтра-дропдауна (Все ▾ / период ▾) в контейнере container.
+function buildHistoryDropdown(container, options, currentKey, onSelect) {
+  const cur = options.find(o => o.key === currentKey) || options[0];
+  container.classList.add("history-dd");
+  container.innerHTML = `
+    <button class="history-dd-btn" type="button">
+      <span class="history-dd-label">${cur.label}</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="history-dd-menu">
+      ${options.map(o => `<button class="history-dd-opt${o.key === currentKey ? " active" : ""}" data-key="${o.key}" type="button">
+        <span>${o.label}</span>${o.count != null ? `<span class="history-dd-count">${o.count}</span>` : ""}
+      </button>`).join("")}
+    </div>`;
+  container.querySelector(".history-dd-btn").addEventListener("click", e => {
+    e.stopPropagation();
+    const wasOpen = container.classList.contains("open");
+    document.querySelectorAll(".history-dd.open").forEach(d => d.classList.remove("open"));
+    if (!wasOpen) container.classList.add("open");
+  });
+  container.querySelectorAll(".history-dd-opt").forEach(opt => {
+    opt.addEventListener("click", e => {
+      e.stopPropagation();
+      container.classList.remove("open");
+      onSelect(opt.dataset.key);
+    });
+  });
+}
+
+// Глобально закрываем открытые дропдауны по клику вне их.
+if (!window._historyDdCloserBound) {
+  window._historyDdCloserBound = true;
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".history-dd.open").forEach(d => d.classList.remove("open"));
+  });
+}
+
 function renderHistoryScreen() {
   const userId = DATA.getCurrentUser();
   const all = DATA.getWorkoutHistory(userId);
 
-  // Тип-фильтр: счётчики считаем в пределах выбранного периода.
+  // Фильтр по типу — дропдаун «Все ▾» (счётчики в пределах выбранного периода).
   const inPeriod = all.filter(w => historyPeriodMatch(w, _historyPeriod));
-  const filters = [["all", "Все"], ["strength", "Силовые"], ["run", "Пробежки"]];
-  const tabsEl = $("history-filter-tabs");
-  tabsEl.innerHTML = filters.map(([key, label]) => {
-    const count = inPeriod.filter(w => historyTypeMatch(w, key)).length;
-    return `<button class="ex-cat-tab${_historyFilter === key ? " active" : ""}" data-filter="${key}">${label} ${count}</button>`;
-  }).join("");
-  tabsEl.querySelectorAll(".ex-cat-tab").forEach(btn => {
-    btn.addEventListener("click", () => { _historyFilter = btn.dataset.filter; renderHistoryScreen(); });
+  const typeOpts = [["all", "Все"], ["strength", "Силовые"], ["run", "Пробежки"]].map(([key, label]) =>
+    ({ key, label, count: inPeriod.filter(w => historyTypeMatch(w, key)).length }));
+  buildHistoryDropdown($("history-type-dd"), typeOpts, _historyFilter, key => {
+    _historyFilter = key; renderHistoryScreen();
   });
 
-  // Период-фильтр.
-  const periodEl = $("history-period-tabs");
-  periodEl.innerHTML = HISTORY_PERIODS.map(([key, label]) =>
-    `<button class="ex-cat-tab${_historyPeriod === key ? " active" : ""}" data-period="${key}">${label}</button>`
-  ).join("");
-  periodEl.querySelectorAll(".ex-cat-tab").forEach(btn => {
-    btn.addEventListener("click", () => { _historyPeriod = btn.dataset.period; renderHistoryScreen(); });
+  // Фильтр по периоду — дропдаун «Месяц ▾».
+  const periodOpts = HISTORY_PERIODS.map(([key, label]) => ({ key, label }));
+  buildHistoryDropdown($("history-period-dd"), periodOpts, _historyPeriod, key => {
+    _historyPeriod = key; renderHistoryScreen();
   });
 
   const list = all.filter(w => historyTypeMatch(w, _historyFilter) && historyPeriodMatch(w, _historyPeriod));
@@ -1110,7 +1147,18 @@ function renderHistoryScreen() {
   if (!list.length) {
     listEl.innerHTML = `<p class="empty-state" style="padding:24px 6px">Тренировок по выбранным фильтрам нет.</p>` + moreBtnHtml;
   } else {
-    listEl.innerHTML = list.map(historyItemHtml).join("") + moreBtnHtml;
+    // Группируем по месяцам — список уже отсортирован «новые сверху».
+    let html = "", curMonthKey = null;
+    list.forEach(w => {
+      const d = new Date(w.startedAt);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      if (key !== curMonthKey) {
+        curMonthKey = key;
+        html += `<div class="history-month">${historyMonthLabel(w.startedAt)}</div>`;
+      }
+      html += historyItemHtml(w);
+    });
+    listEl.innerHTML = html + moreBtnHtml;
     listEl.querySelectorAll(".history-item").forEach(el => {
       el.addEventListener("click", () => {
         const w = all.find(x => x.id === el.dataset.id);
@@ -3803,13 +3851,11 @@ function openDetailScreen(workout, returnScreen = "menu") {
   } else {
     const exercises = DATA.getVisibleExercises(DATA.getCurrentUser());
     const totalSets = (workout.exercises || []).reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
-    const volume    = (workout.exercises || []).reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
 
     body.innerHTML = `
       <div class="detail-stats">
         <div class="detail-stat"><div class="detail-stat-num">${(workout.exercises || []).length}</div><div class="detail-stat-label">Упражнений</div></div>
         <div class="detail-stat"><div class="detail-stat-num">${totalSets}</div><div class="detail-stat-label">Подходов</div></div>
-        <div class="detail-stat"><div class="detail-stat-num">${volume.toLocaleString("ru-RU")}</div><div class="detail-stat-label">Кг объём</div></div>
         ${workout.durationSec ? `<div class="detail-stat"><div class="detail-stat-num">${formatDuration(workout.durationSec)}</div><div class="detail-stat-label">Длительность</div></div>` : ""}
         ${workout.restSec ? `<div class="detail-stat"><div class="detail-stat-num">${formatDuration(workout.restSec)}</div><div class="detail-stat-label">Отдых</div></div>` : ""}
       </div>
