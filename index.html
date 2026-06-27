@@ -477,6 +477,10 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .modal-option-icon { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex: none; color: var(--accent-bright); }
 .modal-option-icon svg { width: 100%; height: 100%; }
 
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.settings-grid-btn { flex-direction: column; justify-content: center; gap: 8px; padding: 14px 10px; text-align: center; font-size: 13px; }
+.settings-grid-btn .modal-option-icon { width: 26px; height: 26px; }
+
 /* Выбор типа тренировки — ячейки в стилистике карточек истории, надпись по центру */
 .modal-option--strength, .modal-option--run { justify-content: center; text-align: center; }
 .modal-option--strength, .modal-option--strength:active {
@@ -2285,23 +2289,49 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   <div class="modal-backdrop" id="settings-modal-backdrop">
     <div class="modal">
       <h2 class="modal-title">Настройки</h2>
-      <button class="modal-option" id="upload-data-btn">
-        <span class="modal-option-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
-          </svg>
-        </span>
-        <span>Синхронизировать (в облако)</span>
-      </button>
-      <button class="modal-option" id="download-data-btn">
-        <span class="modal-option-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 11a9 9 0 0 1 15.3-6.3L21 7"/><path d="M21 3v4h-4"/>
-            <path d="M21 13a9 9 0 0 1-15.3 6.3L3 17"/><path d="M3 21v-4h4"/>
-          </svg>
-        </span>
-        <span>Проверить обновления</span>
-      </button>
+      <div class="settings-grid">
+        <!-- Из облака -->
+        <button class="modal-option settings-grid-btn" id="download-data-btn">
+          <span class="modal-option-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+            </svg>
+          </span>
+          <span>Из облака</span>
+        </button>
+        <!-- В облако -->
+        <button class="modal-option settings-grid-btn" id="upload-data-btn">
+          <span class="modal-option-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
+            </svg>
+          </span>
+          <span>В облако</span>
+        </button>
+        <!-- Импорт — файл со стрелкой входящей -->
+        <button class="modal-option settings-grid-btn" id="import-data-btn">
+          <span class="modal-option-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <path d="M14 2v6h6"/>
+              <path d="M12 11v6"/><path d="M9 14l3 3 3-3"/>
+            </svg>
+          </span>
+          <span>Импорт</span>
+        </button>
+        <!-- Экспорт — файл со стрелкой наружу -->
+        <button class="modal-option settings-grid-btn" id="export-data-btn">
+          <span class="modal-option-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <path d="M14 2v6h6"/>
+              <path d="M12 17v-6"/><path d="M9 14l3-3 3 3"/>
+            </svg>
+          </span>
+          <span>Экспорт</span>
+        </button>
+      </div>
+      <!-- Сменить профиль — полная ширина -->
       <button class="modal-option" id="switch-user-btn">
         <span class="modal-option-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -2310,22 +2340,6 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
           </svg>
         </span>
         <span>Сменить профиль</span>
-      </button>
-      <button class="modal-option" id="export-data-btn">
-        <span class="modal-option-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M12 3v13"/><path d="M7 11l5 5 5-5"/>
-          </svg>
-        </span>
-        <span>Экспорт данных</span>
-      </button>
-      <button class="modal-option" id="import-data-btn">
-        <span class="modal-option-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M12 16V3"/><path d="M7 8l5-5 5 5"/>
-          </svg>
-        </span>
-        <span>Импорт данных</span>
       </button>
       <input type="file" id="import-data-input" accept="application/json,.json" hidden>
       <button class="modal-cancel" id="settings-close">Закрыть</button>
