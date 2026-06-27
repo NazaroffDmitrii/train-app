@@ -1,424 +1,335 @@
 /*
- * sync.js — слой синхронизации между DATA (локальные данные, localStorage)
- * и Storage (адаптер JSONBin, см. storage.js). Раздел 8 спецификации.
+ * sync.js — синхронизация в стиле Anki (snapshot-модель).
  *
- * DATA остаётся единственным источником истины для экранов приложения —
- * все экраны как читали/писали в DATA синхронно, так и продолжают, без
- * единой правки. Этот файл просто подглядывает за изменениями (через
- * SyncQueue.push, который уже был вызван из index.html на каждое действие)
- * и в фоне, с задержкой, отправляет актуальное состояние нужных бинов
- * в JSONBin — а при входе в профиль один раз подтягивает свежие данные
- * с сервера в локальный кэш, прежде чем экраны успеют их прочитать.
+ * Модель (осознанная замена прежней фоновой авто-синхронизации):
  *
- * Если JSONBin не настроен (config.js: ENABLED=false) — все функции здесь
- * тихо ничего не делают, приложение работает как обычное local-only PWA.
+ *   • Источник истины во время работы — ВСЕГДА это устройство (локальный DATA /
+ *     localStorage). Приложение никогда само не лезет в сеть «подсмотреть» и не
+ *     накатывает чужие данные молча. Это и даёт «бесшовность»: состояние меняется
+ *     только когда ты сам нажал кнопку.
  *
- * Разбиение на бины (раздел 8, защита от конфликтов записи):
- *   exercises             — общий пул упражнений (сейчас фактически read-only,
- *                            UI не даёт его редактировать, только читает)
- *   user_<id>             — видимость + личные упражнения + рекорды + указатель
- *                            на активную тренировку конкретного пользователя
- *   templates_<id>        — шаблоны конкретного пользователя
- *   workoutIndex_<id>     — лёгкий список {id, binId, ...} тренировок пользователя
- *   (динамически)         — отдельный bin на каждую тренировку, id которого
- *                            попадает в workoutIndex_<id> после создания
+ *   • Всё состояние пользователя хранится ОДНИМ снапшотом в одном бине
+ *     (user_<id>): личные упражнения, скрытые, рекорды, шаблоны, категории и их
+ *     цвета, порядок упражнений, ВСЯ история тренировок и активная тренировка.
+ *     У снапшота есть монотонная version и deviceId автора.
+ *
+ *   • Две явные операции (кнопки в настройках):
+ *       upload  («Синхронизировать»)     — выгрузить локальное состояние в облако,
+ *                                           version++. После — облако = это устройство.
+ *       download («Проверить обновления») — затянуть облако и ПОЛНОСТЬЮ заменить им
+ *                                           локальное состояние.
+ *
+ *   • Конфликт (обе стороны менялись с последней синхронизации) НЕ сливается
+ *     молча — пользователю показывается выбор «оставить это устройство» (upload)
+ *     или «взять из облака» (download). Точно как в Anki.
+ *
+ * Защита от потери данных строится на версиях, а не на эвристиках:
+ *   - upload отказывается затирать облако, если оно новее нашей последней
+ *     синхронизации (remote.version > syncedVersion) — пока пользователь явно не
+ *     подтвердит force.
+ *   - download отказывается затирать локальные правки, если они есть (dirty) —
+ *     пока пользователь явно не подтвердит force.
+ *
+ * Если JSONBin не настроен (config.js: ENABLED=false) — всё тихо no-op,
+ * приложение работает как обычное local-only PWA.
+ *
+ * Прежняя схема (бин на тренировку, workoutIndex, rev/dirty-эвристики, фоновый
+ * debounce-пуш) удалена. Старые бины тренировок остаются на сервере как мусор,
+ * но больше не читаются; миграция (mergeLegacyIntoLocal) один раз собирает из них
+ * полную локальную историю перед первым upload.
  */
 
 const Sync = (() => {
-  const DEBOUNCE_MS = 3000;       // обычные действия (новый подход и т.п.)
-  const FAST_DEBOUNCE_MS = 600;   // значимые чекпоинты (завершение тренировки)
-  const HYDRATE_WORKOUT_CAP = 25; // не вытягивать всю историю целиком за раз
-  const DIRTY_KEY = "train_sync_dirty";
+  const SCHEMA = "snapshot-v1";
 
-  // dirty переживает перезагрузку страницы — иначе при гидратации на новом
-  // заходе нельзя отличить «локально пусто, потому что и не было правок» от
-  // «есть неотправленные правки, их нельзя терять при pull» (см. hydrateUser).
-  function loadDirty() {
-    try { return new Set(JSON.parse(localStorage.getItem(DIRTY_KEY) || "[]")); }
-    catch { return new Set(); }
-  }
-  function persistDirty() {
-    try { localStorage.setItem(DIRTY_KEY, JSON.stringify(Array.from(dirty))); } catch {}
-  }
+  /* ----- ключи локального состояния синхронизации ----- */
+  function syncedVerKey(userId) { return `train_synced_version_${userId}`; }
+  function dirtyKey(userId)     { return `train_local_dirty_${userId}`; }
+  const DEVICE_KEY = "train_device_id";
 
-  const dirty = loadDirty();
-  const timers = new Map();
-  let lastError = null;
-
-  // Версия пользовательского бина: монотонно растёт при каждом нашем push.
-  // Нужна, чтобы при гидратации отличить «сервер реально новее» (правка с
-  // другого устройства) от «сервер вернул устаревшую копию сразу после нашей
-  // же записи» (read-after-write у JSONBin). Во втором случае remote.rev <
-  // localRev — и мы НЕ накатываем remote поверх своих свежих упражнений, иначе
-  // только что созданное на тренировке упражнение исчезает, а тренировки,
-  // ссылающиеся на его id, показывают «Упражнение недоступно».
-  function revKey(userId) { return `train_user_rev_${userId}`; }
-  function getLocalRev(userId) {
-    const v = Number(localStorage.getItem(revKey(userId)));
+  function getSyncedVersion(userId) {
+    const v = Number(localStorage.getItem(syncedVerKey(userId)));
     return Number.isFinite(v) ? v : 0;
   }
-  function setLocalRev(userId, v) {
-    try { localStorage.setItem(revKey(userId), String(v)); } catch {}
+  function setSyncedVersion(userId, v) {
+    try { localStorage.setItem(syncedVerKey(userId), String(v)); } catch {}
   }
-  // max(now, prev+1) — монотонно даже при двух push в одну миллисекунду и при
-  // перекошенных часах другого устройства.
-  function nextRev(userId) {
-    const v = Math.max(Date.now(), getLocalRev(userId) + 1);
-    setLocalRev(userId, v);
-    return v;
+  function isDirty(userId) {
+    return localStorage.getItem(dirtyKey(userId)) === "1";
   }
-
-  /* ----- вспомогательные ключи/бины ----- */
-  function binIdForUser(userId)          { return CONFIG.BINS[`user_${userId}`]; }
-  function binIdForTemplates(userId)     { return CONFIG.BINS[`templates_${userId}`]; }
-  function binIdForWorkoutIndex(userId)  { return CONFIG.BINS[`workoutIndex_${userId}`]; }
-
-  function splitScope(scope) {
-    const i = scope.indexOf(":");
-    return i === -1 ? [scope, null] : [scope.slice(0, i), scope.slice(i + 1)];
+  function setDirty(userId, on) {
+    try {
+      if (on) localStorage.setItem(dirtyKey(userId), "1");
+      else localStorage.removeItem(dirtyKey(userId));
+    } catch {}
   }
-
-  // Какие действия из index.html (см. вызовы SyncQueue.push) затрагивают какие бины.
-  function scopesForAction(type, payload, currentUserId) {
-    switch (type) {
-      case "user:update":
-        // Общая синхронизация пользовательского бина (видимость/упражнения/
-        // рекорды/указатель активной тренировки) — например после отмены.
-        return [`user:${currentUserId}`];
-      case "workout:update":
-      case "run:update":
-        return [`workout:${payload.workoutId}`];
-      case "workout:finish":
-      case "run:finish":
-        // Сам индекс отправляется как часть pushWorkout() ниже — после того,
-        // как бин тренировки реально создан/обновлён, а не отдельным
-        // параллельным таймером (иначе возможна гонка: индекс уезжает раньше,
-        // чем тренировка получает finishedAt).
-        return [`workout:${payload.workoutId}`, `user:${currentUserId}`];
-      case "exercise:create":
-      case "exercise:update":
-      case "exercise:delete":
-      case "exercise:visibility":
-        // Все эти действия в текущей реализации — это «личные» упражнения
-        // и видимость, которые живут в пользовательском бине, а не в общем пуле
-        // (общий пул в UI сейчас не редактируется — см. комментарий выше).
-        return [`user:${currentUserId}`];
-      case "exercise:share":
-        return [`user:${payload.toUserId}`];
-      case "workout:delete":
-        return [`workoutIndex:${currentUserId}`];
-      case "workout:edit":
-        return [`workout:${payload.workoutId}`, `workoutIndex:${currentUserId}`];
-      case "template:update":
-      case "template:rename":
-      case "template:delete":
-      case "template:create":
-        return [`templates:${currentUserId}`];
-      case "template:share":
-        return [`templates:${payload.toUserId}`];
-      default:
-        return [];
+  function deviceId() {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id) {
+      id = "d_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      try { localStorage.setItem(DEVICE_KEY, id); } catch {}
     }
+    return id;
   }
 
-  /* ----- отправка одного scope ----- */
-  async function pushScope(scope) {
-    const [kind, id] = splitScope(scope);
+  let lastError = null;
 
-    if (kind === "exercises") {
-      await Storage.updateBin(CONFIG.BINS.exercises, DATA.getExercises());
-      return;
-    }
-    if (kind === "user") {
-      await Storage.updateBin(binIdForUser(id), buildUserPayload(id));
-      return;
-    }
-    if (kind === "templates") {
-      await Storage.updateBin(binIdForTemplates(id), { items: DATA.getTemplates(id) });
-      return;
-    }
-    if (kind === "workoutIndex") {
-      await Storage.updateBin(binIdForWorkoutIndex(id), { items: DATA.getWorkoutIndex(id) });
-      return;
-    }
-    if (kind === "workout") {
-      await pushWorkout(id);
-      return;
-    }
+  /* ----- бины ----- */
+  function binIdForUser(userId)      { return CONFIG.BINS[`user_${userId}`]; }
+  function binIdForTemplates(userId) { return CONFIG.BINS[`templates_${userId}`]; }
+  function binIdForIndex(userId)     { return CONFIG.BINS[`workoutIndex_${userId}`]; }
+
+  /* ----- снапшот ----- */
+  function isSnapshot(obj) {
+    return !!(obj && obj.schema === SCHEMA && obj.data && typeof obj.version === "number");
   }
 
-  function buildUserPayload(userId) {
-    const active = DATA.getActiveWorkout(userId);
-    return {
-      rev: nextRev(userId), // версия для защиты от read-after-write при pull
-      hidden: DATA.getHiddenIds(userId),
-      own: DATA.getOwnExercises(userId),
-      records: DATA.getRecords(userId),
-      activeWorkoutId: active ? active.id : null,
-      activeWorkoutBinId: active ? (active._remoteBinId || null) : null,
-    };
-  }
-
-  function findWorkoutById(userId, workoutId) {
-    const active = DATA.getActiveWorkout(userId);
-    if (active && active.id === workoutId) return active;
-    return DATA.getWorkoutHistory(userId).find(w => w.id === workoutId) || null;
-  }
-
-  function summarizeWorkout(w) {
-    return {
-      id: w.id, binId: w._remoteBinId || null, type: w.type, name: w.name,
-      startedAt: w.startedAt, finishedAt: w.finishedAt || null,
-      durationSec: w.durationSec || null, distance: w.distance || null,
-    };
-  }
-
-  function upsertWorkoutIndexLocal(userId, workout) {
-    const list = DATA.getWorkoutIndex(userId);
-    const idx = list.findIndex(e => e.id === workout.id);
-    const entry = summarizeWorkout(workout);
-    if (idx === -1) list.unshift(entry); else list[idx] = entry;
-    DATA.saveWorkoutIndex(userId, list);
-  }
-
-  function stripLocalFields(workout) {
+  function stripLocal(workout) {
+    if (!workout) return workout;
     const { _remoteBinId, ...rest } = workout;
     return rest;
   }
 
-  // Создаёт bin тренировки при первой реальной записи («по мере записи
-  // действий» — раздел 6.1), дальше просто обновляет тот же bin.
-  async function pushWorkout(workoutId) {
+  function buildSnapshot(userId, version) {
+    const active = DATA.getActiveWorkout(userId);
+    return {
+      schema: SCHEMA,
+      version,
+      deviceId: deviceId(),
+      updatedAt: Date.now(),
+      data: {
+        own:            DATA.getOwnExercises(userId),
+        hidden:         DATA.getHiddenIds(userId),
+        records:        DATA.getRecords(userId),
+        templates:      DATA.getTemplates(userId),
+        categories:     DATA.getAllCategories(userId),
+        categoryColors: DATA.getCategoryColors(userId),
+        exerciseOrder:  DATA.getExerciseOrder(userId),
+        history:        DATA.getWorkoutHistory(userId).map(stripLocal),
+        active:         active ? stripLocal(active) : null,
+      },
+    };
+  }
+
+  // Накатить снапшот поверх локального состояния ЦЕЛИКОМ (download-семантика:
+  // облако — авторитетная копия, локальное состояние замещается).
+  function applySnapshot(userId, snapshot) {
+    const d = snapshot.data || {};
+    if (Array.isArray(d.own))            DATA.saveOwnExercises(userId, d.own);
+    if (Array.isArray(d.hidden))         DATA.saveHiddenIds(userId, d.hidden);
+    if (d.records)                       DATA.saveRecords(userId, d.records);
+    if (Array.isArray(d.templates))      DATA.saveTemplates(userId, d.templates);
+    if (Array.isArray(d.categories))     DATA.saveAllCategories(userId, d.categories);
+    if (d.categoryColors)                DATA.saveCategoryColors(userId, d.categoryColors);
+    if (d.exerciseOrder !== undefined)   DATA.saveExerciseOrder(userId, d.exerciseOrder);
+    if (Array.isArray(d.history))        DATA.saveWorkoutHistory(userId, d.history);
+    if (d.active) DATA.saveActiveWorkout(userId, d.active);
+    else          DATA.clearActiveWorkout(userId);
+    // Личные упражнения в снапшоте полные — не даём seed заново плодить дубликаты.
+    DATA.markExercisesSeeded(userId);
+  }
+
+  async function readSnapshot(userId) {
+    return await Storage.readBin(binIdForUser(userId));
+  }
+  async function writeSnapshot(userId, snapshot) {
+    await Storage.updateBin(binIdForUser(userId), snapshot);
+  }
+
+  /* ----- разметка «есть локальные правки» ----- */
+  // Публичная точка входа push(type, payload) сохранена ради всех вызовов
+  // SyncQueue.push(...) по экранам: теперь действие просто помечает локальное
+  // состояние изменённым (dirty), а не планирует фоновую отправку.
+  function push(/* type, payload */) {
+    if (!Storage.isEnabled()) return;
     const userId = DATA.getCurrentUser();
     if (!userId) return;
-    const workout = findWorkoutById(userId, workoutId);
-    if (!workout) return; // тренировку успели удалить — отправлять нечего
-
-    if (!workout._remoteBinId) {
-      const binId = await Storage.createBin(stripLocalFields(workout), workout.name);
-      workout._remoteBinId = binId;
-      DATA.updateWorkoutInPlace(userId, workout);
-    } else {
-      await Storage.updateBin(workout._remoteBinId, stripLocalFields(workout));
-    }
-
-    upsertWorkoutIndexLocal(userId, workout); // локальный кэш — всегда, дёшево
-
-    // В сам JSONBin индекс отправляем только на значимых чекпоинтах
-    // (тренировка завершена), а не на каждую правку подхода — иначе расход
-    // запросов растёт вдвое на каждое сохранение почти без пользы.
-    if (workout.finishedAt) {
-      // Помечаем индекс грязным ДО отправки: если iOS убьёт страницу между
-      // созданием бина тренировки и отправкой индекса — следующий заход
-      // подхватит workoutIndex:<userId> как самостоятельный retry.
-      const indexScope = `workoutIndex:${userId}`;
-      dirty.add(indexScope);
-      persistDirty();
-      await Storage.updateBin(binIdForWorkoutIndex(userId), { items: DATA.getWorkoutIndex(userId) });
-      dirty.delete(indexScope);
-      persistDirty();
-    }
-  }
-
-  /* ----- отложенная отправка ----- */
-  function scheduleFlush(scope, delay) {
-    dirty.add(scope);
-    persistDirty();
-    if (timers.has(scope)) clearTimeout(timers.get(scope));
-    timers.set(scope, setTimeout(() => flushScope(scope), delay));
-  }
-
-  async function flushScope(scope) {
-    timers.delete(scope);
-    if (!Storage.isEnabled() || !navigator.onLine) return; // останется dirty, попробуем позже
-    try {
-      await pushScope(scope);
-      dirty.delete(scope);
-      persistDirty();
-      if (!dirty.size) lastError = null;
-    } catch (e) {
-      console.warn("Sync: не удалось отправить", scope, e);
-      lastError = e?.message || String(e);
-      // оставляем dirty — заберёт следующий flushAll()
-    }
+    setDirty(userId, true);
     notifyStatus();
-  }
-
-  // Используется при гидратации: отправить локальное состояние ПЕРЕД pull
-  // нужно, только если оно реально не синхронизировано (scope всё ещё в
-  // dirty). Если правок не было — пуш не делаем вообще, иначе на новом
-  // устройстве с пустым локальным кэшем мы бы затёрли реальные данные на
-  // сервере этой самой пустотой.
-  async function pushIfDirty(scope) {
-    if (!dirty.has(scope)) return;
-    clearTimeout(timers.get(scope));
-    timers.delete(scope);
-    await flushScope(scope);
-  }
-
-  function flushAll() {
-    if (!Storage.isEnabled() || !navigator.onLine) return;
-    Array.from(dirty).forEach(scope => {
-      clearTimeout(timers.get(scope));
-      timers.delete(scope);
-      flushScope(scope);
-    });
   }
 
   function notifyStatus() {
     if (typeof updateOnlineStatus === "function") updateOnlineStatus();
   }
 
-  // Публичная точка входа, вызывается из тех же мест index.html, что и раньше
-  // (раздел 8: «каждое действие сразу кладётся в очередь на отправку»).
-  function push(type, payload = {}) {
-    if (!Storage.isEnabled()) return; // локальный режим — синхронизировать некуда
-    const userId = DATA.getCurrentUser();
-    const scopes = scopesForAction(type, payload, userId);
-    const delay = type.endsWith(":finish") ? FAST_DEBOUNCE_MS : DEBOUNCE_MS;
-    scopes.forEach(scope => scheduleFlush(scope, delay));
-    notifyStatus();
+  /* ----- миграция со старой схемы (бин на тренировку + отдельные бины) ----- */
+  function unionById(localArr, remoteArr) {
+    const seen = new Set((localArr || []).map(x => x && x.id));
+    const out = [...(localArr || [])];
+    (remoteArr || []).forEach(x => { if (x && x.id && !seen.has(x.id)) { seen.add(x.id); out.push(x); } });
+    return out;
   }
 
-  function pendingCount() { return dirty.size; }
-  function getLastError() { return lastError; }
+  // Один раз (когда syncedVersion === 0) собирает в локальный DATA всё, что
+  // лежало в старых бинах, чтобы первый снапшот был полным независимо от того,
+  // с какого устройства его выгружают. Только union (ничего не удаляет).
+  async function mergeLegacyIntoLocal(userId) {
+    // Личные упражнения / скрытые из старого user-бина.
+    try {
+      const legacy = await readSnapshot(userId);
+      if (legacy && !isSnapshot(legacy)) {
+        if (Array.isArray(legacy.own))    DATA.saveOwnExercises(userId, unionById(DATA.getOwnExercises(userId), legacy.own));
+        if (Array.isArray(legacy.hidden)) {
+          const merged = Array.from(new Set([...(DATA.getHiddenIds(userId) || []), ...legacy.hidden]));
+          DATA.saveHiddenIds(userId, merged);
+        }
+      }
+    } catch (e) { console.warn("Sync.migrate: user bin", e); }
 
-  /* ----- подтягивание данных при входе в профиль ----- */
-  async function hydrateUser(userId) {
-    if (!Storage.isEnabled() || !navigator.onLine) return;
+    // Шаблоны из старого templates-бина.
+    try {
+      const tpl = await Storage.readBin(binIdForTemplates(userId));
+      const list = Array.isArray(tpl) ? tpl : (tpl && Array.isArray(tpl.items)) ? tpl.items : null;
+      if (list) DATA.saveTemplates(userId, unionById(DATA.getTemplates(userId), list));
+    } catch (e) { console.warn("Sync.migrate: templates bin", e); }
+
+    // История: индекс + бин на тренировку.
+    try {
+      const idx = await Storage.readBin(binIdForIndex(userId));
+      const entries = Array.isArray(idx) ? idx : (idx && Array.isArray(idx.items)) ? idx.items : null;
+      if (entries) {
+        const localIds = new Set(DATA.getWorkoutHistory(userId).map(w => w.id));
+        for (const e of entries) {
+          if (!e || !e.binId || !e.finishedAt || localIds.has(e.id)) continue;
+          try {
+            const w = await Storage.readBin(e.binId);
+            if (w) { DATA.saveWorkout(userId, stripLocal(w)); localIds.add(w.id); }
+          } catch (err) { console.warn("Sync.migrate: workout bin", e.id, err); }
+        }
+        // История пополнилась — пересчитываем рекорды из полной локальной истории.
+        DATA.recomputeRecords(userId);
+      }
+    } catch (e) { console.warn("Sync.migrate: index bin", e); }
+  }
+
+  /* ----- upload: «Синхронизировать» (выгрузить это устройство в облако) ----- */
+  async function upload(userId, { force = false } = {}) {
+    if (!Storage.isEnabled()) return { status: "disabled" };
+    if (!navigator.onLine)    return { status: "offline" };
     lastError = null;
-    notifyStatus();
-
     try {
-      const exercises = await Storage.readBin(CONFIG.BINS.exercises);
-      if (Array.isArray(exercises) && exercises.length) DATA.saveExercises(exercises);
-    } catch (e) { console.warn("Sync: pull exercises failed", e); lastError = e?.message || String(e); }
+      const remote = await readSnapshot(userId);
+      const remoteVersion = isSnapshot(remote) ? remote.version : 0;
+      const syncedVersion = getSyncedVersion(userId);
 
-    try {
-      // Дошлём то, что не успели отправить с этого устройства, — но только
-      // если правки реально есть (см. pushIfDirty). На новом устройстве с
-      // пустым локальным кэшем push не делаем вообще: иначе эта пустота
-      // затёрла бы настоящие данные на сервере раньше, чем мы успели бы их
-      // прочитать.
-      await pushIfDirty(`user:${userId}`);
-      const remote = await Storage.readBin(binIdForUser(userId));
-      if (remote) {
-        // Накатываем remote поверх own/hidden/records ТОЛЬКО когда выполнены оба
-        // условия:
-        //  1) локальные правки уже синхронизированы (scope не dirty) — иначе
-        //     push упал/прервался и устаревшая серверная копия затёрла бы
-        //     несинхронизированные локальные упражнения;
-        //  2) сервер не старше нашего последнего push (remote.rev >= localRev) —
-        //     иначе это read-after-write: JSONBin вернул копию ДО нашей записи,
-        //     и накат стёр бы только что созданное локально упражнение (тогда
-        //     тренировки начинают показывать сырой e_own_… вместо имени).
-        const remoteRev = typeof remote.rev === "number" ? remote.rev : 0;
-        const localRev  = getLocalRev(userId);
-        if (!dirty.has(`user:${userId}`) && remoteRev >= localRev) {
-          if (Array.isArray(remote.hidden)) DATA.saveHiddenIds(userId, remote.hidden);
-          if (Array.isArray(remote.own)) DATA.saveOwnExercises(userId, remote.own);
-          if (remote.records) DATA.saveRecords(userId, remote.records);
-          setLocalRev(userId, remoteRev); // догнали серверную версию
-        }
-
-        // Тренировка, начатая на другом устройстве и ещё не завершённая.
-        // Безопасно даже при dirty: блок только добавляет активную тренировку,
-        // когда локальной нет, и ничего не затирает.
-        const localActive = DATA.getActiveWorkout(userId);
-        if (!localActive && remote.activeWorkoutId && remote.activeWorkoutBinId) {
-          const remoteWorkout = await Storage.readBin(remote.activeWorkoutBinId);
-          if (remoteWorkout) {
-            remoteWorkout._remoteBinId = remote.activeWorkoutBinId;
-            DATA.saveActiveWorkout(userId, remoteWorkout);
-          }
-        }
+      // Облако новее нашей последней синхронизации — менялось на другом
+      // устройстве. Не затираем без явного подтверждения.
+      if (!force && remoteVersion > syncedVersion) {
+        return { status: "conflict", direction: "upload", remoteVersion, syncedVersion };
       }
-    } catch (e) { console.warn("Sync: pull user failed", e); lastError = e?.message || String(e); }
 
-    try {
-      await pushIfDirty(`templates:${userId}`);
-      const remoteTpl = await Storage.readBin(binIdForTemplates(userId));
-      // JSONBin не принимает пустой массив — бин засеивается как {items:[]}.
-      // Принимаем оба формата: старый (массив напрямую) и новый ({items:[]}).
-      const tplList = Array.isArray(remoteTpl) ? remoteTpl
-        : (remoteTpl && Array.isArray(remoteTpl.items)) ? remoteTpl.items : null;
-      if (tplList) DATA.saveTemplates(userId, tplList);
-    } catch (e) { console.warn("Sync: pull templates failed", e); lastError = e?.message || String(e); }
-
-    try {
-      await pushIfDirty(`workoutIndex:${userId}`);
-      const remoteIndex = await Storage.readBin(binIdForWorkoutIndex(userId));
-      const indexList = Array.isArray(remoteIndex) ? remoteIndex
-        : (remoteIndex && Array.isArray(remoteIndex.items)) ? remoteIndex.items : null;
-      if (indexList) {
-        DATA.saveWorkoutIndex(userId, indexList);
-        await hydrateMissingWorkouts(userId, indexList);
+      // Первый выгруз с этого устройства: подтянуть данные из старых бинов,
+      // чтобы снапшот был полным (one-time миграция).
+      if (syncedVersion === 0 && !isSnapshot(remote)) {
+        await mergeLegacyIntoLocal(userId);
       }
-    } catch (e) { console.warn("Sync: pull workout index failed", e); lastError = e?.message || String(e); }
 
-    notifyStatus();
-  }
-
-  async function hydrateMissingWorkouts(userId, remoteIndex, cap = HYDRATE_WORKOUT_CAP) {
-    const localIds = new Set(DATA.getWorkoutHistory(userId).map(w => w.id));
-    const missing = remoteIndex.filter(e => e.binId && e.finishedAt && !localIds.has(e.id)).slice(0, cap);
-    let fetched = 0;
-    for (const entry of missing) {
-      try {
-        const w = await Storage.readBin(entry.binId);
-        if (!w) continue;
-        w._remoteBinId = entry.binId;
-        DATA.saveWorkout(userId, w);
-        fetched++;
-      } catch (e) { console.warn("Sync: pull workout failed", entry.id, e); }
+      const newVersion = Math.max(remoteVersion, syncedVersion) + 1;
+      await writeSnapshot(userId, buildSnapshot(userId, newVersion));
+      setSyncedVersion(userId, newVersion);
+      setDirty(userId, false);
+      notifyStatus();
+      return { status: "ok", version: newVersion };
+    } catch (e) {
+      lastError = e?.message || String(e);
+      notifyStatus();
+      return { status: "error", error: lastError };
     }
-    return fetched;
   }
 
-  // Сколько тренировок есть в индексе, но ещё не подтянуто в локальную историю
-  // (хвост старше лимита гидратации). Для кнопки «Загрузить ещё».
-  function missingWorkoutCount(userId) {
-    const localIds = new Set(DATA.getWorkoutHistory(userId).map(w => w.id));
-    return DATA.getWorkoutIndex(userId).filter(e => e.binId && e.finishedAt && !localIds.has(e.id)).length;
+  /* ----- download: «Проверить обновления» (затянуть облако в это устройство) - */
+  async function download(userId, { force = false } = {}) {
+    if (!Storage.isEnabled()) return { status: "disabled" };
+    if (!navigator.onLine)    return { status: "offline" };
+    lastError = null;
+    try {
+      const remote = await readSnapshot(userId);
+      if (!isSnapshot(remote)) return { status: "empty" }; // в облаке ещё нет снапшота
+
+      const syncedVersion = getSyncedVersion(userId);
+      if (remote.version <= syncedVersion && !force) {
+        return { status: "up_to_date" };
+      }
+
+      // На устройстве есть несинхронизированные правки — не теряем их без спроса.
+      if (!force && isDirty(userId)) {
+        return { status: "conflict", direction: "download", remoteVersion: remote.version, syncedVersion };
+      }
+
+      applySnapshot(userId, remote);
+      setSyncedVersion(userId, remote.version);
+      setDirty(userId, false);
+      notifyStatus();
+      return { status: "ok", version: remote.version };
+    } catch (e) {
+      lastError = e?.message || String(e);
+      notifyStatus();
+      return { status: "error", error: lastError };
+    }
   }
 
-  // Догрузить следующую пачку старых тренировок по запросу (кнопка в истории).
-  // Возвращает число реально подтянутых. Индекс уже целиком локален (его бин
-  // маленький и тянется при входе), поэтому берём недостающие прямо из него.
-  async function loadMoreWorkouts(userId, batch = HYDRATE_WORKOUT_CAP) {
-    if (!Storage.isEnabled() || !navigator.onLine) return 0;
-    return await hydrateMissingWorkouts(userId, DATA.getWorkoutIndex(userId), batch);
+  /* ----- «Поделиться» с другим пользователем ----- */
+  // Записываем прямо в снапшот получателя: читаем его, добавляем элемент,
+  // version++. Best-effort — рассчитано на то, что получатель в этот момент не
+  // редактирует свой профиль (два доверенных пользователя, раздел 2 спеки).
+  async function pushSharedItem(toUserId, mutate) {
+    if (!Storage.isEnabled() || !navigator.onLine) return;
+    try {
+      const remote = await readSnapshot(toUserId);
+      if (isSnapshot(remote)) {
+        mutate(remote.data);
+        remote.version = remote.version + 1;
+        remote.deviceId = deviceId();
+        remote.updatedAt = Date.now();
+        await writeSnapshot(toUserId, remote);
+        // Если получатель — текущий профиль на этом устройстве, держим synced
+        // version в согласии, чтобы он потом не словил ложный конфликт.
+        if (DATA.getCurrentUser() === toUserId) setSyncedVersion(toUserId, remote.version);
+      }
+    } catch (e) { console.warn("Sync.pushSharedItem failed", e); }
   }
 
-  // «Поделиться» шаблоном пишет в бин ДРУГОГО пользователя — если просто
-  // скопировать локально и тут же отправить, можно затереть его реальный
-  // список шаблонов устаревшей локальной копией. Поэтому сначала подтягиваем
-  // актуальный список получателя, и только потом добавляем в него копию.
   async function shareTemplate(templateId, fromUserId, toUserId) {
-    if (Storage.isEnabled() && navigator.onLine) {
-      try {
-        const remoteList = await Storage.readBin(binIdForTemplates(toUserId));
-        const tplArr = Array.isArray(remoteList) ? remoteList
-          : (remoteList && Array.isArray(remoteList.items)) ? remoteList.items : null;
-        if (tplArr) DATA.saveTemplates(toUserId, tplArr);
-      } catch (e) { console.warn("Sync: pull recipient templates before share failed", e); }
-    }
     const copy = DATA.shareTemplate(templateId, fromUserId, toUserId);
-    push("template:share", { templateId, toUserId });
+    if (copy) await pushSharedItem(toUserId, data => {
+      if (Array.isArray(data.templates)) data.templates = unionById(data.templates, [copy]);
+    });
     return copy;
   }
 
   async function shareExercise(exerciseId, fromUserId, toUserId) {
-    if (Storage.isEnabled() && navigator.onLine) {
-      try {
-        const remote = await Storage.readBin(binIdForUser(toUserId));
-        if (remote && Array.isArray(remote.own)) DATA.saveOwnExercises(toUserId, remote.own);
-      } catch (e) { console.warn("Sync: pull recipient exercises before share failed", e); }
-    }
     const result = DATA.shareExercise(exerciseId, fromUserId, toUserId);
-    if (result === "shared") push("exercise:share", { toUserId });
+    if (result === "shared") {
+      const added = DATA.getOwnExercises(toUserId);
+      const copy = added[added.length - 1];
+      await pushSharedItem(toUserId, data => {
+        if (Array.isArray(data.own) && copy) data.own = unionById(data.own, [copy]);
+      });
+    }
     return result;
   }
 
-  return { push, flush: flushAll, size: pendingCount, lastError: getLastError, hydrateUser, shareTemplate, shareExercise, loadMoreWorkouts, missingWorkoutCount };
+  /* ----- статус для индикатора ----- */
+  function pendingCount() {
+    const userId = DATA.getCurrentUser();
+    return userId && isDirty(userId) ? 1 : 0;
+  }
+  function getLastError() { return lastError; }
+
+  /* ----- совместимость со старым API (вызовы из app.js) ----- */
+  // В snapshot-модели вся история локальна после download — ленивой догрузки нет.
+  function missingWorkoutCount() { return 0; }
+  async function loadMoreWorkouts() { return 0; }
+  // Авто-гидратации при входе больше нет (Anki-модель — только вручную).
+  async function hydrateUser() { return; }
+  // Фоновой отправки нет — flush больше ничего не шлёт, просто обновляет статус.
+  function flush() { notifyStatus(); }
+
+  return {
+    push, flush, size: pendingCount, lastError: getLastError,
+    upload, download, isDirty: () => { const u = DATA.getCurrentUser(); return !!(u && isDirty(u)); },
+    syncedVersion: getSyncedVersion,
+    shareTemplate, shareExercise,
+    hydrateUser, loadMoreWorkouts, missingWorkoutCount,
+  };
 })();

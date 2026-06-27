@@ -182,6 +182,8 @@ const DATA = (() => {
     // Цвета меток категорий — личная карта { имя: "#hex" }. Если цвет не задан,
     // getCategoryColor отдаёт дефолт из палитры по позиции категории в списке.
     getCategoryColors(userId) { return ls(`train_category_colors_${userId}`, {}); },
+    // Перезаписать карту цветов целиком — нужно слою синхронизации (snapshot).
+    saveCategoryColors(userId, map) { lsSet(`train_category_colors_${userId}`, map || {}); },
     getCategoryColor(userId, name) {
       const map = this.getCategoryColors(userId);
       if (map[name]) return map[name];
@@ -260,6 +262,11 @@ const DATA = (() => {
       lsSet(`train_exercises_seeded_${userId}`, true);
       return true; // первый запуск — нужно запушить в remote
     },
+
+    // Пометить набор упражнений как уже засеянный — вызывается слоем синхронизации
+    // после применения снапшота из облака: личные упражнения там полные, и
+    // повторный seed дефолтов только создал бы дубликаты.
+    markExercisesSeeded(userId) { lsSet(`train_exercises_seeded_${userId}`, true); },
 
     // Поделиться упражнением с другим пользователем — копия по значению,
     // независимая от оригинала. Возвращает 'shared' | 'duplicate' | 'not_found'.
@@ -931,12 +938,12 @@ function updateOnlineStatus() {
 
   if (!online) {
     statusText.textContent = pending > 0
-      ? `Нет сети — ${pending} ${pluralChanges(pending)} ждут синхронизации`
+      ? "Нет сети — есть несинхронизированные изменения"
       : "Нет сети — данные сохраняются локально";
   } else if (syncError) {
     statusText.textContent = `Ошибка синхронизации: ${syncError}`;
   } else if (pending > 0) {
-    statusText.textContent = "Синхронизация…";
+    statusText.textContent = "Есть несинхронизированные изменения";
   } else {
     statusText.textContent = "Работаем онлайн";
   }
@@ -1426,19 +1433,91 @@ document.querySelectorAll(".pill").forEach(pill => {
    Settings modal
    ========================================================================== */
 $("settings-close").addEventListener("click", () => closeModal(settingsModalBackdrop));
-$("refresh-data-btn").addEventListener("click", () => {
+/* ==========================================================================
+   Синхронизация (Anki-модель): две явные операции — выгрузить это устройство
+   в облако (upload) и затянуть облако в это устройство (download). Конфликт
+   (обе стороны менялись) разрешается выбором пользователя, без авто-слияния.
+   ========================================================================== */
+
+// Перерисовать активный экран после download — данные могли смениться целиком.
+function rerenderAfterSync() {
+  if (screenMenu.classList.contains("active")) { refreshMenu(); return; }
+  const dataScreens = ["history", "stats", "templates", "exercises"];
+  for (const name of dataScreens) {
+    if (SCREENS[name] && SCREENS[name].classList.contains("active")) { goToScreen(name); return; }
+  }
+}
+
+function syncResultMessage(res, kind) {
+  switch (res.status) {
+    case "ok":         return kind === "upload" ? "Данные выгружены в облако" : "Данные обновлены из облака";
+    case "up_to_date": return "Уже актуально — обновлений нет";
+    case "empty":      return "В облаке пока нет данных — сначала синхронизируйте с основного устройства";
+    case "offline":    return "Нет сети — попробуйте позже";
+    case "disabled":   return "Синхронизация выключена";
+    case "error":      return `Не удалось: ${res.error || "ошибка"}`;
+    default:           return "";
+  }
+}
+
+function handleSyncResult(res, kind) {
+  updateOnlineStatus();
+  if (res.status === "conflict") { openSyncConflictModal(); return; }
+  if (res.status === "ok" && kind === "download") rerenderAfterSync();
+  else if (screenMenu.classList.contains("active")) refreshMenu();
+  showToast(syncResultMessage(res, kind));
+}
+
+let _syncBusy = false;
+async function runSync(kind, force = false) {
+  if (_syncBusy) return;
   const userId = DATA.getCurrentUser();
+  if (!userId) return;
+  _syncBusy = true;
+  showToast(kind === "upload" ? "Выгружаем…" : "Проверяем обновления…");
+  try {
+    const res = kind === "upload"
+      ? await SyncQueue.upload(userId, { force })
+      : await SyncQueue.download(userId, { force });
+    handleSyncResult(res, kind);
+  } finally {
+    _syncBusy = false;
+  }
+}
+
+// Конфликт: и тут, и в облаке менялось с последней синхронизации. Выбор —
+// чья копия побеждает (точно как Upload/Download в Anki).
+function openSyncConflictModal() {
+  if (document.getElementById("sync-conflict-modal")) return;
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop open";
+  backdrop.id = "sync-conflict-modal";
+  backdrop.innerHTML = `
+    <div class="modal modal-form">
+      <h2 class="modal-title">Конфликт синхронизации</h2>
+      <p style="margin:0 0 16px;color:var(--text-secondary);font-size:14px;line-height:1.5">Данные менялись и на этом устройстве, и в облаке. Слияние не делается — выберите, какую копию оставить. Вторая будет перезаписана.</p>
+      <div class="modal-form-actions" style="flex-direction:column;gap:8px">
+        <button class="btn-chip primary" id="sync-conflict-keep">Оставить это устройство</button>
+        <button class="btn-chip" id="sync-conflict-cloud">Взять из облака</button>
+        <button class="btn-chip" id="sync-conflict-cancel">Отмена</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => backdrop.remove();
+  $("sync-conflict-keep").addEventListener("click",  () => { close(); runSync("upload", true); });
+  $("sync-conflict-cloud").addEventListener("click", () => { close(); runSync("download", true); });
+  $("sync-conflict-cancel").addEventListener("click", close);
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
+}
+
+$("upload-data-btn").addEventListener("click", () => {
   closeModal(settingsModalBackdrop);
-  showToast("Синхронизируем данные…");
-  SyncQueue.flush();
-  if (userId) _menuHydrating = Storage.isEnabled() && navigator.onLine;
-  Promise.resolve(userId ? SyncQueue.hydrateUser(userId) : null)
-    .then(() => {
-      _menuHydrating = false;
-      if (screenMenu.classList.contains("active")) refreshMenu();
-      updateOnlineStatus();
-      showToast(SyncQueue.lastError() ? "Синхронизация не удалась" : "Данные обновлены");
-    });
+  runSync("upload");
+});
+$("download-data-btn").addEventListener("click", () => {
+  closeModal(settingsModalBackdrop);
+  runSync("download");
   if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.update()));
 });
 $("switch-user-btn").addEventListener("click", () => {
