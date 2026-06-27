@@ -4631,9 +4631,9 @@ function initStatsScreen() {
   const oneRM = selRec && typeof estimate1RM === "function" ? estimate1RM(selRec.maxWeight, selRec.repsAtMaxWeight) : 0;
 
   // Доп. метрики для детальных экранов (за выбранный период)
-  let totalSets = 0, totalReps = 0;
+  let totalSets = 0, totalReps = 0, restSecTotal = 0;
   strength.forEach(w => (w.exercises||[]).forEach(ex => (ex.sets||[]).filter(s=>s.done&&s.reps>0).forEach(s=>{ totalSets++; totalReps += s.reps||0; })));
-  const avgVolPerWorkout = strength.length ? Math.round(volume/strength.length) : 0;
+  strength.forEach(w => { restSecTotal += w.restSec || 0; });
   let longestRun = 0;
   runs.forEach(w => { const d = parseFloat(w.distance)||0; if (d>longestRun) longestRun = d; });
   const avgDistPerRun = runs.length ? totalDist/runs.length : 0;
@@ -4690,7 +4690,7 @@ function initStatsScreen() {
         <div class="s-tiles s-tiles-3">
           ${tile(totalSets||"—", "Подходы")}
           ${tile(totalReps||"—", "Повторы")}
-          ${tile(avgVolPerWorkout>0?`${avgVolPerWorkout.toLocaleString("ru-RU")} кг`:"—", "Тоннаж/трен.")}
+          ${tile(restSecTotal>0?_hrsStr(restSecTotal*1000):"—", "Отдых")}
         </div>
       </div>
       ${calendarBlock}
@@ -4750,7 +4750,6 @@ function initStatsScreen() {
         </div>
       </div>
       ${calendarBlock}
-      <div class="s-section-label">Хайлайты</div>
       <div class="s-card s-card-full">
         <div class="s-tiles s-tiles-2">
           ${tile(filtered.length, "Всего трен.")}
