@@ -480,6 +480,21 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .settings-grid-btn { flex-direction: column; justify-content: center; gap: 8px; padding: 14px 10px; text-align: center; font-size: 13px; }
 .settings-grid-btn .modal-option-icon { width: 26px; height: 26px; }
+#switch-user-btn { justify-content: center; }
+
+/* Блокировка горизонтальной ориентации */
+#landscape-block {
+  display: none;
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; padding: 32px; text-align: center;
+}
+#landscape-block svg { width: 48px; height: 48px; color: var(--accent-bright); }
+#landscape-block p { font-size: 16px; font-weight: 600; margin: 0; }
+@media screen and (orientation: landscape) and (max-width: 900px) {
+  #landscape-block { display: flex; }
+}
 
 /* Выбор типа тренировки — ячейки в стилистике карточек истории, надпись по центру */
 .modal-option--strength, .modal-option--run { justify-content: center; text-align: center; }
@@ -1898,6 +1913,14 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 </style>
 </head>
 <body>
+
+<div id="landscape-block">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="7" width="20" height="10" rx="2"/>
+    <path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
+  </svg>
+  <p>Поверните телефон вертикально</p>
+</div>
 
 <div class="app">
   <div class="bg-glow"></div>
