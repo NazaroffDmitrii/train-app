@@ -573,6 +573,28 @@ const DATA = (() => {
       this.saveTemplates(userId, this.getTemplates(userId).filter(t => t.id !== templateId));
     },
 
+    // Привязать тренировку из истории к шаблону (для «посл.» и среднего времени)
+    // и, по желанию, переименовать её под имя шаблона. Возвращает true, если нашли.
+    linkWorkoutToTemplate(userId, workoutId, templateId, name) {
+      const hist = this.getWorkoutHistory(userId);
+      const w = hist.find(x => x.id === workoutId);
+      if (!w) return false;
+      w.templateId = templateId;
+      if (name) w.name = name;
+      this.saveWorkoutHistory(userId, hist);
+      return true;
+    },
+
+    // Переименовать все тренировки, привязанные к шаблону, под его новое имя.
+    // Возвращает id изменённых тренировок (чтобы вызвать синк по каждой).
+    renameTemplateWorkouts(userId, templateId, name) {
+      const hist = this.getWorkoutHistory(userId);
+      const changed = [];
+      hist.forEach(w => { if (w.templateId === templateId && w.name !== name) { w.name = name; changed.push(w.id); } });
+      if (changed.length) this.saveWorkoutHistory(userId, hist);
+      return changed;
+    },
+
     // «Поделиться» = создание независимой копии у другого пользователя (раздел 5).
     shareTemplate(templateId, fromUserId, toUserId) {
       const tpl = this.getTemplate(fromUserId, templateId);
@@ -4781,6 +4803,7 @@ const TPL_PLUS_SVG  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const TPL_X_SVG     = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 const TPL_TRASH_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 const TPL_HANDLE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/></svg>`;
+const TPL_SHARE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>`;
 
 function pluralExercises(n) {
   const mod10 = n % 10, mod100 = n % 100;
@@ -4871,10 +4894,15 @@ function tplCardHtml(t, history, lib) {
   }
 
   const titleCls = _tplEditMode ? "tpl-card-title tpl-card-title--edit" : "tpl-card-title";
+  // Кнопка «Поделиться» — только в режиме правки, в правом верхнем углу карточки.
+  const shareBtn = _tplEditMode
+    ? `<button class="tpl-share-btn" title="Поделиться шаблоном">${TPL_SHARE_SVG}</button>`
+    : "";
   return `
     <div class="tpl-card-wrap" data-id="${escHtml(t.id)}">
       <div class="tpl-card-delete">${TPL_TRASH_SVG}<span>Удалить</span></div>
       <div class="tpl-card tpl-card--strength" data-id="${escHtml(t.id)}">
+        ${shareBtn}
         <div class="${titleCls}">${escHtml(t.name)}</div>
         <div class="tpl-card-meta">${escHtml(meta)}</div>
         ${body}
@@ -4986,8 +5014,12 @@ function startTplRename(wrap, id) {
     delete wrap.dataset.renaming;
     const next = inp.value.trim();
     if (next && next !== current) {
-      DATA.renameTemplate(DATA.getCurrentUser(), id, next);
+      const userId = DATA.getCurrentUser();
+      DATA.renameTemplate(userId, id, next);
       SyncQueue.push("template:rename", { templateId: id });
+      // Все тренировки по этому шаблону носят его имя (п.4).
+      DATA.renameTemplateWorkouts(userId, id, next).forEach(wid =>
+        SyncQueue.push("workout:edit", { workoutId: wid }));
     }
     const div = document.createElement("div");
     div.className = "tpl-card-title tpl-card-title--edit";
@@ -5018,6 +5050,37 @@ function tplAddExercise(id) {
   });
 }
 
+/* — Поделиться шаблоном = независимая копия у другого пользователя (раздел 5) — */
+const shareModalBackdrop = $("share-modal-backdrop");
+const shareModalList     = $("share-modal-list");
+
+function tplShareTemplate(id) {
+  const userId = DATA.getCurrentUser();
+  const others = DATA.USERS.filter(u => u.id !== userId);
+  if (!others.length) { showToast("Делиться не с кем"); return; }
+
+  shareModalList.innerHTML = others.map(u => `
+    <button class="modal-option" data-user="${u.id}">
+      <span class="avatar sm ${u.avatarClass}">${u.initial}</span>
+      <span>${u.name}</span>
+    </button>
+  `).join("");
+
+  shareModalList.querySelectorAll(".modal-option").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const toUserId = btn.dataset.user;
+      const toUser = others.find(u => u.id === toUserId);
+      closeModal(shareModalBackdrop);
+      await Sync.shareTemplate(id, userId, toUserId);
+      showToast(`Шаблон скопирован для ${toUser ? toUser.name : "пользователя"}`);
+    });
+  });
+
+  openModal(shareModalBackdrop);
+}
+
+$("share-modal-cancel").addEventListener("click", () => closeModal(shareModalBackdrop));
+
 /* — Заменить упражнение (тап по ячейке в режиме правки) — */
 function tplSwapExercise(id, idx) {
   const userId = DATA.getCurrentUser();
@@ -5041,6 +5104,8 @@ function wireTplCard(id) {
   if (_tplEditMode) {
     const title = wrap.querySelector(".tpl-card-title--edit");
     if (title) title.addEventListener("click", e => { e.stopPropagation(); startTplRename(wrap, id); });
+    const shareBtn = wrap.querySelector(".tpl-share-btn");
+    if (shareBtn) shareBtn.addEventListener("click", e => { e.stopPropagation(); tplShareTemplate(id); });
     const addEx = wrap.querySelector(".tpl-ex-add");
     if (addEx) addEx.addEventListener("click", e => { e.stopPropagation(); tplAddExercise(id); });
     wrap.querySelectorAll(".tpl-ex-cell").forEach(cell => wireTplExCell(cell, wrap, id));
@@ -5279,8 +5344,15 @@ function openSaveAsTemplateModal(workout) {
     initialValue: workout.name || "",
     confirmLabel: "Сохранить",
     onConfirm: name => {
-      const tpl = DATA.createTemplateFromWorkout(DATA.getCurrentUser(), workout, name);
+      const userId = DATA.getCurrentUser();
+      const tpl = DATA.createTemplateFromWorkout(userId, workout, name);
       SyncQueue.push("template:create", { templateId: tpl.id });
+      // Привязываем исходную тренировку к шаблону и переименовываем под него —
+      // тогда в карточке шаблона видно дату/время этой тренировки (если она
+      // последняя), а все тренировки по шаблону носят его имя (п.4).
+      if (DATA.linkWorkoutToTemplate(userId, workout.id, tpl.id, tpl.name)) {
+        SyncQueue.push("workout:edit", { workoutId: workout.id });
+      }
       showToast("Шаблон сохранён");
     },
   });

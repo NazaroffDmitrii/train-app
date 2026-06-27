@@ -1075,7 +1075,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .picker-tab {
   flex: none; white-space: nowrap;
   padding: 7px 13px; border-radius: 14px;
-  background: var(--panel-raised); border: 1.5px solid var(--tab-color, var(--border-subtle));
+  background: var(--panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--tab-color, transparent);
   color: var(--text-secondary); font-size: 13px; font-weight: 600;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
@@ -1316,7 +1318,9 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .ex-cat-tabs::-webkit-scrollbar { display: none; }
 .ex-cat-tab {
   flex: none; padding: 7px 13px; border-radius: 14px;
-  background: var(--panel-raised); border: 1.5px solid var(--tab-color, var(--border-subtle));
+  background: var(--panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--tab-color, transparent);
   color: var(--text-secondary); font-size: 13px; font-weight: 600;
   white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
@@ -1547,7 +1551,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .cat-sheet-title { font-size: 20px; font-weight: 700; }
 .cat-sheet-count { font-size: 13px; color: var(--text-tertiary); font-weight: 600; }
 .cat-sheet-list { overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-.cat-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--panel-raised); border: 1.5px solid var(--cat-color, var(--border-subtle)); border-radius: var(--radius-md); touch-action: pan-y; }
+.cat-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--panel-raised); border: 1px solid var(--border-subtle); border-left: 3px solid var(--cat-color, transparent); border-radius: var(--radius-md); touch-action: pan-y; }
 .cat-item-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
 .cat-item-name { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600; background: transparent; border: none; color: var(--text-primary); padding: 2px 0; }
 .cat-item-name:focus { outline: none; border-bottom: 1px solid var(--accent); }
@@ -1792,10 +1796,23 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   transition: transform 0.12s ease;
 }
 .tpl-card--strength {
-  background: linear-gradient(rgba(124,108,230,0.10), rgba(124,108,230,0.10)), var(--bg-base);
-  border-color: rgba(124,108,230,0.26);
+  background: linear-gradient(rgba(124,108,230,0.06), rgba(124,108,230,0.06)), var(--bg-base);
+  border-color: rgba(124,108,230,0.22);
 }
-.tpl-card-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.tpl-card-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; padding-right: 4px; }
+
+/* Кнопка «Поделиться» — в правом верхнем углу карточки, только в режиме правки */
+.tpl-share-btn {
+  position: absolute; top: 12px; right: 12px; z-index: 2;
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  color: var(--text-secondary); display: flex; align-items: center; justify-content: center;
+}
+.tpl-share-btn:active { transform: scale(0.94); }
+.tpl-share-btn svg { width: 17px; height: 17px; }
+.tpl-editing .tpl-card-title { padding-right: 44px; }
+.avatar.sm { width: 30px; height: 30px; border-radius: 9px; font-size: 13px; }
+#share-modal-list { display: flex; flex-direction: column; gap: 8px; }
 .tpl-card-meta { font-size: 12.5px; color: var(--text-tertiary); margin-top: 4px; }
 
 /* Чипы упражнений (режим просмотра) — показываем все, без скрытия */
@@ -2181,6 +2198,15 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
         <button class="btn-chip" id="name-modal-cancel">Отмена</button>
         <button class="btn-chip primary" id="name-modal-confirm">Сохранить</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== Модалка: поделиться шаблоном ===== -->
+  <div class="modal-backdrop" id="share-modal-backdrop">
+    <div class="modal">
+      <h2 class="modal-title">Поделиться шаблоном</h2>
+      <div id="share-modal-list"></div>
+      <button class="modal-cancel" id="share-modal-cancel">Отмена</button>
     </div>
   </div>
 
