@@ -57,16 +57,33 @@ const DATA = (() => {
   // Палитра цветных меток категорий. Пользователь выбирает цвет вручную (см.
   // setCategoryColor); пока он не выбран, цвет берётся из палитры по индексу
   // категории в общем списке — так список выглядит цветным сразу, без правок.
-  // Оттенки одного «фиолетового» семейства (от индиго-сине-фиолетового до
-  // пурпурно-маджентового) вместо радуги — категории остаются различимыми, но
-  // все читаются как акценты основного цвета приложения (--accent ≈ #7c6ce6).
-  // Порядок подобран так, чтобы соседние по списку категории заметно отличались.
-  const CATEGORY_PALETTE = [
-    "#8b7cf0", "#a78bfa", "#6f7ce8", "#c084fc", "#9aa6fb",
-    "#b07cf5", "#7d8bf2", "#d0a3fb", "#8466e6", "#bb8ef7",
-    "#7e6bea", "#c89bf9", "#6d83ef", "#a87cf3", "#9d8bf6",
-    "#b894f8", "#7a73ec", "#cf9bf9", "#8f7cf1", "#a394fa",
-  ];
+  // HSL → #hex (h в градусах, s/l в долях 0..1).
+  function hslToHex(h, s, l) {
+    h = ((h % 360) + 360) % 360 / 360;
+    const f = n => {
+      const k = (n + h * 12) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+      return Math.round(255 * c).toString(16).padStart(2, "0");
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+  }
+
+  // Цвет категории по её позиции в списке. Вместо радуги/фиксированного списка —
+  // плавный ход оттенка внутри «фиолетовой» полосы (индиго → фиолетовый →
+  // магента и обратно) при постоянной насыщенности/светлоте. Считается формулой,
+  // поэтому новые категории продолжают ту же плавную тенденцию, а существующие
+  // не перекрашиваются. «Пинг-понг» по краям полосы — чтобы не было резкого
+  // скачка оттенка при переходе через границу.
+  const CAT_HUE_LO = 224, CAT_HUE_HI = 292;  // границы «фиолетового» семейства
+  const CAT_HUE_STEP = 12;                    // шаг оттенка на одну категорию
+  function categoryColor(idx) {
+    if (!(idx >= 0)) idx = 0;
+    const span = CAT_HUE_HI - CAT_HUE_LO;
+    const pos = (idx * CAT_HUE_STEP) % (2 * span);
+    const hue = pos <= span ? CAT_HUE_LO + pos : CAT_HUE_HI - (pos - span);
+    return hslToHex(hue, 0.78, 0.72);
+  }
 
   const RPE_LABELS = {
     1: "Совсем легко",   2: "Очень легко",   3: "Легко",
@@ -131,7 +148,7 @@ const DATA = (() => {
     USERS,
     DEFAULT_EXERCISES,
     EXERCISE_CATEGORIES,
-    CATEGORY_PALETTE,
+    categoryColor,
     RPE_LABELS,
 
     // Общий пул (без личных и без учёта скрытия) — низкоуровневый доступ
@@ -169,7 +186,7 @@ const DATA = (() => {
       const map = this.getCategoryColors(userId);
       if (map[name]) return map[name];
       const idx = this.getAllCategories(userId).indexOf(name);
-      return CATEGORY_PALETTE[(idx < 0 ? 0 : idx) % CATEGORY_PALETTE.length];
+      return categoryColor(idx);
     },
     setCategoryColor(userId, name, color) {
       const map = { ...this.getCategoryColors(userId), [name]: color };
