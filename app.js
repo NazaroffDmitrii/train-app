@@ -600,15 +600,26 @@ const DATA = (() => {
       const workout = {
         id: `w_${Date.now()}`,
         type: "strength",
+        templateId: tpl.id,                  // связь с шаблоном — для среднего времени и «посл.»
         name: tpl.name,
         startedAt: Date.now(),
-        exercises: tpl.exercises.map(ex => ({
-          exerciseId: ex.exerciseId,
-          name: exNameById.get(ex.exerciseId), // снимок имени — устойчивость к потере справочника
-          sets: ex.sets.length
-            ? ex.sets.map(s => ({ weight: s.weight, reps: s.reps, rpe: 0, done: false }))
-            : [{ weight: 0, reps: 0, rpe: 0, done: false }],
-        })),
+        // Шаблон задаёт только состав. Количество подходов и теневые
+        // (placeholder) значения берём из прошлой тренировки с этим
+        // упражнением — ровно как при ручном добавлении (addExerciseToWorkout),
+        // чтобы старт из шаблона ничем не отличался от обычного старта.
+        exercises: tpl.exercises.map(ex => {
+          const lastW = this.getLastWorkoutForExercise(userId, ex.exerciseId);
+          const lastEx = lastW ? lastW.exercises.find(e => e.exerciseId === ex.exerciseId) : null;
+          const lastSets = lastEx ? lastEx.sets.filter(s => s.done && (s.weight || s.reps)) : [];
+          const sets = lastSets.length > 1
+            ? lastSets.map(() => ({ weight: 0, reps: 0, rpe: 0, done: false }))
+            : [{ weight: 0, reps: 0, rpe: 0, done: false }];
+          return {
+            exerciseId: ex.exerciseId,
+            name: exNameById.get(ex.exerciseId), // снимок имени — устойчивость к потере справочника
+            sets,
+          };
+        }),
       };
       this.saveActiveWorkout(userId, workout);
       return workout;
@@ -902,7 +913,7 @@ window.addEventListener("pagehide", () => SyncQueue.flush());
 /* ==========================================================================
    Screen switching
    ========================================================================== */
-const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), templateDetail: $("screen-template-detail"), templateEdit: $("screen-template-edit") };
+const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates") };
 
 function goToScreen(name, opts = {}) {
   Object.values(SCREENS).forEach(s => s && s.classList.remove("active"));
@@ -4753,29 +4764,29 @@ function renderProgressChart(points, opts = {}) {
    - «Начать тренировку» — переносит состав в новую активную тренировку
    - «Поделиться» — независимая копия у другого пользователя
    ========================================================================== */
-const templatesScroll  = $("templates-scroll");
-const templateBlocksEl = $("template-blocks");
+const templatesScroll = $("templates-scroll");
+
+// Имена модалки ввода (создание/переименование) — модалка осталась общей.
 const nameModalBackdrop  = $("name-modal-backdrop");
 const nameModalTitle     = $("name-modal-title");
 const nameModalInput     = $("name-modal-input");
 const nameModalConfirm   = $("name-modal-confirm");
-const shareModalBackdrop = $("share-modal-backdrop");
-const shareModalList     = $("share-modal-list");
 
-let _templateId = null; // id шаблона, открытого на экране редактирования
+let _tplEditMode = false;  // глобальный режим правки: все карточки «дрожат»
+let _tplDrag = null;       // активное перетаскивание ячейки упражнения внутри карточки
+
+// Иконки карточек шаблона
+const TPL_PLAY_SVG  = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>`;
+const TPL_PLUS_SVG  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+const TPL_X_SVG     = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+const TPL_TRASH_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
+const TPL_HANDLE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/></svg>`;
 
 function pluralExercises(n) {
   const mod10 = n % 10, mod100 = n % 100;
   if (mod10 === 1 && mod100 !== 11) return "упражнение";
   if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "упражнения";
   return "упражнений";
-}
-
-function pluralSets(n) {
-  const mod10 = n % 10, mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "подход";
-  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "подхода";
-  return "подходов";
 }
 
 function pluralDays(n) {
@@ -4785,59 +4796,131 @@ function pluralDays(n) {
   return "дней";
 }
 
-// Иконка штанги для плиток/иконок шаблонов
-const TPL_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`;
-
-// Сводная статистика шаблона: всего подходов и грубая оценка времени
-function templateStats(tpl) {
-  const sets = tpl.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
-  // ~2.75 мин на подход (работа + отдых), округляем до 5 минут
-  const minutes = sets ? Math.max(5, Math.round(sets * 2.75 / 5) * 5) : 0;
-  return { sets, minutes };
-}
-
-// «N дней назад» по времени последнего изменения шаблона
-function relativeUpdated(ts) {
-  if (!ts) return { value: "—", unit: "", label: "обновлён" };
+// «когда последний раз делали этот шаблон» — короткой строкой для меты карточки
+function relPastText(ts) {
+  if (!ts) return null;
   const days = Math.floor((Date.now() - ts) / 86400000);
-  if (days <= 0) return { value: "сегодня", unit: "", label: "обновлён" };
-  if (days < 7) return { value: String(days), unit: pluralDays(days), label: "назад" };
+  if (days <= 0) return "сегодня";
+  if (days === 1) return "вчера";
+  if (days < 7) return `${days} ${pluralDays(days)} назад`;
   const weeks = Math.floor(days / 7);
-  return { value: String(weeks), unit: weeks === 1 ? "нед" : "нед", label: "назад" };
+  if (weeks === 1) return "неделю назад";
+  if (weeks < 4) return `${weeks} нед назад`;
+  const months = Math.floor(days / 30);
+  if (months <= 1) return "месяц назад";
+  if (months < 12) return `${months} мес назад`;
+  return "давно";
 }
 
-/* — Список шаблонов: сетка плиток — */
-function initTemplatesScreen() { renderTemplatesList(); }
+// Среднее время и дата последнего выполнения шаблона — по истории тренировок,
+// связанных с этим шаблоном (workout.templateId). Если выполненных ещё нет —
+// грубая оценка 12 минут на упражнение.
+function templateUsage(tpl, history) {
+  const runs = history.filter(w => w.templateId === tpl.id);
+  const withDur = runs.filter(w => w.durationSec);
+  let avgMin;
+  if (withDur.length) {
+    avgMin = Math.round(withDur.reduce((s, w) => s + w.durationSec, 0) / withDur.length / 60);
+  } else {
+    avgMin = tpl.exercises.length * 12;
+  }
+  let lastTs = null;
+  runs.forEach(w => { const t = w.finishedAt || w.startedAt; if (t && (!lastTs || t > lastTs)) lastTs = t; });
+  return { avgMin: Math.max(1, avgMin), lastTs };
+}
+
+function templateExName(ex, lib) {
+  const def = lib.find(e => e.id === ex.exerciseId);
+  return def ? def.name : (ex.name || "Упражнение");
+}
+
+/* — Единый экран шаблонов: список карточек + правка inline — */
+function initTemplatesScreen() {
+  _tplEditMode = false;
+  const b = $("templates-done-btn"); if (b) b.classList.remove("visible");
+  renderTemplatesList();
+}
+
+function tplCardHtml(t, history, lib) {
+  const n = t.exercises.length;
+  const { avgMin, lastTs } = templateUsage(t, history);
+  const metaParts = [`${n} ${pluralExercises(n)}`];
+  if (n) metaParts.push(`~${avgMin} мин`);
+  const last = relPastText(lastTs);
+  if (last) metaParts.push(`посл. ${last}`);
+  const meta = metaParts.join(" · ");
+
+  let body;
+  if (_tplEditMode) {
+    const cells = t.exercises.map((ex, i) => `
+      <div class="tpl-ex-cell" data-idx="${i}">
+        <span class="tpl-ex-handle">${TPL_HANDLE_SVG}</span>
+        <span class="tpl-ex-name">${escHtml(templateExName(ex, lib))}</span>
+        <button class="tpl-ex-remove" title="Убрать из шаблона">${TPL_X_SVG}</button>
+      </div>`).join("");
+    body = `
+      <div class="tpl-ex-list">${cells}</div>
+      <button class="tpl-ex-add">${TPL_PLUS_SVG}<span>Добавить упражнение</span></button>`;
+  } else {
+    const chips = n
+      ? t.exercises.map(ex => `<span class="tpl-chip">${escHtml(templateExName(ex, lib))}</span>`).join("")
+      : `<span class="tpl-chip tpl-chip--empty">Пока нет упражнений</span>`;
+    body = `
+      <div class="tpl-card-chips">${chips}</div>
+      <button class="tpl-card-start"${n ? "" : " disabled"}>${TPL_PLAY_SVG}<span>Начать тренировку</span></button>`;
+  }
+
+  const titleCls = _tplEditMode ? "tpl-card-title tpl-card-title--edit" : "tpl-card-title";
+  return `
+    <div class="tpl-card-wrap" data-id="${escHtml(t.id)}">
+      <div class="tpl-card-delete">${TPL_TRASH_SVG}<span>Удалить</span></div>
+      <div class="tpl-card tpl-card--strength" data-id="${escHtml(t.id)}">
+        <div class="${titleCls}">${escHtml(t.name)}</div>
+        <div class="tpl-card-meta">${escHtml(meta)}</div>
+        ${body}
+      </div>
+    </div>`;
+}
+
+function tplAddBtnHtml() {
+  return `<button class="tpl-add-new" id="tpl-add-new">${TPL_PLUS_SVG}<span>Добавить новый шаблон</span></button>`;
+}
 
 function renderTemplatesList() {
-  const userId = DATA.getCurrentUser();
-  const list = DATA.getTemplates(userId);
+  const userId  = DATA.getCurrentUser();
+  const list    = DATA.getTemplates(userId);
+  const history = DATA.getWorkoutHistory(userId);
+  const lib     = DATA.getVisibleExercises(userId);
 
-  const tiles = list.map(t => `
-    <button class="tpl-tile" data-id="${t.id}">
-      <span class="tpl-tile-icon">${TPL_ICON_SVG}</span>
-      <span class="tpl-tile-name">${escHtml(t.name)}</span>
-      <span class="tpl-tile-meta">${t.exercises.length} ${pluralExercises(t.exercises.length)}</span>
-    </button>
-  `).join("");
+  templatesScroll.classList.toggle("tpl-editing", _tplEditMode);
 
-  const newTile = `
-    <button class="tpl-tile tpl-tile-new" id="tpl-new-tile">
-      <span class="tpl-tile-plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-      <span class="tpl-tile-new-label">Новый</span>
-    </button>`;
+  const cards = list.map(t => tplCardHtml(t, history, lib)).join("");
+  templatesScroll.innerHTML = `<div class="tpl-list">${cards}${tplAddBtnHtml()}</div>`;
 
-  templatesScroll.innerHTML = `<div class="tpl-grid">${tiles}${newTile}</div>`;
-
-  templatesScroll.querySelectorAll(".tpl-tile[data-id]").forEach(tile => {
-    tile.addEventListener("click", () => openTemplateDetail(tile.dataset.id));
-  });
-  $("tpl-new-tile").addEventListener("click", createNewTemplate);
+  list.forEach(t => wireTplCard(t.id));
+  const addBtn = $("tpl-add-new");
+  if (addBtn) addBtn.addEventListener("click", createNewTemplate);
 }
 
-$("templates-back-btn").addEventListener("click", () => goToScreen("menu"));
+function enterTplEditMode() {
+  if (_tplEditMode) return;
+  _tplEditMode = true;
+  haptic(22);
+  renderTemplatesList();
+  const b = $("templates-done-btn"); if (b) b.classList.add("visible");
+}
 
-/* — Создание пользовательского шаблона с нуля (п.7) — */
+function exitTplEditMode() {
+  if (!_tplEditMode) return;
+  _tplEditMode = false;
+  renderTemplatesList();
+  const b = $("templates-done-btn"); if (b) b.classList.remove("visible");
+}
+
+$("templates-back-btn").addEventListener("click", () => { exitTplEditMode(); goToScreen("menu"); });
+$("templates-done-btn").addEventListener("click", exitTplEditMode);
+
+/* — Создание нового шаблона: сразу открываем режим правки, чтобы добавить состав — */
 function createNewTemplate() {
   openNameModal({
     title: "Новый шаблон",
@@ -4847,305 +4930,325 @@ function createNewTemplate() {
       const userId = DATA.getCurrentUser();
       const tpl = DATA.createBlankTemplate(userId, name);
       SyncQueue.push("template:create", { templateId: tpl.id });
-      openTemplateEdit(tpl.id); // сразу открываем редактор для добавления упражнений
+      _tplEditMode = true;
+      renderTemplatesList();
+      const b = $("templates-done-btn"); if (b) b.classList.add("visible");
+      templatesScroll.scrollTop = 0;
     },
   });
 }
 
-/* — Экран шаблона: просмотр (только чтение) — */
-function openTemplateDetail(templateId) {
-  _templateId = templateId;
-  renderTemplateDetail();
-  goToScreen("templateDetail");
-}
-
-function renderTemplateDetail() {
-  const userId = DATA.getCurrentUser();
-  const tpl = DATA.getTemplate(userId, _templateId);
-  if (!tpl) { goToScreen("templates"); return; }
-
-  $("template-detail-title").textContent = tpl.name;
-  $("template-detail-meta").textContent = `Шаблон · ${tpl.exercises.length} ${pluralExercises(tpl.exercises.length)}`;
-
-  // Сводка
-  const { sets, minutes } = templateStats(tpl);
-  const rel = relativeUpdated(tpl.updatedAt || tpl.createdAt);
-  $("template-stats").innerHTML = `
-    <div class="tpl-stat highlight">
-      <div class="tpl-stat-value">${sets}</div>
-      <div class="tpl-stat-label">${pluralSets(sets)}</div>
-    </div>
-    <div class="tpl-stat">
-      <div class="tpl-stat-value">~${minutes}<span class="tpl-stat-unit">мин</span></div>
-      <div class="tpl-stat-label">время</div>
-    </div>
-    <div class="tpl-stat">
-      <div class="tpl-stat-value">${rel.value}${rel.unit ? `<span class="tpl-stat-unit">${rel.unit}</span>` : ""}</div>
-      <div class="tpl-stat-label">${rel.label}</div>
-    </div>`;
-
-  renderTemplateViewBlocks(tpl);
-}
-
-// Состав в режиме просмотра — упражнения с целевыми подходами в виде чипов
-function renderTemplateViewBlocks(tpl) {
-  const wrap = $("template-view-blocks");
-  if (!tpl.exercises.length) {
-    wrap.innerHTML = `<p class="empty-state">В шаблоне пока нет упражнений. Нажми карандаш, чтобы добавить состав.</p>`;
-    return;
-  }
-  const exercisesLib = DATA.getVisibleExercises(DATA.getCurrentUser());
-  wrap.innerHTML = tpl.exercises.map(ex => {
-    const exDef = exercisesLib.find(e => e.id === ex.exerciseId) || { name: ex.name || "Упражнение недоступно" };
-    const chips = ex.sets.map(s => {
-      const label = (s.weight > 0) ? `${s.weight}×${s.reps || 0}` : (s.reps > 0 ? `${s.reps}` : "—");
-      return `<span class="tpl-set-chip">${label}</span>`;
-    }).join("");
-    return `
-      <div class="tpl-view-ex">
-        <div class="tpl-view-ex-head">
-          <span class="tpl-view-ex-dot"></span>
-          <span class="tpl-view-ex-name">${escHtml(exDef.name)}</span>
-          <span class="tpl-view-ex-sets">${ex.sets.length} ${pluralSets(ex.sets.length)}</span>
-        </div>
-        <div class="tpl-view-ex-chips">${chips}</div>
-      </div>`;
-  }).join("");
-}
-
-/* — Экран шаблона: редактирование состава — */
-function openTemplateEdit(templateId) {
-  _templateId = templateId;
-  renderTemplateEditScreen();
-  goToScreen("templateEdit");
-}
-
-function renderTemplateEditScreen() {
-  const userId = DATA.getCurrentUser();
-  const tpl = DATA.getTemplate(userId, _templateId);
-  if (!tpl) { goToScreen("templates"); return; }
-  $("template-edit-title").textContent = tpl.name;
-  $("template-edit-meta").textContent = `${tpl.exercises.length} ${pluralExercises(tpl.exercises.length)}`;
-  renderTemplateBlocks(tpl);
-}
-
-function persistTemplateExercises(tpl) {
-  DATA.updateTemplateExercises(DATA.getCurrentUser(), tpl.id, tpl.exercises);
-  SyncQueue.push("template:update", { templateId: tpl.id });
-  $("template-edit-meta").textContent = `${tpl.exercises.length} ${pluralExercises(tpl.exercises.length)}`;
-}
-
-function renderTemplateBlocks(tpl) {
-  if (!tpl.exercises.length) {
-    templateBlocksEl.innerHTML = `<p class="empty-state">В шаблоне пока нет упражнений — добавь первое кнопкой ниже.</p>`;
-    return;
-  }
-
-  const exercisesLib = DATA.getVisibleExercises(DATA.getCurrentUser());
-  templateBlocksEl.innerHTML = "";
-
-  tpl.exercises.forEach((ex, idx) => {
-    const exDef = exercisesLib.find(e => e.id === ex.exerciseId) || { name: ex.name || "Упражнение недоступно" };
-    const canUp = idx > 0, canDown = idx < tpl.exercises.length - 1;
-
-    const block = document.createElement("div");
-    block.className = "ex-block";
-    block.innerHTML = `
-      <div class="ex-block-header">
-        <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
-        <div class="ex-reorder">
-          <button class="ex-reorder-btn" data-dir="up" ${canUp ? "" : "disabled"} title="Переместить вверх">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
-          </button>
-          <button class="ex-reorder-btn" data-dir="down" ${canDown ? "" : "disabled"} title="Переместить вниз">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-          </button>
-        </div>
-        <button class="ex-remove-btn" title="Удалить упражнение из шаблона">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div class="tpl-sets-table">
-        <div class="tpl-sets-header"><span>#</span><span>Вес</span><span>Повт</span><span></span></div>
-        <div class="tpl-sets-body"></div>
-      </div>
-      <div class="sets-actions">
-        <button class="btn-chip tpl-add-set-btn" style="flex:1">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Подход
-        </button>
-      </div>
-    `;
-
-    renderTemplateSets(block, tpl, idx);
-
-    block.querySelectorAll(".ex-reorder-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const dir = btn.dataset.dir === "up" ? -1 : 1;
-        const arr = tpl.exercises;
-        [arr[idx], arr[idx + dir]] = [arr[idx + dir], arr[idx]];
-        persistTemplateExercises(tpl);
-        renderTemplateBlocks(tpl);
-      });
-    });
-
-    block.querySelector(".ex-remove-btn").addEventListener("click", () => {
-      tpl.exercises.splice(idx, 1);
-      persistTemplateExercises(tpl);
-      renderTemplateBlocks(tpl);
-    });
-
-    block.querySelector(".tpl-add-set-btn").addEventListener("click", () => {
-      const last = ex.sets[ex.sets.length - 1];
-      ex.sets.push({ weight: last ? last.weight : 0, reps: last ? last.reps : 0 });
-      persistTemplateExercises(tpl);
-      renderTemplateSets(block, tpl, idx);
-    });
-
-    templateBlocksEl.appendChild(block);
-  });
-}
-
-function renderTemplateSets(block, tpl, exIdx) {
-  const ex = tpl.exercises[exIdx];
-  if (!ex.sets.length) ex.sets.push({ weight: 0, reps: 0 }); // в блоке всегда хотя бы один подход
-
-  const tbody = block.querySelector(".tpl-sets-body");
-  tbody.innerHTML = "";
-
-  ex.sets.forEach((set, sIdx) => {
-    const row = document.createElement("div");
-    row.className = "tpl-set-row";
-    row.innerHTML = `
-      <span class="set-num">${sIdx + 1}</span>
-      <div class="set-field"><input type="number" inputmode="decimal" placeholder="кг" value="${set.weight || ""}" step="0.5"></div>
-      <div class="set-field"><input type="number" inputmode="numeric" placeholder="повт" value="${set.reps || ""}"></div>
-      <button class="tpl-set-remove" title="Удалить подход" ${ex.sets.length <= 1 ? "disabled" : ""}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    `;
-
-    const weightInput = row.querySelectorAll("input")[0];
-    weightInput.addEventListener("change", () => {
-      ex.sets[sIdx].weight = parseFloat(weightInput.value) || 0;
-      persistTemplateExercises(tpl);
-    });
-
-    const repsInput = row.querySelectorAll("input")[1];
-    repsInput.addEventListener("change", () => {
-      ex.sets[sIdx].reps = parseInt(repsInput.value) || 0;
-      persistTemplateExercises(tpl);
-    });
-
-    row.querySelector(".tpl-set-remove").addEventListener("click", () => {
-      if (ex.sets.length <= 1) return;
-      ex.sets.splice(sIdx, 1);
-      persistTemplateExercises(tpl);
-      renderTemplateSets(block, tpl, exIdx);
-    });
-
-    tbody.appendChild(row);
-  });
-}
-
-$("template-detail-back-btn").addEventListener("click", () => goToScreen("templates"));
-
-/* — Переход в редактирование состава (карандаш в шапке и на нижней панели) — */
-$("template-head-edit-btn").addEventListener("click", () => openTemplateEdit(_templateId));
-$("template-edit-btn").addEventListener("click", () => openTemplateEdit(_templateId));
-
-/* — Возврат из редактирования к просмотру — */
-$("template-edit-back-btn").addEventListener("click", () => {
-  renderTemplateDetail();
-  goToScreen("templateDetail");
-});
-
-$("template-add-ex-btn").addEventListener("click", () => {
-  openExercisePicker(exerciseId => {
-    const userId = DATA.getCurrentUser();
-    const tpl = DATA.getTemplate(userId, _templateId);
-    if (!tpl) return;
-    tpl.exercises.push({ exerciseId, sets: [{ weight: 0, reps: 0 }] });
-    persistTemplateExercises(tpl);
-    renderTemplateBlocks(tpl);
-  });
-});
-
-/* — Начать тренировку из шаблона — */
-$("template-start-btn").addEventListener("click", () => {
+/* — Старт тренировки из шаблона: состав выбран за нас, значения — теневые из
+   прошлого раза (всё как при ручном старте и добавлении упражнений) — */
+function tplStartWorkout(id) {
   const userId = DATA.getCurrentUser();
   if (DATA.getActiveWorkout(userId)) {
     showToast("Сначала заверши текущую тренировку");
     goToScreen("workout");
     return;
   }
-  const workout = DATA.startWorkoutFromTemplate(userId, _templateId);
+  const workout = DATA.startWorkoutFromTemplate(userId, id);
   if (!workout) { showToast("Не удалось начать тренировку"); return; }
   goToScreen("workout");
-});
+}
 
-/* — Переименование шаблона — */
-$("template-rename-btn").addEventListener("click", () => {
-  const userId = DATA.getCurrentUser();
-  const tpl = DATA.getTemplate(userId, _templateId);
-  if (!tpl) return;
-  openNameModal({
-    title: "Переименовать шаблон",
-    placeholder: "Название шаблона",
-    initialValue: tpl.name,
-    confirmLabel: "Сохранить",
-    onConfirm: value => {
-      DATA.renameTemplate(userId, _templateId, value);
-      SyncQueue.push("template:rename", { templateId: _templateId });
-      $("template-edit-title").textContent = value;
-      showToast("Шаблон переименован");
-    },
-  });
-});
-
-/* — Удаление шаблона (с возможностью отмены) — */
-$("template-delete-btn").addEventListener("click", () => {
+function deleteTemplateWithUndo(id) {
   const userId = DATA.getCurrentUser();
   const snapshot = [...DATA.getTemplates(userId)];
-  DATA.deleteTemplate(userId, _templateId);
-  SyncQueue.push("template:delete", { templateId: _templateId });
-  goToScreen("templates");
+  DATA.deleteTemplate(userId, id);
+  SyncQueue.push("template:delete", { templateId: id });
+  renderTemplatesList();
   showUndoToast("Шаблон удалён", () => {
     DATA.saveTemplates(userId, snapshot);
     SyncQueue.push("template:create", {}); // повторно зальёт список шаблонов
-    goToScreen("templates");
+    renderTemplatesList();
     showToast("Восстановлено");
   });
-});
+}
 
-/* — «Поделиться» = независимая копия у другого пользователя (раздел 5) — */
-$("template-share-btn").addEventListener("click", () => {
+/* — Переименование шаблона: инлайн-правка названия (как в списке упражнений) — */
+function startTplRename(wrap, id) {
+  const nameEl = wrap.querySelector(".tpl-card-title");
+  if (!nameEl || wrap.dataset.renaming) return;
+  wrap.dataset.renaming = "1";
+
+  const current = nameEl.textContent;
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = current;
+  inp.className = "tpl-title-input";
+  nameEl.replaceWith(inp);
+  inp.focus();
+  inp.select();
+
+  const commit = () => {
+    if (!wrap.dataset.renaming) return;
+    delete wrap.dataset.renaming;
+    const next = inp.value.trim();
+    if (next && next !== current) {
+      DATA.renameTemplate(DATA.getCurrentUser(), id, next);
+      SyncQueue.push("template:rename", { templateId: id });
+    }
+    const div = document.createElement("div");
+    div.className = "tpl-card-title tpl-card-title--edit";
+    div.textContent = next || current;
+    inp.replaceWith(div);
+    div.addEventListener("click", e => { e.stopPropagation(); startTplRename(wrap, id); });
+  };
+
+  inp.addEventListener("blur", commit);
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); inp.blur(); }
+    if (e.key === "Escape") { inp.value = current; inp.blur(); }
+  });
+  inp.addEventListener("pointerdown", e => e.stopPropagation());
+}
+
+/* — Добавить упражнение в шаблон (кнопка в карточке) — */
+function tplAddExercise(id) {
+  openExercisePicker(exId => {
+    const userId = DATA.getCurrentUser();
+    const tpl = DATA.getTemplate(userId, id);
+    if (!tpl) return;
+    const name = DATA.getVisibleExercises(userId).find(e => e.id === exId)?.name;
+    tpl.exercises.push({ exerciseId: exId, name });
+    DATA.updateTemplateExercises(userId, id, tpl.exercises);
+    SyncQueue.push("template:update", { templateId: id });
+    renderTemplatesList();
+  });
+}
+
+/* — Заменить упражнение (тап по ячейке в режиме правки) — */
+function tplSwapExercise(id, idx) {
   const userId = DATA.getCurrentUser();
-  const others = DATA.USERS.filter(u => u.id !== userId);
+  const tpl = DATA.getTemplate(userId, id);
+  if (!tpl || !tpl.exercises[idx]) return;
+  openExercisePicker(newId => {
+    const name = DATA.getVisibleExercises(userId).find(e => e.id === newId)?.name;
+    tpl.exercises[idx] = { exerciseId: newId, name };
+    DATA.updateTemplateExercises(userId, id, tpl.exercises);
+    SyncQueue.push("template:update", { templateId: id });
+    renderTemplatesList();
+  }, tpl.exercises[idx].exerciseId);
+}
 
-  if (!others.length) { showToast("Делиться не с кем"); return; }
+/* — Привязка жестов и кнопок одной карточки — */
+function wireTplCard(id) {
+  const wrap = templatesScroll.querySelector(`.tpl-card-wrap[data-id="${id}"]`);
+  if (!wrap) return;
+  const card = wrap.querySelector(".tpl-card");
 
-  shareModalList.innerHTML = others.map(u => `
-    <button class="modal-option" data-user="${u.id}">
-      <span class="avatar sm ${u.avatarClass}">${u.initial}</span>
-      <span>${u.name}</span>
-    </button>
-  `).join("");
+  if (_tplEditMode) {
+    const title = wrap.querySelector(".tpl-card-title--edit");
+    if (title) title.addEventListener("click", e => { e.stopPropagation(); startTplRename(wrap, id); });
+    const addEx = wrap.querySelector(".tpl-ex-add");
+    if (addEx) addEx.addEventListener("click", e => { e.stopPropagation(); tplAddExercise(id); });
+    wrap.querySelectorAll(".tpl-ex-cell").forEach(cell => wireTplExCell(cell, wrap, id));
+  } else {
+    const startBtn = wrap.querySelector(".tpl-card-start");
+    if (startBtn) startBtn.addEventListener("click", e => { e.stopPropagation(); tplStartWorkout(id); });
+    wireTplCardHold(wrap, card);
+    wireTplCardSwipe(wrap, id);
+  }
+}
 
-  shareModalList.querySelectorAll(".modal-option").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const toUserId = btn.dataset.user;
-      const toUser = others.find(u => u.id === toUserId);
-      closeModal(shareModalBackdrop);
-      await Sync.shareTemplate(_templateId, userId, toUserId);
-      showToast(`Шаблон скопирован для ${toUser ? toUser.name : "пользователя"}`);
-    });
+// Долгое нажатие по карточке (вне режима правки) → вход в режим правки.
+function wireTplCardHold(wrap, card) {
+  let holdTimer = null, sx = 0, sy = 0, moved = false;
+  const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+  const begin = (x, y, target) => {
+    if (target.closest("button, input")) return;
+    moved = false; sx = x; sy = y; clearHold();
+    holdTimer = setTimeout(() => { holdTimer = null; if (!moved) enterTplEditMode(); }, 430);
+  };
+  const move = (x, y) => { if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); } };
+  const finish = () => clearHold();
+
+  card.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
+  card.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY); }, { passive: true });
+  card.addEventListener("touchend",   finish);
+  card.addEventListener("touchcancel", finish);
+  card.addEventListener("mousedown", e => {
+    begin(e.clientX, e.clientY, e.target);
+    const mm = ev => move(ev.clientX, ev.clientY);
+    const mu = () => { finish(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); };
+    window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu);
+  });
+}
+
+// Свайп влево по карточке (вне режима правки) → удалить шаблон (с откатом).
+function wireTplCardSwipe(wrap, id) {
+  const row = wrap.querySelector(".tpl-card");
+  if (!row) return;
+  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, didSwipe = false;
+  const MAX = 124, DEL = 86;
+
+  row.addEventListener("pointerdown", e => {
+    if (e.target.closest("button, input")) return;
+    sx = e.clientX; sy = e.clientY; dx = 0;
+    active = true; decided = false; horiz = false; didSwipe = false;
+    row.style.transition = "";
+  });
+  row.addEventListener("pointermove", e => {
+    if (!active) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!decided) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      decided = true;
+      horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+      if (!horiz) { active = false; return; }
+      wrap.classList.add("swiping");
+      try { row.setPointerCapture(e.pointerId); } catch {}
+    }
+    if (!horiz) return;
+    dx = Math.max(-MAX, Math.min(0, mx));
+    if (dx < -4) didSwipe = true;
+    row.style.transform = `translateX(${dx}px)`;
+    wrap.classList.toggle("will-delete", dx <= -DEL);
+  });
+  row.addEventListener("touchmove", e => {
+    if (!active) return;
+    const t = e.touches[0]; if (!t) return;
+    const mx = t.clientX - sx, my = t.clientY - sy;
+    if (horiz || (Math.abs(mx) >= 8 && mx < 0 && Math.abs(mx) > Math.abs(my))) {
+      if (e.cancelable) e.preventDefault();
+    }
+  }, { passive: false });
+  const settle = () => {
+    if (!active) return;
+    active = false;
+    if (!horiz) return;
+    if (dx <= -DEL) {
+      row.style.transition = "transform 0.16s ease";
+      row.style.transform = "translateX(-110%)";
+      wrap.style.height = wrap.offsetHeight + "px";
+      requestAnimationFrame(() => {
+        wrap.style.transition = "height 0.18s ease, opacity 0.18s ease";
+        wrap.style.height = "0"; wrap.style.opacity = "0";
+      });
+      setTimeout(() => deleteTemplateWithUndo(id), 200);
+    } else {
+      row.style.transition = "transform 0.18s ease";
+      row.style.transform = "";
+      wrap.classList.remove("will-delete");
+      setTimeout(() => wrap.classList.remove("swiping"), 200);
+    }
+  };
+  row.addEventListener("pointerup", settle);
+  row.addEventListener("pointercancel", settle);
+  row.addEventListener("click", e => {
+    if (didSwipe) { e.stopPropagation(); e.preventDefault(); didSwipe = false; }
+  }, true);
+}
+
+// Ячейка упражнения в режиме правки: тап → замена, крестик → удалить, зажатие → перетащить.
+function wireTplExCell(cell, wrap, id) {
+  const listEl = wrap.querySelector(".tpl-ex-list");
+  const removeBtn = cell.querySelector(".tpl-ex-remove");
+  if (removeBtn) removeBtn.addEventListener("click", e => {
+    e.stopPropagation();
+    const userId = DATA.getCurrentUser();
+    const tpl = DATA.getTemplate(userId, id);
+    if (!tpl) return;
+    const i = +cell.dataset.idx;
+    tpl.exercises.splice(i, 1);
+    DATA.updateTemplateExercises(userId, id, tpl.exercises);
+    SyncQueue.push("template:update", { templateId: id });
+    renderTemplatesList();
   });
 
-  openModal(shareModalBackdrop);
-});
+  let holdTimer = null, sx = 0, sy = 0, moved = false, dragging = false;
+  const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+  const begin = (x, y, target) => {
+    if (target.closest(".tpl-ex-remove")) return;
+    moved = false; dragging = false; sx = x; sy = y; clearHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      if (moved) return;
+      dragging = true;
+      startTplExDrag(cell, listEl, y);
+    }, 250);
+  };
+  const move = (x, y, e) => {
+    if (dragging) { if (e && e.cancelable) e.preventDefault(); moveTplExDrag(y); return; }
+    if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); }
+  };
+  const finish = () => {
+    clearHold();
+    if (dragging) { dragging = false; cell.dataset.justDragged = "1"; endTplExDrag(id); }
+  };
 
-$("share-modal-cancel").addEventListener("click", () => closeModal(shareModalBackdrop));
+  cell.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
+  cell.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
+  cell.addEventListener("touchend",   finish);
+  cell.addEventListener("touchcancel", finish);
+  cell.addEventListener("mousedown", e => {
+    begin(e.clientX, e.clientY, e.target);
+    const mm = ev => move(ev.clientX, ev.clientY, null);
+    const mu = () => { finish(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); };
+    window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu);
+  });
+  cell.addEventListener("click", e => {
+    if (e.target.closest(".tpl-ex-remove")) return;
+    if (cell.dataset.justDragged) { delete cell.dataset.justDragged; e.stopPropagation(); return; }
+    if (moved) return;
+    e.stopPropagation();
+    tplSwapExercise(id, +cell.dataset.idx);
+  });
+}
+
+function startTplExDrag(cell, listEl, pointerY) {
+  if (_tplDrag) return;
+  const wrap = listEl.closest(".tpl-card-wrap");
+  if (wrap) wrap.classList.add("dragging");      // пауза «дрожания» на время перетаскивания
+  const top = cell.getBoundingClientRect().top;
+  _tplDrag = { cell, listEl, wrap, grabDy: pointerY - top, ty: 0 };
+  cell.style.transition = "none";
+  cell.classList.add("tpl-ex-dragging");
+  haptic(18);
+}
+
+function moveTplExDrag(pointerY) {
+  const d = _tplDrag; if (!d) return;
+  const h = d.cell.getBoundingClientRect().height;
+  const center = (pointerY - d.grabDy) + h / 2;
+
+  let insertBeforeEl = null;
+  for (const child of d.listEl.children) {
+    if (child === d.cell) continue;
+    const r = child.getBoundingClientRect();
+    if (r.top + r.height / 2 > center) { insertBeforeEl = child; break; }
+  }
+  const curNext = d.cell.nextElementSibling;
+  if (insertBeforeEl !== curNext && insertBeforeEl !== d.cell) {
+    d.listEl.insertBefore(d.cell, insertBeforeEl);
+  }
+
+  const rect = d.cell.getBoundingClientRect();
+  const naturalTop = rect.top - d.ty;
+  d.ty = (pointerY - d.grabDy) - naturalTop;
+  d.cell.style.transform = `translateY(${d.ty}px)`;
+}
+
+function endTplExDrag(id) {
+  const d = _tplDrag; if (!d) return;
+  _tplDrag = null;
+  d.cell.style.transition = "transform 0.18s ease";
+  d.cell.style.transform = "";
+  d.cell.classList.remove("tpl-ex-dragging");
+  if (d.wrap) d.wrap.classList.remove("dragging");
+  setTimeout(() => { d.cell.style.transition = ""; }, 200);
+
+  const userId = DATA.getCurrentUser();
+  const tpl = DATA.getTemplate(userId, id);
+  if (!tpl) return;
+  const cells = [...d.listEl.querySelectorAll(".tpl-ex-cell")];
+  tpl.exercises = cells.map(c => tpl.exercises[+c.dataset.idx]);
+  DATA.updateTemplateExercises(userId, id, tpl.exercises);
+  SyncQueue.push("template:update", { templateId: id });
+  // Переиндексируем data-idx на месте (без ре-рендера — иначе ложный tap по ячейке).
+  cells.forEach((c, i) => { c.dataset.idx = i; });
+}
 
 /* — Универсальная модалка ввода имени: сохранение шаблона из тренировки / переименование — */
 let _nameModalOnConfirm = null;
@@ -5228,7 +5331,6 @@ if ("serviceWorker" in navigator) {
     "screen-stats":           "stats-back-btn",
     "screen-stat-chart":      "stat-chart-back-btn",
     "screen-templates":       "templates-back-btn",
-    "screen-template-detail": "template-detail-back-btn",
     "screen-detail":          "detail-back-btn",
     "screen-exercise-detail": "exd-back-btn",
   };
@@ -5245,6 +5347,7 @@ if ("serviceWorker" in navigator) {
   }
   function blocked() {
     if (typeof _exEdit !== "undefined" && _exEdit) return true;   // идёт перестановка
+    if (typeof _tplDrag !== "undefined" && _tplDrag) return true; // тащим упражнение в шаблоне
     return !!document.querySelector(".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open");
   }
   function down(x, y) {
