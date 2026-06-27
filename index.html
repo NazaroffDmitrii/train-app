@@ -1708,6 +1708,12 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .s-prog-flat { background:var(--panel-raised); border:1px solid var(--border-subtle); color:var(--text-tertiary); }
 .s-empty { padding:24px 14px; text-align:center; font-size:13px; color:var(--text-tertiary); font-style:italic; }
 
+/* Плитки метрик (детальные данные за период / хайлайты) */
+.s-tiles { display:grid; gap:8px; }
+.s-tiles + .s-tiles { margin-top:8px; }
+.s-tiles-2 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.s-tiles-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+
 /* ── Редизайн карточек статистики (06 · Статистика) ── */
 .s-card-stat { text-align: center; }
 .s-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 11px 0; }
@@ -2178,6 +2184,10 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
         </button>
         <div class="exercises-header-title">Статистика</div>
       </div>
+    </div>
+    <div class="history-filters-row">
+      <div class="history-dd" id="stats-type-dd"></div>
+      <div class="history-dd" id="stats-period-dd"></div>
     </div>
     <div class="exercises-scroll" id="stats-scroll"></div>
   </section>
