@@ -46,7 +46,6 @@ const Sync = (() => {
   function syncedVerKey(userId) { return `train_synced_version_${userId}`; }
   function dirtyKey(userId)     { return `train_local_dirty_${userId}`; }
   function syncedAtKey(userId)  { return `train_last_synced_at_${userId}`; }
-  function backupKey(userId)    { return `train_local_backup_${userId}`; }
   const DEVICE_KEY = "train_device_id";
 
   function getSyncedVersion(userId) {
@@ -279,39 +278,6 @@ const Sync = (() => {
     }
   }
 
-  /* ----- локальный бэкап на устройстве (не облако) -----
-   * Раз в сутки при открытии приложения снимается снимок локальных данных —
-   * страховка от собственных ошибок (случайно стёр упражнения, неудачный
-   * импорт и т.п.), никак не связанная с Supabase. Хранится только ПОСЛЕДНИЙ
-   * снимок (не история версий) — этого достаточно как отход на день назад,
-   * а не полноценная система версионирования.
-   */
-  function captureLocalData(userId) { return buildSnapshot(userId, 0).data; }
-  function applyLocalData(userId, data) { applySnapshot(userId, { data }); }
-
-  function createLocalBackupIfDue(userId) {
-    try {
-      const raw = localStorage.getItem(backupKey(userId));
-      const existing = raw ? JSON.parse(raw) : null;
-      if (existing && Date.now() - existing.at < 24 * 60 * 60 * 1000) return;
-      localStorage.setItem(backupKey(userId), JSON.stringify({ at: Date.now(), data: captureLocalData(userId) }));
-    } catch (e) { console.warn("Sync.createLocalBackupIfDue failed", e); }
-  }
-
-  function getLocalBackup(userId) {
-    try {
-      const raw = localStorage.getItem(backupKey(userId));
-      return raw ? JSON.parse(raw) : null;
-    } catch { return null; }
-  }
-
-  function restoreLocalBackup(userId) {
-    const backup = getLocalBackup(userId);
-    if (!backup) return false;
-    applyLocalData(userId, backup.data);
-    return true;
-  }
-
   /* ----- «Поделиться» с другим пользователем ----- */
   // Записываем прямо в снапшот получателя: читаем его, добавляем элемент,
   // version++. Best-effort — рассчитано на то, что получатель в этот момент не
@@ -375,6 +341,5 @@ const Sync = (() => {
     syncedVersion: getSyncedVersion, lastSyncedAt: getLastSyncedAt,
     shareTemplate, shareExercise,
     hydrateUser, loadMoreWorkouts, missingWorkoutCount,
-    createLocalBackupIfDue, getLocalBackup, restoreLocalBackup, captureLocalData, applyLocalData,
   };
 })();

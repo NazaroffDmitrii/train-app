@@ -985,11 +985,11 @@ function goToScreen(name, opts = {}) {
 
 // Гигиена на каждый вход в профиль — и при явном выборе на экране профилей,
 // и при автоматическом восстановлении сессии в init() (обычный случай:
-// приложение уже открыто под этим пользователем). Локальный бэкап снимается
-// не чаще раза в сутки; напоминание — только чтение localStorage, без сети.
+// приложение уже открыто под этим пользователем). Оба напоминания — только
+// чтение localStorage, без сети; показываем не больше одного тоста за раз,
+// синхронизация приоритетнее (риск больше — расхождение между устройствами).
 function onProfileEnter(userId) {
-  Sync.createLocalBackupIfDue(userId);
-  notifyStaleSync(userId);
+  if (!notifyStaleSync(userId)) notifyStaleExport(userId);
 }
 
 /* ==========================================================================
@@ -1436,7 +1436,6 @@ document.querySelectorAll(".pill").forEach(pill => {
     const action = pill.dataset.action;
     if (action === "settings")  {
       updateSettingsSyncInfo();
-      updateRestoreBackupBtn();
       openModal(settingsModalBackdrop);
       return;
     }
@@ -1466,19 +1465,21 @@ function rerenderAfterSync() {
   }
 }
 
-function formatSyncAge(days) {
+function formatDaysAgo(days) {
   if (days <= 0) return "сегодня";
   return `${days} ${pluralDays(days)} назад`;
 }
 
 // Мягкое напоминание при входе в профиль — никаких сетевых запросов, просто
-// сверяем локальную метку последней успешной синхронизации.
+// сверяем локальную метку последней успешной синхронизации. true — если
+// что-то показали (чтобы не перекрыть напоминанием про экспорт следом).
 function notifyStaleSync(userId) {
-  if (!Storage.isEnabled()) return;
+  if (!Storage.isEnabled()) return false;
   const lastSynced = Sync.lastSyncedAt(userId);
-  if (lastSynced === null) { showToast("Ты ещё ни разу не синхронизировался с облаком"); return; }
+  if (lastSynced === null) { showToast("Ты ещё ни разу не синхронизировался с облаком"); return true; }
   const days = Math.floor((Date.now() - lastSynced) / 86400000);
-  if (days >= 1) showToast(`Не синхронизировался ${formatSyncAge(days)}`);
+  if (days >= 1) { showToast(`Не синхронизировался ${formatDaysAgo(days)}`); return true; }
+  return false;
 }
 
 function updateSettingsSyncInfo() {
@@ -1489,21 +1490,7 @@ function updateSettingsSyncInfo() {
   const lastSynced = Sync.lastSyncedAt(userId);
   el.textContent = lastSynced === null
     ? "Ещё ни разу не синхронизировался"
-    : `Последняя синхронизация: ${formatSyncAge(Math.floor((Date.now() - lastSynced) / 86400000))}`;
-}
-
-function updateRestoreBackupBtn() {
-  const btn = $("restore-backup-btn");
-  const label = $("restore-backup-label");
-  const userId = DATA.getCurrentUser();
-  if (!btn || !label || !userId) return;
-  const backup = Sync.getLocalBackup(userId);
-  if (!backup) { btn.style.display = "none"; return; }
-  btn.style.display = "";
-  const d = new Date(backup.at);
-  const datePart = d.toLocaleDateString("ru-RU");
-  const timePart = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-  label.textContent = `Восстановить локальную копию от ${datePart} ${timePart}`;
+    : `Последняя синхронизация: ${formatDaysAgo(Math.floor((Date.now() - lastSynced) / 86400000))}`;
 }
 
 function syncResultMessage(res, kind) {
@@ -1578,21 +1565,6 @@ $("download-data-btn").addEventListener("click", () => {
   runSync("download");
   if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.update()));
 });
-$("restore-backup-btn").addEventListener("click", () => {
-  const userId = DATA.getCurrentUser();
-  const backup = Sync.getLocalBackup(userId);
-  if (!backup) return;
-  const before = Sync.captureLocalData(userId); // чтобы можно было отменить
-  Sync.restoreLocalBackup(userId);
-  SyncQueue.push("backup:restore", {});
-  closeModal(settingsModalBackdrop);
-  rerenderAfterSync();
-  showUndoToast("Локальная копия восстановлена", () => {
-    Sync.applyLocalData(userId, before);
-    SyncQueue.push("backup:restore-undo", {});
-    rerenderAfterSync();
-  });
-});
 $("switch-user-btn").addEventListener("click", () => {
   closeModal(settingsModalBackdrop);
   DATA.clearCurrentUser();
@@ -1618,9 +1590,20 @@ function userDataKeys(userId) {
   return keys;
 }
 
-$("export-data-btn").addEventListener("click", () => {
-  const userId = DATA.getCurrentUser();
-  if (!userId) { showToast("Сначала выбери профиль"); return; }
+// Метка последнего экспорта — только для мягкого напоминания (раздел ниже),
+// сети не касается.
+function exportedAtKey(userId) { return `train_last_export_at_${userId}`; }
+function getLastExportedAt(userId) {
+  const v = Number(localStorage.getItem(exportedAtKey(userId)));
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+function setLastExportedAt(userId) {
+  try { localStorage.setItem(exportedAtKey(userId), String(Date.now())); } catch {}
+}
+
+// Общая логика скачивания файла — используется и кнопкой в настройках, и
+// напоминанием (кнопка "Экспортировать" прямо в тосте).
+function exportUserData(userId) {
   const data = {};
   userDataKeys(userId).forEach(k => data[k] = localStorage.getItem(k));
   const payload = { app: "train.", version: 2, user: userId, exportedAt: new Date().toISOString(), data };
@@ -1635,6 +1618,31 @@ $("export-data-btn").addEventListener("click", () => {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setLastExportedAt(userId);
+}
+
+// Напоминание при входе в профиль, раз в ~2 дня — экспорт это реальный файл
+// на диске, локальный откат в localStorage мы сознательно убрали (см. чат):
+// на iPhone standalone-режим может не делить хранилище с обычным Safari, а
+// File System Access API там вообще недоступен, поэтому «тихого автосохранения
+// в папку» одинаково на всех устройствах не сделать — только явное действие.
+function notifyStaleExport(userId) {
+  const lastExported = getLastExportedAt(userId);
+  const days = lastExported === null ? Infinity : Math.floor((Date.now() - lastExported) / 86400000);
+  if (days < 2) return;
+  const msg = lastExported === null
+    ? "Ты ещё ни разу не делал экспорт данных"
+    : `Экспорт данных давно не делался (${formatDaysAgo(days)})`;
+  showActionToast(msg, "Экспортировать", () => {
+    exportUserData(userId);
+    showToast("Копия данных сохранена");
+  }, 6000);
+}
+
+$("export-data-btn").addEventListener("click", () => {
+  const userId = DATA.getCurrentUser();
+  if (!userId) { showToast("Сначала выбери профиль"); return; }
+  exportUserData(userId);
   closeModal(settingsModalBackdrop);
   showToast("Копия данных сохранена");
 });
