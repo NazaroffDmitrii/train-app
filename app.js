@@ -7,13 +7,9 @@ function escHtml(s) {
 }
 
 Storage.configure({
-  enabled:   CONFIG.ENABLED,
-  accessKey: CONFIG.ACCESS_KEY,
-  // Мастер-ключ НЕ подставляем из ACCESS_KEY: иначе ограниченный Access Key,
-  // положенный в ACCESS_KEY, молча трактовался бы как мастер-ключ (X-Master-Key),
-  // и сценарий «в деплой кладём только ограниченный ключ» не заработал бы. Если
-  // MASTER_KEY пуст, storage.js шлёт X-Access-Key (см. authHeaders/createAuthHeaders).
-  masterKey: CONFIG.MASTER_KEY || "",
+  enabled: CONFIG.ENABLED,
+  baseUrl: CONFIG.SUPABASE_URL,
+  apiKey:  CONFIG.SUPABASE_KEY,
 });
 
 /* ==========================================================================
