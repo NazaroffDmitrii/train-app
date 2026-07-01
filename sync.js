@@ -45,6 +45,8 @@ const Sync = (() => {
   /* ----- ключи локального состояния синхронизации ----- */
   function syncedVerKey(userId) { return `train_synced_version_${userId}`; }
   function dirtyKey(userId)     { return `train_local_dirty_${userId}`; }
+  function syncedAtKey(userId)  { return `train_last_synced_at_${userId}`; }
+  function backupKey(userId)    { return `train_local_backup_${userId}`; }
   const DEVICE_KEY = "train_device_id";
 
   function getSyncedVersion(userId) {
@@ -62,6 +64,13 @@ const Sync = (() => {
       if (on) localStorage.setItem(dirtyKey(userId), "1");
       else localStorage.removeItem(dirtyKey(userId));
     } catch {}
+  }
+  function getLastSyncedAt(userId) {
+    const v = Number(localStorage.getItem(syncedAtKey(userId)));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  }
+  function setLastSyncedAt(userId) {
+    try { localStorage.setItem(syncedAtKey(userId), String(Date.now())); } catch {}
   }
   function deviceId() {
     let id = localStorage.getItem(DEVICE_KEY);
@@ -228,6 +237,7 @@ const Sync = (() => {
       await writeSnapshot(userId, buildSnapshot(userId, newVersion));
       setSyncedVersion(userId, newVersion);
       setDirty(userId, false);
+      setLastSyncedAt(userId);
       notifyStatus();
       return { status: "ok", version: newVersion };
     } catch (e) {
@@ -259,6 +269,7 @@ const Sync = (() => {
       applySnapshot(userId, remote);
       setSyncedVersion(userId, remote.version);
       setDirty(userId, false);
+      setLastSyncedAt(userId);
       notifyStatus();
       return { status: "ok", version: remote.version };
     } catch (e) {
@@ -266,6 +277,39 @@ const Sync = (() => {
       notifyStatus();
       return { status: "error", error: lastError };
     }
+  }
+
+  /* ----- локальный бэкап на устройстве (не облако) -----
+   * Раз в сутки при открытии приложения снимается снимок локальных данных —
+   * страховка от собственных ошибок (случайно стёр упражнения, неудачный
+   * импорт и т.п.), никак не связанная с Supabase. Хранится только ПОСЛЕДНИЙ
+   * снимок (не история версий) — этого достаточно как отход на день назад,
+   * а не полноценная система версионирования.
+   */
+  function captureLocalData(userId) { return buildSnapshot(userId, 0).data; }
+  function applyLocalData(userId, data) { applySnapshot(userId, { data }); }
+
+  function createLocalBackupIfDue(userId) {
+    try {
+      const raw = localStorage.getItem(backupKey(userId));
+      const existing = raw ? JSON.parse(raw) : null;
+      if (existing && Date.now() - existing.at < 24 * 60 * 60 * 1000) return;
+      localStorage.setItem(backupKey(userId), JSON.stringify({ at: Date.now(), data: captureLocalData(userId) }));
+    } catch (e) { console.warn("Sync.createLocalBackupIfDue failed", e); }
+  }
+
+  function getLocalBackup(userId) {
+    try {
+      const raw = localStorage.getItem(backupKey(userId));
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  function restoreLocalBackup(userId) {
+    const backup = getLocalBackup(userId);
+    if (!backup) return false;
+    applyLocalData(userId, backup.data);
+    return true;
   }
 
   /* ----- «Поделиться» с другим пользователем ----- */
@@ -328,8 +372,9 @@ const Sync = (() => {
   return {
     push, flush, size: pendingCount, lastError: getLastError,
     upload, download, isDirty: () => { const u = DATA.getCurrentUser(); return !!(u && isDirty(u)); },
-    syncedVersion: getSyncedVersion,
+    syncedVersion: getSyncedVersion, lastSyncedAt: getLastSyncedAt,
     shareTemplate, shareExercise,
     hydrateUser, loadMoreWorkouts, missingWorkoutCount,
+    createLocalBackupIfDue, getLocalBackup, restoreLocalBackup, captureLocalData, applyLocalData,
   };
 })();

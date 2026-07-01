@@ -920,6 +920,13 @@ function pluralChanges(n) {
   return "изменений";
 }
 
+function pluralDays(n) {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "день";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "дня";
+  return "дней";
+}
+
 /* ==========================================================================
    Online status
    ========================================================================== */
@@ -976,6 +983,15 @@ function goToScreen(name, opts = {}) {
   if (name === "templates") { initTemplatesScreen(); }
 }
 
+// Гигиена на каждый вход в профиль — и при явном выборе на экране профилей,
+// и при автоматическом восстановлении сессии в init() (обычный случай:
+// приложение уже открыто под этим пользователем). Локальный бэкап снимается
+// не чаще раза в сутки; напоминание — только чтение localStorage, без сети.
+function onProfileEnter(userId) {
+  Sync.createLocalBackupIfDue(userId);
+  notifyStaleSync(userId);
+}
+
 /* ==========================================================================
    Screen 1: profile
    ========================================================================== */
@@ -995,6 +1011,7 @@ function renderProfiles() {
       DATA.setCurrentUser(user.id);
       _menuHydrating = Storage.isEnabled() && navigator.onLine;
       goToScreen("menu");
+      onProfileEnter(user.id);
       // Гидратация в фоне — переход на главный экран не ждёт сеть (раздел 8:
       // local-first). Если что-то подтянулось, тихо обновляем уже открытое меню.
       Sync.hydrateUser(user.id).then(() => {
@@ -1417,7 +1434,12 @@ $("modal-cancel").addEventListener("click", () => closeModal(typeModalBackdrop))
 document.querySelectorAll(".pill").forEach(pill => {
   pill.addEventListener("click", () => {
     const action = pill.dataset.action;
-    if (action === "settings")  { openModal(settingsModalBackdrop); return; }
+    if (action === "settings")  {
+      updateSettingsSyncInfo();
+      updateRestoreBackupBtn();
+      openModal(settingsModalBackdrop);
+      return;
+    }
     if (action === "exercises") { goToScreen("exercises"); return; }
     if (action === "stats")     { goToScreen("stats"); return; }
     if (action === "templates") { goToScreen("templates"); return; }
@@ -1442,6 +1464,46 @@ function rerenderAfterSync() {
   for (const name of dataScreens) {
     if (SCREENS[name] && SCREENS[name].classList.contains("active")) { goToScreen(name); return; }
   }
+}
+
+function formatSyncAge(days) {
+  if (days <= 0) return "сегодня";
+  return `${days} ${pluralDays(days)} назад`;
+}
+
+// Мягкое напоминание при входе в профиль — никаких сетевых запросов, просто
+// сверяем локальную метку последней успешной синхронизации.
+function notifyStaleSync(userId) {
+  if (!Storage.isEnabled()) return;
+  const lastSynced = Sync.lastSyncedAt(userId);
+  if (lastSynced === null) { showToast("Ты ещё ни разу не синхронизировался с облаком"); return; }
+  const days = Math.floor((Date.now() - lastSynced) / 86400000);
+  if (days >= 1) showToast(`Не синхронизировался ${formatSyncAge(days)}`);
+}
+
+function updateSettingsSyncInfo() {
+  const el = $("settings-sync-info");
+  const userId = DATA.getCurrentUser();
+  if (!el || !userId) return;
+  if (!Storage.isEnabled()) { el.textContent = ""; return; }
+  const lastSynced = Sync.lastSyncedAt(userId);
+  el.textContent = lastSynced === null
+    ? "Ещё ни разу не синхронизировался"
+    : `Последняя синхронизация: ${formatSyncAge(Math.floor((Date.now() - lastSynced) / 86400000))}`;
+}
+
+function updateRestoreBackupBtn() {
+  const btn = $("restore-backup-btn");
+  const label = $("restore-backup-label");
+  const userId = DATA.getCurrentUser();
+  if (!btn || !label || !userId) return;
+  const backup = Sync.getLocalBackup(userId);
+  if (!backup) { btn.style.display = "none"; return; }
+  btn.style.display = "";
+  const d = new Date(backup.at);
+  const datePart = d.toLocaleDateString("ru-RU");
+  const timePart = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  label.textContent = `Восстановить локальную копию от ${datePart} ${timePart}`;
 }
 
 function syncResultMessage(res, kind) {
@@ -1515,6 +1577,21 @@ $("download-data-btn").addEventListener("click", () => {
   closeModal(settingsModalBackdrop);
   runSync("download");
   if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.update()));
+});
+$("restore-backup-btn").addEventListener("click", () => {
+  const userId = DATA.getCurrentUser();
+  const backup = Sync.getLocalBackup(userId);
+  if (!backup) return;
+  const before = Sync.captureLocalData(userId); // чтобы можно было отменить
+  Sync.restoreLocalBackup(userId);
+  SyncQueue.push("backup:restore", {});
+  closeModal(settingsModalBackdrop);
+  rerenderAfterSync();
+  showUndoToast("Локальная копия восстановлена", () => {
+    Sync.applyLocalData(userId, before);
+    SyncQueue.push("backup:restore-undo", {});
+    rerenderAfterSync();
+  });
 });
 $("switch-user-btn").addEventListener("click", () => {
   closeModal(settingsModalBackdrop);
@@ -5661,6 +5738,7 @@ function init() {
     // Скелетон показываем только когда реально есть что тянуть (онлайн + sync).
     _menuHydrating = Storage.isEnabled() && navigator.onLine;
     goToScreen("menu");
+    onProfileEnter(userId);
     Sync.hydrateUser(userId).then(() => {
       _menuHydrating = false;
       if (screenMenu.classList.contains("active")) refreshMenu();

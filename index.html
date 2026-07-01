@@ -481,6 +481,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .settings-grid-btn { flex-direction: column; justify-content: center; gap: 8px; padding: 14px 10px; text-align: center; font-size: 13px; }
 .settings-grid-btn .modal-option-icon { width: 26px; height: 26px; }
 #switch-user-btn { justify-content: center; }
+.modal-sync-info { color: var(--text-secondary); font-size: 13px; margin: -6px 0 14px; }
 
 /* Блокировка горизонтальной ориентации */
 #landscape-block {
@@ -2324,6 +2325,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   <div class="modal-backdrop" id="settings-modal-backdrop">
     <div class="modal">
       <h2 class="modal-title">Настройки</h2>
+      <p class="modal-sync-info" id="settings-sync-info"></p>
       <div class="settings-grid">
         <!-- Из облака -->
         <button class="modal-option settings-grid-btn" id="download-data-btn">
@@ -2366,6 +2368,15 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
           <span>Экспорт</span>
         </button>
       </div>
+      <!-- Восстановить локальную копию — показывается, только если она есть -->
+      <button class="modal-option" id="restore-backup-btn" style="display:none">
+        <span class="modal-option-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>
+          </svg>
+        </span>
+        <span id="restore-backup-label">Восстановить локальную копию</span>
+      </button>
       <!-- Сменить профиль — полная ширина -->
       <button class="modal-option" id="switch-user-btn">
         <span class="modal-option-icon">
