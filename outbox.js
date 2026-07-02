@@ -113,3 +113,32 @@ const Outbox = (() => {
 
   return { enqueueWorkout, enqueueDeleteWorkout, enqueueUserData, flush, count, all };
 })();
+
+/* ---- индикатор синхронизации ----
+ * ПЕРЕОПРЕДЕЛЯЕТ updateOnlineStatus() из app.js (та function-декларация,
+ * замена работает без правок app.js — тот же приём, что в auth-ui.js).
+ *
+ * Старая версия читала SyncQueue.size() → isDirty-флаг в localStorage,
+ * который выставляли десятки разбросанных по app.js SyncQueue.push(...) и
+ * сбрасывали только внутри удалённых кнопок «В облако»/«Из облака» (см.
+ * cleanup п.1). После их удаления флаг залипал навсегда → жёлтый «Есть
+ * несинхронизированные изменения» горел даже при пустой очереди. Настоящий
+ * источник истины теперь — количество операций в Outbox.
+ */
+function updateOnlineStatus() {
+  const online = navigator.onLine;
+  statusDot.classList.toggle("offline", !online);
+  Outbox.count().then(pending => {
+    statusDot.classList.toggle("pending", online && pending > 0);
+    statusDot.classList.remove("error"); // старое error-состояние (snapshot-sync) не используется
+    if (!online) {
+      statusText.textContent = pending > 0
+        ? "Нет сети — есть несинхронизированные изменения"
+        : "Нет сети — данные сохраняются локально";
+    } else if (pending > 0) {
+      statusText.textContent = "Отправляем изменения…";
+    } else {
+      statusText.textContent = "Работаем онлайн";
+    }
+  }).catch(() => {});
+}
