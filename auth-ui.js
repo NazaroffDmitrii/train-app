@@ -305,11 +305,64 @@ async function renderProfiles() {
     try { await DB.createManagedClient(name.trim()); await renderProfiles(); }
     catch (e) { alert("Не удалось создать клиента: " + e.message); }
   });
-  document.getElementById("gen-invite-btn").addEventListener("click", async () => {
-    try {
-      const code = await DB.createInvite(null, 14);
-      alert("Код приглашения (действует 14 дней):\n\n" + code + "\n\nПередайте его клиенту — он вводит его при регистрации.");
-    } catch (e) { alert("Не удалось создать код: " + e.message); }
+  document.getElementById("gen-invite-btn").addEventListener("click", () => openInviteModal());
+}
+
+// Модалка «Код приглашения»: кому выдать доступ.
+//  • Управляемому клиенту (без логина) — инвайт привязывается к ЕГО профилю, при
+//    регистрации клиент «захватит» его вместе со всей накопленной историей.
+//  • Новому человеку — обычный инвайт, создаст свежий профиль, связанный с тренером.
+async function openInviteModal() {
+  let clients = [];
+  try { clients = await DB.myClients(); }
+  catch (e) { alert("Не удалось загрузить клиентов: " + e.message); return; }
+  const managed = clients.filter(c => !c.auth_id);
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop open";
+  backdrop.id = "invite-modal";
+  const managedBtns = managed.map(c =>
+    `<button class="btn-chip" type="button" data-claim="${escHtml(c.id)}" style="width:100%;margin-bottom:8px">Дать доступ: ${escHtml(c.name || "клиент")}</button>`
+  ).join("");
+  backdrop.innerHTML = `
+    <div class="modal modal-form modal-scroll">
+      <h2 class="modal-title">Пригласить клиента</h2>
+      <p style="margin:0 0 14px;color:var(--text-secondary);font-size:13.5px;line-height:1.5">
+        Клиент регистрируется по коду сам (свой email и пароль). Если выдать
+        доступ существующему клиенту — при регистрации он получит свой профиль
+        со всей уже накопленной историей.</p>
+      ${managed.length ? `<div style="margin-bottom:6px;font-size:12px;color:var(--text-3)">Мои клиенты без логина:</div>${managedBtns}` : ""}
+      <button class="btn-chip" type="button" data-claim="" style="width:100%;margin-bottom:8px">Пригласить нового человека</button>
+      <div class="auth-error" id="invite-result" style="color:var(--text-secondary);white-space:pre-line"></div>
+      <div class="modal-form-actions">
+        <button class="btn-chip" id="invite-close" type="button">Закрыть</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+
+  const result = backdrop.querySelector("#invite-result");
+  const close = () => backdrop.remove();
+  backdrop.querySelector("#invite-close").addEventListener("click", close);
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
+
+  backdrop.querySelectorAll("button[data-claim]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const claimId = btn.dataset.claim || null;
+      result.style.color = "var(--text-secondary)";
+      result.textContent = "Создаём код…";
+      try {
+        const code = await DB.createInvite(claimId, 14);
+        result.style.color = "var(--green)";
+        result.textContent =
+          `Код (14 дней): ${code}\n\n` +
+          `Передай его клиенту. Пусть на экране входа нажмёт «Нет аккаунта? ` +
+          `Зарегистрироваться», введёт свой email и пароль, впишет этот код в ` +
+          `поле приглашения и зарегистрируется.`;
+      } catch (e) {
+        result.style.color = "var(--red)";
+        result.textContent = "Не удалось создать код: " + e.message;
+      }
+    });
   });
 }
 
