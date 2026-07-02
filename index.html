@@ -203,6 +203,28 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .status-dot.pending { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .status-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
 
+/* ============ Screen 1: вход / регистрация / переключатель профиля ============ */
+.auth-form { display: flex; flex-direction: column; gap: 12px; }
+.auth-error { color: var(--red); font-size: 13px; min-height: 16px; margin: -4px 0 0; }
+.auth-toggle-mode {
+  display: block; width: 100%; text-align: center; margin-top: 2px;
+  background: none; border: none; color: var(--text-secondary);
+  font-size: 13px; padding: 8px 0 0; text-decoration: underline; text-underline-offset: 2px;
+}
+.auth-toggle-mode:active { color: var(--accent-bright); }
+.profile-role-badge {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 2px 7px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-bright);
+  flex: none;
+}
+.profile-role-badge.managed { background: rgba(255,255,255,0.05); color: var(--text-tertiary); }
+.profile-list-section-title {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-tertiary); margin: 4px 0 -4px;
+}
+.profile-list-actions { display: flex; gap: 8px; }
+.profile-list-actions .btn-chip { flex: 1; justify-content: center; }
+
 /* ============ Screen 2: main menu ============ */
 .screen-menu { padding-top: calc(20px + var(--safe-top)); }
 
@@ -1934,14 +1956,49 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 <div class="app">
   <div class="bg-glow"></div>
 
-  <!-- ===== ЭКРАН 1: выбор профиля ===== -->
+  <!-- ===== ЭКРАН 1: вход / регистрация / переключатель профиля ===== -->
   <section id="screen-profile" class="screen screen-profile active">
     <div class="profile-sheet">
       <div class="brand">
         <h1 class="brand-logo">train<span class="brand-dot">.</span></h1>
-        <p class="subtitle">Выбери профиль, чтобы продолжить</p>
+        <p class="subtitle" id="profile-subtitle">Войдите, чтобы продолжить</p>
       </div>
-      <div class="profile-list" id="profile-list"></div>
+
+      <!-- Форма входа/регистрации — видна, когда нет активной сессии Supabase Auth -->
+      <div class="auth-form" id="auth-form-view">
+        <div class="ex-form-field">
+          <span class="ex-form-label">Email</span>
+          <input class="ex-form-input" id="auth-email" type="email" autocomplete="username" placeholder="you@example.com">
+        </div>
+        <div class="ex-form-field">
+          <span class="ex-form-label">Пароль</span>
+          <input class="ex-form-input" id="auth-password" type="password" autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <div class="ex-form-field" id="auth-name-field" style="display:none">
+          <span class="ex-form-label">Имя</span>
+          <input class="ex-form-input" id="auth-name" type="text" placeholder="Как вас называть">
+        </div>
+        <div class="ex-form-field" id="auth-role-field" style="display:none">
+          <span class="ex-form-label">Я —</span>
+          <div class="ex-form-chip-group" id="auth-role-group">
+            <button class="ex-form-chip selected" data-role="client" type="button">Клиент</button>
+            <button class="ex-form-chip" data-role="trainer" type="button">Тренер</button>
+          </div>
+        </div>
+        <div class="ex-form-field" id="auth-invite-field" style="display:none">
+          <span class="ex-form-label">Код приглашения от тренера (необязательно)</span>
+          <input class="ex-form-input" id="auth-invite-code" type="text" placeholder="Например, 9CC93D0F">
+        </div>
+        <div class="auth-error" id="auth-error"></div>
+        <div class="modal-form-actions">
+          <button class="btn-chip primary" id="auth-submit-btn">Войти</button>
+        </div>
+        <button class="auth-toggle-mode" id="auth-toggle-mode" type="button">Нет аккаунта? Зарегистрироваться</button>
+      </div>
+
+      <!-- Переключатель профиля — видна, когда сессия уже есть -->
+      <div class="profile-list" id="profile-list" style="display:none"></div>
+
       <div class="status-row">
         <span class="status-dot" id="status-dot"></span>
         <span id="status-text">Работаем онлайн</span>
@@ -2325,26 +2382,8 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   <div class="modal-backdrop" id="settings-modal-backdrop">
     <div class="modal">
       <h2 class="modal-title">Настройки</h2>
-      <p class="modal-sync-info" id="settings-sync-info"></p>
+      <p class="modal-sync-info" id="settings-sync-info">Изменения сохраняются в облако автоматически. Экспорт/импорт ниже — локальная резервная копия в файл.</p>
       <div class="settings-grid">
-        <!-- Из облака -->
-        <button class="modal-option settings-grid-btn" id="download-data-btn">
-          <span class="modal-option-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
-            </svg>
-          </span>
-          <span>Из облака</span>
-        </button>
-        <!-- В облако -->
-        <button class="modal-option settings-grid-btn" id="upload-data-btn">
-          <span class="modal-option-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
-            </svg>
-          </span>
-          <span>В облако</span>
-        </button>
         <!-- Импорт — файл со стрелкой входящей -->
         <button class="modal-option settings-grid-btn" id="import-data-btn">
           <span class="modal-option-icon">
@@ -2377,6 +2416,27 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
           </svg>
         </span>
         <span>Сменить профиль</span>
+      </button>
+      <!-- Перенос старых локальных данных в облако (миграция). Показывается
+           только если на устройстве найдены легаси-данные (см. auth-ui.js). -->
+      <button class="modal-option" id="migrate-legacy-btn" style="display:none">
+        <span class="modal-option-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
+          </svg>
+        </span>
+        <span>Перенести старые данные в облако</span>
+      </button>
+      <!-- Выйти из аккаунта Supabase Auth целиком (не путать со «Сменить
+           профиль» выше — та просто возвращает к переключателю без выхода из
+           сессии, чтобы тренер мог быстро прыгать между клиентами). -->
+      <button class="modal-option" id="auth-signout-btn">
+        <span class="modal-option-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>
+          </svg>
+        </span>
+        <span>Выйти из аккаунта</span>
       </button>
       <input type="file" id="import-data-input" accept="application/json,.json" hidden>
       <button class="modal-cancel" id="settings-close">Закрыть</button>
@@ -2459,6 +2519,12 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 <script src="storage.js"></script>
 <script src="sync.js"></script>
 <script src="lib.js"></script>
+<script src="auth.js"></script>
+<script src="db.js"></script>
 <script src="app.js"></script>
+<script src="outbox.js"></script>
+<script src="bridge.js"></script>
+<script src="migrate.js"></script>
+<script src="auth-ui.js"></script>
 </body>
 </html>
