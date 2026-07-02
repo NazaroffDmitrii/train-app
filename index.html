@@ -2427,6 +2427,17 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
         </span>
         <span>Перенести старые данные в облако</span>
       </button>
+      <!-- Ввести код приглашения будучи уже залогиненным. Нужно клиенту,
+           который зарегистрировался, но не привязался к своему профилю с
+           данными (напр. ошибся в коде при регистрации). -->
+      <button class="modal-option" id="enter-invite-btn">
+        <span class="modal-option-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 4h16v16H4z"/><path d="M9 12h6"/><path d="M12 9v6"/>
+          </svg>
+        </span>
+        <span>Ввести код приглашения</span>
+      </button>
       <!-- Выйти из аккаунта Supabase Auth целиком (не путать со «Сменить
            профиль» выше — та просто возвращает к переключателю без выхода из
            сессии, чтобы тренер мог быстро прыгать между клиентами). -->

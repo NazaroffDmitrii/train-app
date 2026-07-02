@@ -72,8 +72,18 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
       }
       const inviteCode = document.getElementById("auth-invite-code").value.trim();
       if (inviteCode) {
-        try { await DB.claimInvite(inviteCode); }
-        catch (e) { console.warn("auth-ui: claimInvite при регистрации", e); }
+        // НЕ проглатываем ошибку молча: если код неверный/просрочен, клиент
+        // должен это увидеть, а не залогиниться в пустой профиль (иначе как с
+        // Нателой — регистрация «прошла», а привязки к профилю с данными нет).
+        try {
+          await DB.claimInvite(inviteCode);
+        } catch (e) {
+          authSetError("Аккаунт создан, но код приглашения не сработал: " +
+            (e.message || "ошибка") + ". Войдите и введите код в Настройках → «Ввести код приглашения».");
+          _authMode = "signin";
+          updateAuthFormMode();
+          return;
+        }
       }
     } else {
       await Auth.signIn(email, password);
@@ -185,6 +195,25 @@ async function openMigrationModal() {
 document.getElementById("migrate-legacy-btn").addEventListener("click", () => {
   closeModal(settingsModalBackdrop);
   openMigrationModal();
+});
+
+// «Ввести код приглашения» — для уже залогиненного клиента (см. index.html
+// #enter-invite-btn). Нужно, если при регистрации код не сработал: клиент
+// заявляет его сейчас и «захватывает» свой профиль с данными.
+document.getElementById("enter-invite-btn").addEventListener("click", async () => {
+  const code = prompt("Введите код приглашения от тренера:");
+  if (!code || !code.trim()) return;
+  try {
+    await DB.claimInvite(code.trim());
+    closeModal(settingsModalBackdrop);
+    // Профиль мог смениться (захват управляемого профиля) — перечитываем сессию
+    // с чистого листа, bootAuthAware сам разрулит и подтянет данные из облака.
+    DATA.clearCurrentUser();
+    Bridge.reset();
+    location.reload();
+  } catch (e) {
+    alert("Не удалось применить код: " + (e.message || "ошибка"));
+  }
 });
 
 // «Выйти из аккаунта» — в настройках (см. index.html #auth-signout-btn),
