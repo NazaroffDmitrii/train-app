@@ -2444,6 +2444,16 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
           <span>Экспорт</span>
         </button>
       </div>
+      <!-- Личные данные (Имя/Фамилия/Возраст/Вес/Рост) просматриваемого сейчас
+           профиля — своего или клиента (см. auth-ui.js openPersonalDataModal). -->
+      <button class="modal-option modal-option-full" id="personal-data-btn">
+        <span class="modal-option-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+        </span>
+        <span>Личные данные</span>
+      </button>
       <!-- Сменить профиль — полная ширина -->
       <button class="modal-option modal-option-full" id="switch-user-btn">
         <span class="modal-option-icon">

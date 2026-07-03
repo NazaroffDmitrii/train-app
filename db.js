@@ -111,6 +111,14 @@ const DB = (() => {
     return rows?.[0] || null;
   }
 
+  // Личные данные (Настройки → «Личные данные»). RLS та же, что и на весь
+  // профиль (profiles_update: свой или клиента) — трогать роль/auth_id отсюда
+  // не даём (fields — только name/last_name/age/weight/height, см. auth-ui.js).
+  async function updateProfile(profileId, fields) {
+    const rows = await patch("profiles", `id=eq.${enc(profileId)}`, fields);
+    return rows?.[0] || null;
+  }
+
   // Клиенты тренера вместе с их профилями (PostgREST embed через FK).
   async function myClients() {
     const rows = await select(
@@ -234,7 +242,7 @@ const DB = (() => {
   }
 
   return {
-    myProfile, getProfile, myClients, hasAnyTrainer, createManagedClient, createInvite, claimInvite,
+    myProfile, getProfile, updateProfile, myClients, hasAnyTrainer, createManagedClient, createInvite, claimInvite,
     listWorkouts, getWorkout, saveWorkout, saveWorkouts, deleteWorkout,
     getUserData, saveUserData,
     exerciseRecords, deleteMyAccount, deleteManagedClient,

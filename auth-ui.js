@@ -300,6 +300,96 @@ document.getElementById("sync-upload-btn").addEventListener("click", async () =>
   }
 });
 
+// «Личные данные» — Имя/Фамилия/Возраст/Вес/Рост ПРОСМАТРИВАЕМОГО СЕЙЧАС
+// профиля (DATA.getCurrentUser()) — своего или клиента (RLS profiles_update
+// пускает тренера редактировать данные его клиентов, в т.ч. управляемых без
+// логина — например, вписать вес/рост подопечного самому). Модалка строится
+// динамически, как migrate/invite — тот же паттерн в этом файле.
+async function openPersonalDataModal() {
+  const viewedId = DATA.getCurrentUser();
+  if (!viewedId) return;
+  let profile;
+  try { profile = await DB.getProfile(viewedId); }
+  catch (e) { alert("Не удалось загрузить данные: " + e.message); return; }
+  if (!profile) { alert("Профиль не найден."); return; }
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop open";
+  backdrop.id = "personal-data-modal";
+  const num = v => (v === null || v === undefined ? "" : String(v));
+  backdrop.innerHTML = `
+    <div class="modal modal-form modal-scroll">
+      <h2 class="modal-title">Личные данные</h2>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Имя</span>
+        <input class="ex-form-input" id="pd-name" type="text" value="${escHtml(profile.name || "")}">
+      </div>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Фамилия</span>
+        <input class="ex-form-input" id="pd-last-name" type="text" value="${escHtml(profile.last_name || "")}">
+      </div>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Возраст</span>
+        <input class="ex-form-input" id="pd-age" type="number" inputmode="numeric" min="0" max="120" value="${escHtml(num(profile.age))}">
+      </div>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Вес, кг</span>
+        <input class="ex-form-input" id="pd-weight" type="number" inputmode="decimal" step="0.1" min="0" value="${escHtml(num(profile.weight))}">
+      </div>
+      <div class="ex-form-field">
+        <span class="ex-form-label">Рост, см</span>
+        <input class="ex-form-input" id="pd-height" type="number" inputmode="decimal" step="0.1" min="0" value="${escHtml(num(profile.height))}">
+      </div>
+      <div class="auth-error" id="pd-status"></div>
+      <div class="modal-form-actions">
+        <button class="btn-chip" id="pd-cancel" type="button">Отмена</button>
+        <button class="btn-chip primary" id="pd-save" type="button">Сохранить</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+
+  const close = () => backdrop.remove();
+  backdrop.querySelector("#pd-cancel").addEventListener("click", close);
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
+
+  backdrop.querySelector("#pd-save").addEventListener("click", async () => {
+    const status = backdrop.querySelector("#pd-status");
+    const saveBtn = backdrop.querySelector("#pd-save");
+    const toNum = id => {
+      const v = backdrop.querySelector(id).value.trim();
+      return v === "" ? null : Number(v);
+    };
+    const name = backdrop.querySelector("#pd-name").value.trim();
+    if (!name) { status.textContent = "Имя не может быть пустым."; return; }
+    saveBtn.disabled = true;
+    try {
+      const updated = await DB.updateProfile(viewedId, {
+        name,
+        last_name: backdrop.querySelector("#pd-last-name").value.trim() || null,
+        age:    toNum("#pd-age"),
+        weight: toNum("#pd-weight"),
+        height: toNum("#pd-height"),
+      });
+      // Если это МОЙ профиль (или тот, что сейчас открыт на экране) — обновить
+      // чип/заголовок сразу, не дожидаясь следующего hydrate.
+      if (updated) {
+        registerUser(updated);
+        if (screenMenu.classList.contains("active")) refreshMenu();
+      }
+      close();
+      showToast("Сохранено");
+    } catch (e) {
+      saveBtn.disabled = false;
+      status.textContent = "Не удалось сохранить: " + e.message;
+    }
+  });
+}
+
+document.getElementById("personal-data-btn").addEventListener("click", () => {
+  closeModal(settingsModalBackdrop);
+  openPersonalDataModal();
+});
+
 // «Синхронизация» — двойное действие: (1) форсирует проверку обновления
 // приложения (reg.update() тянет свежий sw.js; если версия новее — новый SW
 // установится, активируется и controllerchange в app.js сам перезагрузит
@@ -436,17 +526,34 @@ async function renderProfiles() {
   listView.style.display = "";
   listView.innerHTML = `<div class="profile-card" style="justify-content:center;color:var(--text-secondary)">Загрузка…</div>`;
 
+  // Тупиковые состояния (сеть недоступна / профиль удалён — напр. сам себя
+  // удалил и потом залогинился тем же email+паролем: аккаунт Supabase Auth
+  // остаётся жив, а строку profiles мы стереть уже не можем) раньше показывали
+  // текст «выйдите и войдите заново» БЕЗ единой кнопки выйти — тупик в буквальном
+  // смысле, из него некуда было деться. Теперь всегда даём кнопку «Выйти».
+  function renderStuck(message) {
+    listView.innerHTML = `
+      <div class="auth-error" style="margin-bottom:12px">${escHtml(message)}</div>
+      <button class="btn-chip primary" id="stuck-signout-btn" type="button" style="width:100%">Выйти</button>`;
+    document.getElementById("stuck-signout-btn").addEventListener("click", async () => {
+      await Auth.signOut();
+      Bridge.reset();
+      DATA.clearCurrentUser();
+      await renderProfiles();
+    });
+  }
+
   let me;
   try {
     me = await DB.myProfile();
   } catch (e) {
     if (myGen !== _renderGen) return; // подоспел более новый вызов — не мешаем ему
-    listView.innerHTML = `<div class="auth-error">Не удалось загрузить профиль: ${escHtml(e.message)}</div>`;
+    renderStuck("Не удалось загрузить профиль: " + e.message);
     return;
   }
   if (myGen !== _renderGen) return;
   if (!me) {
-    listView.innerHTML = `<div class="auth-error">Профиль не найден для этого аккаунта. Попробуйте выйти и войти заново.</div>`;
+    renderStuck("Профиль не найден для этого аккаунта (возможно, был удалён). Выйдите и попробуйте другой аккаунт, либо зарегистрируйтесь заново.");
     return;
   }
 
