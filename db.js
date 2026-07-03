@@ -196,13 +196,47 @@ const DB = (() => {
   async function deleteMyAccount() {
     const me = await myProfile();
     if (!me) throw new Error("Нет профиля для удаления");
-    return remove("profiles", `id=eq.${enc(me.id)}`);
+    // return=representation + проверка непустого ответа — чтобы не показать
+    // ложное «аккаунт удалён», если RLS/FK по какой-то причине не дали удалить
+    // (RLS-блок в PostgREST не бросает ошибку сам по себе, см. deleteManagedClient).
+    const res = await fetch(restUrl(`profiles?id=eq.${enc(me.id)}`), {
+      method: "DELETE",
+      headers: await authHeaders({ Prefer: "return=representation" }),
+    });
+    if (!res.ok) await throwHttpError(res, "DB.deleteMyAccount");
+    const rows = await res.json().catch(() => []);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error("не удалось удалить профиль (нет прав или он связан с чужими данными)");
+    }
+    return rows[0];
+  }
+
+  // Удалить УПРАВЛЯЕМОГО клиента (без логина) — RLS profiles_delete пропустит
+  // только если это профиль с auth_id is null И я его тренер. Клиента с
+  // собственным логином так не удалить — это защита.
+  //
+  // ВАЖНО: RLS-блокировка DELETE в PostgREST — это НЕ ошибка (возвращается
+  // 204/пустой ответ, «удалено 0 строк»), поэтому обычный remove() решил бы,
+  // что всё ок, хотя ничего не удалилось. Просим return=representation и
+  // проверяем, что строка реально вернулась — иначе явно сообщаем о неудаче
+  // (частый случай: не прогнан SQL-патч policy profiles_delete).
+  async function deleteManagedClient(profileId) {
+    const res = await fetch(restUrl(`profiles?id=eq.${enc(profileId)}`), {
+      method: "DELETE",
+      headers: await authHeaders({ Prefer: "return=representation" }),
+    });
+    if (!res.ok) await throwHttpError(res, "DB.deleteManagedClient");
+    const rows = await res.json().catch(() => []);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error("нет прав на удаление или профиль уже удалён (проверьте, применён ли SQL-патч policy profiles_delete)");
+    }
+    return rows[0];
   }
 
   return {
     myProfile, getProfile, myClients, hasAnyTrainer, createManagedClient, createInvite, claimInvite,
     listWorkouts, getWorkout, saveWorkout, saveWorkouts, deleteWorkout,
     getUserData, saveUserData,
-    exerciseRecords, deleteMyAccount,
+    exerciseRecords, deleteMyAccount, deleteManagedClient,
   };
 })();

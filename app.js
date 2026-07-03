@@ -5475,22 +5475,36 @@ function openSaveAsTemplateModal(workout) {
    без сети (раздел 2, раздел 8 спецификации).
    ========================================================================== */
 if ("serviceWorker" in navigator) {
+  // Авто-обновление PWA. Раньше location.reload() (в т.ч. кнопка «Синхронизация»)
+  // НЕ обновляла приложение: старый service worker продолжал отдавать старый
+  // каркас из кэша, и единственным способом получить новую версию было снести
+  // иконку с рабочего стола и добавить заново. Теперь:
+  //   • sw.js делает skipWaiting (install) + clients.claim (activate) — новая
+  //     версия активируется сразу, как только браузер её скачал;
+  //   • здесь ловим controllerchange (момент, когда новый SW перехватил
+  //     управление страницей) и перезагружаемся — уже на свежий каркас.
+  // Итог: достаточно открыть/свернуть-развернуть приложение (или нажать
+  // «Синхронизация»), сносить с рабочего стола больше не нужно.
+  let _reloadedForUpdate = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (_reloadedForUpdate) return;
+    // Посреди активной тренировки не перезагружаем молча — предлагаем тапом,
+    // чтобы не сбить с толку в середине подхода (активная тренировка переживёт
+    // перезагрузку — она в localStorage, — но резкий reload всё равно неприятен).
+    const inWorkout = document.getElementById("screen-workout")?.classList.contains("active")
+                   || document.getElementById("screen-run")?.classList.contains("active");
+    if (inWorkout) {
+      showActionToast("Доступна новая версия", "Обновить", () => { _reloadedForUpdate = true; location.reload(); }, 0);
+      return;
+    }
+    _reloadedForUpdate = true;
+    location.reload();
+  });
+
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").then(reg => {
-      reg.addEventListener("updatefound", () => {
-        const newWorker = reg.installing;
-        if (!newWorker) return;
-        newWorker.addEventListener("statechange", () => {
-          // Новая версия каркаса установлена поверх уже работавшей. Предлагаем
-          // обновиться одним тапом (перезагрузка подтянет новый index.html/app.js
-          // из свежего кэша). Тост висит, пока не нажмут — чтобы не пропал, если
-          // человек сейчас в середине подхода.
-          if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-            showActionToast("Доступна новая версия", "Обновить", () => location.reload(), 0);
-          }
-        });
-      });
-    }).catch(() => { /* нет SW — офлайн-режим работает только на уже загруженных данных, без кэша каркаса */ });
+    navigator.serviceWorker.register("./sw.js")
+      .then(reg => reg.update())   // сразу проверить, нет ли новой версии
+      .catch(() => { /* нет SW — офлайн-режим работает только на уже загруженных данных */ });
   });
 }
 

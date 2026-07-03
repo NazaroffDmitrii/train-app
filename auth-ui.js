@@ -85,42 +85,46 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
   }
 });
 
-// ---- видимость кнопок в модалке «Настройки» ----
+// ---- видимость и режим кнопок в модалке «Настройки» ----
 // Одна функция вместо нескольких разрозненных — все проверки используют ОДИН
 // и тот же DB.myProfile() (личность РЕАЛЬНОЙ залогиненной сессии), поэтому не
 // могут разъехаться друг с другом. Правила:
-//   • «Перенести старые данные» — видна, если на устройстве есть легаси-данные.
+//   • «Перенести старые данные» — видна, если на устройстве есть легаси-данные
+//     И перенос ещё не отмечен выполненным (Migrate.isDone).
 //   • «Сменить профиль» — видна ТОЛЬКО тренеру: у обычного клиента структурно
-//     нет второго профиля, переключаться некуда (см. чат: решение пользователя).
-//   • «Ввести код приглашения» — скрыта тренеру (вводить ему нечего, над ним
-//     никого нет) И скрыта клиенту, который уже привязан хотя бы к одному
-//     тренеру (повторный ввод уже ничего не даст).
-//   • «Удалить аккаунт» — скрыта, если СЕЙЧАС ПРОСМАТРИВАЕТСЯ (переключателем)
-//     чужой профиль: кнопка всегда удаляет РЕАЛЬНУЮ залогиненную сессию, а не
-//     то, что на экране — показывать её при просмотре клиента было бы опасно
-//     вводящей в заблуждение (ровно так чуть не удалили тренерский аккаунт,
-//     пытаясь удалить тестового клиента).
+//     нет второго профиля, переключаться некуда.
+//   • «Ввести код приглашения» — скрыта тренеру И скрыта клиенту, который уже
+//     привязан хотя бы к одному тренеру (повторный ввод ничего не даст).
+//   • Удаление — АДАПТИВНАЯ кнопка (текст + режим в dataset):
+//       – смотрю СВОЙ профиль → «Удалить аккаунт» (mode=self, самоудаление);
+//       – смотрю СВОЕГО управляемого клиента (auth_id null) → «Удалить клиента»
+//         (mode=managed, удаляет тот профиль, возврат к переключателю);
+//       – смотрю клиента с СОБСТВЕННЫМ логином → кнопка скрыта (чужой аккаунт,
+//         владелец удаляет сам). Кнопка всегда оперирует ПРОСМАТРИВАЕМЫМ
+//         профилем явно (dataset.targetId), а не «текущей сессией вслепую» —
+//         это и защита от прошлого бага (чуть не удалили тренера, «удаляя»
+//         клиента), и то, что вернуло возможность чистить управляемых клиентов.
 async function refreshSettingsButtons() {
   const migrateBtn = document.getElementById("migrate-legacy-btn");
   const inviteBtn  = document.getElementById("enter-invite-btn");
   const switchBtn  = document.getElementById("switch-user-btn");
   const deleteBtn  = document.getElementById("delete-account-btn");
+  const deleteLabel = deleteBtn?.querySelector("span:last-child");
 
-  if (migrateBtn) migrateBtn.style.display = (Auth.isSignedIn() && Migrate.detectLegacyProfiles().length > 0) ? "" : "none";
+  if (migrateBtn) migrateBtn.style.display =
+    (Auth.isSignedIn() && !Migrate.isDone() && Migrate.detectLegacyProfiles().length > 0) ? "" : "none";
 
   if (!Auth.isSignedIn()) {
-    if (inviteBtn) inviteBtn.style.display = "none";
-    if (switchBtn) switchBtn.style.display = "none";
-    if (deleteBtn) deleteBtn.style.display = "none";
+    [inviteBtn, switchBtn, deleteBtn].forEach(b => { if (b) b.style.display = "none"; });
     return;
   }
 
   let me = null;
   try { me = await DB.myProfile(); } catch {}
   const isTrainer = me?.role === "trainer";
+  const viewedId  = DATA.getCurrentUser();
 
   if (switchBtn) switchBtn.style.display = isTrainer ? "" : "none";
-  if (deleteBtn) deleteBtn.style.display = (me && DATA.getCurrentUser() === me.id) ? "" : "none";
 
   if (inviteBtn) {
     if (!me) { inviteBtn.style.display = ""; }               // не смогли проверить — лучше показать, чем спрятать нужное
@@ -128,6 +132,29 @@ async function refreshSettingsButtons() {
     else {
       try { inviteBtn.style.display = (await DB.hasAnyTrainer(me.id)) ? "none" : ""; }
       catch { inviteBtn.style.display = ""; }
+    }
+  }
+
+  if (deleteBtn) {
+    if (me && viewedId === me.id) {
+      deleteBtn.style.display = "";
+      deleteBtn.dataset.mode = "self";
+      deleteBtn.dataset.targetId = me.id;
+      if (deleteLabel) deleteLabel.textContent = "Удалить аккаунт";
+    } else if (isTrainer && viewedId) {
+      // Смотрим клиента: удалять можно только управляемого (без логина).
+      let viewed = null;
+      try { viewed = await DB.getProfile(viewedId); } catch {}
+      if (viewed && !viewed.auth_id) {
+        deleteBtn.style.display = "";
+        deleteBtn.dataset.mode = "managed";
+        deleteBtn.dataset.targetId = viewed.id;
+        if (deleteLabel) deleteLabel.textContent = "Удалить клиента";
+      } else {
+        deleteBtn.style.display = "none";
+      }
+    } else {
+      deleteBtn.style.display = "none";
     }
   }
 }
@@ -273,18 +300,61 @@ document.getElementById("sync-upload-btn").addEventListener("click", async () =>
   }
 });
 
-// «Синхронизация» — перезагрузка страницы: обновляет само приложение до
-// актуальной версии (новый Service Worker) И перечитывает данные из облака
-// (bootAuthAware → Bridge.hydrate на старте). Если hydrate после перезагрузки
-// упадёт — bootAuthAware сам покажет тост с ошибкой (см. ниже).
-document.getElementById("sync-reload-btn").addEventListener("click", () => {
+// «Синхронизация» — двойное действие: (1) форсирует проверку обновления
+// приложения (reg.update() тянет свежий sw.js; если версия новее — новый SW
+// установится, активируется и controllerchange в app.js сам перезагрузит
+// страницу на свежий каркас); (2) перечитывает данные из облака (перезагрузка
+// → bootAuthAware → Bridge.hydrate). Раньше тут был голый location.reload(),
+// который НЕ обновлял приложение (старый SW отдавал старый кэш) — из-за этого
+// и приходилось сносить иконку с рабочего стола.
+document.getElementById("sync-reload-btn").addEventListener("click", async () => {
+  closeModal(settingsModalBackdrop);
+  showToast("Обновляем…");
+  try {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update();
+    }
+  } catch { /* не смогли проверить SW — всё равно перезагрузимся ниже */ }
+  // Если новая версия нашлась — controllerchange (app.js) перезагрузит раньше
+  // этой строки (там стоит guard от двойной перезагрузки). Если новой версии
+  // нет — этот reload просто перечитает данные из облака.
   location.reload();
 });
 
-// «Удалить аккаунт» — необратимо, поэтому через то же подтверждение, что и
-// удаление тренировок/упражнений (openConfirmModal определена в app.js).
-document.getElementById("delete-account-btn").addEventListener("click", () => {
+// Удаление — необратимо, поэтому через подтверждение (openConfirmModal из
+// app.js). Режим (свой аккаунт / управляемый клиент) и цель определяются в
+// refreshSettingsButtons и лежат в dataset кнопки — обработчик оперирует
+// ЯВНЫМ targetId, а не «текущей сессией».
+document.getElementById("delete-account-btn").addEventListener("click", (e) => {
+  const btn = e.currentTarget;
+  const mode = btn.dataset.mode;               // "self" | "managed"
+  const targetId = btn.dataset.targetId;
   closeModal(settingsModalBackdrop);
+
+  if (mode === "managed") {
+    openConfirmModal({
+      title: "Удалить клиента?",
+      message: "Профиль клиента и вся его история (тренировки, упражнения, шаблоны) будут удалены из облака безвозвратно. Отменить нельзя.",
+      confirmLabel: "Удалить",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await DB.deleteManagedClient(targetId);
+          // Мы смотрели этого клиента — возвращаемся к переключателю тренера.
+          DATA.clearCurrentUser();
+          goToScreen("profile");
+          await renderProfiles();
+          showToast("Клиент удалён");
+        } catch (err) {
+          alert("Не удалось удалить клиента: " + (err.message || "ошибка"));
+        }
+      },
+    });
+    return;
+  }
+
+  // mode === "self" (или отсутствует — трактуем как своё, безопасный дефолт).
   openConfirmModal({
     title: "Удалить аккаунт?",
     message: "Профиль и вся его история (тренировки, упражнения, шаблоны) будут удалены из облака безвозвратно. Отменить нельзя.",
@@ -299,8 +369,8 @@ document.getElementById("delete-account-btn").addEventListener("click", () => {
         goToScreen("profile");
         await renderProfiles();
         showToast("Аккаунт удалён");
-      } catch (e) {
-        alert("Не удалось удалить аккаунт: " + (e.message || "ошибка"));
+      } catch (err) {
+        alert("Не удалось удалить аккаунт: " + (err.message || "ошибка"));
       }
     },
   });
