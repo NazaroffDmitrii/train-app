@@ -1971,8 +1971,15 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
         <p class="subtitle" id="profile-subtitle">Войдите, чтобы продолжить</p>
       </div>
 
-      <!-- Форма входа/регистрации — видна, когда нет активной сессии Supabase Auth -->
-      <div class="auth-form" id="auth-form-view">
+      <!-- Форма входа/регистрации. ПО УМОЛЧАНИЮ СКРЫТА (display:none) — её
+           показывает renderProfiles() только когда реально нет сессии. Иначе
+           при каждой перезагрузке (а их стало больше: авто-обновление PWA,
+           «Синхронизация») экран #screen-profile успевал мелькнуть с видимым
+           полем пароля до того, как скрипт переключит на меню — и iOS ловил
+           это поле, показывая своё автозаполнение «сам по себе». Скрытое
+           (display:none) поле пароля браузер игнорирует, поэтому предложение
+           Apple теперь появляется только когда пользователь сам тапнет поле. -->
+      <div class="auth-form" id="auth-form-view" style="display:none">
         <div class="ex-form-field">
           <span class="ex-form-label">Email</span>
           <input class="ex-form-input" id="auth-email" type="email" autocomplete="username" placeholder="you@example.com">
