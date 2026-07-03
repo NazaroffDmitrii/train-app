@@ -31,7 +31,6 @@ function updateAuthFormMode() {
   const isSignup = _authMode === "signup";
   document.getElementById("auth-name-field").style.display = isSignup ? "" : "none";
   document.getElementById("auth-role-field").style.display = isSignup ? "" : "none";
-  document.getElementById("auth-invite-field").style.display = isSignup ? "" : "none";
   document.getElementById("auth-submit-btn").textContent = isSignup ? "Зарегистрироваться" : "Войти";
   document.getElementById("auth-toggle-mode").textContent = isSignup
     ? "Уже есть аккаунт? Войти"
@@ -70,21 +69,10 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
         updateAuthFormMode();
         return;
       }
-      const inviteCode = document.getElementById("auth-invite-code").value.trim();
-      if (inviteCode) {
-        // НЕ проглатываем ошибку молча: если код неверный/просрочен, клиент
-        // должен это увидеть, а не залогиниться в пустой профиль (иначе как с
-        // Нателой — регистрация «прошла», а привязки к профилю с данными нет).
-        try {
-          await DB.claimInvite(inviteCode);
-        } catch (e) {
-          authSetError("Аккаунт создан, но код приглашения не сработал: " +
-            (e.message || "ошибка") + ". Войдите и введите код в Настройках → «Ввести код приглашения».");
-          _authMode = "signin";
-          updateAuthFormMode();
-          return;
-        }
-      }
+      // Код приглашения регистрация больше не спрашивает (см. чат: ввод кода
+      // ПОСЛЕ регистрации через Настройки → «Ввести код приглашения» оказался
+      // надёжнее — ошибка при заявке кода видна сразу и не путается с самой
+      // регистрацией, как было с Нателой).
     } else {
       await Auth.signIn(email, password);
     }
@@ -104,6 +92,21 @@ function refreshMigrateButton() {
   if (!btn) return;
   const has = Auth.isSignedIn() && Migrate.detectLegacyProfiles().length > 0;
   btn.style.display = has ? "" : "none";
+}
+
+// «Ввести код приглашения» не нужна тренеру: код приглашения выдаётся ЕГО
+// клиентам, а не ему самому — над ним в этой модели никого нет. Видимость
+// зависит от РОЛИ ЗАЛОГИНЕННОГО АККАУНТА (DB.myProfile — свой auth_id), а не
+// от того, чей профиль сейчас открыт на экране: claim_invite всегда работает
+// с профилем текущей сессии, даже если тренер листает экран клиента.
+async function refreshEnterInviteButton() {
+  const btn = document.getElementById("enter-invite-btn");
+  if (!btn) return;
+  if (!Auth.isSignedIn()) { btn.style.display = "none"; return; }
+  try {
+    const me = await DB.myProfile();
+    btn.style.display = (me && me.role === "trainer") ? "none" : "";
+  } catch { btn.style.display = ""; } // не смогли проверить — лучше показать, чем спрятать нужное
 }
 
 async function openMigrationModal() {
@@ -197,9 +200,71 @@ document.getElementById("migrate-legacy-btn").addEventListener("click", () => {
   openMigrationModal();
 });
 
-// «Ввести код приглашения» — для уже залогиненного клиента (см. index.html
-// #enter-invite-btn). Нужно, если при регистрации код не сработал: клиент
-// заявляет его сейчас и «захватывает» свой профиль с данными.
+// Второй обработчик клика по той же пилюле «Настройки», что уже слушает
+// app.js (multiple addEventListener на одном элементе — не конфликтуют) —
+// на случай, если роль сменилась с прошлого раза (напр. только что заявили
+// код приглашения), кнопки в модалке должны отражать текущее состояние.
+const settingsPill = document.querySelector('.pill[data-action="settings"]');
+if (settingsPill) settingsPill.addEventListener("click", () => { refreshEnterInviteButton(); refreshMigrateButton(); });
+
+// «В облако» — досылает очередь несинхронизированных правок ПРЯМО СЕЙЧАС
+// (обычно она и так пуста — Bridge пушит сразу после каждого изменения;
+// кнопка даёт явное подтверждение и ручной повтор, если что-то зависло).
+document.getElementById("sync-upload-btn").addEventListener("click", async () => {
+  closeModal(settingsModalBackdrop);
+  try {
+    const res = await Outbox.flush();
+    if (res.skipped === "offline") showToast("Нет сети — попробуйте позже");
+    else if (res.skipped === "no-session") showToast("Вы не авторизованы");
+    else if (res.skipped === "in-flight") showToast("Уже отправляем…");
+    else if (res.failed > 0) showToast(`Отправлено ${res.sent}, ошибка на ${res.failed} — попробуйте ещё раз`);
+    else if (res.sent > 0) showToast(`Отправлено в облако: ${res.sent}`);
+    else showToast("Всё уже в облаке");
+  } catch (e) {
+    showToast("Ошибка отправки: " + (e.message || "неизвестная"));
+  } finally {
+    updateOnlineStatus();
+  }
+});
+
+// «Синхронизация» — перезагрузка страницы: обновляет само приложение до
+// актуальной версии (новый Service Worker) И перечитывает данные из облака
+// (bootAuthAware → Bridge.hydrate на старте). Если hydrate после перезагрузки
+// упадёт — bootAuthAware сам покажет тост с ошибкой (см. ниже).
+document.getElementById("sync-reload-btn").addEventListener("click", () => {
+  location.reload();
+});
+
+// «Удалить аккаунт» — необратимо, поэтому через то же подтверждение, что и
+// удаление тренировок/упражнений (openConfirmModal определена в app.js).
+document.getElementById("delete-account-btn").addEventListener("click", () => {
+  closeModal(settingsModalBackdrop);
+  openConfirmModal({
+    title: "Удалить аккаунт?",
+    message: "Профиль и вся его история (тренировки, упражнения, шаблоны) будут удалены из облака безвозвратно. Отменить нельзя.",
+    confirmLabel: "Удалить",
+    danger: true,
+    onConfirm: async () => {
+      try {
+        await DB.deleteMyAccount();
+        await Auth.signOut();
+        Bridge.reset();
+        DATA.clearCurrentUser();
+        goToScreen("profile");
+        await renderProfiles();
+        showToast("Аккаунт удалён");
+      } catch (e) {
+        alert("Не удалось удалить аккаунт: " + (e.message || "ошибка"));
+      }
+    },
+  });
+});
+
+// «Ввести код приглашения» — основной (и единственный) способ клиента
+// привязаться к тренеру: сначала обычная регистрация (email+пароль, без
+// кода), затем здесь код заявляется отдельно — «захватывает» управляемый
+// профиль тренера со всей накопленной историей, если код был на него
+// привязан, либо просто линкует текущий профиль к тренеру.
 document.getElementById("enter-invite-btn").addEventListener("click", async () => {
   const code = prompt("Введите код приглашения от тренера:");
   if (!code || !code.trim()) return;
@@ -277,6 +342,7 @@ async function renderProfiles() {
     _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
     refreshMigrateButton();
+    refreshEnterInviteButton();
   };
 
   // Клиент без клиентов-подопечных — сразу входим в свой профиль, без лишнего клика.
@@ -384,9 +450,9 @@ async function openInviteModal() {
         result.style.color = "var(--green)";
         result.textContent =
           `Код (14 дней): ${code}\n\n` +
-          `Передай его клиенту. Пусть на экране входа нажмёт «Нет аккаунта? ` +
-          `Зарегистрироваться», введёт свой email и пароль, впишет этот код в ` +
-          `поле приглашения и зарегистрируется.`;
+          `Передай его клиенту. Пусть зарегистрируется (email + пароль на ` +
+          `экране входа), затем в Настройках нажмёт «Ввести код приглашения» ` +
+          `и впишет этот код.`;
       } catch (e) {
         result.style.color = "var(--red)";
         result.textContent = "Не удалось создать код: " + e.message;
@@ -415,10 +481,18 @@ async function openInviteModal() {
       if (!profile) { DATA.clearCurrentUser(); goToScreen("profile"); await renderProfiles(); return; }
       registerUser(profile);
       await Bridge.hydrate(currentUser);
-    } catch (e) { console.warn("bootAuthAware: hydrate", e); }
+    } catch (e) {
+      // Раньше ошибка тут терялась в console.warn — пользователь ничего не
+      // видел (та самая ситуация с Нателой: молчаливый сбой). Теперь видно
+      // тостом — актуально и для обычной загрузки, и для кнопки «Синхронизация»
+      // (перезагрузка страницы проходит через этот же путь).
+      console.warn("bootAuthAware: hydrate", e);
+      showToast("Не удалось синхронизироваться: " + (e.message || "ошибка сети"));
+    }
     _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
     refreshMigrateButton();
+    refreshEnterInviteButton();
   } else {
     // Нет сессии ИЛИ профиль не выбран → форма входа / переключатель профиля.
     // clearCurrentUser защищает от «залипшего» локального профиля без сессии
@@ -428,3 +502,8 @@ async function openInviteModal() {
     await renderProfiles();
   }
 })();
+
+// Версия приложения в шапке меню (см. config.js APP_VERSION и правило её
+// изменения). Простое присвоение, без зависимости от bootAuthAware.
+const _versionEl = document.getElementById("app-version");
+if (_versionEl) _versionEl.textContent = "v" + APP_VERSION;

@@ -913,20 +913,6 @@ document.addEventListener("storage-full", () => showToast("Хранилище з
    ========================================================================== */
 const SyncQueue = Sync;
 
-function pluralChanges(n) {
-  const mod10 = n % 10, mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "изменение";
-  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "изменения";
-  return "изменений";
-}
-
-function pluralDays(n) {
-  const mod10 = n % 10, mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "день";
-  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "дня";
-  return "дней";
-}
-
 /* ==========================================================================
    Online status
    ========================================================================== */
@@ -988,12 +974,13 @@ function goToScreen(name, opts = {}) {
 // приложение уже открыто под этим пользователем). Оба напоминания — только
 // чтение localStorage, без сети; показываем не больше одного тоста за раз,
 // синхронизация приоритетнее (риск больше — расхождение между устройствами).
-function onProfileEnter(userId) {
-  // Облачная синхронизация теперь автоматическая (bridge.js), напоминать о
-  // «давней синхронизации» больше не нужно — осталось только напоминание о
-  // локальном файловом бэкапе (экспорт), это независимая страховка.
-  notifyStaleExport(userId);
-}
+// Раньше показывала напоминания «давно не синхронизировался» / «давно не
+// экспортировал» — обе убраны (первая устарела вместе со старым sync, вторая
+// убрана по просьбе пользователя, мешала больше, чем помогала). Оставлена
+// как пустой хук: вызывается из нескольких мест при входе в профиль
+// (app.js legacy-путь + auth-ui.js), трогать вызовы не стали, чтобы не
+// плодить лишний риск ради нулевого поведенческого изменения.
+function onProfileEnter(userId) {}
 
 /* ==========================================================================
    Screen 1: profile
@@ -1070,6 +1057,9 @@ function historyItemHtml(w) {
         return [exCnt ? `${exCnt} ${pluralExercises(exCnt)}` : null, sets ? `${sets} ${pluralSets(sets)}` : null].filter(Boolean).join(" · ");
       })();
   const duration = w.durationSec ? formatDuration(w.durationSec) : "";
+  // Заполнено не тем, чей это профиль (тренер внёс за клиента) — см. bridge.js
+  // (createdBy прокидывается из облака 1:1 в локальный объект тренировки).
+  const filledByTrainer = w.createdBy && w.createdBy !== DATA.getCurrentUser();
 
   return `
     <div class="history-item-wrap" data-id="${w.id}">
@@ -1077,7 +1067,7 @@ function historyItemHtml(w) {
       <div class="history-item history-item--${isRun ? "run" : "strength"}" data-id="${w.id}">
         <span class="history-item-body">
           <span class="history-item-label">${escHtml(w.name || (isRun ? "Пробежка" : "Силовая"))}</span>
-          <span class="history-item-meta">${meta || "—"}</span>
+          <span class="history-item-meta">${meta || "—"}${filledByTrainer ? ' <span class="history-item-trainer-tag">· внесено тренером</span>' : ""}</span>
         </span>
         <span class="history-item-right">
           <span class="history-item-date">${fmtDate(w.startedAt)}</span>
@@ -1462,11 +1452,6 @@ $("settings-close").addEventListener("click", () => closeModal(settingsModalBack
    файловый экспорт/импорт ниже сохранён как независимая страховка.
    ========================================================================== */
 
-function formatDaysAgo(days) {
-  if (days <= 0) return "сегодня";
-  return `${days} ${pluralDays(days)} назад`;
-}
-
 $("switch-user-btn").addEventListener("click", () => {
   closeModal(settingsModalBackdrop);
   DATA.clearCurrentUser();
@@ -1492,19 +1477,10 @@ function userDataKeys(userId) {
   return keys;
 }
 
-// Метка последнего экспорта — только для мягкого напоминания (раздел ниже),
-// сети не касается.
-function exportedAtKey(userId) { return `train_last_export_at_${userId}`; }
-function getLastExportedAt(userId) {
-  const v = Number(localStorage.getItem(exportedAtKey(userId)));
-  return Number.isFinite(v) && v > 0 ? v : null;
-}
-function setLastExportedAt(userId) {
-  try { localStorage.setItem(exportedAtKey(userId), String(Date.now())); } catch {}
-}
-
-// Общая логика скачивания файла — используется и кнопкой в настройках, и
-// напоминанием (кнопка "Экспортировать" прямо в тосте).
+// Общая логика скачивания файла — единственный вход, кнопка в настройках.
+// Раньше сюда же вело мягкое напоминание «давно не экспортировал» — убрано
+// по просьбе пользователя (мешало больше, чем помогало); знать, есть ли
+// расхождение с облаком, теперь можно по индикатору синхронизации в шапке.
 function exportUserData(userId) {
   const data = {};
   userDataKeys(userId).forEach(k => data[k] = localStorage.getItem(k));
@@ -1520,25 +1496,6 @@ function exportUserData(userId) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  setLastExportedAt(userId);
-}
-
-// Напоминание при входе в профиль, раз в ~2 дня — экспорт это реальный файл
-// на диске, локальный откат в localStorage мы сознательно убрали (см. чат):
-// на iPhone standalone-режим может не делить хранилище с обычным Safari, а
-// File System Access API там вообще недоступен, поэтому «тихого автосохранения
-// в папку» одинаково на всех устройствах не сделать — только явное действие.
-function notifyStaleExport(userId) {
-  const lastExported = getLastExportedAt(userId);
-  const days = lastExported === null ? Infinity : Math.floor((Date.now() - lastExported) / 86400000);
-  if (days < 2) return;
-  const msg = lastExported === null
-    ? "Ты ещё ни разу не делал экспорт данных"
-    : `Экспорт данных давно не делался (${formatDaysAgo(days)})`;
-  showActionToast(msg, "Экспортировать", () => {
-    exportUserData(userId);
-    showToast("Копия данных сохранена");
-  }, 6000);
 }
 
 $("export-data-btn").addEventListener("click", () => {
@@ -4143,7 +4100,8 @@ function openDetailScreen(workout, returnScreen = "menu") {
   $("detail-screen-icon").style.display = "none";
 
   $("detail-screen-title").textContent = workout.name || (isRun ? "Пробежка" : "Силовая");
-  $("detail-screen-meta").textContent = fmtDate(workout.startedAt);
+  const filledByTrainer = workout.createdBy && workout.createdBy !== DATA.getCurrentUser();
+  $("detail-screen-meta").textContent = fmtDate(workout.startedAt) + (filledByTrainer ? " · внесено тренером" : "");
 
   const body = $("detail-screen-body");
 

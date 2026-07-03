@@ -40,10 +40,13 @@ const Bridge = (() => {
   function reset() { authProfileId = null; } // на signOut, чтобы не утёк в следующую сессию на этом же устройстве
 
   /* ----- локальный объект тренировки ⇄ строка DB ----- */
-  // data хранит ВСЁ тело локального объекта, кроме id/type/startedAt (они —
-  // отдельные колонки) — round-trip 1:1, никакой трансляции полей.
+  // data хранит ВСЁ тело локального объекта, кроме id/type/startedAt/createdBy
+  // (они — отдельные колонки) — round-trip 1:1, никакой трансляции полей.
+  // createdBy прокидывается в локальный объект (не только в БД), чтобы app.js
+  // мог показать пометку «заполнено тренером», когда createdBy отличается от
+  // текущего просматриваемого профиля (см. historyItemHtml/openDetailScreen).
   function localToRow(userId, createdBy, workout) {
-    const { id, type, startedAt, ...data } = workout;
+    const { id, type, startedAt, createdBy: _drop, ...data } = workout;
     return {
       id, user_id: userId, created_by: createdBy,
       type: type || "strength",
@@ -52,7 +55,11 @@ const Bridge = (() => {
     };
   }
   function rowToLocal(row) {
-    return { id: row.id, type: row.type, startedAt: new Date(row.performed_at).getTime(), ...(row.data || {}) };
+    return {
+      id: row.id, type: row.type, startedAt: new Date(row.performed_at).getTime(),
+      createdBy: row.created_by,
+      ...(row.data || {}),
+    };
   }
 
   /* ----- оригинальные (не обёрнутые) setter'ы DATA — ими пользуется сам мост,
@@ -102,8 +109,25 @@ const Bridge = (() => {
     });
 
   /* ----- пуш тренировок (через durable outbox) ----- */
+  // Проставляет createdBy В ЛОКАЛЬНЫЙ объект (не только в облачную строку),
+  // best-effort, синхронно — если authProfileId уже закэширован (обычно так:
+  // Bridge.hydrate резолвит его при входе в профиль ДО того, как экран
+  // становится интерактивным). Даёт пометке «заполнено тренером» появиться
+  // сразу в этой же сессии, не дожидаясь следующего hydrate/reload. Если поле
+  // уже было выставлено раньше (правка чужой записи) — НЕ трогаем: автор
+  // должен оставаться тем, кто создал запись первым, а не тем, кто её правит.
+  function stampLocalCreatedBy(workout) {
+    if (authProfileId && workout.createdBy === undefined) workout.createdBy = authProfileId;
+  }
   function queueWorkout(userId, workout) {
     if (!Auth.isSignedIn()) return;
+    if (workout.createdBy) {
+      // Автор уже известен (застемплен выше или пришёл из облака при более
+      // раннем hydrate) — используем его, а не текущую сессию, иначе повторная
+      // правка чужой записи переписала бы created_by на редактирующего.
+      Outbox.enqueueWorkout(localToRow(userId, workout.createdBy, workout)).then(() => Outbox.flush());
+      return;
+    }
     ensureAuthProfileId().then(createdBy => {
       if (!createdBy) return;
       Outbox.enqueueWorkout(localToRow(userId, createdBy, workout)).then(() => Outbox.flush());
@@ -111,11 +135,13 @@ const Bridge = (() => {
   }
 
   DATA.saveWorkout = function (userId, workout) {
+    stampLocalCreatedBy(workout);
     const ok = _orig.saveWorkout(userId, workout);
     if (ok) queueWorkout(userId, workout);   // локальная запись первой; пуш — durable
     return ok;
   };
   DATA.updateWorkout = function (userId, workout) {
+    stampLocalCreatedBy(workout);
     _orig.updateWorkout(userId, workout);
     queueWorkout(userId, workout);
   };
@@ -131,9 +157,12 @@ const Bridge = (() => {
   DATA.saveWorkoutHistory = function (userId, list) {
     _orig.saveWorkoutHistory(userId, list);
     if (Auth.isSignedIn() && list.length) {
-      ensureAuthProfileId().then(createdBy => {
-        if (!createdBy) return;
-        Promise.all(list.map(w => Outbox.enqueueWorkout(localToRow(userId, createdBy, w))))
+      ensureAuthProfileId().then(fallbackCreatedBy => {
+        if (!fallbackCreatedBy) return;
+        // Каждый элемент сохраняет СВОЕГО автора, если он уже известен (см.
+        // stampLocalCreatedBy/queueWorkout) — иначе, как запасной вариант,
+        // автором становится текущая сессия.
+        Promise.all(list.map(w => Outbox.enqueueWorkout(localToRow(userId, w.createdBy || fallbackCreatedBy, w))))
           .then(() => Outbox.flush());
       });
     }

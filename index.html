@@ -235,6 +235,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   margin-bottom: 14px;
 }
 .menu-brand-logo { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
+.menu-brand-and-version { display: flex; align-items: baseline; gap: 6px; }
+.menu-version { font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
 
 .profile-chip {
   display: flex; align-items: center; gap: 7px;
@@ -427,6 +429,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .history-item-body { flex: 1; min-width: 0; }
 .history-item-label { display: block; font-size: 14.5px; font-weight: 600; }
 .history-item-meta { display: block; font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
+.history-item-trainer-tag { color: var(--accent-bright); }
 .history-item-right { flex: none; text-align: right; }
 .history-item-date { display: block; font-size: 12px; color: var(--text-tertiary); }
 .history-item-dur { display: block; margin-top: 1px; font-size: 11.5px; color: var(--text-tertiary); }
@@ -502,7 +505,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .settings-grid-btn { flex-direction: column; justify-content: center; gap: 8px; padding: 14px 10px; text-align: center; font-size: 13px; }
 .settings-grid-btn .modal-option-icon { width: 26px; height: 26px; }
-#switch-user-btn { justify-content: center; }
+/* Полноширинные кнопки-строки в модалках (Сменить профиль, Перенести данные,
+   Ввести код, Выйти, Удалить аккаунт) — текст+иконка центрируются как группа. */
+.modal-option-full { justify-content: center; }
+.modal-option.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
+.modal-option.danger .modal-option-icon { color: var(--red); }
 .modal-sync-info { color: var(--text-secondary); font-size: 13px; margin: -6px 0 14px; }
 
 /* Блокировка горизонтальной ориентации */
@@ -1985,10 +1992,6 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
             <button class="ex-form-chip" data-role="trainer" type="button">Тренер</button>
           </div>
         </div>
-        <div class="ex-form-field" id="auth-invite-field" style="display:none">
-          <span class="ex-form-label">Код приглашения от тренера (необязательно)</span>
-          <input class="ex-form-input" id="auth-invite-code" type="text" placeholder="Например, 9CC93D0F">
-        </div>
         <div class="auth-error" id="auth-error"></div>
         <div class="modal-form-actions">
           <button class="btn-chip primary" id="auth-submit-btn">Войти</button>
@@ -2010,7 +2013,10 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   <section id="screen-menu" class="screen screen-menu">
     <header class="menu-top">
       <div class="menu-brand-row">
-        <h1 class="menu-brand-logo">train<span class="brand-dot">.</span></h1>
+        <div class="menu-brand-and-version">
+          <h1 class="menu-brand-logo">train<span class="brand-dot">.</span></h1>
+          <span class="menu-version" id="app-version"></span>
+        </div>
         <button class="profile-chip" id="profile-chip" title="Сменить профиль">
           <span class="avatar profile-chip-avatar" id="profile-chip-avatar"></span>
           <span class="profile-chip-name" id="profile-chip-name"></span>
@@ -2383,6 +2389,30 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
     <div class="modal">
       <h2 class="modal-title">Настройки</h2>
       <p class="modal-sync-info" id="settings-sync-info">Изменения сохраняются в облако автоматически. Экспорт/импорт ниже — локальная резервная копия в файл.</p>
+      <!-- Ручная синхронизация. Изменения и так уходят в облако сами (bridge.js
+           → outbox.js), это — явный контроль поверх авто-режима на случай
+           сомнений: «В облако» досылает очередь прямо сейчас (обычно там уже
+           пусто, кнопка просто это подтверждает), «Синхронизация» перечитывает
+           состояние с сервера через перезагрузку страницы (заодно обновляет
+           само приложение до последней версии). -->
+      <div class="settings-grid">
+        <button class="modal-option settings-grid-btn" id="sync-upload-btn">
+          <span class="modal-option-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
+            </svg>
+          </span>
+          <span>В облако</span>
+        </button>
+        <button class="modal-option settings-grid-btn" id="sync-reload-btn">
+          <span class="modal-option-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
+            </svg>
+          </span>
+          <span>Синхронизация</span>
+        </button>
+      </div>
       <div class="settings-grid">
         <!-- Импорт — файл со стрелкой входящей -->
         <button class="modal-option settings-grid-btn" id="import-data-btn">
@@ -2408,7 +2438,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
         </button>
       </div>
       <!-- Сменить профиль — полная ширина -->
-      <button class="modal-option" id="switch-user-btn">
+      <button class="modal-option modal-option-full" id="switch-user-btn">
         <span class="modal-option-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M7 4v12"/><path d="M3.5 12.5L7 16l3.5-3.5"/>
@@ -2419,7 +2449,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
       </button>
       <!-- Перенос старых локальных данных в облако (миграция). Показывается
            только если на устройстве найдены легаси-данные (см. auth-ui.js). -->
-      <button class="modal-option" id="migrate-legacy-btn" style="display:none">
+      <button class="modal-option modal-option-full" id="migrate-legacy-btn" style="display:none">
         <span class="modal-option-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
@@ -2429,8 +2459,10 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
       </button>
       <!-- Ввести код приглашения будучи уже залогиненным. Нужно клиенту,
            который зарегистрировался, но не привязался к своему профилю с
-           данными (напр. ошибся в коде при регистрации). -->
-      <button class="modal-option" id="enter-invite-btn">
+           данными (напр. ошибся в коде при регистрации). Скрыта для тренера —
+           у него нет над собой тренера, вводить код было бы некуда (см.
+           auth-ui.js refreshEnterInviteButton). -->
+      <button class="modal-option modal-option-full" id="enter-invite-btn">
         <span class="modal-option-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 4h16v16H4z"/><path d="M9 12h6"/><path d="M12 9v6"/>
@@ -2441,13 +2473,27 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
       <!-- Выйти из аккаунта Supabase Auth целиком (не путать со «Сменить
            профиль» выше — та просто возвращает к переключателю без выхода из
            сессии, чтобы тренер мог быстро прыгать между клиентами). -->
-      <button class="modal-option" id="auth-signout-btn">
+      <button class="modal-option modal-option-full" id="auth-signout-btn">
         <span class="modal-option-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>
           </svg>
         </span>
         <span>Выйти из аккаунта</span>
+      </button>
+      <!-- Удаление аккаунта — необратимо, поэтому danger-стиль + отдельное
+           подтверждение (openConfirmModal, см. auth-ui.js). Удаляет только
+           СВОЙ профиль (RLS profiles_delete: id = current_profile_id()) —
+           каскадом уходят его тренировки/user_data/связи с тренером. -->
+      <button class="modal-option modal-option-full danger" id="delete-account-btn">
+        <span class="modal-option-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6"/><path d="M14 11v6"/>
+          </svg>
+        </span>
+        <span>Удалить аккаунт</span>
       </button>
       <input type="file" id="import-data-input" accept="application/json,.json" hidden>
       <button class="modal-cancel" id="settings-close">Закрыть</button>

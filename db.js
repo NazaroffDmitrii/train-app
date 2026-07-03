@@ -177,10 +177,23 @@ const DB = (() => {
     return select("exercise_records", `user_id=eq.${enc(userId)}&select=*`);
   }
 
+  // Удалить СВОЙ профиль (self-service). RLS profiles_delete разрешает удалить
+  // только строку с id = current_profile_id() — чужой/управляемый профиль
+  // отсюда не удалить. Каскадом (FK on delete cascade) уходят workouts,
+  // user_data, trainer_clients этого профиля. Если это профиль тренера,
+  // который вносил тренировки СВОИМ клиентам (workouts.created_by), Postgres
+  // откажет с ошибкой внешнего ключа — намеренно, это защита от случайного
+  // "осиротения" чужой истории, а не то, что стоит обходить здесь.
+  async function deleteMyAccount() {
+    const me = await myProfile();
+    if (!me) throw new Error("Нет профиля для удаления");
+    return remove("profiles", `id=eq.${enc(me.id)}`);
+  }
+
   return {
     myProfile, getProfile, myClients, createManagedClient, createInvite, claimInvite,
     listWorkouts, getWorkout, saveWorkout, saveWorkouts, deleteWorkout,
     getUserData, saveUserData,
-    exerciseRecords,
+    exerciseRecords, deleteMyAccount,
   };
 })();
