@@ -66,8 +66,15 @@ const Migrate = (() => {
   async function importInto(legacyId, targetProfileId, createdById) {
     const d = readLegacy(legacyId);
 
-    // Тренировки — построчно, чанками (workouts.created_by нельзя подделать: он
-    // должен быть = current_profile_id, поэтому ставим createdById импортёра).
+    // Тренировки — построчно, чанками. workouts.created_by нельзя подделать
+    // (RLS wk_insert требует created_by = current_profile_id() — тот, кто
+    // РЕАЛЬНО сейчас залогинен и жмёт «Перенести»), поэтому если тренер
+    // переносит данные ЗА клиента, в БД физически запишется created_by =
+    // тренер, хотя тренировки в старой системе мог вносить кто угодно —
+    // старая localStorage-модель это никак не различала. Чтобы не приписывать
+    // тренеру чужое авторство задним числом, помечаем такие строки _migrated —
+    // бейдж «внесено тренером» (app.js historyItemHtml/openDetailScreen)
+    // на них не показывается, честно «не знаем, кто вносил».
     const rows = (d.history || [])
       .filter(w => w && w.id && w.startedAt)
       .map(w => {
@@ -76,7 +83,7 @@ const Migrate = (() => {
           id, user_id: targetProfileId, created_by: createdById,
           type: type === "run" ? "run" : "strength",
           performed_at: new Date(startedAt).toISOString(),
-          data,
+          data: { ...data, _migrated: true },
         };
       });
     const CHUNK = 100;

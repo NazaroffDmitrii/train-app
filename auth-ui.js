@@ -85,28 +85,51 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
   }
 });
 
-// ---- миграция старых локальных данных в облако ----
-// Кнопка в настройках показывается только если на устройстве есть легаси-данные.
-function refreshMigrateButton() {
-  const btn = document.getElementById("migrate-legacy-btn");
-  if (!btn) return;
-  const has = Auth.isSignedIn() && Migrate.detectLegacyProfiles().length > 0;
-  btn.style.display = has ? "" : "none";
-}
+// ---- видимость кнопок в модалке «Настройки» ----
+// Одна функция вместо нескольких разрозненных — все проверки используют ОДИН
+// и тот же DB.myProfile() (личность РЕАЛЬНОЙ залогиненной сессии), поэтому не
+// могут разъехаться друг с другом. Правила:
+//   • «Перенести старые данные» — видна, если на устройстве есть легаси-данные.
+//   • «Сменить профиль» — видна ТОЛЬКО тренеру: у обычного клиента структурно
+//     нет второго профиля, переключаться некуда (см. чат: решение пользователя).
+//   • «Ввести код приглашения» — скрыта тренеру (вводить ему нечего, над ним
+//     никого нет) И скрыта клиенту, который уже привязан хотя бы к одному
+//     тренеру (повторный ввод уже ничего не даст).
+//   • «Удалить аккаунт» — скрыта, если СЕЙЧАС ПРОСМАТРИВАЕТСЯ (переключателем)
+//     чужой профиль: кнопка всегда удаляет РЕАЛЬНУЮ залогиненную сессию, а не
+//     то, что на экране — показывать её при просмотре клиента было бы опасно
+//     вводящей в заблуждение (ровно так чуть не удалили тренерский аккаунт,
+//     пытаясь удалить тестового клиента).
+async function refreshSettingsButtons() {
+  const migrateBtn = document.getElementById("migrate-legacy-btn");
+  const inviteBtn  = document.getElementById("enter-invite-btn");
+  const switchBtn  = document.getElementById("switch-user-btn");
+  const deleteBtn  = document.getElementById("delete-account-btn");
 
-// «Ввести код приглашения» не нужна тренеру: код приглашения выдаётся ЕГО
-// клиентам, а не ему самому — над ним в этой модели никого нет. Видимость
-// зависит от РОЛИ ЗАЛОГИНЕННОГО АККАУНТА (DB.myProfile — свой auth_id), а не
-// от того, чей профиль сейчас открыт на экране: claim_invite всегда работает
-// с профилем текущей сессии, даже если тренер листает экран клиента.
-async function refreshEnterInviteButton() {
-  const btn = document.getElementById("enter-invite-btn");
-  if (!btn) return;
-  if (!Auth.isSignedIn()) { btn.style.display = "none"; return; }
-  try {
-    const me = await DB.myProfile();
-    btn.style.display = (me && me.role === "trainer") ? "none" : "";
-  } catch { btn.style.display = ""; } // не смогли проверить — лучше показать, чем спрятать нужное
+  if (migrateBtn) migrateBtn.style.display = (Auth.isSignedIn() && Migrate.detectLegacyProfiles().length > 0) ? "" : "none";
+
+  if (!Auth.isSignedIn()) {
+    if (inviteBtn) inviteBtn.style.display = "none";
+    if (switchBtn) switchBtn.style.display = "none";
+    if (deleteBtn) deleteBtn.style.display = "none";
+    return;
+  }
+
+  let me = null;
+  try { me = await DB.myProfile(); } catch {}
+  const isTrainer = me?.role === "trainer";
+
+  if (switchBtn) switchBtn.style.display = isTrainer ? "" : "none";
+  if (deleteBtn) deleteBtn.style.display = (me && DATA.getCurrentUser() === me.id) ? "" : "none";
+
+  if (inviteBtn) {
+    if (!me) { inviteBtn.style.display = ""; }               // не смогли проверить — лучше показать, чем спрятать нужное
+    else if (isTrainer) { inviteBtn.style.display = "none"; }
+    else {
+      try { inviteBtn.style.display = (await DB.hasAnyTrainer(me.id)) ? "none" : ""; }
+      catch { inviteBtn.style.display = ""; }
+    }
+  }
 }
 
 async function openMigrationModal() {
@@ -179,7 +202,7 @@ async function openMigrationModal() {
       Migrate.markDone();
       status.style.color = "var(--green)";
       status.textContent = `Готово: ${total.workouts} трен., ${total.exercises} упр., ${total.templates} шабл. перенесено.`;
-      refreshMigrateButton();
+      refreshSettingsButtons();
       // Если перенесли в текущий открытый профиль — подтянуть свежие данные.
       const cur = DATA.getCurrentUser();
       if (cur && mappings.some(m => m.target === cur)) {
@@ -202,10 +225,33 @@ document.getElementById("migrate-legacy-btn").addEventListener("click", () => {
 
 // Второй обработчик клика по той же пилюле «Настройки», что уже слушает
 // app.js (multiple addEventListener на одном элементе — не конфликтуют) —
-// на случай, если роль сменилась с прошлого раза (напр. только что заявили
-// код приглашения), кнопки в модалке должны отражать текущее состояние.
+// на случай, если что-то сменилось с прошлого раза (роль, привязка к
+// тренеру, просматриваемый профиль), кнопки должны отражать текущее состояние.
 const settingsPill = document.querySelector('.pill[data-action="settings"]');
-if (settingsPill) settingsPill.addEventListener("click", () => { refreshEnterInviteButton(); refreshMigrateButton(); });
+if (settingsPill) settingsPill.addEventListener("click", () => { refreshSettingsButtons(); });
+
+// ---- КОРЕНЬ БАГА С «ЛОГИН-ФОРМОЙ ПОСЛЕ СИНХРОНИЗАЦИИ» ----
+// app.js (не тронутый) вешает на profile-chip (аватар в шапке меню) и на
+// switch-user-btn обработчики, которые ПРОСТО переключают экран:
+//   DATA.clearCurrentUser(); goToScreen("profile");
+// без единого вызова renderProfiles(). Раньше (хардкоженные dima/natela) это
+// было безопасно — карточки профилей рисовались один раз при первой загрузке
+// и больше не менялись. Теперь renderProfiles() — асинхронная, показывает
+// РАЗНОЕ в зависимости от состояния, и если она ни разу не была вызвана в
+// этой загрузке страницы (частый случай: сессия сама восстановилась при
+// старте, bootAuthAware идёт по быстрому пути сразу в меню, минуя
+// renderProfiles) — экран #screen-profile так и остаётся с "сырым" HTML по
+// умолчанию: форма входа ВИДНА (для неё нет display:none, пока JS явно не
+// поставит), список профилей СКРЫТ. Клик по чипу/«Сменить профиль» открывал
+// ровно эту сырую форму входа — iOS видел парольное поле и предлагал
+// Face ID/автозаполнение (то самое фото 2). Фикс: довызываем renderProfiles()
+// СРАЗУ после — она сама решит, что показать (переключатель тренеру, тихий
+// возврат в свой единственный профиль клиенту, или форму входа, если сессия
+// правда истекла). Второй addEventListener на тех же элементах — не мешает
+// оригинальному обработчику из app.js, просто выполняется следом.
+const profileChipEl = document.getElementById("profile-chip");
+if (profileChipEl) profileChipEl.addEventListener("click", () => { renderProfiles(); });
+document.getElementById("switch-user-btn").addEventListener("click", () => { renderProfiles(); });
 
 // «В облако» — досылает очередь несинхронизированных правок ПРЯМО СЕЙЧАС
 // (обычно она и так пуста — Bridge пушит сразу после каждого изменения;
@@ -293,7 +339,16 @@ document.getElementById("auth-signout-btn").addEventListener("click", async () =
 });
 
 // ---- переопределение renderProfiles() из app.js ----
+// renderProfiles() теперь вызывается из МНОГИХ мест (клик по чипу профиля,
+// «Сменить профиль», отправка формы входа, bootAuthAware) и внутри себя ждёт
+// сеть (DB.myProfile/myClients) — два конкурентных вызова могут переплестись:
+// младший (запущенный раньше) допишет в listView УЖЕ ПОСЛЕ того, как более
+// новый вызов её очистил и заполнил актуально, задваивая карточки. _renderGen
+// — простой «номер поколения»: после каждого await проверяем, что мы всё ещё
+// самый свежий вызов, и если нет — тихо прекращаем работу, не трогая DOM.
+let _renderGen = 0;
 async function renderProfiles() {
+  const myGen = ++_renderGen;
   const authView = document.getElementById("auth-form-view");
   const listView = document.getElementById("profile-list");
   const subtitle = document.getElementById("profile-subtitle");
@@ -315,9 +370,11 @@ async function renderProfiles() {
   try {
     me = await DB.myProfile();
   } catch (e) {
+    if (myGen !== _renderGen) return; // подоспел более новый вызов — не мешаем ему
     listView.innerHTML = `<div class="auth-error">Не удалось загрузить профиль: ${escHtml(e.message)}</div>`;
     return;
   }
+  if (myGen !== _renderGen) return;
   if (!me) {
     listView.innerHTML = `<div class="auth-error">Профиль не найден для этого аккаунта. Попробуйте выйти и войти заново.</div>`;
     return;
@@ -341,8 +398,7 @@ async function renderProfiles() {
     await Bridge.hydrate(profileId);
     _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
-    refreshMigrateButton();
-    refreshEnterInviteButton();
+    refreshSettingsButtons();
   };
 
   // Клиент без клиентов-подопечных — сразу входим в свой профиль, без лишнего клика.
@@ -377,6 +433,7 @@ async function renderProfiles() {
   let clients = [];
   try { clients = await DB.myClients(); }
   catch (e) { console.warn("auth-ui: myClients", e); }
+  if (myGen !== _renderGen) return; // более новый вызов уже перерисовал список — не дублируем
 
   if (clients.length) {
     const title = document.createElement("div");
@@ -491,8 +548,7 @@ async function openInviteModal() {
     }
     _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
-    refreshMigrateButton();
-    refreshEnterInviteButton();
+    refreshSettingsButtons();
   } else {
     // Нет сессии ИЛИ профиль не выбран → форма входа / переключатель профиля.
     // clearCurrentUser защищает от «залипшего» локального профиля без сессии

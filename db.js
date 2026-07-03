@@ -120,6 +120,15 @@ const DB = (() => {
     return rows.map(r => ({ ...r.client, status: r.status }));
   }
 
+  // Есть ли у меня (как у клиента) хотя бы одна активная связь с тренером —
+  // нужно решить, показывать ли «Ввести код приглашения»: свежезарегистри-
+  // рованному незалинкованному клиенту кнопка нужна, уже привязанному — уже
+  // ничего не даст (см. auth-ui.js refreshEnterInviteButton).
+  async function hasAnyTrainer(myProfileId) {
+    const rows = await select("trainer_clients", `client_id=eq.${enc(myProfileId)}&status=eq.active&select=trainer_id&limit=1`);
+    return rows.length > 0;
+  }
+
   async function createManagedClient(name) { return rpc("create_managed_client", { client_name: name }); }
   async function createInvite(claimProfileId, ttlDays) {
     return rpc("create_invite", { claim: claimProfileId || null, ttl_days: ttlDays ?? 14 });
@@ -191,7 +200,7 @@ const DB = (() => {
   }
 
   return {
-    myProfile, getProfile, myClients, createManagedClient, createInvite, claimInvite,
+    myProfile, getProfile, myClients, hasAnyTrainer, createManagedClient, createInvite, claimInvite,
     listWorkouts, getWorkout, saveWorkout, saveWorkouts, deleteWorkout,
     getUserData, saveUserData,
     exerciseRecords, deleteMyAccount,

@@ -1059,7 +1059,11 @@ function historyItemHtml(w) {
   const duration = w.durationSec ? formatDuration(w.durationSec) : "";
   // Заполнено не тем, чей это профиль (тренер внёс за клиента) — см. bridge.js
   // (createdBy прокидывается из облака 1:1 в локальный объект тренировки).
-  const filledByTrainer = w.createdBy && w.createdBy !== DATA.getCurrentUser();
+  // _migrated — исключение: перенесённые из старой localStorage-модели записи
+  // (см. migrate.js) технически получают created_by = того, кто нажал
+  // «Перенести», а не того, кто реально вносил тренировку в старой системе —
+  // это было неизвестно уже тогда, бейдж на них честно не показываем.
+  const filledByTrainer = w.createdBy && w.createdBy !== DATA.getCurrentUser() && !w._migrated;
 
   return `
     <div class="history-item-wrap" data-id="${w.id}">
@@ -4100,7 +4104,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
   $("detail-screen-icon").style.display = "none";
 
   $("detail-screen-title").textContent = workout.name || (isRun ? "Пробежка" : "Силовая");
-  const filledByTrainer = workout.createdBy && workout.createdBy !== DATA.getCurrentUser();
+  const filledByTrainer = workout.createdBy && workout.createdBy !== DATA.getCurrentUser() && !workout._migrated;
   $("detail-screen-meta").textContent = fmtDate(workout.startedAt) + (filledByTrainer ? " · внесено тренером" : "");
 
   const body = $("detail-screen-body");
