@@ -239,7 +239,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .menu-version { font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
 
 .profile-chip {
-  display: flex; align-items: center; gap: 7px;
+  /* Скрыт (не удалён из DOM — на него ссылается app.js синхронным
+     $("profile-chip").addEventListener(...); удаление элемента разбило бы
+     загрузку скрипта). Причины скрытия: работал по сути только у тренера,
+     дублировал «Сменить профиль» в Настройках — второй путь к тому же экрану
+     был лишним. */
+  display: none;
+  align-items: center; gap: 7px;
   padding: 5px 10px 5px 5px;
   background: var(--panel); border: 1px solid var(--border-subtle);
   border-radius: 20px; color: var(--text-primary);

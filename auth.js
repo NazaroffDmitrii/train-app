@@ -45,13 +45,33 @@ const Auth = (() => {
     };
   }
 
+  // Supabase (GoTrue) отдаёт сообщения об ошибках на английском — они шли на
+  // экран как есть ("Invalid login credentials" и т.п.). Переводим известные
+  // формулировки; неизвестные оставляем как есть (лучше английский текст, чем
+  // потерять содержание ошибки).
+  const AUTH_ERROR_RU = [
+    [/invalid login credentials/i, "Неверный email или пароль"],
+    [/user already registered/i, "Пользователь с таким email уже зарегистрирован"],
+    [/email not confirmed/i, "Email не подтверждён"],
+    [/password should be at least/i, "Пароль слишком короткий (минимум 6 символов)"],
+    [/unable to validate email address/i, "Некорректный формат email"],
+    [/user not found/i, "Пользователь не найден"],
+    [/email rate limit exceeded/i, "Слишком много попыток — попробуйте чуть позже"],
+    [/signup requires a valid password/i, "Введите пароль"],
+    [/network/i, "Нет соединения с сервером"],
+  ];
+  function translateAuthError(msg) {
+    const hit = AUTH_ERROR_RU.find(([re]) => re.test(msg));
+    return hit ? hit[1] : msg;
+  }
+
   async function parseAuthError(res) {
     let msg = `HTTP ${res.status}`;
     try {
       const j = await res.json();
       msg = j.error_description || j.msg || j.error || msg;
     } catch {}
-    return new Error(msg);
+    return new Error(translateAuthError(msg));
   }
 
   // ---- регистрация -----------------------------------------------------

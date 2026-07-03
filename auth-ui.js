@@ -587,7 +587,13 @@ async function renderProfiles() {
   }
 
   subtitle.textContent = "Кого тренируем?";
-  listView.innerHTML = "";
+  // ВАЖНО: listView НЕ чистим здесь — «Загрузка…» остаётся на экране, пока не
+  // соберём ВЕСЬ список (свой профиль + клиенты) целиком в отдельном
+  // фрагменте, вне DOM. Раньше свой профиль вставлялся сразу, а карточки
+  // клиентов — только после отдельного await DB.myClients() чуть позже:
+  // список визуально «дёргался» (сначала одна карточка, потом остальные
+  // рывком). Теперь единственная подмена DOM происходит одним кадром, когда
+  // уже всё готово — ощущается бесшовно.
 
   function makeCard(profile, meta) {
     const card = document.createElement("button");
@@ -605,28 +611,30 @@ async function renderProfiles() {
     return card;
   }
 
-  listView.appendChild(makeCard(me, "Моя тренировка"));
-
   let clients = [];
   try { clients = await DB.myClients(); }
   catch (e) { console.warn("auth-ui: myClients", e); }
   if (myGen !== _renderGen) return; // более новый вызов уже перерисовал список — не дублируем
 
+  const frag = document.createDocumentFragment();
+  frag.appendChild(makeCard(me, "Моя тренировка"));
   if (clients.length) {
     const title = document.createElement("div");
     title.className = "profile-list-section-title";
     title.textContent = "Клиенты";
-    listView.appendChild(title);
-    clients.forEach(c => listView.appendChild(makeCard(c, c.auth_id ? "Сам ведёт тренировки" : "Веду за него/неё")));
+    frag.appendChild(title);
+    clients.forEach(c => frag.appendChild(makeCard(c, c.auth_id ? "Сам ведёт тренировки" : "Веду за него/неё")));
   }
-
   const actions = document.createElement("div");
   actions.className = "profile-list-actions";
   actions.innerHTML = `
     <button class="btn-chip" id="add-managed-client-btn" type="button">+ Клиент</button>
     <button class="btn-chip" id="gen-invite-btn" type="button">Код приглашения</button>
   `;
-  listView.appendChild(actions);
+  frag.appendChild(actions);
+
+  listView.innerHTML = "";     // убираем «Загрузка…» и...
+  listView.appendChild(frag);  // ...сразу вставляем готовый список — одним кадром.
 
   document.getElementById("add-managed-client-btn").addEventListener("click", async () => {
     const name = prompt("Имя нового клиента:");
