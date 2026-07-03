@@ -399,6 +399,10 @@ document.getElementById("auth-signout-btn").addEventListener("click", async () =
   Bridge.reset();
   DATA.clearCurrentUser();
   goToScreen("profile");
+  // goToScreen больше не дёргает renderProfiles() сама (см. её комментарий в
+  // app.js) — здесь единственное место, где после неё явно ничего не звалось;
+  // после signOut() экран без этого остался бы со старым содержимым.
+  await renderProfiles();
 });
 
 // ---- переопределение renderProfiles() из app.js ----

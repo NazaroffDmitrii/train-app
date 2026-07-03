@@ -959,7 +959,15 @@ function goToScreen(name, opts = {}) {
   if (!target) return;
   target.classList.add("active");
 
-  if (name === "profile")  { renderProfiles(); }
+  // "profile" сюда сознательно НЕ включён (в отличие от остальных экранов):
+  // renderProfiles() — асинхронная и решает, что показать (переключатель/форма
+  // входа/тихий автовход), а не мгновенный синхронный рендер как у других
+  // экранов. Раньше он тоже дёргался отсюда — из-за этого при переходах,
+  // которые сами уже дожидались renderProfiles() ПЕРЕД goToScreen (см.
+  // auth-ui.js switch-user-btn), полная загрузка происходила ДВАЖДЫ подряд:
+  // сначала правильно (до перехода), потом ещё раз отсюда (уже на экране,
+  // с новой вспышкой «Загрузка…» поверх). Теперь каждый вызывающий код сам
+  // явно вызывает renderProfiles() — см. вызовы этой функции в auth-ui.js.
   if (name === "menu")     { refreshMenu(); }
   if (name === "workout")  { initWorkoutScreen(opts); }
   if (name === "run")      { initRunScreen(opts); }
