@@ -89,8 +89,6 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
 // Одна функция вместо нескольких разрозненных — все проверки используют ОДИН
 // и тот же DB.myProfile() (личность РЕАЛЬНОЙ залогиненной сессии), поэтому не
 // могут разъехаться друг с другом. Правила:
-//   • «Перенести старые данные» — видна, если на устройстве есть легаси-данные
-//     И перенос ещё не отмечен выполненным (Migrate.isDone).
 //   • «Сменить профиль» — видна ТОЛЬКО тренеру: у обычного клиента структурно
 //     нет второго профиля, переключаться некуда.
 //   • «Ввести код приглашения» — скрыта тренеру И скрыта клиенту, который уже
@@ -105,14 +103,10 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
 //         это и защита от прошлого бага (чуть не удалили тренера, «удаляя»
 //         клиента), и то, что вернуло возможность чистить управляемых клиентов.
 async function refreshSettingsButtons() {
-  const migrateBtn = document.getElementById("migrate-legacy-btn");
   const inviteBtn  = document.getElementById("enter-invite-btn");
   const switchBtn  = document.getElementById("switch-user-btn");
   const deleteBtn  = document.getElementById("delete-account-btn");
   const deleteLabel = deleteBtn?.querySelector("span:last-child");
-
-  if (migrateBtn) migrateBtn.style.display =
-    (Auth.isSignedIn() && !Migrate.isDone() && Migrate.detectLegacyProfiles().length > 0) ? "" : "none";
 
   if (!Auth.isSignedIn()) {
     [inviteBtn, switchBtn, deleteBtn].forEach(b => { if (b) b.style.display = "none"; });
@@ -159,97 +153,6 @@ async function refreshSettingsButtons() {
   }
 }
 
-async function openMigrationModal() {
-  const legacy = Migrate.detectLegacyProfiles();
-  if (!legacy.length) return;
-
-  // Облачные цели: свой профиль + клиенты (для тренера).
-  let me, clients = [];
-  try {
-    me = await DB.myProfile();
-    if (me?.role === "trainer") clients = await DB.myClients();
-  } catch (e) { alert("Не удалось загрузить облачные профили: " + e.message); return; }
-  const targets = [me, ...clients].filter(Boolean);
-
-  const backdrop = document.createElement("div");
-  backdrop.className = "modal-backdrop open";
-  backdrop.id = "migrate-modal";
-  const optionsHtml = targets.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name || "Профиль")}</option>`).join("");
-  backdrop.innerHTML = `
-    <div class="modal modal-form modal-scroll">
-      <h2 class="modal-title">Перенос старых данных</h2>
-      <p style="margin:0 0 14px;color:var(--text-secondary);font-size:13.5px;line-height:1.5">
-        На этом устройстве найдены данные прошлой версии. Выберите, в какой
-        облачный профиль их перенести. Старые данные на устройстве не удаляются;
-        повторный перенос не создаёт дубликатов.</p>
-      <div id="migrate-rows"></div>
-      <div class="auth-error" id="migrate-status"></div>
-      <div class="modal-form-actions">
-        <button class="btn-chip" id="migrate-cancel" type="button">Закрыть</button>
-        <button class="btn-chip primary" id="migrate-run" type="button">Перенести</button>
-      </div>
-    </div>`;
-  document.body.appendChild(backdrop);
-
-  const rowsEl = backdrop.querySelector("#migrate-rows");
-  legacy.forEach(p => {
-    const row = document.createElement("div");
-    row.className = "ex-form-field";
-    row.innerHTML = `
-      <span class="ex-form-label">${escHtml(p.name)} — ${p.workouts} трен., ${p.exercises} упр., ${p.templates} шабл.</span>
-      <select class="ex-form-input" data-legacy="${escHtml(p.id)}">
-        <option value="">— не переносить —</option>
-        ${optionsHtml}
-      </select>`;
-    rowsEl.appendChild(row);
-  });
-
-  const close = () => backdrop.remove();
-  backdrop.querySelector("#migrate-cancel").addEventListener("click", close);
-  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
-
-  backdrop.querySelector("#migrate-run").addEventListener("click", async () => {
-    const status = backdrop.querySelector("#migrate-status");
-    const runBtn = backdrop.querySelector("#migrate-run");
-    const mappings = [...backdrop.querySelectorAll("select[data-legacy]")]
-      .map(s => ({ legacy: s.dataset.legacy, target: s.value }))
-      .filter(m => m.target);
-    if (!mappings.length) { status.textContent = "Выберите хотя бы один профиль для переноса."; return; }
-
-    runBtn.disabled = true;
-    status.style.color = "var(--text-secondary)";
-    try {
-      const createdBy = me.id;   // импортёр — текущий залогиненный профиль
-      let total = { workouts: 0, exercises: 0, templates: 0 };
-      for (const m of mappings) {
-        status.textContent = `Переносим «${m.legacy}»…`;
-        const r = await Migrate.importInto(m.legacy, m.target, createdBy);
-        total.workouts += r.workouts; total.exercises += r.exercises; total.templates += r.templates;
-      }
-      Migrate.markDone();
-      status.style.color = "var(--green)";
-      status.textContent = `Готово: ${total.workouts} трен., ${total.exercises} упр., ${total.templates} шабл. перенесено.`;
-      refreshSettingsButtons();
-      // Если перенесли в текущий открытый профиль — подтянуть свежие данные.
-      const cur = DATA.getCurrentUser();
-      if (cur && mappings.some(m => m.target === cur)) {
-        await Bridge.hydrate(cur);
-        if (screenMenu.classList.contains("active")) refreshMenu();
-      }
-    } catch (e) {
-      status.style.color = "var(--red)";
-      status.textContent = "Ошибка переноса: " + e.message;
-    } finally {
-      runBtn.disabled = false;
-    }
-  });
-}
-
-document.getElementById("migrate-legacy-btn").addEventListener("click", () => {
-  closeModal(settingsModalBackdrop);
-  openMigrationModal();
-});
-
 // Второй обработчик клика по той же пилюле «Настройки», что уже слушает
 // app.js (multiple addEventListener на одном элементе — не конфликтуют) —
 // на случай, если что-то сменилось с прошлого раза (роль, привязка к
@@ -257,28 +160,28 @@ document.getElementById("migrate-legacy-btn").addEventListener("click", () => {
 const settingsPill = document.querySelector('.pill[data-action="settings"]');
 if (settingsPill) settingsPill.addEventListener("click", () => { refreshSettingsButtons(); });
 
-// ---- КОРЕНЬ БАГА С «ЛОГИН-ФОРМОЙ ПОСЛЕ СИНХРОНИЗАЦИИ» ----
-// app.js (не тронутый) вешает на profile-chip (аватар в шапке меню) и на
-// switch-user-btn обработчики, которые ПРОСТО переключают экран:
-//   DATA.clearCurrentUser(); goToScreen("profile");
-// без единого вызова renderProfiles(). Раньше (хардкоженные dima/natela) это
-// было безопасно — карточки профилей рисовались один раз при первой загрузке
-// и больше не менялись. Теперь renderProfiles() — асинхронная, показывает
-// РАЗНОЕ в зависимости от состояния, и если она ни разу не была вызвана в
-// этой загрузке страницы (частый случай: сессия сама восстановилась при
-// старте, bootAuthAware идёт по быстрому пути сразу в меню, минуя
-// renderProfiles) — экран #screen-profile так и остаётся с "сырым" HTML по
-// умолчанию: форма входа ВИДНА (для неё нет display:none, пока JS явно не
-// поставит), список профилей СКРЫТ. Клик по чипу/«Сменить профиль» открывал
-// ровно эту сырую форму входа — iOS видел парольное поле и предлагал
-// Face ID/автозаполнение (то самое фото 2). Фикс: довызываем renderProfiles()
-// СРАЗУ после — она сама решит, что показать (переключатель тренеру, тихий
-// возврат в свой единственный профиль клиенту, или форму входа, если сессия
-// правда истекла). Второй addEventListener на тех же элементах — не мешает
-// оригинальному обработчику из app.js, просто выполняется следом.
+// profile-chip (аватар в шапке меню) сейчас скрыт CSS-ом (см. index.html
+// .profile-chip { display:none }) — оставлен нетронутым, кликнуть по нему
+// физически нельзя. Если его когда-нибудь вернут — тот же принцип, что и у
+// switch-user-btn ниже, должен применяться и здесь.
 const profileChipEl = document.getElementById("profile-chip");
 if (profileChipEl) profileChipEl.addEventListener("click", () => { renderProfiles(); });
-document.getElementById("switch-user-btn").addEventListener("click", () => { renderProfiles(); });
+
+// «Сменить профиль» — управляем ПОРЯДКОМ действий сами (app.js теперь только
+// закрывает модалку настроек, см. его комментарий у этой же кнопки). Раньше
+// экран #screen-profile показывался СРАЗУ (goToScreen), а полноценный список
+// профилей дорисовывался следом — пользователь видел вспышку «Загрузка…» на
+// уже открытом экране. Теперь наоборот: сперва тихо (оставаясь на текущем
+// экране) дожидаемся renderProfiles() — она полностью строит контент
+// #screen-profile, включая финальный список карточек одним кадром (см. её
+// комментарий про DocumentFragment) — и только когда всё готово, ПОКАЗЫВАЕМ
+// экран уже полностью заполненным. Задержка перед переходом ощущается как
+// короткая пауза на прежнем экране, а не как дёрганая загрузка на новом.
+document.getElementById("switch-user-btn").addEventListener("click", async () => {
+  DATA.clearCurrentUser();
+  await renderProfiles();
+  goToScreen("profile");
+});
 
 // «В облако» — досылает очередь несинхронизированных правок ПРЯМО СЕЙЧАС
 // (обычно она и так пуста — Bridge пушит сразу после каждого изменения;

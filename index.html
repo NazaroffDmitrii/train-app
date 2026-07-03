@@ -2470,16 +2470,6 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
         </span>
         <span>Сменить профиль</span>
       </button>
-      <!-- Перенос старых локальных данных в облако (миграция). Показывается
-           только если на устройстве найдены легаси-данные (см. auth-ui.js). -->
-      <button class="modal-option modal-option-full" id="migrate-legacy-btn" style="display:none">
-        <span class="modal-option-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
-          </svg>
-        </span>
-        <span>Перенести старые данные в облако</span>
-      </button>
       <!-- Ввести код приглашения будучи уже залогиненным. Нужно клиенту,
            который зарегистрировался, но не привязался к своему профилю с
            данными (напр. ошибся в коде при регистрации). Скрыта для тренера —
@@ -2604,7 +2594,6 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 <script src="app.js"></script>
 <script src="outbox.js"></script>
 <script src="bridge.js"></script>
-<script src="migrate.js"></script>
 <script src="auth-ui.js"></script>
 </body>
 </html>
