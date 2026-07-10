@@ -27,28 +27,91 @@ const DATA = (() => {
   // Библиотека упражнений — общий пул.
   // owner: null = общее (видно всем, можно скрыть у себя, нельзя удалить — только скрыть).
   // type: "strength" | "run" — на будущее для фильтрации (раздел 4 спеки).
-  const DEFAULT_EXERCISES = [
-    { id: "e_squat",      name: "Приседания со штангой",     cat: "Ноги",   type: "strength", owner: null },
-    { id: "e_deadlift",   name: "Становая тяга",             cat: "Спина",  type: "strength", owner: null },
-    { id: "e_bench",      name: "Жим лёжа",                  cat: "Грудь",  type: "strength", owner: null },
-    { id: "e_ohp",        name: "Жим стоя",                  cat: "Плечи",  type: "strength", owner: null },
-    { id: "e_row",        name: "Тяга штанги в наклоне",     cat: "Спина",  type: "strength", owner: null },
-    { id: "e_pullup",     name: "Подтягивания",              cat: "Спина",  type: "strength", owner: null },
-    { id: "e_dip",        name: "Отжимания на брусьях",      cat: "Грудь",  type: "strength", owner: null },
-    { id: "e_curl",       name: "Сгибание на бицепс",        cat: "Руки",   type: "strength", owner: null },
-    { id: "e_tricep",     name: "Разгибание на трицепс",     cat: "Руки",   type: "strength", owner: null },
-    { id: "e_lunge",      name: "Выпады",                    cat: "Ноги",   type: "strength", owner: null },
-    { id: "e_rdl",        name: "Румынская тяга",            cat: "Ноги",   type: "strength", owner: null },
-    { id: "e_press_inc",  name: "Жим гантелей на наклонной", cat: "Грудь", type: "strength", owner: null },
-    { id: "e_fly",        name: "Разводка гантелей",         cat: "Грудь",  type: "strength", owner: null },
-    { id: "e_lat",        name: "Тяга блока сверху",         cat: "Спина",  type: "strength", owner: null },
-    { id: "e_calf",       name: "Подъём на носки",           cat: "Ноги",   type: "strength", owner: null },
-    { id: "e_plank",      name: "Планка",                    cat: "Кор",    type: "strength", owner: null },
-    { id: "e_crunch",     name: "Скручивания",               cat: "Кор",    type: "strength", owner: null },
-    { id: "e_run",        name: "Бег",                       cat: "Кардио", type: "run",      owner: null },
-  ];
+  // === Биомех-база «Атлас» (window.ATLAS_SEED из atlas-seed.js) ===
+  // Справочник (groups / categories(движения) / muscles / muscleCategoryLinks) +
+  // 163 упражнения. Это ОБЩИЙ сид для всех: держим его read-only базой, а личные
+  // правки живут отдельным override-слоем (copy-on-write, см. getVisibleExercises).
+  // Так персональный snapshot синхронизации не раздувается на ~766 КБ.
+  const ATLAS = (window.ATLAS_SEED && typeof window.ATLAS_SEED === "object")
+    ? window.ATLAS_SEED
+    : { groups: [], categories: [], muscles: [], muscleCategoryLinks: [], exercises: [] };
 
-  const EXERCISE_CATEGORIES = ["Ноги", "Спина", "Грудь", "Плечи", "Руки", "Кор", "Кардио", "Другое"];
+  // имя мышцы → её группа-витрина (для вывода группы упражнения по целевой мышце)
+  const _muscleGroup = new Map(ATLAS.muscles.map(m => [m.name, m.group]));
+
+  // роль новой модели ({muscle,bundle}[]) → строка «Мышца (пучок), …» для легаси-рендера
+  function _rolesToStr(arr) {
+    return (arr || []).map(o => o.bundle ? `${o.muscle} (${o.bundle})` : o.muscle).join(", ");
+  }
+  // обратный разбор: «Мышца (Пучок), …» → [{muscle,bundle}] (для синхронизации правок в ex.atlas)
+  function _strToRoles(str) {
+    return (str || "").split(",").map(s => s.trim()).filter(Boolean).map(s => {
+      const m = s.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+      return m ? { muscle: m[1].trim(), bundle: m[2].trim() } : { muscle: s, bundle: "" };
+    });
+  }
+  // группы упражнения = группы его целевых мышц (уникальные, в порядке появления)
+  function atlasExerciseGroups(ex) {
+    const t = (ex.muscles && ex.muscles.target) || [];
+    const seen = [];
+    t.forEach(o => { const g = _muscleGroup.get(o.muscle); if (g && !seen.includes(g)) seen.push(g); });
+    return seen;
+  }
+  // Карточка Атласа → объект упражнения приложения. Полная новая модель лежит в
+  // ex.atlas; сверху — производные легаси-поля (cat/type/muscles-строки/steps),
+  // чтобы существующие экраны работали до их переписывания под новую модель.
+  function atlasToExercise(a) {
+    const m = a.muscles || {};
+    const groups = atlasExerciseGroups(a);
+    return {
+      id: a.id,
+      name: a.name,
+      cat: groups[0] || "Другое",
+      groups,
+      type: "strength",
+      owner: null,
+      atlas: {
+        movementGroup: a.movementGroup || "",
+        equipment: a.equipment || "",
+        loadTypes: a.loadTypes || [],
+        level: a.level || "",
+        target: m.target || [],
+        synergist: m.synergist || [],
+        stabilizer: m.stabilizer || [],
+        categories: a.categories || [],
+        technique: a.technique || "",
+        mistakes: a.mistakes || [],
+        differences: a.differences || "",
+        extra: a.extra || "",
+        contraindications: a.contraindications || "",
+        referenceUrl: a.referenceUrl || "",
+      },
+      // легаси-поля для существующих экранов (список/пикер/статистика/деталка):
+      muscles: {
+        agonists:     _rolesToStr(m.target),
+        synergists:   _rolesToStr(m.synergist),
+        stabilizers:  _rolesToStr(m.stabilizer),
+        distributors: "",
+      },
+      steps: (a.technique || "").split("\n").map(s => s.trim()).filter(Boolean),
+      media: "",
+      tip: "",
+    };
+  }
+
+  const DEFAULT_EXERCISES = ATLAS.exercises.map(atlasToExercise);
+  const ATLAS_BY_ID = new Map(DEFAULT_EXERCISES.map(e => [e.id, e]));
+
+  // id старых 18 дефолтов — при миграции их копии сносим из личного списка
+  // (полная замена базы, см. решение пользователя). Личные e_own_* сохраняются.
+  const OLD_DEFAULT_IDS = new Set([
+    "e_squat","e_deadlift","e_bench","e_ohp","e_row","e_pullup","e_dip","e_curl",
+    "e_tricep","e_lunge","e_rdl","e_press_inc","e_fly","e_lat","e_calf","e_plank",
+    "e_crunch","e_run",
+  ]);
+
+  // «Категории» приложения теперь = 8 групп-витрин Атласа (аналог старых категорий).
+  const EXERCISE_CATEGORIES = ATLAS.groups.slice();
 
   // Палитра цветных меток категорий. Пользователь выбирает цвет вручную (см.
   // setCategoryColor); пока он не выбран, цвет берётся из палитры по индексу
@@ -147,6 +210,15 @@ const DATA = (() => {
     categoryColor,
     RPE_LABELS,
 
+    // === Справочник Атласа (для подвкладок Мышцы/Движения/Группы и конструктора) ===
+    atlasGroups() { return ATLAS.groups.slice(); },
+    atlasMuscles() { return ATLAS.muscles; },
+    atlasMovements() { return ATLAS.categories; },       // «основные движения» (База/Опция)
+    atlasLinks() { return ATLAS.muscleCategoryLinks; },  // мышца ↔ движение
+    atlasExerciseById(id) { return ATLAS_BY_ID.get(id) || null; },
+    atlasMuscleGroup(name) { return _muscleGroup.get(name) || null; },
+    atlasExerciseGroups,
+
     // Общий пул (без личных и без учёта скрытия) — низкоуровневый доступ
     getExercises() {
       return ls("train_exercises", DEFAULT_EXERCISES);
@@ -238,25 +310,41 @@ const DATA = (() => {
     getHiddenIds(userId) { return ls(`train_hidden_${userId}`, []); },
     saveHiddenIds(userId, list) { lsSet(`train_hidden_${userId}`, list); },
 
-    // Полный список упражнений пользователя — стартовый набор + добавленные им.
+    // Полный список упражнений пользователя = read-only база Атласа + личный
+    // override-слой (copy-on-write). Правило слияния:
+    //   • личное упражнение с id базового (exNNN) перекрывает базовое (это его правка);
+    //   • скрытые id (getHiddenIds) выпадают и из базы, и из override;
+    //   • чисто личные (e_own_*) добавляются сверху.
+    // База в личный список НЕ копируется — snapshot синхронизации не раздувается.
     getVisibleExercises(userId) {
       this.ensureExercisesSeeded(userId);
-      return this.getOwnExercises(userId);
+      const own = this.getOwnExercises(userId);
+      const ownIds = new Set(own.map(e => e.id));
+      const hidden = new Set(this.getHiddenIds(userId));
+      const base = DEFAULT_EXERCISES.filter(e => !ownIds.has(e.id) && !hidden.has(e.id));
+      const ownVisible = own.filter(e => !hidden.has(e.id));
+      return [...base, ...ownVisible];
     },
 
-    // Скопировать стартовый набор в личный список пользователя, если ещё не сделано.
-    // Запускается один раз при первом открытии экрана упражнений после перехода на
-    // архитектуру «у каждого своя база».
+    // Разовая миграция на базу «Атлас»: сносит копии старых 18 дефолтов из личного
+    // списка (полная замена базы). Личные упражнения (e_own_*) и правки атласа
+    // сохраняются. Ничего не копирует — база отдаётся merge'ом (см. getVisibleExercises).
     ensureExercisesSeeded(userId) {
-      if (ls(`train_exercises_seeded_${userId}`)) return false;
+      if (ls(`train_atlas_migrated_${userId}`)) return false;
       const own = this.getOwnExercises(userId);
-      const existingNames = new Set(own.map(e => e.name.toLowerCase()));
-      const toAdd = DEFAULT_EXERCISES
-        .filter(e => !existingNames.has(e.name.toLowerCase()))
-        .map(e => ({ ...e, owner: userId }));
-      if (toAdd.length) this.saveOwnExercises(userId, [...toAdd, ...own]);
+      const kept = own.filter(e => !OLD_DEFAULT_IDS.has(e.id));
+      if (kept.length !== own.length) this.saveOwnExercises(userId, kept);
+      // Категории → 8 групп-витрин Атласа. Старые (Спина/Кор/Кардио…) больше не
+      // совпадают с ex.cat новой базы; сохраняем лишь кастомные, добавленные юзером.
+      const OLD_CATS = ["Ноги", "Спина", "Грудь", "Плечи", "Руки", "Кор", "Кардио", "Другое"];
+      const curCats = ls(`train_categories_${userId}`, null);
+      if (Array.isArray(curCats)) {
+        const custom = curCats.filter(c => !OLD_CATS.includes(c) && !ATLAS.groups.includes(c));
+        lsSet(`train_categories_${userId}`, [...ATLAS.groups, ...custom]);
+      }
+      lsSet(`train_atlas_migrated_${userId}`, true);
       lsSet(`train_exercises_seeded_${userId}`, true);
-      return true; // первый запуск — нужно запушить в remote
+      return false; // база больше не копируется — push в remote не нужен
     },
 
     // Пометить набор упражнений как уже засеянный — вызывается слоем синхронизации
@@ -299,11 +387,19 @@ const DATA = (() => {
       return ex;
     },
 
-    // Редактирование: только своих личных упражнений (общие — общий CRUD, не в этой версии).
+    // Редактирование. Личное правится на месте; базовое (атлас) правится через
+    // copy-on-write — создаётся личная копия с тем же id, которая перекрывает базу
+    // при слиянии (getVisibleExercises). Так синхронизируется только правка, не вся база.
     updateOwnExercise(userId, exerciseId, patch) {
       const list = this.getOwnExercises(userId);
-      const ex = list.find(e => e.id === exerciseId);
-      if (!ex) return null;
+      let ex = list.find(e => e.id === exerciseId);
+      if (!ex) {
+        const base = ATLAS_BY_ID.get(exerciseId);
+        if (!base) return null;
+        ex = JSON.parse(JSON.stringify(base)); // глубокая копия, чтобы не мутировать общий сид
+        ex.owner = userId;
+        list.push(ex);
+      }
       if (patch.name !== undefined) ex.name = patch.name.trim();
       if (patch.cat !== undefined) ex.cat = patch.cat;
       if (patch.type !== undefined) ex.type = patch.type;
@@ -312,14 +408,28 @@ const DATA = (() => {
       if (patch.muscles !== undefined) ex.muscles = normMuscles(patch.muscles);
       if (patch.steps !== undefined) ex.steps = normSteps(patch.steps);
       if (patch.tip !== undefined) ex.tip = (patch.tip || "").trim();
+      // Правку атласного упражнения отражаем и в ex.atlas — богатая карточка читает его.
+      if (ex.atlas) {
+        if (patch.muscles !== undefined) {
+          ex.atlas.target     = _strToRoles(patch.muscles.agonists);
+          ex.atlas.synergist  = _strToRoles(patch.muscles.synergists);
+          ex.atlas.stabilizer = _strToRoles(patch.muscles.stabilizers);
+        }
+        if (patch.steps !== undefined) ex.atlas.technique = normSteps(patch.steps).join("\n");
+      }
       this.saveOwnExercises(userId, list);
       return ex;
     },
 
-    // Удаление: только своё личное. Общее упражнение нельзя удалить — только скрыть у себя (раздел 3, 4).
+    // Удаление из списка пользователя. Чисто личное (e_own_*) удаляется совсем.
+    // Базовое (атлас) удалить нельзя — его скрываем у этого пользователя; заодно
+    // убираем его override из личного списка, если был. Восстановление — через undo
+    // (снимок own + hidden, см. обработчик свайпа).
     deleteOwnExercise(userId, exerciseId) {
       const list = this.getOwnExercises(userId);
-      this.saveOwnExercises(userId, list.filter(e => e.id !== exerciseId));
+      const filtered = list.filter(e => e.id !== exerciseId);
+      if (filtered.length !== list.length) this.saveOwnExercises(userId, filtered);
+      if (ATLAS_BY_ID.has(exerciseId)) this.hideExercise(userId, exerciseId);
     },
 
     getExerciseOrder(userId) { return ls(`train_ex_order_${userId}`, null); },
@@ -457,6 +567,46 @@ const DATA = (() => {
       });
       this.saveRecords(userId, recs);
       return recs;
+    },
+
+    // Перепривязать «осиротевшее» упражнение (id из истории/шаблонов, которого
+    // больше нет в базе — напр. старые дефолты после перехода на «Атлас») к
+    // упражнению из новой базы. Переписывает историю и шаблоны, обновляет снимок
+    // имени, пересчитывает рекорды — после этого статистика считается под newId.
+    remapExercise(userId, oldId, newId) {
+      if (!oldId || !newId || oldId === newId) return 0;
+      const newEx = this.getVisibleExercises(userId).find(e => e.id === newId);
+      const newName = newEx ? newEx.name : null;
+      let changed = 0;
+      const hist = this.getWorkoutHistory(userId);
+      hist.forEach(w => (w.exercises || []).forEach(ex => {
+        if (ex.exerciseId === oldId) { ex.exerciseId = newId; if (newName) ex.name = newName; changed++; }
+      }));
+      if (changed) { this.saveWorkoutHistory(userId, hist); this.recomputeRecords(userId); }
+      const tpls = this.getTemplates(userId);
+      let tplChanged = 0;
+      tpls.forEach(t => (t.exercises || []).forEach(ex => {
+        if (ex.exerciseId === oldId) { ex.exerciseId = newId; tplChanged++; }
+      }));
+      if (tplChanged) this.saveTemplates(userId, tpls);
+      return changed + tplChanged;
+    },
+
+    // Список «осиротевших» упражнений (встречаются в истории, но нет в базе) —
+    // для перепривязки. Имя берём из снимка в истории (ex.name).
+    getOrphanExercises(userId) {
+      const known = new Set(this.getVisibleExercises(userId).map(e => e.id));
+      const orphans = {};
+      this.getWorkoutHistory(userId).forEach(w => {
+        if (w.type !== "strength") return;
+        (w.exercises || []).forEach(ex => {
+          if (known.has(ex.exerciseId)) return;
+          const o = orphans[ex.exerciseId] || (orphans[ex.exerciseId] = { id: ex.exerciseId, name: ex.name || ex.exerciseId, count: 0 });
+          if (ex.name && o.name === ex.exerciseId) o.name = ex.name;
+          o.count++;
+        });
+      });
+      return Object.values(orphans).sort((a, b) => b.count - a.count);
     },
 
     // Дефолт таймера отдыха — девайс-настройка, запоминается между тренировками.
@@ -951,7 +1101,7 @@ window.addEventListener("pagehide", () => SyncQueue.flush());
 /* ==========================================================================
    Screen switching
    ========================================================================== */
-const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates") };
+const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), constructor: $("screen-constructor") };
 
 function goToScreen(name, opts = {}) {
   Object.values(SCREENS).forEach(s => s && s.classList.remove("active"));
@@ -975,6 +1125,7 @@ function goToScreen(name, opts = {}) {
   if (name === "history")  { initHistoryScreen(); }
   if (name === "stats")    { initStatsScreen(); }
   if (name === "templates") { initTemplatesScreen(); }
+  if (name === "constructor" && window.CONSTRUCTOR) { CONSTRUCTOR.init(); }
 }
 
 // Гигиена на каждый вход в профиль — и при явном выборе на экране профилей,
@@ -3124,6 +3275,7 @@ let _exercisesCatFilter = "all";
 let _exercisesShowHidden = false;
 let _exListEditMode = false;
 let _exListDrag = null;
+let _atlasSubtab = "exercises"; // подвкладка «Атлас»: exercises | muscles | movements | groups
 
 // Роли рабочих мышц — фиксированный порядок и подписи для деталей/формы.
 const MUSCLE_ROLES = [
@@ -3132,22 +3284,176 @@ const MUSCLE_ROLES = [
   { key: "stabilizers",  label: "Стабилизаторы" },
   { key: "distributors", label: "Распределители усилий" },
 ];
+// Роли новой модели Атласа ({muscle,bundle}[]) для богатой карточки.
+const ATLAS_ROLES = [
+  { key: "target",     label: "Целевые",       primary: true },
+  { key: "synergist",  label: "Синергисты" },
+  { key: "stabilizer", label: "Стабилизаторы", stab: true },
+];
+const LEVEL_LABELS = { global: "Глобальное", regional: "Региональное", local: "Локальное",
+  "глобальные": "Глобальное", "региональные": "Региональное", "локальные": "Локальное" };
+const LOAD_LABELS = { weighted: "С отягощением", bodyweight: "Свой вес" };
 
 function initExercisesScreen() {
   exercisesSearch.value = "";
   _exercisesCatFilter = "all";
   _exercisesShowHidden = false;
   _exListEditMode = false;
+  _atlasSubtab = "exercises";
+  document.querySelectorAll("#atlas-subtabs .atlas-subtab").forEach(b =>
+    b.classList.toggle("active", b.dataset.sub === "exercises"));
   const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.classList.remove("visible");
   const addBtn  = $("exercises-add-btn");  if (addBtn)  addBtn.hidden  = false;
   const userId = DATA.getCurrentUser();
   if (DATA.ensureExercisesSeeded(userId)) SyncQueue.push("exercise:create", {});
+  applyAtlasSubtabChrome();
   renderExercisesList("");
 }
 
 $("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goToScreen("menu"); });
-exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
+exercisesSearch.addEventListener("input", () => renderAtlasCurrent());
 $("ex-cat-manage-btn").addEventListener("click", () => openCategoryManager());
+
+// ── Подвкладки «Атлас»: Упражнения / Мышцы / Движения / Группы ──────────────
+document.querySelectorAll("#atlas-subtabs .atlas-subtab").forEach(btn => {
+  btn.addEventListener("click", () => switchAtlasSubtab(btn.dataset.sub));
+});
+
+function switchAtlasSubtab(sub) {
+  _atlasSubtab = sub;
+  exercisesSearch.value = "";
+  document.querySelectorAll("#atlas-subtabs .atlas-subtab").forEach(b =>
+    b.classList.toggle("active", b.dataset.sub === sub));
+  if (sub !== "exercises") exitExListEditMode();
+  applyAtlasSubtabChrome();
+  renderAtlasCurrent();
+}
+
+// Видимость специфичных для подвкладки элементов шапки (поиск, фильтр групп, «+»).
+function applyAtlasSubtabChrome() {
+  const sub = _atlasSubtab;
+  const searchWrap = document.querySelector("#screen-exercises .exercises-search-wrap");
+  const catWrap = document.querySelector("#screen-exercises .ex-cat-tabs-wrap");
+  const addBtn = $("exercises-add-btn");
+  const showSearch = sub === "exercises" || sub === "muscles" || sub === "movements";
+  if (searchWrap) searchWrap.style.display = showSearch ? "" : "none";
+  if (catWrap) catWrap.style.display = sub === "exercises" ? "" : "none";
+  if (addBtn) addBtn.style.display = sub === "exercises" ? "" : "none";
+  const ph = { exercises: "Поиск упражнения…", muscles: "Поиск мышцы…", movements: "Поиск движения…" }[sub];
+  if (ph) exercisesSearch.placeholder = ph;
+}
+
+function renderAtlasCurrent() {
+  const q = exercisesSearch.value;
+  if (_atlasSubtab === "muscles") renderMusclesTab(q);
+  else if (_atlasSubtab === "movements") renderMovementsTab(q);
+  else if (_atlasSubtab === "groups") renderGroupsTab();
+  else renderExercisesList(q);
+}
+
+// Порядок групп для справочника: как у пользователя (getAllCategories), но только
+// 8 групп Атласа; недостающие добавляем в каноничном порядке.
+function atlasOrderedGroups(userId) {
+  const all = DATA.getAllCategories(userId);
+  const g = DATA.atlasGroups();
+  return [...all.filter(x => g.includes(x)), ...g.filter(x => !all.includes(x))];
+}
+
+// ── Подвкладка «Мышцы» ──────────────────────────────────────────────────────
+function renderMusclesTab(query) {
+  const userId = DATA.getCurrentUser();
+  const q = (query || "").trim().toLowerCase();
+  const muscles = DATA.atlasMuscles();
+  const links = DATA.atlasLinks();
+  const movesByMuscle = {};
+  links.forEach(l => { (movesByMuscle[l.muscle] = movesByMuscle[l.muscle] || new Set()).add(l.category); });
+  const filtered = muscles.filter(m => !q || m.name.toLowerCase().includes(q)
+    || (m.bundles || []).some(b => b.toLowerCase().includes(q)));
+  const byGroup = {};
+  filtered.forEach(m => (byGroup[m.group] = byGroup[m.group] || []).push(m));
+  const groups = atlasOrderedGroups(userId).filter(g => byGroup[g]);
+  const el = $("exercises-scroll");
+  if (!filtered.length) { el.innerHTML = `<p class="empty-state">Ничего не найдено</p>`; return; }
+  el.innerHTML = groups.map(g => {
+    const color = DATA.getCategoryColor(userId, g);
+    const cards = byGroup[g].map(m => {
+      const star = m.visible ? `<span class="ref-star" title="Поверхностная — рост виден внешне">★</span>` : "";
+      const bundles = (m.bundles || []).length
+        ? `<div class="ref-chips">${m.bundles.map(b => `<span class="ref-chip">${escHtml(b)}</span>`).join("")}</div>` : "";
+      const moves = movesByMuscle[m.name] ? [...movesByMuscle[m.name]] : [];
+      const movesLine = moves.length ? `<div class="ref-sub"><b>Двигает:</b> ${moves.map(escHtml).join(", ")}</div>` : "";
+      return `<div class="ref-card" style="border-left-color:${escHtml(color)}">
+        <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${star}</div>
+        ${bundles}${movesLine}</div>`;
+    }).join("");
+    return `<div class="ref-group-label"><span class="ref-dot" style="background:${escHtml(color)}"></span>${escHtml(g)}<span class="ref-count" style="margin-left:auto">${byGroup[g].length}</span></div>${cards}`;
+  }).join("");
+}
+
+// ── Подвкладка «Основные движения» ──────────────────────────────────────────
+function renderMovementsTab(query) {
+  const userId = DATA.getCurrentUser();
+  const q = (query || "").trim().toLowerCase();
+  const moves = DATA.atlasMovements();
+  const links = DATA.atlasLinks();
+  const exs = DATA.getVisibleExercises(userId);
+  const musByMove = {};
+  links.forEach(l => { (musByMove[l.category] = musByMove[l.category] || new Set()).add(l.muscle); });
+  const exByMove = {};
+  exs.forEach(e => { ((e.atlas && e.atlas.categories) || []).forEach(c => { exByMove[c] = (exByMove[c] || 0) + 1; }); });
+  const filtered = moves.filter(m => !q || m.name.toLowerCase().includes(q));
+  const byGroup = {};
+  filtered.forEach(m => (byGroup[m.group] = byGroup[m.group] || []).push(m));
+  const groups = atlasOrderedGroups(userId).filter(g => byGroup[g]);
+  const el = $("exercises-scroll");
+  if (!filtered.length) { el.innerHTML = `<p class="empty-state">Ничего не найдено</p>`; return; }
+  el.innerHTML = groups.map(g => {
+    const color = DATA.getCategoryColor(userId, g);
+    const cards = byGroup[g].slice()
+      .sort((a, b) => (a.type === b.type ? 0 : a.type === "База" ? -1 : 1))
+      .map(m => {
+        const badge = m.type === "База" ? `<span class="ref-badge">База</span>` : `<span class="ref-badge opt">Опция</span>`;
+        const mus = musByMove[m.name] ? [...musByMove[m.name]] : [];
+        const musLine = mus.length ? `<div class="ref-sub"><b>Мышцы:</b> ${mus.map(escHtml).join(", ")}</div>` : "";
+        return `<div class="ref-card" style="border-left-color:${escHtml(color)}">
+          <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${badge}<span class="ref-count" title="Упражнений в базе">${exByMove[m.name] || 0}</span></div>
+          ${musLine}</div>`;
+      }).join("");
+    return `<div class="ref-group-label"><span class="ref-dot" style="background:${escHtml(color)}"></span>${escHtml(g)}</div>${cards}`;
+  }).join("");
+}
+
+// ── Подвкладка «Группы» (витрины, аналог старых категорий) ───────────────────
+function renderGroupsTab() {
+  const userId = DATA.getCurrentUser();
+  const groups = atlasOrderedGroups(userId);
+  const exs = DATA.getVisibleExercises(userId);
+  const muscles = DATA.atlasMuscles();
+  const exCount = {}; // по первичной группе — как в списке упражнений
+  exs.forEach(e => { exCount[e.cat] = (exCount[e.cat] || 0) + 1; });
+  const musCount = {};
+  muscles.forEach(m => { musCount[m.group] = (musCount[m.group] || 0) + 1; });
+  const el = $("exercises-scroll");
+  const intro = `<div class="ref-sub" style="padding:2px 6px 10px">Группы — витрины для быстрого выбора упражнений (аналог категорий). Тап — открыть упражнения группы.</div>`;
+  const manage = `<button class="ex-show-hidden-btn" id="ref-groups-manage">Настроить цвета и порядок</button>`;
+  el.innerHTML = intro + groups.map(g => {
+    const color = DATA.getCategoryColor(userId, g);
+    return `<div class="ref-card ref-card-tap" data-group="${escHtml(g)}" style="border-left-color:${escHtml(color)}">
+      <div class="ref-card-top">
+        <span class="ref-dot" style="background:${escHtml(color)};width:12px;height:12px"></span>
+        <span class="ref-card-name">${escHtml(g)}</span>
+        <span class="ref-count">${exCount[g] || 0} упр · ${musCount[g] || 0} мышц</span>
+      </div></div>`;
+  }).join("") + manage;
+  el.querySelectorAll(".ref-card[data-group]").forEach(card => {
+    card.addEventListener("click", () => {
+      _exercisesCatFilter = card.dataset.group;
+      switchAtlasSubtab("exercises");
+    });
+  });
+  const mgBtn = $("ref-groups-manage");
+  if (mgBtn) mgBtn.addEventListener("click", () => openCategoryManager());
+}
 
 function renderCatTabs(userId, presentCats) {
   const tabsEl = $("ex-cat-tabs");
@@ -3359,11 +3665,13 @@ function wireExRowSwipe(wrap, userId) {
         const ex = allExs.find(e => e.id === exId);
         const exName = ex ? ex.name : exId;
         const snapshot = [...DATA.getOwnExercises(userId)];
+        const hiddenSnapshot = [...DATA.getHiddenIds(userId)];
         DATA.deleteOwnExercise(userId, exId);
         SyncQueue.push("exercise:delete", { id: exId });
         renderExercisesList(exercisesSearch.value);
         showUndoToast(`Упражнение «${exName}» удалено`, () => {
           DATA.saveOwnExercises(userId, snapshot);
+          DATA.saveHiddenIds(userId, hiddenSnapshot); // базовое было скрыто — вернуть
           SyncQueue.push("exercise:create", {});
           renderExercisesList(exercisesSearch.value);
           showToast("Восстановлено");
@@ -3555,20 +3863,55 @@ function openExerciseDetail(exerciseId) {
       Смотреть видео</a>`;
   }
 
-  const muscles = ex.muscles || {};
-  const rolesHtml = MUSCLE_ROLES
-    .map(r => ({ ...r, items: splitMuscles(muscles[r.key]) }))
-    .filter(r => r.items.length)
-    .map(r => `
-      <div class="exd-muscle-role">
-        <div class="exd-muscle-role-name">${escHtml(r.label)}</div>
-        <div class="exd-chips">${r.items.map(m => `<span class="exd-chip${r.primary ? " primary" : ""}">${escHtml(m)}</span>`).join("")}</div>
-      </div>`).join("");
-  const musclesSection = rolesHtml
-    ? `<div class="exd-section-label">Рабочие мышцы</div>${rolesHtml}`
+  const a = ex.atlas || null;
+
+  // Мета-чипы: оборудование, уровень, режим отягощения.
+  const metaChips = [];
+  if (a && a.equipment) metaChips.push(`<span class="exd-metachip">${escHtml(a.equipment)}</span>`);
+  if (a && a.level) metaChips.push(`<span class="exd-metachip level">${escHtml(LEVEL_LABELS[a.level] || a.level)}</span>`);
+  if (a && a.loadTypes) a.loadTypes.forEach(lt => metaChips.push(`<span class="exd-metachip">${escHtml(LOAD_LABELS[lt] || lt)}</span>`));
+  const metaSection = metaChips.length ? `<div class="exd-metachips">${metaChips.join("")}</div>` : "";
+
+  // Основные движения (категории Атласа).
+  const movements = (a && a.categories) || [];
+  const movementsSection = movements.length
+    ? `<div class="exd-section-label">Основные движения</div><div class="exd-chips">${movements.map(m => `<span class="exd-chip">${escHtml(m)}</span>`).join("")}</div>`
     : "";
 
-  const steps = Array.isArray(ex.steps) ? ex.steps : [];
+  // Рабочие мышцы: новая модель (роли с пучками) или легаси-строки.
+  let musclesSection = "";
+  const hasAtlasMuscles = a && Array.isArray(a.target) && a.target.length;
+  if (hasAtlasMuscles) {
+    const rolesHtml = ATLAS_ROLES.map(r => ({ ...r, items: (a[r.key] || []) }))
+      .filter(r => r.items.length)
+      .map(r => `
+        <div class="exd-muscle-role">
+          <div class="exd-muscle-role-name">${escHtml(r.label)}</div>
+          <div class="exd-chips">${r.items.map(o => {
+            const lbl = o.bundle ? `${o.muscle} · ${o.bundle}` : o.muscle;
+            const cls = r.primary ? " primary" : (r.stab ? " stab" : "");
+            return `<span class="exd-chip${cls}">${escHtml(lbl)}</span>`;
+          }).join("")}</div>
+        </div>`).join("");
+    musclesSection = `<div class="exd-section-label">Рабочие мышцы</div>${rolesHtml}`;
+  } else {
+    const muscles = ex.muscles || {};
+    const rolesHtml = MUSCLE_ROLES
+      .map(r => ({ ...r, items: splitMuscles(muscles[r.key]) }))
+      .filter(r => r.items.length)
+      .map(r => `
+        <div class="exd-muscle-role">
+          <div class="exd-muscle-role-name">${escHtml(r.label)}</div>
+          <div class="exd-chips">${r.items.map(m => `<span class="exd-chip${r.primary ? " primary" : ""}">${escHtml(m)}</span>`).join("")}</div>
+        </div>`).join("");
+    musclesSection = rolesHtml ? `<div class="exd-section-label">Рабочие мышцы</div>${rolesHtml}` : "";
+  }
+
+  // Техника: из atlas.technique (шаги через \n) или легаси steps.
+  const techniqueText = (a && a.technique) || "";
+  const steps = techniqueText
+    ? techniqueText.split("\n").map(s => s.trim()).filter(Boolean)
+    : (Array.isArray(ex.steps) ? ex.steps : []);
   const stepsSection = steps.length
     ? `<div class="exd-section-label">Техника</div>${steps.map((s, i) => `
         <div class="exd-step">
@@ -3577,12 +3920,46 @@ function openExerciseDetail(exerciseId) {
         </div>`).join("")}`
     : "";
 
+  // Типичные ошибки.
+  const mistakes = (a && a.mistakes) || [];
+  const mistakesSection = mistakes.length
+    ? `<div class="exd-section-label">Типичные ошибки</div>${mistakes.map(m => `
+        <div class="exd-mistake"><span class="exd-mistake-dot"></span><span>${escHtml(m)}</span></div>`).join("")}`
+    : "";
+
+  // Чем отличается / когда выбирать.
+  const differences = ((a && a.differences) || "").trim();
+  const differencesSection = differences
+    ? `<div class="exd-section-label">Чем отличается</div><p class="exd-note">${escHtml(differences)}</p>`
+    : "";
+
+  // Биомех-нюанс.
+  const extra = ((a && a.extra) || "").trim();
+  const extraSection = extra
+    ? `<div class="exd-section-label">Нюанс</div><p class="exd-note">${escHtml(extra)}</p>`
+    : "";
+
+  // Противопоказания — предупреждающий блок.
+  const contra = ((a && a.contraindications) || "").trim();
+  const contraSection = contra
+    ? `<div class="exd-warn"><span class="exd-warn-icon">⚠️</span><span><b>Противопоказания.</b> ${escHtml(contra)}</span></div>`
+    : "";
+
+  // Ссылка-референс (напр. каталог muscleandmotion).
+  const ref = ((a && a.referenceUrl) || "").trim();
+  const refSection = isHttpUrl(ref)
+    ? `<a class="exd-video-btn" href="${escHtml(ref)}" target="_blank" rel="noopener" style="margin-top:18px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        Открыть референс</a>`
+    : "";
+
   const tip = (ex.tip || "").trim();
   const tipSection = tip
     ? `<div class="exd-tip"><span class="exd-tip-icon">💡</span><span><b>Совет.</b> ${escHtml(tip)}</span></div>`
     : "";
 
-  const body = musclesSection + stepsSection + tipSection;
+  const body = metaSection + movementsSection + musclesSection + stepsSection
+    + mistakesSection + differencesSection + extraSection + contraSection + refSection + tipSection;
   $("exd-body").innerHTML = mediaHtml +
     (body || `<p class="exd-empty">Техника и мышцы пока не заполнены — нажми «Править», чтобы добавить.</p>`);
 
@@ -4631,6 +5008,16 @@ function initStatsScreen() {
       </div>
     </div>` : `<div class="s-empty">Проведи первую силовую тренировку</div>`;
 
+  // Старые упражнения из истории, которых нет в новой базе — предложить привязку,
+  // чтобы статистика/рекорды считались корректно (после перехода на «Атлас»).
+  const orphans = DATA.getOrphanExercises(userId);
+  const orphanBanner = orphans.length ? `
+    <button class="s-orphan-banner" id="s-orphan-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+      <span><b>Старых упражнений: ${orphans.length}</b><small>Привяжи к базе, чтобы учитывалась статистика</small></span>
+      <svg class="s-orphan-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+    </button>` : "";
+
   let html;
   if (_statsTypeFilter === "strength") {
     // ── Экран 2: силовые ──
@@ -4650,6 +5037,7 @@ function initStatsScreen() {
         </div>
       </div>
       ${calendarBlock}
+      ${orphanBanner}
       ${exerciseCardHtml}
     `;
   } else if (_statsTypeFilter === "run") {
@@ -4731,6 +5119,52 @@ function initStatsScreen() {
   if (pickBtn) pickBtn.addEventListener("click", () => {
     openExercisePicker(id => { _statsSelectedExId = id; initStatsScreen(); }, _statsSelectedExId);
   });
+
+  const orphanBtn = $("s-orphan-btn");
+  if (orphanBtn) orphanBtn.addEventListener("click", () => openOrphanRemapSheet());
+}
+
+// Лист перепривязки старых упражнений: список «сирот» из истории, у каждого —
+// «Заменить на…» → общий пикер базы → DATA.remapExercise (история/шаблоны/рекорды).
+function openOrphanRemapSheet() {
+  const userId = DATA.getCurrentUser();
+  const existing = $("orphan-remap-backdrop");
+  if (existing) existing.remove();
+
+  const backdrop = document.createElement("div");
+  backdrop.id = "orphan-remap-backdrop";
+  backdrop.className = "stats-picker-backdrop";
+  const sheet = document.createElement("div");
+  sheet.className = "stats-picker-sheet";
+  backdrop.appendChild(sheet);
+  document.body.appendChild(backdrop);
+  requestAnimationFrame(() => backdrop.classList.add("open"));
+  const close = () => { backdrop.classList.remove("open"); setTimeout(() => backdrop.remove(), 250); };
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
+
+  const rebuild = () => {
+    const orphans = DATA.getOrphanExercises(userId);
+    if (!orphans.length) { close(); initStatsScreen(); return; }
+    sheet.innerHTML = `<div class="stats-picker-handle"></div>
+      <div class="stats-picker-title">Старые упражнения</div>
+      <p class="orphan-hint">Эти упражнения есть в истории, но их нет в новой базе. Выбери, чем заменить — статистика и рекорды перейдут на новое упражнение.</p>
+      <div class="orphan-list">${orphans.map(o => `
+        <div class="orphan-row">
+          <div class="orphan-info"><span class="orphan-name">${escHtml(o.name)}</span><span class="orphan-count">${o.count}× в истории</span></div>
+          <button class="orphan-pick" data-old="${escHtml(o.id)}">Заменить на…</button>
+        </div>`).join("")}</div>`;
+    sheet.querySelectorAll(".orphan-pick").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const oldId = btn.dataset.old;
+        openExercisePicker(newId => {
+          const n = DATA.remapExercise(userId, oldId, newId);
+          if (n) { SyncQueue.push("exercise:remap", { from: oldId, to: newId }); showToast("Перепривязано"); }
+          rebuild();
+        }, null);
+      });
+    });
+  };
+  rebuild();
 }
 
 function openStatsExPicker(exWithHist, allEx, userId) {
@@ -5040,11 +5474,18 @@ function renderTemplatesList() {
   templatesScroll.classList.toggle("tpl-editing", _tplEditMode);
 
   const cards = list.map(t => tplCardHtml(t, history, lib)).join("");
-  templatesScroll.innerHTML = `<div class="tpl-list">${cards}${tplAddBtnHtml()}</div>`;
+  const constructorBtn = `<button class="tpl-constructor-btn" id="tpl-constructor-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.2"/></svg>
+    <span><b>Собрать тренировку</b><small>Конструктор по движениям и балансу</small></span>
+    <svg class="tpl-constructor-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+  </button>`;
+  templatesScroll.innerHTML = `<div class="tpl-list">${constructorBtn}${cards}${tplAddBtnHtml()}</div>`;
 
   list.forEach(t => wireTplCard(t.id));
   const addBtn = $("tpl-add-new");
   if (addBtn) addBtn.addEventListener("click", createNewTemplate);
+  const conBtn = $("tpl-constructor-btn");
+  if (conBtn) conBtn.addEventListener("click", () => { exitTplEditMode(); goToScreen("constructor"); });
 }
 
 function enterTplEditMode() {
@@ -5064,6 +5505,7 @@ function exitTplEditMode() {
 
 $("templates-back-btn").addEventListener("click", () => { exitTplEditMode(); goToScreen("menu"); });
 $("templates-done-btn").addEventListener("click", exitTplEditMode);
+$("constructor-back-btn").addEventListener("click", () => goToScreen("templates"));
 
 /* — Создание нового шаблона: сразу открываем режим правки, чтобы добавить состав — */
 function createNewTemplate() {
