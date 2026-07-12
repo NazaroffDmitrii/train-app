@@ -319,6 +319,12 @@ const DATA = (() => {
     getHiddenMovementIds(userId) { return ls(`train_hidden_movements_${userId}`, []); },
     saveHiddenMovementIds(userId, l){ lsSet(`train_hidden_movements_${userId}`, l); },
 
+    // Пользовательский порядок карточек справочника (как train_ex_order у
+    // упражнений): плоский список id в нужном порядке, применяется внутри групп
+    // при рендере. Локальный (перетаскивание — личная сортировка справочника).
+    getRefOrder(userId, kind)      { return ls(`train_ref_order_${kind}_${userId}`, []); },
+    saveRefOrder(userId, kind, ids){ lsSet(`train_ref_order_${kind}_${userId}`, ids); },
+
     // Список для UI справочника: (общие − скрытые) + личные.
     refMuscles(userId) {
       const hidden = new Set(this.getHiddenMuscleIds(userId));
@@ -3518,9 +3524,12 @@ function renderMusclesTab(container, query, opts) {
     || (m.bundles || []).some(b => b.toLowerCase().includes(q)));
   const byGroup = {};
   filtered.forEach(m => (byGroup[m.group] = byGroup[m.group] || []).push(m));
+  const order = DATA.getRefOrder(userId, "muscle");
+  const oIdx = id => { const i = order.indexOf(id); return i === -1 ? Infinity : i; };
   const groups = atlasOrderedGroups(userId).filter(g => byGroup[g]);
   let html = groups.map(g => {
     const color = DATA.getCategoryColor(userId, g);
+    byGroup[g].sort((a, b) => oIdx(a.id) - oIdx(b.id));   // пользовательский порядок (drag)
     const cards = byGroup[g].map(m => {
       const star = m.visible ? `<span class="ref-star" title="Поверхностная — рост виден внешне">★</span>` : "";
       const own = refItemIsOwn(m) ? `<span class="ref-own-badge">моё</span>` : "";
@@ -3551,11 +3560,15 @@ function renderMovementsTab(container, query, opts) {
   const filtered = moves.filter(m => !q || m.name.toLowerCase().includes(q));
   const byGroup = {};
   filtered.forEach(m => (byGroup[m.group] = byGroup[m.group] || []).push(m));
+  const order = DATA.getRefOrder(userId, "movement");
+  const oIdx = id => { const i = order.indexOf(id); return i === -1 ? Infinity : i; };
   const groups = atlasOrderedGroups(userId).filter(g => byGroup[g]);
   let html = groups.map(g => {
     const color = DATA.getCategoryColor(userId, g);
     const cards = byGroup[g].slice()
+      // База раньше Опции; при заданном пользователем порядке (drag) — он главнее.
       .sort((a, b) => (a.type === b.type ? 0 : a.type === "База" ? -1 : 1))
+      .sort((a, b) => oIdx(a.id) - oIdx(b.id))
       .map(m => {
         const badge = m.type === "База" ? `<span class="ref-badge">База</span>` : `<span class="ref-badge opt">Опция</span>`;
         const own = refItemIsOwn(m) ? `<span class="ref-own-badge">моё</span>` : "";
@@ -4118,6 +4131,7 @@ function openReferenceSheet(initialTab) {
   let refQuery = "";
   let refExpanded = { muscles: new Set(), movements: new Set() };  // id развёрнутых карточек (мультивыбор)
   let refEditMode = false;   // режим правки вкладок Мышцы/Движения
+  let refDrag = null;        // перетаскивание карточки мышцы/движения
   let catEditMode = false;
   let catDrag = null;
 
@@ -4489,6 +4503,7 @@ function openReferenceSheet(initialTab) {
       const addBtn = actionsEl.querySelector(".ref-add-btn");
       if (addBtn) addBtn.addEventListener("click", () => (isMus ? openMuscleForm(null) : openMovementForm(null)));
       wireRefCards(listEl);
+      if (refEditMode) listEl.querySelectorAll(".ref-card-editing[data-id]:not(.ref-card-hidden)").forEach(wireRefDrag);
     } else {
       listEl.onclick = null;
       renderGroupsInto(listEl, actionsEl);
@@ -4528,6 +4543,62 @@ function openReferenceSheet(initialTab) {
     if (!item) return;
     const after = () => renderContent();
     if (kind === "muscle") openMuscleForm(item, after); else openMovementForm(item, after);
+  }
+
+  // Перетаскивание карточки зажатием (как у упражнений). Долгое удержание —
+  // старт; двигается только среди соседних .ref-card (границы групп/секции
+  // «Скрытые» её не пускают — реордер внутри группы). На отпускании — сохраняем
+  // порядок (плоский список id сверху вниз) в личную сортировку.
+  function wireRefDrag(card) {
+    let holdTimer = null, sx = 0, sy = 0, moved = false, dragging = false;
+    const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+    const begin = (x, y, target) => {
+      if (target && target.closest(".ref-card-act")) return;   // не мешаем кнопкам
+      moved = false; dragging = false; sx = x; sy = y; clearHold();
+      holdTimer = setTimeout(() => { holdTimer = null; if (moved) return; dragging = true; startRefDrag(card, y); }, 300);
+    };
+    const move = (x, y, e) => {
+      if (refDrag && refDrag.card === card) { if (e && e.cancelable) e.preventDefault(); moveRefDrag(y); return; }
+      if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); }
+    };
+    const finish = () => { clearHold(); if (refDrag && refDrag.card === card) endRefDrag(); };
+    card.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
+    card.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
+    card.addEventListener("touchend", finish);
+    card.addEventListener("touchcancel", finish);
+    card.addEventListener("mousedown", e => begin(e.clientX, e.clientY, e.target));
+    card.addEventListener("mousemove", e => { if (refDrag) move(e.clientX, e.clientY, null); });
+    card.addEventListener("mouseup", finish);
+    card.addEventListener("click", e => { if (dragging) { e.stopPropagation(); dragging = false; } }, true);
+  }
+  function startRefDrag(card, pointerY) {
+    if (refDrag) return;
+    refDrag = { card, grabDy: pointerY - card.getBoundingClientRect().top, ty: 0 };
+    card.style.transition = "none"; card.classList.add("ref-dragging"); haptic(18);
+  }
+  function moveRefDrag(pointerY) {
+    const d = refDrag; if (!d) return;
+    const h = d.card.getBoundingClientRect().height;
+    const center = (pointerY - d.grabDy) + h / 2;
+    const okCard = el => el && el.classList.contains("ref-card") && !el.classList.contains("ref-card-hidden");
+    const prev = d.card.previousElementSibling;
+    if (okCard(prev)) { const r = prev.getBoundingClientRect(); if (center < r.top + r.height / 2) d.card.parentNode.insertBefore(d.card, prev); }
+    const next = d.card.nextElementSibling;
+    if (okCard(next)) { const r = next.getBoundingClientRect(); if (center > r.top + r.height / 2) d.card.parentNode.insertBefore(next, d.card); }
+    const rect = d.card.getBoundingClientRect();
+    d.ty = (pointerY - d.grabDy) - (rect.top - d.ty);
+    d.card.style.transform = `translateY(${d.ty}px)`;
+  }
+  function endRefDrag() {
+    const d = refDrag; if (!d) return;
+    refDrag = null;
+    d.card.style.transition = "transform 0.18s ease"; d.card.style.transform = "";
+    d.card.classList.remove("ref-dragging");
+    setTimeout(() => { d.card.style.transition = ""; }, 200);
+    const listEl = backdrop.querySelector(".ref-sheet-list");
+    const kind = refTab === "muscles" ? "muscle" : "movement";
+    const ids = [...listEl.querySelectorAll(".ref-card[data-id]:not(.ref-card-hidden)")].map(c => c.dataset.id);
+    DATA.saveRefOrder(userId, kind, ids);
   }
   function hideRefItem(kind, id) {
     if (kind === "muscle") {
