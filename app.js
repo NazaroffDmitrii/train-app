@@ -85,6 +85,11 @@ const DATA = (() => {
   // имя мышцы → её группа-витрина; производные пересобираются при подмене ATLAS.
   let _muscleGroup, DEFAULT_EXERCISES, ATLAS_BY_ID, EXERCISE_CATEGORIES;
 
+  // Администратор (profiles.is_admin) может править ОБЩИЙ справочник. Выставляется
+  // из bridge.js при входе (myProfile.is_admin). Обычный пользователь правит
+  // только свой оверлей (own/hidden).
+  let _isAdmin = false;
+
   // роль новой модели ({muscle,bundle}[]) → строка «Мышца (пучок), …» для легаси-рендера
   function _rolesToStr(arr) {
     return (arr || []).map(o => o.bundle ? `${o.muscle} (${o.bundle})` : o.muscle).join(", ");
@@ -286,6 +291,58 @@ const DATA = (() => {
     atlasExerciseById(id) { return ATLAS_BY_ID.get(id) || null; },
     atlasMuscleGroup(name) { return _muscleGroup.get(name) || null; },
     atlasExerciseGroups,
+
+    // --- админ общего справочника ---
+    isAdmin() { return _isAdmin; },
+    setAdmin(v) { _isAdmin = !!v; },
+
+    // Локальная (оптимистичная) мутация общего справочника: клон → правка → коммит
+    // (кэш + производные). Персист в БД — на стороне вызова (DB.saveAtlas*),
+    // только у админа. atlasSnapshot отдаёт глубокую копию для правки.
+    atlasSnapshot() { return JSON.parse(JSON.stringify(ATLAS)); },
+    commitAtlas(atlasObj) {
+      if (!atlasObj || !Array.isArray(atlasObj.muscles)) return;
+      ATLAS = atlasObj;
+      rebuildAtlasDerived();
+      try { localStorage.setItem(ATLAS_CACHE_KEY, JSON.stringify(atlasObj)); } catch {}
+    },
+
+    // --- личный оверлей справочника (own + hidden) ---
+    // own_* — приватные элементы пользователя (видит только он); hidden_* — id
+    // общих элементов, скрытых у себя. Синхронизируются в user_data (bridge.js).
+    getOwnMuscles(userId)        { return ls(`train_own_muscles_${userId}`, []); },
+    saveOwnMuscles(userId, l)    { lsSet(`train_own_muscles_${userId}`, l); },
+    getHiddenMuscleIds(userId)   { return ls(`train_hidden_muscles_${userId}`, []); },
+    saveHiddenMuscleIds(userId, l){ lsSet(`train_hidden_muscles_${userId}`, l); },
+    getOwnMovements(userId)      { return ls(`train_own_movements_${userId}`, []); },
+    saveOwnMovements(userId, l)  { lsSet(`train_own_movements_${userId}`, l); },
+    getHiddenMovementIds(userId) { return ls(`train_hidden_movements_${userId}`, []); },
+    saveHiddenMovementIds(userId, l){ lsSet(`train_hidden_movements_${userId}`, l); },
+
+    // Список для UI справочника: (общие − скрытые) + личные.
+    refMuscles(userId) {
+      const hidden = new Set(this.getHiddenMuscleIds(userId));
+      return [...ATLAS.muscles.filter(m => !hidden.has(m.id)), ...this.getOwnMuscles(userId)];
+    },
+    refMovements(userId) {
+      const hidden = new Set(this.getHiddenMovementIds(userId));
+      return [...ATLAS.categories.filter(m => !hidden.has(m.id)), ...this.getOwnMovements(userId)];
+    },
+    // Движения мышцы по имени: общие связи + inline-связи личных мышц/движений.
+    refMovesByMuscle(userId) {
+      const map = {};
+      ATLAS.muscleCategoryLinks.forEach(l => { (map[l.muscle] = map[l.muscle] || new Set()).add(l.category); });
+      this.getOwnMovements(userId).forEach(mv => (mv.muscles || []).forEach(mn => { (map[mn] = map[mn] || new Set()).add(mv.name); }));
+      this.getOwnMuscles(userId).forEach(m => (m.movements || []).forEach(c => { (map[m.name] = map[m.name] || new Set()).add(c); }));
+      return map;
+    },
+    refMusclesByMove(userId) {
+      const map = {};
+      ATLAS.muscleCategoryLinks.forEach(l => { (map[l.category] = map[l.category] || new Set()).add(l.muscle); });
+      this.getOwnMuscles(userId).forEach(m => (m.movements || []).forEach(c => { (map[c] = map[c] || new Set()).add(m.name); }));
+      this.getOwnMovements(userId).forEach(mv => (mv.muscles || []).forEach(mn => { (map[mv.name] = map[mv.name] || new Set()).add(mn); }));
+      return map;
+    },
 
     // Общий пул (без личных и без учёта скрытия) — низкоуровневый доступ
     getExercises() {
@@ -3343,8 +3400,6 @@ let _exercisesCatFilter = "all";
 let _exercisesShowHidden = false;
 let _exListEditMode = false;
 let _exListDrag = null;
-let _atlasSubtab = "exercises"; // подвкладка «Атлас»: exercises | muscles | movements | groups
-
 // Роли рабочих мышц — фиксированный порядок и подписи для деталей/формы.
 const MUSCLE_ROLES = [
   { key: "agonists",     label: "Агонисты", primary: true },
@@ -3367,160 +3422,135 @@ function initExercisesScreen() {
   _exercisesCatFilter = "all";
   _exercisesShowHidden = false;
   _exListEditMode = false;
-  _atlasSubtab = "exercises";
-  document.querySelectorAll("#atlas-subtabs .atlas-subtab").forEach(b =>
-    b.classList.toggle("active", b.dataset.sub === "exercises"));
+  exercisesSearch.placeholder = "Поиск упражнения…";
   const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.classList.remove("visible");
   const addBtn  = $("exercises-add-btn");  if (addBtn)  addBtn.hidden  = false;
   const userId = DATA.getCurrentUser();
   if (DATA.ensureExercisesSeeded(userId)) SyncQueue.push("exercise:create", {});
-  applyAtlasSubtabChrome();
   renderExercisesList("");
 }
 
 $("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goToScreen("menu"); });
-exercisesSearch.addEventListener("input", () => renderAtlasCurrent());
-$("ex-cat-manage-btn").addEventListener("click", () => openCategoryManager());
-
-// ── Подвкладки «Атлас»: Упражнения / Мышцы / Движения / Группы ──────────────
-document.querySelectorAll("#atlas-subtabs .atlas-subtab").forEach(btn => {
-  btn.addEventListener("click", () => switchAtlasSubtab(btn.dataset.sub));
-});
-
-function switchAtlasSubtab(sub) {
-  _atlasSubtab = sub;
-  exercisesSearch.value = "";
-  document.querySelectorAll("#atlas-subtabs .atlas-subtab").forEach(b =>
-    b.classList.toggle("active", b.dataset.sub === sub));
-  if (sub !== "exercises") exitExListEditMode();
-  applyAtlasSubtabChrome();
-  renderAtlasCurrent();
-}
-
-// Видимость специфичных для подвкладки элементов шапки (поиск, фильтр групп, «+»).
-function applyAtlasSubtabChrome() {
-  const sub = _atlasSubtab;
-  const searchWrap = document.querySelector("#screen-exercises .exercises-search-wrap");
-  const catWrap = document.querySelector("#screen-exercises .ex-cat-tabs-wrap");
-  const addBtn = $("exercises-add-btn");
-  const showSearch = sub === "exercises" || sub === "muscles" || sub === "movements";
-  if (searchWrap) searchWrap.style.display = showSearch ? "" : "none";
-  if (catWrap) catWrap.style.display = sub === "exercises" ? "" : "none";
-  if (addBtn) addBtn.style.display = sub === "exercises" ? "" : "none";
-  const ph = { exercises: "Поиск упражнения…", muscles: "Поиск мышцы…", movements: "Поиск движения…" }[sub];
-  if (ph) exercisesSearch.placeholder = ph;
-}
-
-function renderAtlasCurrent() {
-  const q = exercisesSearch.value;
-  if (_atlasSubtab === "muscles") renderMusclesTab(q);
-  else if (_atlasSubtab === "movements") renderMovementsTab(q);
-  else if (_atlasSubtab === "groups") renderGroupsTab();
-  else renderExercisesList(q);
-}
+exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
+// Шестерёнка → шторка «Справочник» с вкладками Мышцы / Движения / Группы.
+$("ex-cat-manage-btn").addEventListener("click", () => openReferenceSheet("muscles"));
 
 // Порядок групп для справочника: как у пользователя (getAllCategories), но только
-// 8 групп Атласа; недостающие добавляем в каноничном порядке.
+// группы Атласа; недостающие добавляем в каноничном порядке.
 function atlasOrderedGroups(userId) {
   const all = DATA.getAllCategories(userId);
   const g = DATA.atlasGroups();
   return [...all.filter(x => g.includes(x)), ...g.filter(x => !all.includes(x))];
 }
 
-// ── Подвкладка «Мышцы» ──────────────────────────────────────────────────────
-function renderMusclesTab(query) {
+// Личный (own) элемент справочника? id личных мышц — "om_…", движений — "ov_…".
+function refItemIsOwn(item) {
+  const id = String(item && item.id || "");
+  return (item && item.owner != null) || id.startsWith("om_") || id.startsWith("ov_");
+}
+// Можно ли править элемент: общий — только админ; личный — его владелец (текущий).
+function refCanEdit(item) { return DATA.isAdmin() || refItemIsOwn(item); }
+
+const SVG_REF_EDIT  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+const SVG_REF_TRASH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
+const SVG_REF_HIDE  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
+// Правая часть карточки: в обычном режиме — шеврон; в режиме правки — кнопки
+// «изменить» (если можно) и «удалить/скрыть» (общий у не-админа только скрыть).
+function refCardRight(item, editMode, chev) {
+  if (!editMode) return `<span class="ref-card-chev">${chev}</span>`;
+  const own = refItemIsOwn(item);
+  const canDelete = own || DATA.isAdmin();
+  const editBtn = refCanEdit(item) ? `<button class="ref-card-act" data-act="edit" title="Изменить">${SVG_REF_EDIT}</button>` : "";
+  const delBtn = `<button class="ref-card-act danger" data-act="${canDelete ? "delete" : "hide"}" title="${canDelete ? "Удалить" : "Скрыть у себя"}">${canDelete ? SVG_REF_TRASH : SVG_REF_HIDE}</button>`;
+  return `<span class="ref-card-actions">${editBtn}${delBtn}</span>`;
+}
+
+// Детали мышцы (разворот карточки): пучки + группа + движения, в которых
+// участвует (2-колоночные кликабельные ячейки → переход к движению).
+function muscleDetailHtml(m, moves) {
+  const bundles = (m.bundles || []).length
+    ? `<div class="ref-detail-label">Пучки</div><div class="ref-chips">${m.bundles.map(b => `<span class="ref-chip">${escHtml(b)}</span>`).join("")}</div>` : "";
+  const grp = `<div class="ref-detail-label">Группа</div><div class="ref-detail-val">${escHtml(m.group || "—")}</div>`;
+  const vis = `<div class="ref-detail-val ref-detail-muted">${m.visible ? "★ Поверхностная — рост виден внешне" : "Глубокая — рост внешне не виден"}</div>`;
+  const cells = moves.length
+    ? `<div class="ref-detail-label">Участвует в движениях</div><div class="ref-cells">${moves.map(mv => `<button class="ref-cell" data-goto="movement" data-name="${escHtml(mv)}">${escHtml(mv)}</button>`).join("")}</div>`
+    : `<div class="ref-detail-empty">Движения не заданы</div>`;
+  return `<div class="ref-card-detail">${grp}${vis}${bundles}${cells}</div>`;
+}
+
+// Детали движения (разворот): работающие мышцы, 2-колоночные кликабельные ячейки
+// (→ переход к деталке мышцы).
+function movementDetailHtml(mv, muscles) {
+  const badge = mv.type === "База" ? "Базовое движение" : "Опциональное движение";
+  const cells = muscles.length
+    ? `<div class="ref-detail-label">Работающие мышцы</div><div class="ref-cells">${muscles.map(mn => `<button class="ref-cell" data-goto="muscle" data-name="${escHtml(mn)}">${escHtml(mn)}</button>`).join("")}</div>`
+    : `<div class="ref-detail-empty">Мышцы не заданы</div>`;
+  return `<div class="ref-card-detail"><div class="ref-detail-val ref-detail-muted">${badge}</div>${cells}</div>`;
+}
+
+// ── Вкладка «Мышцы» шторки-справочника — рендер в переданный контейнер ────────
+// Квадратик (не точка) перед группой; тап по карточке разворачивает подробности.
+function renderMusclesTab(container, query, opts) {
+  opts = opts || {};
+  const expandedId = opts.expandedId || null;
   const userId = DATA.getCurrentUser();
   const q = (query || "").trim().toLowerCase();
-  const muscles = DATA.atlasMuscles();
-  const links = DATA.atlasLinks();
+  const muscles = DATA.refMuscles(userId);
+  const movesByMuscleSets = DATA.refMovesByMuscle(userId);
   const movesByMuscle = {};
-  links.forEach(l => { (movesByMuscle[l.muscle] = movesByMuscle[l.muscle] || new Set()).add(l.category); });
+  Object.keys(movesByMuscleSets).forEach(k => { movesByMuscle[k] = movesByMuscleSets[k]; });
   const filtered = muscles.filter(m => !q || m.name.toLowerCase().includes(q)
     || (m.bundles || []).some(b => b.toLowerCase().includes(q)));
   const byGroup = {};
   filtered.forEach(m => (byGroup[m.group] = byGroup[m.group] || []).push(m));
   const groups = atlasOrderedGroups(userId).filter(g => byGroup[g]);
-  const el = $("exercises-scroll");
-  if (!filtered.length) { el.innerHTML = `<p class="empty-state">Ничего не найдено</p>`; return; }
-  el.innerHTML = groups.map(g => {
+  if (!filtered.length) { container.innerHTML = `<p class="empty-state">Ничего не найдено</p>`; return; }
+  container.innerHTML = groups.map(g => {
     const color = DATA.getCategoryColor(userId, g);
     const cards = byGroup[g].map(m => {
       const star = m.visible ? `<span class="ref-star" title="Поверхностная — рост виден внешне">★</span>` : "";
-      const bundles = (m.bundles || []).length
-        ? `<div class="ref-chips">${m.bundles.map(b => `<span class="ref-chip">${escHtml(b)}</span>`).join("")}</div>` : "";
-      const moves = movesByMuscle[m.name] ? [...movesByMuscle[m.name]] : [];
-      const movesLine = moves.length ? `<div class="ref-sub"><b>Двигает:</b> ${moves.map(escHtml).join(", ")}</div>` : "";
-      return `<div class="ref-card" style="border-left-color:${escHtml(color)}">
-        <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${star}</div>
-        ${bundles}${movesLine}</div>`;
+      const own = refItemIsOwn(m) ? `<span class="ref-own-badge">моё</span>` : "";
+      const editMode = !!opts.editMode;
+      const expanded = !editMode && m.id === expandedId;
+      const detail = expanded ? muscleDetailHtml(m, [...(movesByMuscle[m.name] || [])]) : "";
+      const right = refCardRight(m, editMode, expanded ? "⌄" : "›");
+      return `<div class="ref-card${editMode ? " ref-card-editing" : " ref-card-tap"}${expanded ? " expanded" : ""}" data-kind="muscle" data-id="${escHtml(m.id)}" style="border-left-color:${escHtml(color)}">
+        <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${own}${star}${right}</div>${detail}</div>`;
     }).join("");
-    return `<div class="ref-group-label"><span class="ref-dot" style="background:${escHtml(color)}"></span>${escHtml(g)}<span class="ref-count" style="margin-left:auto">${byGroup[g].length}</span></div>${cards}`;
+    return `<div class="ref-group-label"><span class="ref-sq" style="background:${escHtml(color)}"></span>${escHtml(g)}<span class="ref-count" style="margin-left:auto">${byGroup[g].length}</span></div>${cards}`;
   }).join("");
 }
 
-// ── Подвкладка «Основные движения» ──────────────────────────────────────────
-function renderMovementsTab(query) {
+// ── Вкладка «Движения» шторки-справочника ────────────────────────────────────
+function renderMovementsTab(container, query, opts) {
+  opts = opts || {};
+  const expandedId = opts.expandedId || null;
   const userId = DATA.getCurrentUser();
   const q = (query || "").trim().toLowerCase();
-  const moves = DATA.atlasMovements();
-  const links = DATA.atlasLinks();
-  const exs = DATA.getVisibleExercises(userId);
-  const musByMove = {};
-  links.forEach(l => { (musByMove[l.category] = musByMove[l.category] || new Set()).add(l.muscle); });
-  const exByMove = {};
-  exs.forEach(e => { ((e.atlas && e.atlas.categories) || []).forEach(c => { exByMove[c] = (exByMove[c] || 0) + 1; }); });
+  const moves = DATA.refMovements(userId);
+  const musByMove = DATA.refMusclesByMove(userId);
   const filtered = moves.filter(m => !q || m.name.toLowerCase().includes(q));
   const byGroup = {};
   filtered.forEach(m => (byGroup[m.group] = byGroup[m.group] || []).push(m));
   const groups = atlasOrderedGroups(userId).filter(g => byGroup[g]);
-  const el = $("exercises-scroll");
-  if (!filtered.length) { el.innerHTML = `<p class="empty-state">Ничего не найдено</p>`; return; }
-  el.innerHTML = groups.map(g => {
+  if (!filtered.length) { container.innerHTML = `<p class="empty-state">Ничего не найдено</p>`; return; }
+  container.innerHTML = groups.map(g => {
     const color = DATA.getCategoryColor(userId, g);
     const cards = byGroup[g].slice()
       .sort((a, b) => (a.type === b.type ? 0 : a.type === "База" ? -1 : 1))
       .map(m => {
         const badge = m.type === "База" ? `<span class="ref-badge">База</span>` : `<span class="ref-badge opt">Опция</span>`;
-        const mus = musByMove[m.name] ? [...musByMove[m.name]] : [];
-        const musLine = mus.length ? `<div class="ref-sub"><b>Мышцы:</b> ${mus.map(escHtml).join(", ")}</div>` : "";
-        return `<div class="ref-card" style="border-left-color:${escHtml(color)}">
-          <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${badge}<span class="ref-count" title="Упражнений в базе">${exByMove[m.name] || 0}</span></div>
-          ${musLine}</div>`;
+        const own = refItemIsOwn(m) ? `<span class="ref-own-badge">моё</span>` : "";
+        const editMode = !!opts.editMode;
+        const expanded = !editMode && m.id === expandedId;
+        const detail = expanded ? movementDetailHtml(m, [...(musByMove[m.name] || [])]) : "";
+        const right = refCardRight(m, editMode, expanded ? "⌄" : "›");
+        return `<div class="ref-card${editMode ? " ref-card-editing" : " ref-card-tap"}${expanded ? " expanded" : ""}" data-kind="movement" data-id="${escHtml(m.id)}" style="border-left-color:${escHtml(color)}">
+          <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${own}${badge}${right}</div>${detail}</div>`;
       }).join("");
-    return `<div class="ref-group-label"><span class="ref-dot" style="background:${escHtml(color)}"></span>${escHtml(g)}</div>${cards}`;
+    return `<div class="ref-group-label"><span class="ref-sq" style="background:${escHtml(color)}"></span>${escHtml(g)}</div>${cards}`;
   }).join("");
-}
-
-// ── Подвкладка «Группы» (витрины, аналог старых категорий) ───────────────────
-function renderGroupsTab() {
-  const userId = DATA.getCurrentUser();
-  const groups = atlasOrderedGroups(userId);
-  const exs = DATA.getVisibleExercises(userId);
-  const muscles = DATA.atlasMuscles();
-  const exCount = {}; // по первичной группе — как в списке упражнений
-  exs.forEach(e => { exCount[e.cat] = (exCount[e.cat] || 0) + 1; });
-  const musCount = {};
-  muscles.forEach(m => { musCount[m.group] = (musCount[m.group] || 0) + 1; });
-  const el = $("exercises-scroll");
-  const intro = `<div class="ref-sub" style="padding:2px 6px 10px">Группы — витрины для быстрого выбора упражнений (аналог категорий). Тап — открыть упражнения группы.</div>`;
-  const manage = `<button class="ex-show-hidden-btn" id="ref-groups-manage">Настроить цвета и порядок</button>`;
-  el.innerHTML = intro + groups.map(g => {
-    const color = DATA.getCategoryColor(userId, g);
-    return `<div class="ref-card ref-card-tap" data-group="${escHtml(g)}" style="border-left-color:${escHtml(color)}">
-      <div class="ref-card-top">
-        <span class="ref-dot" style="background:${escHtml(color)};width:12px;height:12px"></span>
-        <span class="ref-card-name">${escHtml(g)}</span>
-        <span class="ref-count">${exCount[g] || 0} упр · ${musCount[g] || 0} мышц</span>
-      </div></div>`;
-  }).join("") + manage;
-  el.querySelectorAll(".ref-card[data-group]").forEach(card => {
-    card.addEventListener("click", () => {
-      _exercisesCatFilter = card.dataset.group;
-      switchAtlasSubtab("exercises");
-    });
-  });
-  const mgBtn = $("ref-groups-manage");
-  if (mgBtn) mgBtn.addEventListener("click", () => openCategoryManager());
 }
 
 function renderCatTabs(userId, presentCats) {
@@ -4054,11 +4084,19 @@ function openExerciseDetail(exerciseId) {
 $("exd-back-btn").addEventListener("click", () => goToScreen("exercises"));
 
 /* — Управление категориями v2: свайп-удаление, долгое нажатие = редактирование/перестановка — */
-function openCategoryManager() {
+// Шторка «Справочник» (открывается шестерёнкой на экране «Упражнения»).
+// Три вкладки: Мышцы / Движения / Группы. «Группы» = прежний менеджер категорий
+// (переименование/перетаскивание/удаление/добавление/цвета) с кнопкой, которая
+// на лету меняет подпись «Настроить»↔«Готово», не меняя высоту шторки.
+function openReferenceSheet(initialTab) {
   const userId = DATA.getCurrentUser();
   const existing = $("cat-manager-backdrop");
   if (existing) existing.remove();
 
+  let refTab = initialTab || "muscles";   // muscles | movements | groups
+  let refQuery = "";
+  let refExpanded = { muscles: null, movements: null };  // id развёрнутой карточки
+  let refEditMode = false;   // режим правки вкладок Мышцы/Движения
   let catEditMode = false;
   let catDrag = null;
 
@@ -4083,14 +4121,19 @@ function openCategoryManager() {
 
   function getListEl() { return backdrop.querySelector(".cat-sheet-list"); }
 
+  // Кнопка «Настроить»↔«Готово» меняет только подпись (не появляется/исчезает),
+  // поэтому высота шторки статична (требование п.: «шторка не росла»).
+  function updateGroupsToggle() {
+    const btn = backdrop.querySelector(".ref-groups-toggle");
+    if (btn) btn.textContent = catEditMode ? "Готово" : "Настроить";
+  }
   function enterEditMode() {
     if (catEditMode) return;
     catEditMode = true;
     haptic(22);
     const list = getListEl();
     if (list) list.classList.add("cat-editing");
-    const doneBtn = backdrop.querySelector(".cat-done-btn");
-    if (doneBtn) doneBtn.hidden = false;
+    updateGroupsToggle();
   }
 
   function exitEditMode() {
@@ -4098,8 +4141,7 @@ function openCategoryManager() {
     catEditMode = false;
     const list = getListEl();
     if (list) list.classList.remove("cat-editing");
-    const doneBtn = backdrop.querySelector(".cat-done-btn");
-    if (doneBtn) doneBtn.hidden = true;
+    updateGroupsToggle();
   }
 
   function saveCatOrder() {
@@ -4337,38 +4379,168 @@ function openCategoryManager() {
     saveCatOrder();
   }
 
+  // Каркас шторки: вкладки + поиск постоянны; при вводе в поиск перерисовываем
+  // только список (renderContent), чтобы не терять фокус поля.
   function render() {
+    const ph = refTab === "muscles" ? "Поиск мышцы…" : "Поиск движения…";
+    const searchHidden = refTab === "groups" ? " hidden" : "";
+    backdrop.innerHTML = `
+      <div class="bottom-sheet ref-sheet">
+        <div class="bottom-sheet-handle"></div>
+        <div class="ref-sheet-tabs">
+          <button class="ref-sheet-tab${refTab === "muscles" ? " active" : ""}" data-tab="muscles">Мышцы</button>
+          <button class="ref-sheet-tab${refTab === "movements" ? " active" : ""}" data-tab="movements">Движения</button>
+          <button class="ref-sheet-tab${refTab === "groups" ? " active" : ""}" data-tab="groups">Группы</button>
+        </div>
+        <div class="ref-sheet-search-wrap${searchHidden}">
+          <input class="ref-sheet-search" type="text" placeholder="${ph}" value="${escHtml(refQuery)}">
+        </div>
+        <div class="ref-sheet-list"></div>
+        <div class="ref-sheet-actions"></div>
+      </div>`;
+
+    backdrop.querySelectorAll(".ref-sheet-tab").forEach(b => b.addEventListener("click", () => {
+      if (refTab === b.dataset.tab) return;
+      if (catEditMode) exitEditMode();
+      refTab = b.dataset.tab;
+      refQuery = "";
+      render();
+    }));
+
+    const searchInp = backdrop.querySelector(".ref-sheet-search");
+    if (searchInp) searchInp.addEventListener("input", () => { refQuery = searchInp.value; renderContent(); });
+
+    renderContent();
+
+    const handle = backdrop.querySelector(".bottom-sheet-handle");
+    if (handle) handle.addEventListener("click", close);
+  }
+
+  function renderContent() {
+    const listEl = backdrop.querySelector(".ref-sheet-list");
+    const actionsEl = backdrop.querySelector(".ref-sheet-actions");
+    if (!listEl) return;
+    if (refTab === "muscles" || refTab === "movements") {
+      const isMus = refTab === "muscles";
+      (isMus ? renderMusclesTab : renderMovementsTab)(listEl, refQuery, {
+        expandedId: refExpanded[refTab], editMode: refEditMode,
+      });
+      const addLabel = isMus ? "+ Добавить мышцу" : "+ Добавить движение";
+      actionsEl.innerHTML = `
+        <button class="cat-done-btn ref-edit-toggle">${refEditMode ? "Готово" : "Настроить"}</button>
+        ${refEditMode ? `<button class="cat-item-add ref-add-btn">${addLabel}</button>` : ""}`;
+      actionsEl.querySelector(".ref-edit-toggle").addEventListener("click", () => {
+        refEditMode = !refEditMode;
+        if (refEditMode) haptic(22);
+        renderContent();
+      });
+      const addBtn = actionsEl.querySelector(".ref-add-btn");
+      if (addBtn) addBtn.addEventListener("click", () => (isMus ? openMuscleForm(null) : openMovementForm(null)));
+      wireRefCards(listEl);
+    } else {
+      listEl.onclick = null;
+      renderGroupsInto(listEl, actionsEl);
+    }
+  }
+
+  // Обычный режим: тап по карточке — развернуть/свернуть; клик по ячейке —
+  // перейти на другую вкладку. Режим правки: кнопки изменить / удалить / скрыть.
+  function wireRefCards(listEl) {
+    listEl.onclick = (e) => {
+      const cell = e.target.closest(".ref-cell[data-goto]");
+      if (cell) { crossNav(cell.dataset.goto, cell.dataset.name); return; }
+      const actBtn = e.target.closest(".ref-card-act[data-act]");
+      const card = e.target.closest(".ref-card[data-kind]");
+      if (!card) return;
+      const kind = card.dataset.kind;                 // muscle | movement
+      const id = card.dataset.id;
+      if (refEditMode && actBtn) {
+        const act = actBtn.dataset.act;
+        if (act === "edit")   return openRefEditor(kind, id);
+        if (act === "delete") return deleteRefItem(kind, id);
+        if (act === "hide")   return hideRefItem(kind, id);
+        return;
+      }
+      if (refEditMode) return;                          // в правке тап по телу карточки — ничего
+      const key = kind === "muscle" ? "muscles" : "movements";
+      refExpanded[key] = refExpanded[key] === id ? null : id;
+      renderContent();
+    };
+  }
+
+  function openRefEditor(kind, id) {
+    const item = (kind === "muscle" ? DATA.refMuscles(userId) : DATA.refMovements(userId)).find(x => x.id === id);
+    if (!item) return;
+    const after = () => renderContent();
+    if (kind === "muscle") openMuscleForm(item, after); else openMovementForm(item, after);
+  }
+  function hideRefItem(kind, id) {
+    if (kind === "muscle") {
+      const l = DATA.getHiddenMuscleIds(userId); if (!l.includes(id)) { l.push(id); DATA.saveHiddenMuscleIds(userId, l); }
+    } else {
+      const l = DATA.getHiddenMovementIds(userId); if (!l.includes(id)) { l.push(id); DATA.saveHiddenMovementIds(userId, l); }
+    }
+    renderContent();
+    showToast(kind === "muscle" ? "Мышца скрыта" : "Движение скрыто");
+  }
+  function deleteRefItem(kind, id) {
+    const list = kind === "muscle" ? DATA.refMuscles(userId) : DATA.refMovements(userId);
+    const item = list.find(x => x.id === id); if (!item) return;
+    const own = refItemIsOwn(item);
+    if (own) {
+      if (kind === "muscle") DATA.saveOwnMuscles(userId, DATA.getOwnMuscles(userId).filter(x => x.id !== id));
+      else                   DATA.saveOwnMovements(userId, DATA.getOwnMovements(userId).filter(x => x.id !== id));
+      renderContent();
+      showToast("Удалено");
+    } else if (DATA.isAdmin()) {
+      // Общий элемент удаляет только админ — из общей базы (оптимистично + БД).
+      refAdminDeleteShared(kind, item).then(() => { renderContent(); showToast("Удалено из общей базы"); })
+        .catch(err => { showToast("Не удалось удалить: " + (err && err.message || err)); });
+    }
+  }
+
+  // Переход мышца↔движение по имени: находим id в целевом справочнике, открываем
+  // ту вкладку с развёрнутой карточкой и подкручиваем её в зону видимости.
+  function crossNav(gotoKind, name) {
+    const isMuscle = gotoKind === "muscle";
+    const list = isMuscle ? DATA.atlasMuscles() : DATA.atlasMovements();
+    const found = list.find(x => x.name === name);
+    if (!found) return;
+    refTab = isMuscle ? "muscles" : "movements";
+    refExpanded[refTab] = found.id;
+    refQuery = "";
+    render();
+    requestAnimationFrame(() => {
+      const el = backdrop.querySelector(`.ref-card[data-id="${CSS.escape(found.id)}"]`);
+      if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }
+
+  // Вкладка «Группы» = прежний менеджер категорий (группы == категории).
+  function renderGroupsInto(listEl, actionsEl) {
     const cats = DATA.getAllCategories(userId);
     const counts = {};
     DATA.getVisibleExercises(userId).forEach(e => { counts[e.cat] = (counts[e.cat] || 0) + 1; });
     const editingClass = catEditMode ? " cat-editing" : "";
+    listEl.innerHTML = `
+      <div class="cat-sheet-list${editingClass}">
+        ${cats.length ? cats.map(c => {
+          const color = DATA.getCategoryColor(userId, c);
+          return `
+            <div class="cat-item-wrap" data-cat="${escHtml(c)}">
+              <div class="cat-item-delete">${SVG_DEL} Удалить</div>
+              <div class="cat-item" data-cat="${escHtml(c)}" style="--cat-color:${escHtml(color)}">
+                <span class="cat-item-name-text" title="${escHtml(c)}">${escHtml(c)}</span>
+                <span class="cat-item-count">${counts[c] || 0}</span>
+              </div>
+            </div>`;
+        }).join("") : `<p class="exd-empty">Групп пока нет.</p>`}
+      </div>`;
+    actionsEl.innerHTML = `
+      <button class="cat-done-btn ref-groups-toggle">${catEditMode ? "Готово" : "Настроить"}</button>
+      <button class="cat-item-add">+ Добавить новую группу</button>`;
 
-    backdrop.innerHTML = `
-      <div class="bottom-sheet cat-sheet">
-        <div class="bottom-sheet-handle"></div>
-        <div class="cat-sheet-head">
-          <span class="cat-sheet-title">Категории</span>
-          <span class="cat-sheet-count">${cats.length} шт</span>
-        </div>
-        <div class="cat-sheet-list${editingClass}">
-          ${cats.length ? cats.map(c => {
-            const color = DATA.getCategoryColor(userId, c);
-            return `
-              <div class="cat-item-wrap" data-cat="${escHtml(c)}">
-                <div class="cat-item-delete">${SVG_DEL} Удалить</div>
-                <div class="cat-item" data-cat="${escHtml(c)}" style="--cat-color:${escHtml(color)}">
-                  <span class="cat-item-name-text" title="${escHtml(c)}">${escHtml(c)}</span>
-                  <span class="cat-item-count">${counts[c] || 0}</span>
-                </div>
-              </div>`;
-          }).join("") : `<p class="exd-empty">Категорий пока нет.</p>`}
-        </div>
-        <button class="cat-done-btn"${catEditMode ? "" : " hidden"}>Готово</button>
-        <button class="cat-item-add">+ Добавить новую категорию</button>
-      </div>
-    `;
-
-    backdrop.querySelectorAll(".cat-item-wrap[data-cat]").forEach(wrap => {
+    listEl.querySelectorAll(".cat-item-wrap[data-cat]").forEach(wrap => {
       const cat = wrap.dataset.cat;
       const item = wrap.querySelector(".cat-item");
       const nameEl = wrap.querySelector(".cat-item-name-text");
@@ -4376,15 +4548,10 @@ function openCategoryManager() {
       wireCatGesture(wrap, cat);
       wireNameClick(wrap, cat, nameEl);
     });
-
-    const doneBtn = backdrop.querySelector(".cat-done-btn");
-    if (doneBtn) doneBtn.addEventListener("click", () => { exitEditMode(); });
-
-    const addBtn = backdrop.querySelector(".cat-item-add");
+    const toggle = actionsEl.querySelector(".ref-groups-toggle");
+    if (toggle) toggle.addEventListener("click", () => { catEditMode ? exitEditMode() : enterEditMode(); });
+    const addBtn = actionsEl.querySelector(".cat-item-add");
     if (addBtn) addBtn.addEventListener("click", openAddCatModal);
-
-    const handle = backdrop.querySelector(".bottom-sheet-handle");
-    if (handle) handle.addEventListener("click", close);
   }
 
   document.body.appendChild(backdrop);
@@ -4401,7 +4568,7 @@ function openCategoryManager() {
     }, { passive: true });
     sheetEl.addEventListener("touchmove", e => {
       if (!sdragging) return;
-      const list = sheetEl.querySelector(".cat-sheet-list");
+      const list = sheetEl.querySelector(".ref-sheet-list");
       const dy = e.touches[0].clientY - sy;
       if (dy > 0 && (!list || list.scrollTop <= 0)) {
         sdy = dy;
@@ -4418,6 +4585,225 @@ function openCategoryManager() {
     };
     sheetEl.addEventListener("touchend",   onSheetEnd);
     sheetEl.addEventListener("touchcancel", onSheetEnd);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Редактирование справочника: формы мышцы/движения + запись.
+   Общая база правится только админом (пишет и в БД); обычный пользователь
+   правит/создаёт СВОИ элементы (own-оверлей) и скрывает общие.
+   ══════════════════════════════════════════════════════════════════════════ */
+function refNewId(kind) { return (kind === "muscle" ? "om_" : "ov_") + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function refNewSharedId(kind) { return (kind === "muscle" ? "am_" : "av_") + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
+
+// Админ: удалить общий элемент из базы (локально сразу + БД + его связи).
+async function refAdminDeleteShared(kind, item) {
+  const a = DATA.atlasSnapshot();
+  if (kind === "muscle") {
+    a.muscles = a.muscles.filter(m => m.id !== item.id);
+    a.muscleCategoryLinks = a.muscleCategoryLinks.filter(l => l.muscle !== item.name);
+  } else {
+    a.categories = a.categories.filter(m => m.id !== item.id);
+    a.muscleCategoryLinks = a.muscleCategoryLinks.filter(l => l.category !== item.name);
+  }
+  DATA.commitAtlas(a);
+  if (DATA.isAdmin() && typeof DB !== "undefined" && Auth.isSignedIn()) {
+    if (kind === "muscle") { await DB.deleteAtlasLinksByMuscle(item.id); await DB.deleteAtlasMuscle(item.id); }
+    else                   { await DB.deleteAtlasLinksByMovement(item.id); await DB.deleteAtlasMovement(item.id); }
+  }
+}
+
+// Сохранить мышцу. existing=null → создание. data={name,group,visible,bundles,movements}.
+async function refSaveMuscle(existing, data) {
+  const userId = DATA.getCurrentUser();
+  const own = existing ? refItemIsOwn(existing) : !DATA.isAdmin();
+  if (own) {
+    const list = DATA.getOwnMuscles(userId);
+    if (existing) { const m = list.find(x => x.id === existing.id); if (m) Object.assign(m, data, { owner: userId }); }
+    else list.push({ id: refNewId("muscle"), owner: userId, ...data });
+    DATA.saveOwnMuscles(userId, list);
+    return;
+  }
+  // Общая мышца (админ): оптимистичная правка ATLAS + связи по имени.
+  const a = DATA.atlasSnapshot();
+  const id = existing ? existing.id : refNewSharedId("muscle");
+  let row = existing ? a.muscles.find(m => m.id === id) : null;
+  const oldName = row ? row.name : null;
+  if (row) Object.assign(row, { name: data.name, group: data.group, visible: data.visible, bundles: data.bundles });
+  else { row = { id, name: data.name, group: data.group, visible: data.visible, bundles: data.bundles }; a.muscles.push(row); }
+  a.muscleCategoryLinks = a.muscleCategoryLinks.filter(l => l.muscle !== oldName && l.muscle !== data.name);
+  (data.movements || []).forEach(mvName => a.muscleCategoryLinks.push({ id: "al_" + Math.random().toString(36).slice(2, 9), muscle: data.name, bundle: "", category: mvName }));
+  DATA.commitAtlas(a);
+  if (DATA.isAdmin() && typeof DB !== "undefined" && Auth.isSignedIn()) {
+    const gid = (a.groupRows.find(g => g.name === data.group) || {}).id || null;
+    const pos = a.muscles.findIndex(m => m.id === id);
+    await DB.saveAtlasMuscles({ id, name: data.name, group_id: gid, visible: !!data.visible, bundles: data.bundles || [], position: pos });
+    await DB.deleteAtlasLinksByMuscle(id);
+    const vById = {}; a.categories.forEach(v => { vById[v.name] = v.id; });
+    const rows = (data.movements || []).filter(n => vById[n]).map(n => ({ id: "al_" + id + "_" + vById[n], muscle_id: id, bundle: "", movement_id: vById[n] }));
+    if (rows.length) await DB.saveAtlasLinks(rows);
+  }
+}
+
+// Сохранить движение. data={name,group,type,muscles}.
+async function refSaveMovement(existing, data) {
+  const userId = DATA.getCurrentUser();
+  const own = existing ? refItemIsOwn(existing) : !DATA.isAdmin();
+  if (own) {
+    const list = DATA.getOwnMovements(userId);
+    if (existing) { const m = list.find(x => x.id === existing.id); if (m) Object.assign(m, data, { owner: userId }); }
+    else list.push({ id: refNewId("movement"), owner: userId, ...data });
+    DATA.saveOwnMovements(userId, list);
+    return;
+  }
+  const a = DATA.atlasSnapshot();
+  const id = existing ? existing.id : refNewSharedId("movement");
+  let row = existing ? a.categories.find(m => m.id === id) : null;
+  const oldName = row ? row.name : null;
+  if (row) Object.assign(row, { name: data.name, group: data.group, type: data.type });
+  else { row = { id, name: data.name, group: data.group, type: data.type }; a.categories.push(row); }
+  a.muscleCategoryLinks = a.muscleCategoryLinks.filter(l => l.category !== oldName && l.category !== data.name);
+  (data.muscles || []).forEach(mn => a.muscleCategoryLinks.push({ id: "al_" + Math.random().toString(36).slice(2, 9), muscle: mn, bundle: "", category: data.name }));
+  DATA.commitAtlas(a);
+  if (DATA.isAdmin() && typeof DB !== "undefined" && Auth.isSignedIn()) {
+    const gid = (a.groupRows.find(g => g.name === data.group) || {}).id || null;
+    const pos = a.categories.findIndex(m => m.id === id);
+    await DB.saveAtlasMovements({ id, name: data.name, group_id: gid, type: data.type || "База", position: pos });
+    await DB.deleteAtlasLinksByMovement(id);
+    const mById = {}; a.muscles.forEach(m => { mById[m.name] = m.id; });
+    const rows = (data.muscles || []).filter(n => mById[n]).map(n => ({ id: "al_" + mById[n] + "_" + id, muscle_id: mById[n], bundle: "", movement_id: id }));
+    if (rows.length) await DB.saveAtlasLinks(rows);
+  }
+}
+
+// Универсальный конструктор мультиселект-чипов (single или multi).
+function refChipSelect(container, options, selected, multi) {
+  const sel = new Set(selected);
+  const render = () => {
+    container.innerHTML = options.map(o =>
+      `<button type="button" class="ex-form-chip${sel.has(o) ? " selected" : ""}" data-v="${escHtml(o)}">${escHtml(o)}</button>`).join("");
+    container.querySelectorAll(".ex-form-chip").forEach(ch => ch.addEventListener("click", () => {
+      const v = ch.dataset.v;
+      if (multi) { sel.has(v) ? sel.delete(v) : sel.add(v); }
+      else { sel.clear(); sel.add(v); }
+      render();
+    }));
+  };
+  render();
+  return { get: () => [...sel], getOne: () => [...sel][0] || "" };
+}
+
+// Форма мышцы. onSaved() — колбэк после сохранения (перерисовать шторку).
+function openMuscleForm(existing, onSaved) {
+  const userId = DATA.getCurrentUser();
+  const groups = DATA.atlasGroupRows().map(g => g.name);
+  const allMoves = DATA.refMovements(userId).map(m => m.name);
+  const curMoves = existing ? [...(DATA.refMovesByMuscle(userId)[existing.name] || [])] : [];
+  let bundles = existing ? [...(existing.bundles || [])] : [];
+  const isShared = existing && !refItemIsOwn(existing);
+  const readOnly = isShared && !DATA.isAdmin();
+
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop open ref-form-backdrop";
+  bd.innerHTML = `
+    <div class="modal modal-form ref-form">
+      <h2 class="modal-title">${existing ? "Мышца" : "Новая мышца"}</h2>
+      ${readOnly ? `<p class="ref-form-note">Общую мышцу может менять только администратор. Вы можете её скрыть у себя.</p>` : ""}
+      <div class="ex-form-field"><label class="ex-form-label">Название</label>
+        <input class="ex-form-input" id="rf-name" type="text" placeholder="Например, Большая грудная" value="${escHtml(existing ? existing.name : "")}"></div>
+      <div class="ex-form-field"><label class="ex-form-label">Группа</label><div class="ex-form-chips" id="rf-groups"></div></div>
+      <div class="ex-form-field"><button type="button" class="ref-toggle" id="rf-visible" aria-pressed="${existing && existing.visible ? "true" : "false"}"><span class="ref-toggle-dot"></span>Поверхностная — рост виден внешне</button></div>
+      <div class="ex-form-field"><label class="ex-form-label">Пучки</label>
+        <div class="ref-chips-edit" id="rf-bundles"></div>
+        <input class="ex-form-input" id="rf-bundle-add" type="text" placeholder="+ добавить пучок, Enter"></div>
+      <div class="ex-form-field"><label class="ex-form-label">Участвует в движениях</label><div class="ex-form-chips" id="rf-moves"></div></div>
+      <div class="modal-form-actions">
+        <button class="btn-chip" data-act="cancel">Закрыть</button>
+        ${readOnly ? "" : `<button class="btn-chip primary" data-act="save">Сохранить</button>`}
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
+  bd.style.zIndex = "60";
+
+  const groupSel = refChipSelect(bd.querySelector("#rf-groups"), groups, existing ? [existing.group] : [groups[0]], false);
+  const moveSel = refChipSelect(bd.querySelector("#rf-moves"), allMoves, curMoves, true);
+  const visBtn = bd.querySelector("#rf-visible");
+  visBtn.addEventListener("click", () => visBtn.setAttribute("aria-pressed", visBtn.getAttribute("aria-pressed") === "true" ? "false" : "true"));
+
+  const bundlesEl = bd.querySelector("#rf-bundles");
+  const renderBundles = () => {
+    bundlesEl.innerHTML = bundles.length ? bundles.map((b, i) =>
+      `<span class="ref-chip-edit">${escHtml(b)}<button type="button" data-i="${i}">×</button></span>`).join("") : `<span class="ref-detail-empty">Пучков нет</span>`;
+    bundlesEl.querySelectorAll("button[data-i]").forEach(btn => btn.addEventListener("click", () => { bundles.splice(+btn.dataset.i, 1); renderBundles(); }));
+  };
+  renderBundles();
+  const bundleAdd = bd.querySelector("#rf-bundle-add");
+  bundleAdd.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); const v = bundleAdd.value.trim(); if (v) { bundles.push(v); bundleAdd.value = ""; renderBundles(); } }
+  });
+
+  if (readOnly) bd.querySelectorAll("input,button.ex-form-chip,#rf-visible,#rf-bundle-add").forEach(el => { el.disabled = true; });
+
+  const close = () => bd.remove();
+  bd.addEventListener("click", e => { if (e.target === bd) close(); });
+  bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
+  const saveBtn = bd.querySelector('[data-act="save"]');
+  if (saveBtn) saveBtn.addEventListener("click", async () => {
+    const name = bd.querySelector("#rf-name").value.trim();
+    if (!name) { bd.querySelector("#rf-name").focus(); return; }
+    const data = { name, group: groupSel.getOne() || groups[0], visible: visBtn.getAttribute("aria-pressed") === "true", bundles, movements: moveSel.get() };
+    saveBtn.disabled = true;
+    try { await refSaveMuscle(existing, data); close(); onSaved && onSaved(); }
+    catch (err) { saveBtn.disabled = false; showToast("Ошибка сохранения: " + (err && err.message || err)); }
+  });
+}
+
+// Форма движения.
+function openMovementForm(existing, onSaved) {
+  const userId = DATA.getCurrentUser();
+  const groups = DATA.atlasGroupRows().map(g => g.name);
+  const allMuscles = DATA.refMuscles(userId).map(m => m.name);
+  const curMuscles = existing ? [...(DATA.refMusclesByMove(userId)[existing.name] || [])] : [];
+  let type = existing ? (existing.type || "База") : "База";
+  const isShared = existing && !refItemIsOwn(existing);
+  const readOnly = isShared && !DATA.isAdmin();
+
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop open ref-form-backdrop";
+  bd.innerHTML = `
+    <div class="modal modal-form ref-form">
+      <h2 class="modal-title">${existing ? "Движение" : "Новое движение"}</h2>
+      ${readOnly ? `<p class="ref-form-note">Общее движение может менять только администратор. Вы можете его скрыть у себя.</p>` : ""}
+      <div class="ex-form-field"><label class="ex-form-label">Название</label>
+        <input class="ex-form-input" id="rf-name" type="text" placeholder="Например, Движение рук вперёд" value="${escHtml(existing ? existing.name : "")}"></div>
+      <div class="ex-form-field"><label class="ex-form-label">Группа</label><div class="ex-form-chips" id="rf-groups"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips" id="rf-type"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Работающие мышцы</label><div class="ex-form-chips" id="rf-muscles"></div></div>
+      <div class="modal-form-actions">
+        <button class="btn-chip" data-act="cancel">Закрыть</button>
+        ${readOnly ? "" : `<button class="btn-chip primary" data-act="save">Сохранить</button>`}
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
+  bd.style.zIndex = "60";
+
+  const groupSel = refChipSelect(bd.querySelector("#rf-groups"), groups, existing ? [existing.group] : [groups[0]], false);
+  const typeSel = refChipSelect(bd.querySelector("#rf-type"), ["База", "Опция"], [type], false);
+  const muscleSel = refChipSelect(bd.querySelector("#rf-muscles"), allMuscles, curMuscles, true);
+
+  if (readOnly) bd.querySelectorAll("input,button.ex-form-chip").forEach(el => { el.disabled = true; });
+
+  const close = () => bd.remove();
+  bd.addEventListener("click", e => { if (e.target === bd) close(); });
+  bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
+  const saveBtn = bd.querySelector('[data-act="save"]');
+  if (saveBtn) saveBtn.addEventListener("click", async () => {
+    const name = bd.querySelector("#rf-name").value.trim();
+    if (!name) { bd.querySelector("#rf-name").focus(); return; }
+    const data = { name, group: groupSel.getOne() || groups[0], type: typeSel.getOne() || "База", muscles: muscleSel.get() };
+    saveBtn.disabled = true;
+    try { await refSaveMovement(existing, data); close(); onSaved && onSaved(); }
+    catch (err) { saveBtn.disabled = false; showToast("Ошибка сохранения: " + (err && err.message || err)); }
   });
 }
 
@@ -6139,7 +6525,7 @@ if ("serviceWorker" in navigator) {
 // без перезагрузки. Дёргается только при реальном изменении содержимого.
 window.onAtlasUpdated = function () {
   if (screenExercises && screenExercises.classList.contains("active")) {
-    try { renderAtlasCurrent(); } catch {}
+    try { renderExercisesList(exercisesSearch.value); } catch {}
   }
   if (screenMenu && screenMenu.classList.contains("active")) {
     try { refreshMenu(); } catch {}

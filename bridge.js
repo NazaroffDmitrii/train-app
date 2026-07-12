@@ -35,9 +35,11 @@ const Bridge = (() => {
     if (!Auth.isSignedIn()) return null;
     const p = await DB.myProfile();
     authProfileId = p?.id || null;
+    // Флаг администратора общего справочника (правит Атлас на стороне всех).
+    if (DATA.setAdmin) DATA.setAdmin(!!(p && p.is_admin));
     return authProfileId;
   }
-  function reset() { authProfileId = null; } // на signOut, чтобы не утёк в следующую сессию на этом же устройстве
+  function reset() { authProfileId = null; if (DATA.setAdmin) DATA.setAdmin(false); } // на signOut, чтобы не утёк в следующую сессию на этом же устройстве
 
   /* ----- локальный объект тренировки ⇄ строка DB ----- */
   // data хранит ВСЁ тело локального объекта, кроме id/type/startedAt/createdBy
@@ -76,6 +78,10 @@ const Bridge = (() => {
     saveCategoryColors: DATA.saveCategoryColors.bind(DATA),
     saveExerciseOrder:  DATA.saveExerciseOrder.bind(DATA),
     saveTemplates:      DATA.saveTemplates.bind(DATA),
+    saveOwnMuscles:        DATA.saveOwnMuscles.bind(DATA),
+    saveHiddenMuscleIds:   DATA.saveHiddenMuscleIds.bind(DATA),
+    saveOwnMovements:      DATA.saveOwnMovements.bind(DATA),
+    saveHiddenMovementIds: DATA.saveHiddenMovementIds.bind(DATA),
   };
 
   /* ----- debounced push «мелкого» состояния (упражнения/шаблоны/категории) -----
@@ -95,11 +101,17 @@ const Bridge = (() => {
         category_colors: DATA.getCategoryColors(userId),
         exercise_order:  DATA.getExerciseOrder(userId),
         templates:       DATA.getTemplates(userId),
+        // Личный оверлей справочника (мышцы/движения): own + hidden.
+        own_muscles:         DATA.getOwnMuscles(userId),
+        hidden_muscle_ids:   DATA.getHiddenMuscleIds(userId),
+        own_movements:       DATA.getOwnMovements(userId),
+        hidden_movement_ids: DATA.getHiddenMovementIds(userId),
       }).then(() => Outbox.flush());
     }, PUSH_DEBOUNCE_MS));
   }
 
-  ["saveOwnExercises", "saveHiddenIds", "saveAllCategories", "saveCategoryColors", "saveExerciseOrder", "saveTemplates"]
+  ["saveOwnExercises", "saveHiddenIds", "saveAllCategories", "saveCategoryColors", "saveExerciseOrder", "saveTemplates",
+   "saveOwnMuscles", "saveHiddenMuscleIds", "saveOwnMovements", "saveHiddenMovementIds"]
     .forEach(name => {
       DATA[name] = function (userId, ...rest) {
         const r = _orig[name](userId, ...rest);
@@ -213,6 +225,11 @@ const Bridge = (() => {
       if (ud.category_colors)              _orig.saveCategoryColors(userId, ud.category_colors);
       if (ud.exercise_order !== undefined) _orig.saveExerciseOrder(userId, ud.exercise_order);
       if (Array.isArray(ud.templates))     _orig.saveTemplates(userId, ud.templates);
+      // Личный оверлей справочника (мышцы/движения).
+      if (Array.isArray(ud.own_muscles))         _orig.saveOwnMuscles(userId, ud.own_muscles);
+      if (Array.isArray(ud.hidden_muscle_ids))   _orig.saveHiddenMuscleIds(userId, ud.hidden_muscle_ids);
+      if (Array.isArray(ud.own_movements))       _orig.saveOwnMovements(userId, ud.own_movements);
+      if (Array.isArray(ud.hidden_movement_ids)) _orig.saveHiddenMovementIds(userId, ud.hidden_movement_ids);
       // Личные упражнения из облака уже полные — не даём seed заново плодить
       // дубликаты дефолтного набора (см. DATA.ensureExercisesSeeded).
       DATA.markExercisesSeeded(userId);

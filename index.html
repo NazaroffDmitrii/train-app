@@ -1375,6 +1375,8 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 }
 .ref-group-label:first-child { padding-top: 4px; }
 .ref-group-label .ref-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.ref-group-label .ref-sq  { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.ref-card-chev { flex: none; color: var(--text-tertiary); font-size: 20px; line-height: 1; font-weight: 400; }
 .ref-card {
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
   border-left: 3px solid var(--tab-color, transparent);
@@ -1399,6 +1401,80 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 }
 .ref-sub b { color: var(--text-secondary); font-weight: 650; }
 .ref-card-tap:active { background: var(--panel-hi); }
+.ref-card.expanded { background: var(--panel-hi); }
+.ref-card-chev { transition: transform 0.15s ease; }
+
+/* Разворот карточки мышцы/движения */
+.ref-card-detail { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.ref-detail-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin: 10px 0 6px; }
+.ref-detail-label:first-child { margin-top: 0; }
+.ref-detail-val { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.ref-detail-val.ref-detail-muted { font-size: 12.5px; font-weight: 500; color: var(--text-tertiary); margin-top: 4px; }
+.ref-detail-empty { font-size: 12.5px; color: var(--text-tertiary); margin-top: 8px; }
+.ref-cells { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+.ref-cell {
+  padding: 10px 11px; border-radius: 10px; text-align: left;
+  background: var(--panel); border: 1px solid var(--border-subtle);
+  font-size: 12.5px; font-weight: 600; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ref-cell:active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
+
+/* Режим правки карточек мышц/движений */
+.ref-own-badge { flex: none; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 7px; background: var(--accent-soft); color: var(--accent-bright); text-transform: uppercase; letter-spacing: 0.04em; }
+.ref-card-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.ref-card-act {
+  width: 32px; height: 32px; border-radius: 9px; flex: none;
+  background: var(--panel); border: 1px solid var(--border-subtle);
+  display: flex; align-items: center; justify-content: center; color: var(--text-secondary);
+}
+.ref-card-act svg { width: 16px; height: 16px; }
+.ref-card-act.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
+.ref-card-editing { touch-action: pan-y; }
+
+/* Формы мышцы/движения */
+.ref-form { max-height: 88vh; overflow-y: auto; }
+.ref-form-note { font-size: 12.5px; color: var(--text-tertiary); background: var(--panel-hi); border-radius: 10px; padding: 10px 12px; margin-bottom: 4px; }
+.ex-form-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.ref-toggle {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 11px 14px; border-radius: 12px; font-size: 13.5px; font-weight: 600; color: var(--text-secondary);
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+}
+.ref-toggle-dot { width: 20px; height: 20px; border-radius: 6px; flex: none; border: 2px solid var(--border-strong); position: relative; transition: all 0.15s ease; }
+.ref-toggle[aria-pressed="true"] { color: var(--text-primary); border-color: var(--accent); }
+.ref-toggle[aria-pressed="true"] .ref-toggle-dot { background: var(--accent); border-color: var(--accent); }
+.ref-toggle[aria-pressed="true"] .ref-toggle-dot::after { content: "✓"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #fff; }
+.ref-chips-edit { display: flex; gap: 6px; flex-wrap: wrap; }
+.ref-chip-edit {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600;
+  padding: 5px 6px 5px 10px; border-radius: 9px; background: var(--panel-hi); color: var(--text-secondary);
+}
+.ref-chip-edit button { width: 18px; height: 18px; border-radius: 6px; background: var(--panel); color: var(--text-tertiary); font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+
+/* ── Шторка «Справочник» (шестерёнка): вкладки Мышцы / Движения / Группы ───── */
+.ref-sheet { max-height: 86vh; display: flex; flex-direction: column; }
+.ref-sheet-tabs { display: flex; gap: 8px; margin-bottom: 12px; flex: none; }
+.ref-sheet-tab {
+  flex: 1; min-width: 0; padding: 11px 4px; border-radius: 13px;
+  background: var(--panel-raised); border: 1.5px solid var(--border-subtle);
+  font-size: 14px; font-weight: 650; letter-spacing: -0.01em; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.ref-sheet-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ref-sheet-search-wrap { flex: none; margin-bottom: 10px; }
+.ref-sheet-search-wrap.hidden { display: none; }
+.ref-sheet-search {
+  width: 100%; padding: 11px 16px;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  border-radius: 13px; font-size: 15px; color: var(--text-primary);
+  transition: border-color 0.15s ease;
+}
+.ref-sheet-search:focus { border-color: var(--accent); }
+.ref-sheet-list { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; min-height: 120px; }
+.ref-sheet-actions { flex: none; padding-top: 10px; }
 
 .exercises-search-wrap { flex: none; padding: 12px 20px 2px; }
 .exercises-search {
@@ -2376,12 +2452,6 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
         <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
-      </div>
-      <div class="atlas-subtabs" id="atlas-subtabs">
-        <button class="atlas-subtab active" data-sub="exercises">Упражнения</button>
-        <button class="atlas-subtab" data-sub="muscles">Мышцы</button>
-        <button class="atlas-subtab" data-sub="movements">Движения</button>
-        <button class="atlas-subtab" data-sub="groups">Группы</button>
       </div>
     </div>
     <div class="exercises-search-wrap">
