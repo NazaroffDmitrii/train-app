@@ -1382,6 +1382,21 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   border-left: 3px solid var(--tab-color, transparent);
   border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 8px;
 }
+/* Обёртка карточки со слотом свайп-удаления (как строки упражнений) */
+.ref-card-wrap { position: relative; margin-bottom: 8px; }
+.ref-card-wrap .ref-card { margin-bottom: 0; }
+.ref-card-wrap.swiping { touch-action: pan-y; }
+.ref-card-del {
+  position: absolute; inset: 0; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 0 20px; background: var(--red); color: #fff; font-size: 14px; font-weight: 700;
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.ref-card-del svg { width: 18px; height: 18px; }
+.ref-card-wrap.swiping .ref-card-del { opacity: 0.92; }
+.ref-card-wrap.will-delete .ref-card-del { opacity: 1; }
+.ref-card-wrap .ref-card { position: relative; z-index: 1; }
+.ref-card-wrap.ref-dragging { z-index: 20; box-shadow: 0 8px 24px rgba(0,0,0,0.45); }
 .ref-card-top { display: flex; align-items: center; gap: 8px; }
 .ref-card-name { flex: 1; font-size: 15px; font-weight: 650; color: var(--text-primary); }
 .ref-star { color: #f2c94c; font-size: 14px; flex: none; }
@@ -1474,9 +1489,10 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .ref-sheet-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ref-sheet-search-wrap { flex: none; min-height: 0; overflow: hidden; transition: height 0.22s ease; }
+/* Верхняя зона перетаскивания шторки (ручка + вкладки) — за неё закрываем. */
+.ref-sheet-drag { flex: none; cursor: grab; touch-action: none; }
+.ref-sheet-search-wrap { flex: none; margin-bottom: 10px; }
 .ref-sheet-search-wrap.hidden { display: none; }
-.ref-sheet-search-inner { padding-bottom: 10px; }
 .ref-sheet-search {
   width: 100%; padding: 11px 16px;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
@@ -1501,11 +1517,6 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   flex: none; display: flex; align-items: center; gap: 8px;
   padding: 10px 14px;
 }
-/* #8: шапка (поиск + чипы категорий) плавно сворачивается при прокрутке вниз,
-   разворачивается при прокрутке вверх. Высоту анимируем в JS (wireHeaderCollapse)
-   — надёжно и плавно. */
-.ex-hdr-collapse { overflow: hidden; min-height: 0; transition: height 0.24s ease; }
-.ex-hdr-collapse-inner { overflow: hidden; }
 .ex-cat-tabs {
   flex: 1; min-width: 0; display: flex; gap: 6px;
   overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
@@ -2482,17 +2493,15 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
         </button>
       </div>
     </div>
-    <div class="ex-hdr-collapse"><div class="ex-hdr-collapse-inner">
-      <div class="exercises-search-wrap">
-        <input class="exercises-search" id="exercises-search" placeholder="Поиск упражнения…" type="text">
-      </div>
-      <div class="ex-cat-tabs-wrap">
-        <div class="ex-cat-tabs" id="ex-cat-tabs"></div>
-        <button class="ex-cat-manage-btn" id="ex-cat-manage-btn" title="Категории">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-        </button>
-      </div>
-    </div></div>
+    <div class="exercises-search-wrap">
+      <input class="exercises-search" id="exercises-search" placeholder="Поиск упражнения…" type="text">
+    </div>
+    <div class="ex-cat-tabs-wrap">
+      <div class="ex-cat-tabs" id="ex-cat-tabs"></div>
+      <button class="ex-cat-manage-btn" id="ex-cat-manage-btn" title="Категории">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+      </button>
+    </div>
     <div class="exercises-scroll" id="exercises-scroll"></div>
     <button class="exercises-float-done" id="exercises-done-btn">Готово</button>
   </section>

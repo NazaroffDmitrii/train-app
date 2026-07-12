@@ -3455,9 +3455,6 @@ function initExercisesScreen() {
   exercisesSearch.placeholder = "Поиск упражнения…";
   const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.classList.remove("visible");
   const addBtn  = $("exercises-add-btn");  if (addBtn)  addBtn.hidden  = false;
-  // #8: шапка развёрнута при входе
-  const _hdr = document.querySelector("#screen-exercises .ex-hdr-collapse");
-  if (_hdr) { _hdr.style.height = ""; _hdr.dataset.collapsed = "0"; }
   exercisesScroll.scrollTop = 0;
   const userId = DATA.getCurrentUser();
   if (DATA.ensureExercisesSeeded(userId)) SyncQueue.push("exercise:create", {});
@@ -3466,8 +3463,6 @@ function initExercisesScreen() {
 
 $("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goToScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
-// #8: при прокрутке списка вниз прячем поиск+чипы категорий, вверх — показываем.
-wireHeaderCollapse(exercisesScroll, document.querySelector("#screen-exercises .ex-hdr-collapse"));
 // Шестерёнка → шторка «Справочник» с вкладками Мышцы / Движения / Группы.
 $("ex-cat-manage-btn").addEventListener("click", () => openReferenceSheet("muscles"));
 
@@ -3502,15 +3497,22 @@ function refHiddenSection(kind, hiddenItems) {
   return `<div class="ref-group-label ref-hidden-head">Скрытые · ${hiddenItems.length}</div>${cards}`;
 }
 
-// Правая часть карточки: в обычном режиме — шеврон; в режиме правки — кнопки
-// «изменить» (если можно) и «удалить/скрыть» (общий у не-админа только скрыть).
-function refCardRight(item, editMode, chev) {
-  if (!editMode) return `<span class="ref-card-chev">${chev}</span>`;
-  const own = refItemIsOwn(item);
+// Карточка справочника с обёрткой для свайп-удаления — ровно как строки
+// упражнений (.ex-row-wrap): под карточкой лежит слот «Удалить/Скрыть»,
+// открывается свайпом влево. В обычном режиме тап разворачивает; в правке тап
+// открывает форму, долгое удержание — драг. meta — звезда (мышца) / бейдж (движение).
+function refCardHtml(kind, m, opts) {
+  const { editMode, expanded, color, detail, meta } = opts;
+  const own = refItemIsOwn(m);
   const canDelete = own || DATA.isAdmin();
-  const editBtn = refCanEdit(item) ? `<button class="ref-card-act" data-act="edit" title="Изменить">${SVG_REF_EDIT}</button>` : "";
-  const delBtn = `<button class="ref-card-act danger" data-act="${canDelete ? "delete" : "hide"}" title="${canDelete ? "Удалить" : "Скрыть у себя"}">${canDelete ? SVG_REF_TRASH : SVG_REF_HIDE}</button>`;
-  return `<span class="ref-card-actions">${editBtn}${delBtn}</span>`;
+  const ownBadge = own ? `<span class="ref-own-badge">моё</span>` : "";
+  const chev = editMode ? "" : `<span class="ref-card-chev">${expanded ? "⌄" : "›"}</span>`;
+  return `<div class="ref-card-wrap" data-kind="${kind}" data-id="${escHtml(m.id)}">
+    <div class="ref-card-del">${canDelete ? SVG_REF_TRASH : SVG_REF_HIDE}<span>${canDelete ? "Удалить" : "Скрыть"}</span></div>
+    <div class="ref-card${editMode ? " ref-card-editing" : " ref-card-tap"}${expanded ? " expanded" : ""}" style="border-left-color:${escHtml(color)}">
+      <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${ownBadge}${meta || ""}${chev}</div>${detail}
+    </div>
+  </div>`;
 }
 
 // Детали мышцы (разворот карточки): пучки + группа + движения, в которых
@@ -3558,12 +3560,9 @@ function renderMusclesTab(container, query, opts) {
     byGroup[g].sort((a, b) => oIdx(a.id) - oIdx(b.id));   // пользовательский порядок (drag)
     const cards = byGroup[g].map(m => {
       const star = m.visible ? `<span class="ref-star" title="Поверхностная — рост виден внешне">★</span>` : "";
-      const own = refItemIsOwn(m) ? `<span class="ref-own-badge">моё</span>` : "";
       const expanded = !editMode && expandedIds.has(m.id);
       const detail = expanded ? muscleDetailHtml(m, [...(movesByMuscle[m.name] || [])]) : "";
-      const right = refCardRight(m, editMode, expanded ? "⌄" : "›");
-      return `<div class="ref-card${editMode ? " ref-card-editing" : " ref-card-tap"}${expanded ? " expanded" : ""}" data-kind="muscle" data-id="${escHtml(m.id)}" style="border-left-color:${escHtml(color)}">
-        <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${own}${star}${right}</div>${detail}</div>`;
+      return refCardHtml("muscle", m, { editMode, expanded, color, detail, meta: star });
     }).join("");
     return `<div class="ref-group-label"><span class="ref-sq" style="background:${escHtml(color)}"></span>${escHtml(g)}<span class="ref-count" style="margin-left:auto">${byGroup[g].length}</span></div>${cards}`;
   }).join("");
@@ -3598,12 +3597,9 @@ function renderMovementsTab(container, query, opts) {
       .sort((a, b) => oIdx(a.id) - oIdx(b.id))
       .map(m => {
         const badge = m.type === "База" ? `<span class="ref-badge">База</span>` : `<span class="ref-badge opt">Опция</span>`;
-        const own = refItemIsOwn(m) ? `<span class="ref-own-badge">моё</span>` : "";
         const expanded = !editMode && expandedIds.has(m.id);
         const detail = expanded ? movementDetailHtml(m, [...(musByMove[m.name] || [])]) : "";
-        const right = refCardRight(m, editMode, expanded ? "⌄" : "›");
-        return `<div class="ref-card${editMode ? " ref-card-editing" : " ref-card-tap"}${expanded ? " expanded" : ""}" data-kind="movement" data-id="${escHtml(m.id)}" style="border-left-color:${escHtml(color)}">
-          <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${own}${badge}${right}</div>${detail}</div>`;
+        return refCardHtml("movement", m, { editMode, expanded, color, detail, meta: badge });
       }).join("");
     return `<div class="ref-group-label"><span class="ref-sq" style="background:${escHtml(color)}"></span>${escHtml(g)}</div>${cards}`;
   }).join("");
@@ -4447,15 +4443,17 @@ function openReferenceSheet(initialTab) {
     const searchHidden = refTab !== "muscles" ? " hidden" : "";
     backdrop.innerHTML = `
       <div class="bottom-sheet ref-sheet">
-        <div class="bottom-sheet-handle"></div>
-        <div class="ref-sheet-tabs">
-          <button class="ref-sheet-tab${refTab === "muscles" ? " active" : ""}" data-tab="muscles">Мышцы</button>
-          <button class="ref-sheet-tab${refTab === "movements" ? " active" : ""}" data-tab="movements">Движения</button>
-          <button class="ref-sheet-tab${refTab === "groups" ? " active" : ""}" data-tab="groups">Группы</button>
+        <div class="ref-sheet-drag">
+          <div class="bottom-sheet-handle"></div>
+          <div class="ref-sheet-tabs">
+            <button class="ref-sheet-tab${refTab === "muscles" ? " active" : ""}" data-tab="muscles">Мышцы</button>
+            <button class="ref-sheet-tab${refTab === "movements" ? " active" : ""}" data-tab="movements">Движения</button>
+            <button class="ref-sheet-tab${refTab === "groups" ? " active" : ""}" data-tab="groups">Группы</button>
+          </div>
         </div>
-        <div class="ref-sheet-search-wrap${searchHidden}"><div class="ref-sheet-search-inner">
+        <div class="ref-sheet-search-wrap${searchHidden}">
           <input class="ref-sheet-search" type="text" placeholder="Поиск мышцы…" value="${escHtml(refQuery)}">
-        </div></div>
+        </div>
         <div class="ref-sheet-list"></div>
         <div class="ref-sheet-actions"></div>
       </div>`;
@@ -4480,29 +4478,26 @@ function openReferenceSheet(initialTab) {
     wireSheetChrome();
   }
 
-  // Свайп вниз → закрыть. По эталону пикера (setupPickerSwipe): направление
-  // решается ОДИН раз за жест (флаг decided). Если жест начался как прокрутка
-  // списка (или список не в самом верху) — отдаём его прокрутке и больше не
-  // перехватываем в этом жесте. Так поведение не «ломается» после прокрутки.
+  // Закрытие перетаскиванием ВЕРХНЕЙ ЗОНЫ (ручка + вкладки), как в шторке
+  // главного меню — не из любой точки, чтобы не мешать скроллу/тапам списка.
+  // Лист следует за пальцем; отпускание за порогом ИЛИ с быстрым флингом вниз —
+  // закрывает, иначе возврат. Единое поведение шторок (см. setupSheetDrag/пикер).
   function wireSheetChrome() {
     const sheetEl = backdrop.querySelector(".bottom-sheet");
-    const listEl = backdrop.querySelector(".ref-sheet-list");
-    if (!sheetEl) return;
-    let startY = 0, startX = 0, dy = 0, active = false, decided = false, vert = false, onList = false;
-    const down = (y, x, target) => {
-      active = true; decided = false; vert = false; dy = 0; startY = y; startX = x;
-      onList = !!(target && target.closest && target.closest(".ref-sheet-list"));
-      sheetEl.style.transition = "none";
-    };
+    const dragZone = backdrop.querySelector(".ref-sheet-drag");
+    if (!sheetEl || !dragZone) return;
+    let startY = 0, startX = 0, dy = 0, active = false, decided = false, vert = false, hist = [];
+    const vel = () => { if (hist.length < 2) return 0; const f = hist[0], l = hist[hist.length - 1], dt = l.t - f.t; return dt <= 0 ? 0 : (l.y - f.y) / dt; };
+    const down = (y, x) => { active = true; decided = false; vert = false; dy = 0; startY = y; startX = x; hist = [{ y, t: performance.now() }]; sheetEl.style.transition = "none"; };
     const moveTo = (y, x, e) => {
       if (!active) return;
       const d = y - startY, dx = x - startX;
+      hist.push({ y, t: performance.now() }); if (hist.length > 5) hist.shift();
       if (!decided) {
         if (Math.abs(d) < 6 && Math.abs(dx) < 6) return;
         decided = true;
-        const horiz = Math.abs(dx) > Math.abs(d);
-        vert = !horiz && d > 0 && (!onList || listEl.scrollTop <= 0);
-        if (!vert) { active = false; sheetEl.style.transition = ""; return; }   // отдаём прокрутке
+        vert = d > 0 && Math.abs(d) > Math.abs(dx);
+        if (!vert) { active = false; sheetEl.style.transition = ""; return; }
       }
       dy = Math.max(0, d);
       if (e && e.cancelable) e.preventDefault();
@@ -4513,15 +4508,15 @@ function openReferenceSheet(initialTab) {
       active = false;
       sheetEl.style.transition = "";
       if (!vert) return;
-      sheetEl.style.transform = "";
-      if (dy > 110) close();
+      const fling = vel() > 0.45;
+      if (dy > 110 || fling) { sheetEl.style.transition = "transform 0.22s ease"; sheetEl.style.transform = `translateY(${sheetEl.offsetHeight}px)`; close(); }
+      else sheetEl.style.transform = "";
     };
-    sheetEl.addEventListener("touchstart", e => down(e.touches[0].clientY, e.touches[0].clientX, e.target), { passive: true });
-    sheetEl.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) moveTo(t.clientY, t.clientX, e); }, { passive: false });
-    sheetEl.addEventListener("touchend", up);
-    sheetEl.addEventListener("touchcancel", up);
-    const searchWrap = backdrop.querySelector(".ref-sheet-search-wrap");
-    if (listEl && searchWrap) wireHeaderCollapse(listEl, searchWrap);
+    dragZone.addEventListener("touchstart", e => down(e.touches[0].clientY, e.touches[0].clientX), { passive: true });
+    dragZone.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) moveTo(t.clientY, t.clientX, e); }, { passive: false });
+    dragZone.addEventListener("touchend", up);
+    dragZone.addEventListener("touchcancel", up);
+    dragZone.addEventListener("mousedown", e => { down(e.clientY, e.clientX); const mm = ev => moveTo(ev.clientY, ev.clientX, ev); const mu = () => { up(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); }; window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu); });
   }
 
   function renderContent() {
@@ -4541,42 +4536,87 @@ function openReferenceSheet(initialTab) {
       const doneBtn = actionsEl.querySelector(".ref-edit-toggle");
       if (doneBtn) doneBtn.addEventListener("click", () => { refEditMode = false; renderContent(); });
       wireRefCards(listEl);
-      // Долгое удержание: вне правки — войти в правку; в правке — тащить.
-      listEl.querySelectorAll(".ref-card[data-id]:not(.ref-card-hidden)").forEach(wireRefGesture);
+      // Каждая карточка: свайп влево — удалить/скрыть; долгое удержание — войти в
+      // правку / тащить (эталон строк упражнений).
+      listEl.querySelectorAll(".ref-card-wrap[data-id]").forEach(wrap => {
+        wireRefSwipe(wrap);
+        wireRefGesture(wrap);
+      });
     } else {
       listEl.onclick = null;
       renderGroupsInto(listEl, actionsEl);
     }
   }
 
-  // Обычный режим: тап по карточке — развернуть/свернуть; клик по ячейке —
-  // перейти на другую вкладку. Режим правки: кнопки изменить / удалить / скрыть.
+  // Тап: «+ Добавить»; ячейка деталей → переход; «вернуть» у скрытых. Обычный
+  // режим — тап по карточке разворачивает; режим правки — тап открывает полную
+  // форму (эталон упражнений: тап в правке = редактирование).
   function wireRefCards(listEl) {
     listEl.onclick = (e) => {
       const addBtn = e.target.closest(".ref-add-inline");
       if (addBtn) { return refTab === "muscles" ? openMuscleForm(null, () => renderContent()) : openMovementForm(null, () => renderContent()); }
       const cell = e.target.closest(".ref-cell[data-goto]");
       if (cell) { crossNav(cell.dataset.goto, cell.dataset.name); return; }
-      const actBtn = e.target.closest(".ref-card-act[data-act]");
-      const card = e.target.closest(".ref-card[data-kind]");
-      if (!card) return;
-      const kind = card.dataset.kind;                 // muscle | movement
-      const id = card.dataset.id;
-      if (refEditMode && actBtn) {
-        const act = actBtn.dataset.act;
-        if (act === "edit")   return openRefEditor(kind, id);
-        if (act === "delete") return deleteRefItem(kind, id);
-        if (act === "hide")   return hideRefItem(kind, id);
-        if (act === "unhide") return unhideRefItem(kind, id);
-        return;
-      }
-      if (refEditMode) return;                          // в правке тап по телу карточки — ничего
-      // #2: разворот НЕ схлопывает другие — только повторный тап сворачивает этот.
+      const unhideBtn = e.target.closest('.ref-card-act[data-act="unhide"]');
+      if (unhideBtn) { const c = e.target.closest(".ref-card[data-kind]"); if (c) return unhideRefItem(c.dataset.kind, c.dataset.id); }
+      const wrap = e.target.closest(".ref-card-wrap[data-kind]");
+      if (!wrap) return;
+      if (wrap.dataset.swiped) { delete wrap.dataset.swiped; return; }  // клик после свайпа глушим
+      const kind = wrap.dataset.kind, id = wrap.dataset.id;
+      if (refEditMode) return openRefEditor(kind, id);   // тап в правке → полная форма
       const key = kind === "muscle" ? "muscles" : "movements";
       const set = refExpanded[key];
-      set.has(id) ? set.delete(id) : set.add(id);
+      set.has(id) ? set.delete(id) : set.add(id);        // разворот, без схлопывания других
       renderContent();
     };
+  }
+
+  // Свайп влево по карточке → «Удалить/Скрыть» (как строки упражнений wireExRowSwipe).
+  function wireRefSwipe(wrap) {
+    const card = wrap.querySelector(".ref-card");
+    if (!card) return;
+    let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
+    const MAX = 104, DEL = 74;
+    card.addEventListener("pointerdown", e => {
+      sx = e.clientX; sy = e.clientY; dx = 0; active = true; decided = false; horiz = false; swiped = false;
+      card.style.transition = "";
+    });
+    card.addEventListener("pointermove", e => {
+      if (!active) return;
+      const mx = e.clientX - sx, my = e.clientY - sy;
+      if (!decided) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        decided = true; horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+        if (!horiz) { active = false; return; }
+        wrap.classList.add("swiping");
+        try { card.setPointerCapture(e.pointerId); } catch {}
+      }
+      if (!horiz) return;
+      dx = Math.max(-MAX, Math.min(0, mx));
+      if (dx < -4) swiped = true;
+      card.style.transform = `translateX(${dx}px)`;
+      wrap.classList.toggle("will-delete", dx <= -DEL);
+    });
+    card.addEventListener("touchmove", e => {
+      if (active && horiz && e.cancelable) e.preventDefault();
+    }, { passive: false });
+    const settle = () => {
+      if (!active) return; active = false;
+      if (!horiz) return;
+      if (swiped) wrap.dataset.swiped = "1";
+      if (dx <= -DEL) {
+        card.style.transition = "transform 0.16s ease"; card.style.transform = "translateX(-110%)";
+        wrap.style.height = wrap.offsetHeight + "px";
+        requestAnimationFrame(() => { wrap.style.transition = "height 0.16s ease, opacity 0.16s ease"; wrap.style.height = "0"; wrap.style.opacity = "0"; });
+        setTimeout(() => { const canDel = refItemIsOwn({ id: wrap.dataset.id }) || DATA.isAdmin(); (canDel ? deleteRefItem : hideRefItem)(wrap.dataset.kind, wrap.dataset.id); }, 170);
+      } else {
+        card.style.transition = "transform 0.18s ease"; card.style.transform = "";
+        wrap.classList.remove("will-delete");
+        setTimeout(() => wrap.classList.remove("swiping"), 200);
+      }
+    };
+    card.addEventListener("pointerup", settle);
+    card.addEventListener("pointercancel", settle);
   }
 
   function openRefEditor(kind, id) {
@@ -4594,60 +4634,59 @@ function openReferenceSheet(initialTab) {
   // Долгое удержание на карточке (эталон упражнений): вне правки — войти в
   // правку; в правке — тащить (реордер внутри группы; границы групп/секции
   // «Скрытые» не пускают). На отпускании drag — сохраняем порядок.
-  function wireRefGesture(card) {
+  function wireRefGesture(wrap) {
     let holdTimer = null, sx = 0, sy = 0, moved = false, dragging = false;
     const DELAY = () => refEditMode ? 150 : 430;
     const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
-    const begin = (x, y, target) => {
-      if (target && target.closest(".ref-card-act")) return;   // не мешаем кнопкам
+    const begin = (x, y) => {
       moved = false; dragging = false; sx = x; sy = y; clearHold();
       holdTimer = setTimeout(() => {
         holdTimer = null; if (moved) return;
         if (!refEditMode) { enterRefEdit(); return; }
-        dragging = true; startRefDrag(card, y);
+        dragging = true; startRefDrag(wrap, y);
       }, DELAY());
     };
     const move = (x, y, e) => {
-      if (refDrag && refDrag.card === card) { if (e && e.cancelable) e.preventDefault(); moveRefDrag(y); return; }
+      if (refDrag && refDrag.wrap === wrap) { if (e && e.cancelable) e.preventDefault(); moveRefDrag(y); return; }
       if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); }
     };
-    const finish = () => { clearHold(); if (refDrag && refDrag.card === card) endRefDrag(); };
-    card.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
-    card.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
-    card.addEventListener("touchend", finish);
-    card.addEventListener("touchcancel", finish);
-    card.addEventListener("mousedown", e => begin(e.clientX, e.clientY, e.target));
-    card.addEventListener("mousemove", e => { if (refDrag) move(e.clientX, e.clientY, null); });
-    card.addEventListener("mouseup", finish);
-    card.addEventListener("click", e => { if (dragging) { e.stopPropagation(); dragging = false; } }, true);
+    const finish = () => { clearHold(); if (refDrag && refDrag.wrap === wrap) endRefDrag(); };
+    wrap.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY); }, { passive: true });
+    wrap.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
+    wrap.addEventListener("touchend", finish);
+    wrap.addEventListener("touchcancel", finish);
+    wrap.addEventListener("mousedown", e => begin(e.clientX, e.clientY));
+    wrap.addEventListener("mousemove", e => { if (refDrag) move(e.clientX, e.clientY, null); });
+    wrap.addEventListener("mouseup", finish);
+    wrap.addEventListener("click", e => { if (dragging) { e.stopPropagation(); dragging = false; } }, true);
   }
-  function startRefDrag(card, pointerY) {
+  function startRefDrag(wrap, pointerY) {
     if (refDrag) return;
-    refDrag = { card, grabDy: pointerY - card.getBoundingClientRect().top, ty: 0 };
-    card.style.transition = "none"; card.classList.add("ref-dragging"); haptic(18);
+    refDrag = { wrap, grabDy: pointerY - wrap.getBoundingClientRect().top, ty: 0 };
+    wrap.style.transition = "none"; wrap.classList.add("ref-dragging"); haptic(18);
   }
   function moveRefDrag(pointerY) {
     const d = refDrag; if (!d) return;
-    const h = d.card.getBoundingClientRect().height;
+    const h = d.wrap.getBoundingClientRect().height;
     const center = (pointerY - d.grabDy) + h / 2;
-    const okCard = el => el && el.classList.contains("ref-card") && !el.classList.contains("ref-card-hidden");
-    const prev = d.card.previousElementSibling;
-    if (okCard(prev)) { const r = prev.getBoundingClientRect(); if (center < r.top + r.height / 2) d.card.parentNode.insertBefore(d.card, prev); }
-    const next = d.card.nextElementSibling;
-    if (okCard(next)) { const r = next.getBoundingClientRect(); if (center > r.top + r.height / 2) d.card.parentNode.insertBefore(next, d.card); }
-    const rect = d.card.getBoundingClientRect();
+    const okWrap = el => el && el.classList.contains("ref-card-wrap");
+    const prev = d.wrap.previousElementSibling;
+    if (okWrap(prev)) { const r = prev.getBoundingClientRect(); if (center < r.top + r.height / 2) d.wrap.parentNode.insertBefore(d.wrap, prev); }
+    const next = d.wrap.nextElementSibling;
+    if (okWrap(next)) { const r = next.getBoundingClientRect(); if (center > r.top + r.height / 2) d.wrap.parentNode.insertBefore(next, d.wrap); }
+    const rect = d.wrap.getBoundingClientRect();
     d.ty = (pointerY - d.grabDy) - (rect.top - d.ty);
-    d.card.style.transform = `translateY(${d.ty}px)`;
+    d.wrap.style.transform = `translateY(${d.ty}px)`;
   }
   function endRefDrag() {
     const d = refDrag; if (!d) return;
     refDrag = null;
-    d.card.style.transition = "transform 0.18s ease"; d.card.style.transform = "";
-    d.card.classList.remove("ref-dragging");
-    setTimeout(() => { d.card.style.transition = ""; }, 200);
+    d.wrap.style.transition = "transform 0.18s ease"; d.wrap.style.transform = "";
+    d.wrap.classList.remove("ref-dragging");
+    setTimeout(() => { d.wrap.style.transition = ""; }, 200);
     const listEl = backdrop.querySelector(".ref-sheet-list");
     const kind = refTab === "muscles" ? "muscle" : "movement";
-    const ids = [...listEl.querySelectorAll(".ref-card[data-id]:not(.ref-card-hidden)")].map(c => c.dataset.id);
+    const ids = [...listEl.querySelectorAll(".ref-card-wrap[data-id]")].map(c => c.dataset.id);
     DATA.saveRefOrder(userId, kind, ids);
   }
   function hideRefItem(kind, id) {
@@ -4741,39 +4780,6 @@ function openReferenceSheet(initialTab) {
   document.body.appendChild(backdrop);
   render();
   requestAnimationFrame(() => backdrop.classList.add("open"));
-}
-
-// Скролл-скрытие шапки (как на YouTube): при прокрутке вниз плавно схлопывает
-// collapseEl (поиск/чипы) до высоты 0, при прокрутке вверх — разворачивает.
-// Анимируем реальную height в JS (надёжно и плавно; CSS grid-fr-транзишн в
-// некоторых движках не работает). Состояние храним на самом элементе, чтобы
-// экран можно было сбросить извне (см. initExercisesScreen).
-function wireHeaderCollapse(scrollEl, collapseEl, threshold = 36) {
-  if (!scrollEl || !collapseEl) return;
-  let last = scrollEl.scrollTop || 0;
-  const isCollapsed = () => collapseEl.dataset.collapsed === "1";
-  const set = c => {
-    if (c === isCollapsed()) return;
-    collapseEl.dataset.collapsed = c ? "1" : "0";
-    const start = c ? collapseEl.scrollHeight + "px" : "0px";
-    const target = c ? "0px" : collapseEl.scrollHeight + "px";
-    collapseEl.style.height = start;
-    void collapseEl.offsetHeight;   // коммитим start
-    // Target в следующем кадре — иначе движок схлопывает обе правки в одну и
-    // транзишн не запускается. (В фоновой вкладке rAF троттлится — на устройстве
-    // с видимой вкладкой отрабатывает штатно и плавно.)
-    requestAnimationFrame(() => { collapseEl.style.height = target; });
-    if (!c) {   // после раскрытия вернуть auto, чтобы контент мог меняться
-      const done = () => { collapseEl.style.height = ""; collapseEl.removeEventListener("transitionend", done); };
-      collapseEl.addEventListener("transitionend", done);
-    }
-  };
-  scrollEl.addEventListener("scroll", () => {
-    const st = scrollEl.scrollTop;
-    if (st > last + 4 && st > threshold) set(true);
-    else if (st < last - 4) set(false);
-    last = st;
-  }, { passive: true });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
