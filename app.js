@@ -27,17 +27,63 @@ const DATA = (() => {
   // Библиотека упражнений — общий пул.
   // owner: null = общее (видно всем, можно скрыть у себя, нельзя удалить — только скрыть).
   // type: "strength" | "run" — на будущее для фильтрации (раздел 4 спеки).
-  // === Биомех-база «Атлас» (window.ATLAS_SEED из atlas-seed.js) ===
+  // === Биомех-база «Атлас» ===
   // Справочник (groups / categories(движения) / muscles / muscleCategoryLinks) +
-  // 163 упражнения. Это ОБЩИЙ сид для всех: держим его read-only базой, а личные
-  // правки живут отдельным override-слоем (copy-on-write, см. getVisibleExercises).
-  // Так персональный snapshot синхронизации не раздувается на ~766 КБ.
-  const ATLAS = (window.ATLAS_SEED && typeof window.ATLAS_SEED === "object")
+  // 163 упражнения. ОБЩАЯ база: живёт в реляционных таблицах Supabase
+  // (atlas_*), редактирует её только администратор (RLS is_admin). Приложение
+  // читает её через DB.getAtlas → DATA.setAtlasFromRows и держит в локальном
+  // кэше (train_atlas_cache) ради синхронного доступа и оффлайна; window.ATLAS_SEED
+  // (atlas-seed.js) — фолбэк до первого входа. Личные правки/скрытие у обычных
+  // пользователей — отдельный оверлей (own_*/hidden_*), snapshot не раздувается.
+  const RAW_SEED = (window.ATLAS_SEED && typeof window.ATLAS_SEED === "object")
     ? window.ATLAS_SEED
     : { groups: [], categories: [], muscles: [], muscleCategoryLinks: [], exercises: [] };
 
-  // имя мышцы → её группа-витрина (для вывода группы упражнения по целевой мышце)
-  const _muscleGroup = new Map(ATLAS.muscles.map(m => [m.name, m.group]));
+  const ATLAS_CACHE_KEY = "train_atlas_cache";
+  const _pad = (n, w) => String(n).padStart(w, "0");
+
+  // Внутренняя форма справочника — как сид, но с СТАБИЛЬНЫМИ id у мышц/движений/
+  // групп/связей (нужны для скрытия и правок). id детерминированы позицией и
+  // совпадают со схемой миграции supabase-atlas.sql, поэтому оффлайн-сид и БД
+  // ссылаются на одни и те же id.
+  function seedToAtlas(s) {
+    const gid = {}, mid = {}, vid = {};
+    (s.groups || []).forEach((g, i) => { gid[g] = `ag${_pad(i + 1, 2)}`; });
+    (s.muscles || []).forEach((m, i) => { mid[m.name] = `am${_pad(i + 1, 3)}`; });
+    (s.categories || []).forEach((v, i) => { vid[v.name] = `av${_pad(i + 1, 3)}`; });
+    return {
+      groups: (s.groups || []).slice(),
+      groupRows: (s.groups || []).map(g => ({ id: gid[g], name: g })),
+      muscles: (s.muscles || []).map(m => ({ id: mid[m.name], name: m.name, group: m.group, visible: !!m.visible, bundles: m.bundles || [] })),
+      categories: (s.categories || []).map(v => ({ id: vid[v.name], name: v.name, group: v.group, type: v.type || "База" })),
+      muscleCategoryLinks: (s.muscleCategoryLinks || []).map((l, i) => ({ id: `al${_pad(i + 1, 3)}`, muscle: l.muscle, bundle: l.bundle || "", category: l.category })),
+      exercises: (s.exercises || []).slice(),
+    };
+  }
+  // Строки БД (5 таблиц из DB.getAtlas) → та же внутренняя форма (id — из БД).
+  function rowsToAtlas(r) {
+    const gName = new Map((r.groups || []).map(g => [g.id, g.name]));
+    const mName = new Map((r.muscles || []).map(m => [m.id, m.name]));
+    const vName = new Map((r.movements || []).map(v => [v.id, v.name]));
+    return {
+      groups: (r.groups || []).map(g => g.name),
+      groupRows: (r.groups || []).map(g => ({ id: g.id, name: g.name })),
+      muscles: (r.muscles || []).map(m => ({ id: m.id, name: m.name, group: gName.get(m.group_id) || "", visible: !!m.visible, bundles: Array.isArray(m.bundles) ? m.bundles : [] })),
+      categories: (r.movements || []).map(v => ({ id: v.id, name: v.name, group: gName.get(v.group_id) || "", type: v.type || "База" })),
+      muscleCategoryLinks: (r.links || []).map(l => ({ id: l.id, muscle: mName.get(l.muscle_id) || "", bundle: l.bundle || "", category: vName.get(l.movement_id) || "" })),
+      exercises: (r.exercises || []).map(e => e.data),
+    };
+  }
+  function _loadAtlasCache() {
+    try { const v = JSON.parse(localStorage.getItem(ATLAS_CACHE_KEY)); return v && Array.isArray(v.muscles) ? v : null; }
+    catch { return null; }
+  }
+
+  // Живой справочник. let — подменяется при загрузке из БД (setAtlas).
+  let ATLAS = _loadAtlasCache() || seedToAtlas(RAW_SEED);
+
+  // имя мышцы → её группа-витрина; производные пересобираются при подмене ATLAS.
+  let _muscleGroup, DEFAULT_EXERCISES, ATLAS_BY_ID, EXERCISE_CATEGORIES;
 
   // роль новой модели ({muscle,bundle}[]) → строка «Мышца (пучок), …» для легаси-рендера
   function _rolesToStr(arr) {
@@ -99,8 +145,15 @@ const DATA = (() => {
     };
   }
 
-  const DEFAULT_EXERCISES = ATLAS.exercises.map(atlasToExercise);
-  const ATLAS_BY_ID = new Map(DEFAULT_EXERCISES.map(e => [e.id, e]));
+  // Пересобрать производные от ATLAS (после подмены справочника из БД). Порядок
+  // важен: _muscleGroup нужна atlasToExercise (через atlasExerciseGroups).
+  function rebuildAtlasDerived() {
+    _muscleGroup = new Map(ATLAS.muscles.map(m => [m.name, m.group]));
+    DEFAULT_EXERCISES = ATLAS.exercises.map(atlasToExercise);
+    ATLAS_BY_ID = new Map(DEFAULT_EXERCISES.map(e => [e.id, e]));
+    EXERCISE_CATEGORIES = ATLAS.groups.slice();
+  }
+  rebuildAtlasDerived();
 
   // id старых 18 дефолтов — при миграции их копии сносим из личного списка
   // (полная замена базы, см. решение пользователя). Личные e_own_* сохраняются.
@@ -110,8 +163,8 @@ const DATA = (() => {
     "e_crunch","e_run",
   ]);
 
-  // «Категории» приложения теперь = 8 групп-витрин Атласа (аналог старых категорий).
-  const EXERCISE_CATEGORIES = ATLAS.groups.slice();
+  // «Категории» приложения = группы-витрины Атласа (аналог старых категорий).
+  // EXERCISE_CATEGORIES пересобирается в rebuildAtlasDerived (выше).
 
   // Палитра цветных меток категорий. Пользователь выбирает цвет вручную (см.
   // setCategoryColor); пока он не выбран, цвет берётся из палитры по индексу
@@ -205,13 +258,28 @@ const DATA = (() => {
 
   return {
     USERS,
-    DEFAULT_EXERCISES,
-    EXERCISE_CATEGORIES,
+    // Живые (пересобираются при подмене ATLAS из БД) — отдаём через геттеры,
+    // иначе экспорт застыл бы на значении момента возврата объекта.
+    get DEFAULT_EXERCISES() { return DEFAULT_EXERCISES; },
+    get EXERCISE_CATEGORIES() { return EXERCISE_CATEGORIES; },
     categoryColor,
     RPE_LABELS,
 
     // === Справочник Атласа (для подвкладок Мышцы/Движения/Группы и конструктора) ===
+    // Подменить справочник данными из БД (DB.getAtlas → строки 5 таблиц).
+    // Возвращает true, если содержимое изменилось (для решения перерисовать).
+    setAtlasFromRows(rows) { return this.setAtlas(rowsToAtlas(rows)); },
+    setAtlas(atlasObj) {
+      if (!atlasObj || !Array.isArray(atlasObj.muscles) || !atlasObj.muscles.length) return false;
+      const json = JSON.stringify(atlasObj);
+      const prev = (() => { try { return localStorage.getItem(ATLAS_CACHE_KEY); } catch { return null; } })();
+      ATLAS = atlasObj;
+      rebuildAtlasDerived();
+      try { localStorage.setItem(ATLAS_CACHE_KEY, json); } catch {}
+      return json !== prev;
+    },
     atlasGroups() { return ATLAS.groups.slice(); },
+    atlasGroupRows() { return (ATLAS.groupRows || ATLAS.groups.map(g => ({ id: g, name: g }))).slice(); },
     atlasMuscles() { return ATLAS.muscles; },
     atlasMovements() { return ATLAS.categories; },       // «основные движения» (База/Опция)
     atlasLinks() { return ATLAS.muscleCategoryLinks; },  // мышца ↔ движение
@@ -6065,6 +6133,18 @@ if ("serviceWorker" in navigator) {
     if (active) { window.addEventListener("mousemove", onMM); window.addEventListener("mouseup", onMU); }
   });
 })();
+
+// Справочник Атласа обновился из облака (Bridge.hydrate подменил ATLAS) —
+// перерисовываем открытый экран, чтобы правки админа/новые данные проявились
+// без перезагрузки. Дёргается только при реальном изменении содержимого.
+window.onAtlasUpdated = function () {
+  if (screenExercises && screenExercises.classList.contains("active")) {
+    try { renderAtlasCurrent(); } catch {}
+  }
+  if (screenMenu && screenMenu.classList.contains("active")) {
+    try { refreshMenu(); } catch {}
+  }
+};
 
 /* ==========================================================================
    Init

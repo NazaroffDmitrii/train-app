@@ -192,6 +192,19 @@ const Bridge = (() => {
       DATA.recomputeRecords(userId);
     }
 
+    // Общий справочник Атласа (мышцы/движения/группы/связи/упражнения) из
+    // реляционных таблиц. Подменяет локальный ATLAS (кэш + оффлайн-фолбэк на
+    // atlas-seed.js). Не критичен для входа — ошибку глотаем (останется кэш/сид).
+    // Если содержимое изменилось (админ правил базу с другого устройства) —
+    // просим приложение перерисовать открытый экран.
+    try {
+      const rows = await DB.getAtlas();
+      if (rows && Array.isArray(rows.muscles) && rows.muscles.length) {
+        const changed = DATA.setAtlasFromRows(rows);
+        if (changed && typeof window.onAtlasUpdated === "function") window.onAtlasUpdated();
+      }
+    } catch (e) { console.warn("Bridge.hydrate: atlas", e); }
+
     const ud = await DB.getUserData(userId);
     if (ud) {
       if (Array.isArray(ud.own_exercises)) _orig.saveOwnExercises(userId, ud.own_exercises);

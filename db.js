@@ -194,6 +194,39 @@ const DB = (() => {
     return select("exercise_records", `user_id=eq.${enc(userId)}&select=*`);
   }
 
+  // ---- справочник «Атлас» (общая база: RLS read=all, write=is_admin) --------
+  // Пять таблиц читаются разом и склеиваются приложением в объект-справочник
+  // (см. app.js: atlasRowsToSeed → DATA.setAtlas). Порядок — по position, его
+  // правит администратор перетаскиванием. Личный оверлей пользователя
+  // (own_*/hidden_* в user_data) сюда НЕ входит — он мержится на стороне app.js.
+  async function getAtlas() {
+    const [groups, muscles, movements, links, exercises] = await Promise.all([
+      select("atlas_groups",           "select=*&order=position.asc"),
+      select("atlas_muscles",          "select=*&order=position.asc"),
+      select("atlas_movements",        "select=*&order=position.asc"),
+      select("atlas_muscle_movements", "select=*"),
+      select("atlas_exercises",        "select=*&order=position.asc"),
+    ]);
+    return { groups, muscles, movements, links, exercises };
+  }
+
+  // Запись справочника — пройдёт только у админа (RLS atlas_*_write = is_admin()).
+  // Идемпотентный upsert по id; массовый вариант нужен для сохранения порядка
+  // (перезапись колонки position у пачки строк разом).
+  function saveAtlasGroups(rows)    { return upsert("atlas_groups",           rows, { onConflict: "id" }); }
+  function saveAtlasMuscles(rows)   { return upsert("atlas_muscles",          rows, { onConflict: "id" }); }
+  function saveAtlasMovements(rows) { return upsert("atlas_movements",        rows, { onConflict: "id" }); }
+  function saveAtlasLinks(rows)     { return upsert("atlas_muscle_movements", rows, { onConflict: "id" }); }
+  function saveAtlasExercises(rows) { return upsert("atlas_exercises",        rows, { onConflict: "id" }); }
+  function deleteAtlasGroup(id)     { return remove("atlas_groups",           `id=eq.${enc(id)}`); }
+  function deleteAtlasMuscle(id)    { return remove("atlas_muscles",          `id=eq.${enc(id)}`); }
+  function deleteAtlasMovement(id)  { return remove("atlas_movements",        `id=eq.${enc(id)}`); }
+  function deleteAtlasLink(id)      { return remove("atlas_muscle_movements", `id=eq.${enc(id)}`); }
+  function deleteAtlasExercise(id)  { return remove("atlas_exercises",        `id=eq.${enc(id)}`); }
+  // Удалить все связи мышцы/движения (перед их удалением или при перепривязке).
+  function deleteAtlasLinksByMuscle(muscleId)     { return remove("atlas_muscle_movements", `muscle_id=eq.${enc(muscleId)}`); }
+  function deleteAtlasLinksByMovement(movementId) { return remove("atlas_muscle_movements", `movement_id=eq.${enc(movementId)}`); }
+
   // Удалить СВОЙ профиль (self-service). RLS profiles_delete разрешает удалить
   // только строку с id = current_profile_id() — чужой/управляемый профиль
   // отсюда не удалить. Каскадом (FK on delete cascade) уходят workouts,
@@ -246,5 +279,9 @@ const DB = (() => {
     listWorkouts, getWorkout, saveWorkout, saveWorkouts, deleteWorkout,
     getUserData, saveUserData,
     exerciseRecords, deleteMyAccount, deleteManagedClient,
+    getAtlas,
+    saveAtlasGroups, saveAtlasMuscles, saveAtlasMovements, saveAtlasLinks, saveAtlasExercises,
+    deleteAtlasGroup, deleteAtlasMuscle, deleteAtlasMovement, deleteAtlasLink, deleteAtlasExercise,
+    deleteAtlasLinksByMuscle, deleteAtlasLinksByMovement,
   };
 })();
