@@ -3425,6 +3425,8 @@ function initExercisesScreen() {
   exercisesSearch.placeholder = "Поиск упражнения…";
   const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.classList.remove("visible");
   const addBtn  = $("exercises-add-btn");  if (addBtn)  addBtn.hidden  = false;
+  screenExercises.classList.remove("hdr-collapsed");   // #8: шапка развёрнута при входе
+  exercisesScroll.scrollTop = 0;
   const userId = DATA.getCurrentUser();
   if (DATA.ensureExercisesSeeded(userId)) SyncQueue.push("exercise:create", {});
   renderExercisesList("");
@@ -3432,6 +3434,8 @@ function initExercisesScreen() {
 
 $("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goToScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
+// #8: при прокрутке списка вниз прячем поиск+чипы категорий, вверх — показываем.
+wireHeaderCollapse(exercisesScroll, screenExercises);
 // Шестерёнка → шторка «Справочник» с вкладками Мышцы / Движения / Группы.
 $("ex-cat-manage-btn").addEventListener("click", () => openReferenceSheet("muscles"));
 
@@ -3454,6 +3458,17 @@ function refCanEdit(item) { return DATA.isAdmin() || refItemIsOwn(item); }
 const SVG_REF_EDIT  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
 const SVG_REF_TRASH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 const SVG_REF_HIDE  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+const SVG_REF_SHOW  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+
+// Секция «Скрытые» в режиме правки: общие элементы, которые пользователь скрыл у
+// себя. Показываем приглушённо с кнопкой «вернуть» — иначе непонятно, куда делись.
+function refHiddenSection(kind, hiddenItems) {
+  if (!hiddenItems.length) return "";
+  const cards = hiddenItems.map(m => `<div class="ref-card ref-card-editing ref-card-hidden" data-kind="${kind}" data-id="${escHtml(m.id)}">
+    <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>
+    <span class="ref-card-actions"><button class="ref-card-act" data-act="unhide" title="Вернуть">${SVG_REF_SHOW}</button></span></div></div>`).join("");
+  return `<div class="ref-group-label ref-hidden-head">Скрытые · ${hiddenItems.length}</div>${cards}`;
+}
 
 // Правая часть карточки: в обычном режиме — шеврон; в режиме правки — кнопки
 // «изменить» (если можно) и «удалить/скрыть» (общий у не-админа только скрыть).
@@ -3493,26 +3508,23 @@ function movementDetailHtml(mv, muscles) {
 // Квадратик (не точка) перед группой; тап по карточке разворачивает подробности.
 function renderMusclesTab(container, query, opts) {
   opts = opts || {};
-  const expandedId = opts.expandedId || null;
+  const editMode = !!opts.editMode;
+  const expandedIds = opts.expandedIds || new Set();
   const userId = DATA.getCurrentUser();
   const q = (query || "").trim().toLowerCase();
   const muscles = DATA.refMuscles(userId);
-  const movesByMuscleSets = DATA.refMovesByMuscle(userId);
-  const movesByMuscle = {};
-  Object.keys(movesByMuscleSets).forEach(k => { movesByMuscle[k] = movesByMuscleSets[k]; });
+  const movesByMuscle = DATA.refMovesByMuscle(userId);
   const filtered = muscles.filter(m => !q || m.name.toLowerCase().includes(q)
     || (m.bundles || []).some(b => b.toLowerCase().includes(q)));
   const byGroup = {};
   filtered.forEach(m => (byGroup[m.group] = byGroup[m.group] || []).push(m));
   const groups = atlasOrderedGroups(userId).filter(g => byGroup[g]);
-  if (!filtered.length) { container.innerHTML = `<p class="empty-state">Ничего не найдено</p>`; return; }
-  container.innerHTML = groups.map(g => {
+  let html = groups.map(g => {
     const color = DATA.getCategoryColor(userId, g);
     const cards = byGroup[g].map(m => {
       const star = m.visible ? `<span class="ref-star" title="Поверхностная — рост виден внешне">★</span>` : "";
       const own = refItemIsOwn(m) ? `<span class="ref-own-badge">моё</span>` : "";
-      const editMode = !!opts.editMode;
-      const expanded = !editMode && m.id === expandedId;
+      const expanded = !editMode && expandedIds.has(m.id);
       const detail = expanded ? muscleDetailHtml(m, [...(movesByMuscle[m.name] || [])]) : "";
       const right = refCardRight(m, editMode, expanded ? "⌄" : "›");
       return `<div class="ref-card${editMode ? " ref-card-editing" : " ref-card-tap"}${expanded ? " expanded" : ""}" data-kind="muscle" data-id="${escHtml(m.id)}" style="border-left-color:${escHtml(color)}">
@@ -3520,12 +3532,18 @@ function renderMusclesTab(container, query, opts) {
     }).join("");
     return `<div class="ref-group-label"><span class="ref-sq" style="background:${escHtml(color)}"></span>${escHtml(g)}<span class="ref-count" style="margin-left:auto">${byGroup[g].length}</span></div>${cards}`;
   }).join("");
+  if (editMode) {
+    const hiddenSet = new Set(DATA.getHiddenMuscleIds(userId));
+    html += refHiddenSection("muscle", DATA.atlasMuscles().filter(m => hiddenSet.has(m.id)));
+  }
+  container.innerHTML = html || `<p class="empty-state">Ничего не найдено</p>`;
 }
 
 // ── Вкладка «Движения» шторки-справочника ────────────────────────────────────
 function renderMovementsTab(container, query, opts) {
   opts = opts || {};
-  const expandedId = opts.expandedId || null;
+  const editMode = !!opts.editMode;
+  const expandedIds = opts.expandedIds || new Set();
   const userId = DATA.getCurrentUser();
   const q = (query || "").trim().toLowerCase();
   const moves = DATA.refMovements(userId);
@@ -3534,16 +3552,14 @@ function renderMovementsTab(container, query, opts) {
   const byGroup = {};
   filtered.forEach(m => (byGroup[m.group] = byGroup[m.group] || []).push(m));
   const groups = atlasOrderedGroups(userId).filter(g => byGroup[g]);
-  if (!filtered.length) { container.innerHTML = `<p class="empty-state">Ничего не найдено</p>`; return; }
-  container.innerHTML = groups.map(g => {
+  let html = groups.map(g => {
     const color = DATA.getCategoryColor(userId, g);
     const cards = byGroup[g].slice()
       .sort((a, b) => (a.type === b.type ? 0 : a.type === "База" ? -1 : 1))
       .map(m => {
         const badge = m.type === "База" ? `<span class="ref-badge">База</span>` : `<span class="ref-badge opt">Опция</span>`;
         const own = refItemIsOwn(m) ? `<span class="ref-own-badge">моё</span>` : "";
-        const editMode = !!opts.editMode;
-        const expanded = !editMode && m.id === expandedId;
+        const expanded = !editMode && expandedIds.has(m.id);
         const detail = expanded ? movementDetailHtml(m, [...(musByMove[m.name] || [])]) : "";
         const right = refCardRight(m, editMode, expanded ? "⌄" : "›");
         return `<div class="ref-card${editMode ? " ref-card-editing" : " ref-card-tap"}${expanded ? " expanded" : ""}" data-kind="movement" data-id="${escHtml(m.id)}" style="border-left-color:${escHtml(color)}">
@@ -3551,6 +3567,11 @@ function renderMovementsTab(container, query, opts) {
       }).join("");
     return `<div class="ref-group-label"><span class="ref-sq" style="background:${escHtml(color)}"></span>${escHtml(g)}</div>${cards}`;
   }).join("");
+  if (editMode) {
+    const hiddenSet = new Set(DATA.getHiddenMovementIds(userId));
+    html += refHiddenSection("movement", DATA.atlasMovements().filter(m => hiddenSet.has(m.id)));
+  }
+  container.innerHTML = html || `<p class="empty-state">Ничего не найдено</p>`;
 }
 
 function renderCatTabs(userId, presentCats) {
@@ -4095,7 +4116,7 @@ function openReferenceSheet(initialTab) {
 
   let refTab = initialTab || "muscles";   // muscles | movements | groups
   let refQuery = "";
-  let refExpanded = { muscles: null, movements: null };  // id развёрнутой карточки
+  let refExpanded = { muscles: new Set(), movements: new Set() };  // id развёрнутых карточек (мультивыбор)
   let refEditMode = false;   // режим правки вкладок Мышцы/Движения
   let catEditMode = false;
   let catDrag = null;
@@ -4380,10 +4401,11 @@ function openReferenceSheet(initialTab) {
   }
 
   // Каркас шторки: вкладки + поиск постоянны; при вводе в поиск перерисовываем
-  // только список (renderContent), чтобы не терять фокус поля.
+  // только список (renderContent), чтобы не терять фокус поля. Поиск — только на
+  // «Мышцах» (на «Движениях»/«Группах» не нужен). Высота шторки фиксирована в CSS,
+  // поэтому появление/скрытие поиска её не меняет.
   function render() {
-    const ph = refTab === "muscles" ? "Поиск мышцы…" : "Поиск движения…";
-    const searchHidden = refTab === "groups" ? " hidden" : "";
+    const searchHidden = refTab !== "muscles" ? " hidden" : "";
     backdrop.innerHTML = `
       <div class="bottom-sheet ref-sheet">
         <div class="bottom-sheet-handle"></div>
@@ -4393,7 +4415,7 @@ function openReferenceSheet(initialTab) {
           <button class="ref-sheet-tab${refTab === "groups" ? " active" : ""}" data-tab="groups">Группы</button>
         </div>
         <div class="ref-sheet-search-wrap${searchHidden}">
-          <input class="ref-sheet-search" type="text" placeholder="${ph}" value="${escHtml(refQuery)}">
+          <input class="ref-sheet-search" type="text" placeholder="Поиск мышцы…" value="${escHtml(refQuery)}">
         </div>
         <div class="ref-sheet-list"></div>
         <div class="ref-sheet-actions"></div>
@@ -4414,6 +4436,36 @@ function openReferenceSheet(initialTab) {
 
     const handle = backdrop.querySelector(".bottom-sheet-handle");
     if (handle) handle.addEventListener("click", close);
+    // #1: свайп-закрытие и скролл-скрытие поиска перевешиваем на СВЕЖИЙ .bottom-sheet
+    // при каждом render (переключение вкладок пересобирает разметку).
+    wireSheetChrome();
+  }
+
+  // Свайп вниз по шторке → закрыть; при прокрутке списка вниз прячем поиск,
+  // при прокрутке вверх — показываем (как шапка на YouTube).
+  function wireSheetChrome() {
+    const sheetEl = backdrop.querySelector(".bottom-sheet");
+    const listEl = backdrop.querySelector(".ref-sheet-list");
+    if (!sheetEl) return;
+    let sy = 0, sdy = 0, sdragging = false;
+    sheetEl.addEventListener("touchstart", e => {
+      sy = e.touches[0].clientY; sdy = 0; sdragging = true;
+      sheetEl.style.transition = "none";
+    }, { passive: true });
+    sheetEl.addEventListener("touchmove", e => {
+      if (!sdragging) return;
+      const dy = e.touches[0].clientY - sy;
+      if (dy > 0 && (!listEl || listEl.scrollTop <= 0)) { sdy = dy; sheetEl.style.transform = `translateY(${dy}px)`; }
+      else { sdy = 0; sheetEl.style.transform = ""; }
+    }, { passive: true });
+    const onSheetEnd = () => {
+      if (!sdragging) return; sdragging = false;
+      if (sdy > 80) { sheetEl.style.transition = "transform 0.22s ease"; sheetEl.style.transform = `translateY(${sheetEl.offsetHeight}px)`; close(); }
+      else { sheetEl.style.transition = ""; sheetEl.style.transform = ""; }
+    };
+    sheetEl.addEventListener("touchend", onSheetEnd);
+    sheetEl.addEventListener("touchcancel", onSheetEnd);
+    if (listEl) wireHeaderCollapse(listEl, sheetEl);
   }
 
   function renderContent() {
@@ -4423,7 +4475,7 @@ function openReferenceSheet(initialTab) {
     if (refTab === "muscles" || refTab === "movements") {
       const isMus = refTab === "muscles";
       (isMus ? renderMusclesTab : renderMovementsTab)(listEl, refQuery, {
-        expandedId: refExpanded[refTab], editMode: refEditMode,
+        expandedIds: refExpanded[refTab], editMode: refEditMode,
       });
       const addLabel = isMus ? "+ Добавить мышцу" : "+ Добавить движение";
       actionsEl.innerHTML = `
@@ -4459,11 +4511,14 @@ function openReferenceSheet(initialTab) {
         if (act === "edit")   return openRefEditor(kind, id);
         if (act === "delete") return deleteRefItem(kind, id);
         if (act === "hide")   return hideRefItem(kind, id);
+        if (act === "unhide") return unhideRefItem(kind, id);
         return;
       }
       if (refEditMode) return;                          // в правке тап по телу карточки — ничего
+      // #2: разворот НЕ схлопывает другие — только повторный тап сворачивает этот.
       const key = kind === "muscle" ? "muscles" : "movements";
-      refExpanded[key] = refExpanded[key] === id ? null : id;
+      const set = refExpanded[key];
+      set.has(id) ? set.delete(id) : set.add(id);
       renderContent();
     };
   }
@@ -4481,7 +4536,13 @@ function openReferenceSheet(initialTab) {
       const l = DATA.getHiddenMovementIds(userId); if (!l.includes(id)) { l.push(id); DATA.saveHiddenMovementIds(userId, l); }
     }
     renderContent();
-    showToast(kind === "muscle" ? "Мышца скрыта" : "Движение скрыто");
+    showToast(kind === "muscle" ? "Мышца скрыта — в разделе «Скрытые»" : "Движение скрыто — в разделе «Скрытые»");
+  }
+  function unhideRefItem(kind, id) {
+    if (kind === "muscle") DATA.saveHiddenMuscleIds(userId, DATA.getHiddenMuscleIds(userId).filter(x => x !== id));
+    else                   DATA.saveHiddenMovementIds(userId, DATA.getHiddenMovementIds(userId).filter(x => x !== id));
+    renderContent();
+    showToast("Возвращено");
   }
   function deleteRefItem(kind, id) {
     const list = kind === "muscle" ? DATA.refMuscles(userId) : DATA.refMovements(userId);
@@ -4503,11 +4564,11 @@ function openReferenceSheet(initialTab) {
   // ту вкладку с развёрнутой карточкой и подкручиваем её в зону видимости.
   function crossNav(gotoKind, name) {
     const isMuscle = gotoKind === "muscle";
-    const list = isMuscle ? DATA.atlasMuscles() : DATA.atlasMovements();
+    const list = isMuscle ? DATA.refMuscles(userId) : DATA.refMovements(userId);
     const found = list.find(x => x.name === name);
     if (!found) return;
     refTab = isMuscle ? "muscles" : "movements";
-    refExpanded[refTab] = found.id;
+    refExpanded[refTab].add(found.id);
     refQuery = "";
     render();
     requestAnimationFrame(() => {
@@ -4530,6 +4591,7 @@ function openReferenceSheet(initialTab) {
             <div class="cat-item-wrap" data-cat="${escHtml(c)}">
               <div class="cat-item-delete">${SVG_DEL} Удалить</div>
               <div class="cat-item" data-cat="${escHtml(c)}" style="--cat-color:${escHtml(color)}">
+                <span class="cat-item-sq" style="background:${escHtml(color)}"></span>
                 <span class="cat-item-name-text" title="${escHtml(c)}">${escHtml(c)}</span>
                 <span class="cat-item-count">${counts[c] || 0}</span>
               </div>
@@ -4556,36 +4618,19 @@ function openReferenceSheet(initialTab) {
 
   document.body.appendChild(backdrop);
   render();
-  requestAnimationFrame(() => {
-    backdrop.classList.add("open");
-    // Свайп вниз по шторке → закрыть (аналог главной шторки истории)
-    const sheetEl = backdrop.querySelector(".bottom-sheet");
-    if (!sheetEl) return;
-    let sy = 0, sdy = 0, sdragging = false;
-    sheetEl.addEventListener("touchstart", e => {
-      sy = e.touches[0].clientY; sdy = 0; sdragging = true;
-      sheetEl.style.transition = "none";
-    }, { passive: true });
-    sheetEl.addEventListener("touchmove", e => {
-      if (!sdragging) return;
-      const list = sheetEl.querySelector(".ref-sheet-list");
-      const dy = e.touches[0].clientY - sy;
-      if (dy > 0 && (!list || list.scrollTop <= 0)) {
-        sdy = dy;
-        sheetEl.style.transform = `translateY(${dy}px)`;
-      } else { sdy = 0; sheetEl.style.transform = ""; }
-    }, { passive: true });
-    const onSheetEnd = () => {
-      if (!sdragging) return; sdragging = false;
-      if (sdy > 80) {
-        sheetEl.style.transition = "transform 0.22s ease";
-        sheetEl.style.transform = `translateY(${sheetEl.offsetHeight}px)`;
-        close();
-      } else { sheetEl.style.transition = ""; sheetEl.style.transform = ""; }
-    };
-    sheetEl.addEventListener("touchend",   onSheetEnd);
-    sheetEl.addEventListener("touchcancel", onSheetEnd);
-  });
+  requestAnimationFrame(() => backdrop.classList.add("open"));
+}
+
+// Скролл-скрытие шапки (как на YouTube): при прокрутке вниз добавляет
+// .hdr-collapsed на targetEl (CSS прячет поиск/чипы), при прокрутке вверх снимает.
+function wireHeaderCollapse(scrollEl, targetEl, threshold = 36) {
+  let last = scrollEl.scrollTop || 0;
+  scrollEl.addEventListener("scroll", () => {
+    const st = scrollEl.scrollTop;
+    if (st > last + 4 && st > threshold) targetEl.classList.add("hdr-collapsed");
+    else if (st < last - 4) targetEl.classList.remove("hdr-collapsed");
+    last = st;
+  }, { passive: true });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
