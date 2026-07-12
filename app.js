@@ -150,6 +150,23 @@ const DATA = (() => {
     };
   }
 
+  // Пересчитать легаси-поля упражнения (muscles-строки, steps, groups) из его
+  // богатой модели ex.atlas — после правки полным редактором (#6). cat остаётся
+  // тем, что задал пользователь (или производной, если не задан).
+  function _deriveLegacyFromAtlas(ex) {
+    const a = ex.atlas || {};
+    ex.muscles = {
+      agonists:     _rolesToStr(a.target),
+      synergists:   _rolesToStr(a.synergist),
+      stabilizers:  _rolesToStr(a.stabilizer),
+      distributors: "",
+    };
+    ex.steps = (a.technique || "").split("\n").map(s => s.trim()).filter(Boolean);
+    const groups = [];
+    (a.target || []).forEach(o => { const g = _muscleGroup.get(o.muscle); if (g && !groups.includes(g)) groups.push(g); });
+    ex.groups = groups;
+  }
+
   // Пересобрать производные от ATLAS (после подмены справочника из БД). Порядок
   // важен: _muscleGroup нужна atlasToExercise (через atlasExerciseGroups).
   function rebuildAtlasDerived() {
@@ -500,7 +517,7 @@ const DATA = (() => {
 
     // Добавить новое упражнение. owner=null недоступно из UI пользователя —
     // личные всегда создаются с owner=userId (раздел 4: "добавить свои уникальные").
-    addExercise(userId, { name, cat, type, emoji, media, muscles, steps, tip }) {
+    addExercise(userId, { name, cat, type, emoji, media, muscles, steps, tip, atlas }) {
       const list = this.getOwnExercises(userId);
       const ex = {
         id: `e_own_${userId}_${Date.now()}`,
@@ -513,6 +530,8 @@ const DATA = (() => {
         steps: normSteps(steps),
         tip: (tip || "").trim(),
       };
+      // Полный редактор (#6) передаёт богатую модель — легаси-поля выводим из неё.
+      if (atlas) { ex.atlas = atlas; _deriveLegacyFromAtlas(ex); }
       list.push(ex);
       this.saveOwnExercises(userId, list);
       return ex;
@@ -539,8 +558,13 @@ const DATA = (() => {
       if (patch.muscles !== undefined) ex.muscles = normMuscles(patch.muscles);
       if (patch.steps !== undefined) ex.steps = normSteps(patch.steps);
       if (patch.tip !== undefined) ex.tip = (patch.tip || "").trim();
-      // Правку атласного упражнения отражаем и в ex.atlas — богатая карточка читает его.
-      if (ex.atlas) {
+      // Полный редактор (#6): patch.atlas — богатая модель целиком. Мержим в
+      // ex.atlas и выводим легаси-поля из неё (muscles-строки/steps/groups).
+      if (patch.atlas !== undefined) {
+        ex.atlas = Object.assign(ex.atlas || {}, patch.atlas);
+        _deriveLegacyFromAtlas(ex);
+      } else if (ex.atlas) {
+        // Старый путь (правка отдельных легаси-полей) — отражаем в ex.atlas.
         if (patch.muscles !== undefined) {
           ex.atlas.target     = _strToRoles(patch.muscles.agonists);
           ex.atlas.synergist  = _strToRoles(patch.muscles.synergists);
@@ -3431,7 +3455,9 @@ function initExercisesScreen() {
   exercisesSearch.placeholder = "Поиск упражнения…";
   const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.classList.remove("visible");
   const addBtn  = $("exercises-add-btn");  if (addBtn)  addBtn.hidden  = false;
-  screenExercises.classList.remove("hdr-collapsed");   // #8: шапка развёрнута при входе
+  // #8: шапка развёрнута при входе
+  const _hdr = document.querySelector("#screen-exercises .ex-hdr-collapse");
+  if (_hdr) { _hdr.style.height = ""; _hdr.dataset.collapsed = "0"; }
   exercisesScroll.scrollTop = 0;
   const userId = DATA.getCurrentUser();
   if (DATA.ensureExercisesSeeded(userId)) SyncQueue.push("exercise:create", {});
@@ -3441,7 +3467,7 @@ function initExercisesScreen() {
 $("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goToScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
 // #8: при прокрутке списка вниз прячем поиск+чипы категорий, вверх — показываем.
-wireHeaderCollapse(exercisesScroll, screenExercises);
+wireHeaderCollapse(exercisesScroll, document.querySelector("#screen-exercises .ex-hdr-collapse"));
 // Шестерёнка → шторка «Справочник» с вкладками Мышцы / Движения / Группы.
 $("ex-cat-manage-btn").addEventListener("click", () => openReferenceSheet("muscles"));
 
@@ -3545,7 +3571,8 @@ function renderMusclesTab(container, query, opts) {
     const hiddenSet = new Set(DATA.getHiddenMuscleIds(userId));
     html += refHiddenSection("muscle", DATA.atlasMuscles().filter(m => hiddenSet.has(m.id)));
   }
-  container.innerHTML = html || `<p class="empty-state">Ничего не найдено</p>`;
+  const addHtml = (opts.addLabel && !q) ? `<button class="ref-add-inline">${escHtml(opts.addLabel)}</button>` : "";
+  container.innerHTML = (html || `<p class="empty-state">Ничего не найдено</p>`) + addHtml;
 }
 
 // ── Вкладка «Движения» шторки-справочника ────────────────────────────────────
@@ -3584,7 +3611,8 @@ function renderMovementsTab(container, query, opts) {
     const hiddenSet = new Set(DATA.getHiddenMovementIds(userId));
     html += refHiddenSection("movement", DATA.atlasMovements().filter(m => hiddenSet.has(m.id)));
   }
-  container.innerHTML = html || `<p class="empty-state">Ничего не найдено</p>`;
+  const addHtml = (opts.addLabel && !q) ? `<button class="ref-add-inline">${escHtml(opts.addLabel)}</button>` : "";
+  container.innerHTML = (html || `<p class="empty-state">Ничего не найдено</p>`) + addHtml;
 }
 
 function renderCatTabs(userId, presentCats) {
@@ -4134,6 +4162,7 @@ function openReferenceSheet(initialTab) {
   let refDrag = null;        // перетаскивание карточки мышцы/движения
   let catEditMode = false;
   let catDrag = null;
+  let editEnteredAt = 0;   // момент входа в правку — гасим клик-переименование сразу после входа (#5)
 
   const backdrop = document.createElement("div");
   backdrop.id = "cat-manager-backdrop";
@@ -4156,27 +4185,20 @@ function openReferenceSheet(initialTab) {
 
   function getListEl() { return backdrop.querySelector(".cat-sheet-list"); }
 
-  // Кнопка «Настроить»↔«Готово» меняет только подпись (не появляется/исчезает),
-  // поэтому высота шторки статична (требование п.: «шторка не росла»).
-  function updateGroupsToggle() {
-    const btn = backdrop.querySelector(".ref-groups-toggle");
-    if (btn) btn.textContent = catEditMode ? "Готово" : "Настроить";
-  }
+  // Вход/выход правки групп — по долгому удержанию (как у мышц/движений);
+  // перерисовываем содержимое, чтобы показать/убрать «Готово» и стиль правки.
   function enterEditMode() {
     if (catEditMode) return;
     catEditMode = true;
+    editEnteredAt = Date.now();
     haptic(22);
-    const list = getListEl();
-    if (list) list.classList.add("cat-editing");
-    updateGroupsToggle();
+    renderContent();
   }
 
   function exitEditMode() {
     if (!catEditMode) return;
     catEditMode = false;
-    const list = getListEl();
-    if (list) list.classList.remove("cat-editing");
-    updateGroupsToggle();
+    renderContent();
   }
 
   function saveCatOrder() {
@@ -4265,6 +4287,9 @@ function openReferenceSheet(initialTab) {
   function wireNameClick(wrap, cat, nameEl) {
     nameEl.addEventListener("click", e => {
       if (!catEditMode) return;
+      // #5: клик сразу после входа в правку (тот же тап долгого удержания) НЕ
+      // должен открывать переименование с выделением текста и клавиатурой.
+      if (Date.now() - editEnteredAt < 500) return;
       e.stopPropagation();
       startCatRename(wrap, cat, nameEl);
     });
@@ -4428,9 +4453,9 @@ function openReferenceSheet(initialTab) {
           <button class="ref-sheet-tab${refTab === "movements" ? " active" : ""}" data-tab="movements">Движения</button>
           <button class="ref-sheet-tab${refTab === "groups" ? " active" : ""}" data-tab="groups">Группы</button>
         </div>
-        <div class="ref-sheet-search-wrap${searchHidden}">
+        <div class="ref-sheet-search-wrap${searchHidden}"><div class="ref-sheet-search-inner">
           <input class="ref-sheet-search" type="text" placeholder="Поиск мышцы…" value="${escHtml(refQuery)}">
-        </div>
+        </div></div>
         <div class="ref-sheet-list"></div>
         <div class="ref-sheet-actions"></div>
       </div>`;
@@ -4455,31 +4480,48 @@ function openReferenceSheet(initialTab) {
     wireSheetChrome();
   }
 
-  // Свайп вниз по шторке → закрыть; при прокрутке списка вниз прячем поиск,
-  // при прокрутке вверх — показываем (как шапка на YouTube).
+  // Свайп вниз → закрыть. По эталону пикера (setupPickerSwipe): направление
+  // решается ОДИН раз за жест (флаг decided). Если жест начался как прокрутка
+  // списка (или список не в самом верху) — отдаём его прокрутке и больше не
+  // перехватываем в этом жесте. Так поведение не «ломается» после прокрутки.
   function wireSheetChrome() {
     const sheetEl = backdrop.querySelector(".bottom-sheet");
     const listEl = backdrop.querySelector(".ref-sheet-list");
     if (!sheetEl) return;
-    let sy = 0, sdy = 0, sdragging = false;
-    sheetEl.addEventListener("touchstart", e => {
-      sy = e.touches[0].clientY; sdy = 0; sdragging = true;
+    let startY = 0, startX = 0, dy = 0, active = false, decided = false, vert = false, onList = false;
+    const down = (y, x, target) => {
+      active = true; decided = false; vert = false; dy = 0; startY = y; startX = x;
+      onList = !!(target && target.closest && target.closest(".ref-sheet-list"));
       sheetEl.style.transition = "none";
-    }, { passive: true });
-    sheetEl.addEventListener("touchmove", e => {
-      if (!sdragging) return;
-      const dy = e.touches[0].clientY - sy;
-      if (dy > 0 && (!listEl || listEl.scrollTop <= 0)) { sdy = dy; sheetEl.style.transform = `translateY(${dy}px)`; }
-      else { sdy = 0; sheetEl.style.transform = ""; }
-    }, { passive: true });
-    const onSheetEnd = () => {
-      if (!sdragging) return; sdragging = false;
-      if (sdy > 80) { sheetEl.style.transition = "transform 0.22s ease"; sheetEl.style.transform = `translateY(${sheetEl.offsetHeight}px)`; close(); }
-      else { sheetEl.style.transition = ""; sheetEl.style.transform = ""; }
     };
-    sheetEl.addEventListener("touchend", onSheetEnd);
-    sheetEl.addEventListener("touchcancel", onSheetEnd);
-    if (listEl) wireHeaderCollapse(listEl, sheetEl);
+    const moveTo = (y, x, e) => {
+      if (!active) return;
+      const d = y - startY, dx = x - startX;
+      if (!decided) {
+        if (Math.abs(d) < 6 && Math.abs(dx) < 6) return;
+        decided = true;
+        const horiz = Math.abs(dx) > Math.abs(d);
+        vert = !horiz && d > 0 && (!onList || listEl.scrollTop <= 0);
+        if (!vert) { active = false; sheetEl.style.transition = ""; return; }   // отдаём прокрутке
+      }
+      dy = Math.max(0, d);
+      if (e && e.cancelable) e.preventDefault();
+      sheetEl.style.transform = `translateY(${dy}px)`;
+    };
+    const up = () => {
+      if (!active) return;
+      active = false;
+      sheetEl.style.transition = "";
+      if (!vert) return;
+      sheetEl.style.transform = "";
+      if (dy > 110) close();
+    };
+    sheetEl.addEventListener("touchstart", e => down(e.touches[0].clientY, e.touches[0].clientX, e.target), { passive: true });
+    sheetEl.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) moveTo(t.clientY, t.clientX, e); }, { passive: false });
+    sheetEl.addEventListener("touchend", up);
+    sheetEl.addEventListener("touchcancel", up);
+    const searchWrap = backdrop.querySelector(".ref-sheet-search-wrap");
+    if (listEl && searchWrap) wireHeaderCollapse(listEl, searchWrap);
   }
 
   function renderContent() {
@@ -4490,20 +4532,17 @@ function openReferenceSheet(initialTab) {
       const isMus = refTab === "muscles";
       (isMus ? renderMusclesTab : renderMovementsTab)(listEl, refQuery, {
         expandedIds: refExpanded[refTab], editMode: refEditMode,
+        addLabel: isMus ? "+ Добавить мышцу" : "+ Добавить движение",
       });
-      const addLabel = isMus ? "+ Добавить мышцу" : "+ Добавить движение";
-      actionsEl.innerHTML = `
-        <button class="cat-done-btn ref-edit-toggle">${refEditMode ? "Готово" : "Настроить"}</button>
-        ${refEditMode ? `<button class="cat-item-add ref-add-btn">${addLabel}</button>` : ""}`;
-      actionsEl.querySelector(".ref-edit-toggle").addEventListener("click", () => {
-        refEditMode = !refEditMode;
-        if (refEditMode) haptic(22);
-        renderContent();
-      });
-      const addBtn = actionsEl.querySelector(".ref-add-btn");
-      if (addBtn) addBtn.addEventListener("click", () => (isMus ? openMuscleForm(null) : openMovementForm(null)));
+      // Кнопок-переключателей нет: правка — по долгому удержанию (эталон
+      // упражнений); «+ Добавить» — последней строкой списка; «Готово» —
+      // только в режиме правки.
+      actionsEl.innerHTML = refEditMode ? `<button class="cat-done-btn ref-edit-toggle">Готово</button>` : "";
+      const doneBtn = actionsEl.querySelector(".ref-edit-toggle");
+      if (doneBtn) doneBtn.addEventListener("click", () => { refEditMode = false; renderContent(); });
       wireRefCards(listEl);
-      if (refEditMode) listEl.querySelectorAll(".ref-card-editing[data-id]:not(.ref-card-hidden)").forEach(wireRefDrag);
+      // Долгое удержание: вне правки — войти в правку; в правке — тащить.
+      listEl.querySelectorAll(".ref-card[data-id]:not(.ref-card-hidden)").forEach(wireRefGesture);
     } else {
       listEl.onclick = null;
       renderGroupsInto(listEl, actionsEl);
@@ -4514,6 +4553,8 @@ function openReferenceSheet(initialTab) {
   // перейти на другую вкладку. Режим правки: кнопки изменить / удалить / скрыть.
   function wireRefCards(listEl) {
     listEl.onclick = (e) => {
+      const addBtn = e.target.closest(".ref-add-inline");
+      if (addBtn) { return refTab === "muscles" ? openMuscleForm(null, () => renderContent()) : openMovementForm(null, () => renderContent()); }
       const cell = e.target.closest(".ref-cell[data-goto]");
       if (cell) { crossNav(cell.dataset.goto, cell.dataset.name); return; }
       const actBtn = e.target.closest(".ref-card-act[data-act]");
@@ -4545,17 +4586,26 @@ function openReferenceSheet(initialTab) {
     if (kind === "muscle") openMuscleForm(item, after); else openMovementForm(item, after);
   }
 
-  // Перетаскивание карточки зажатием (как у упражнений). Долгое удержание —
-  // старт; двигается только среди соседних .ref-card (границы групп/секции
-  // «Скрытые» её не пускают — реордер внутри группы). На отпускании — сохраняем
-  // порядок (плоский список id сверху вниз) в личную сортировку.
-  function wireRefDrag(card) {
+  function enterRefEdit() {
+    if (refEditMode) return;
+    refEditMode = true; haptic(22); renderContent();
+  }
+
+  // Долгое удержание на карточке (эталон упражнений): вне правки — войти в
+  // правку; в правке — тащить (реордер внутри группы; границы групп/секции
+  // «Скрытые» не пускают). На отпускании drag — сохраняем порядок.
+  function wireRefGesture(card) {
     let holdTimer = null, sx = 0, sy = 0, moved = false, dragging = false;
+    const DELAY = () => refEditMode ? 150 : 430;
     const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
     const begin = (x, y, target) => {
       if (target && target.closest(".ref-card-act")) return;   // не мешаем кнопкам
       moved = false; dragging = false; sx = x; sy = y; clearHold();
-      holdTimer = setTimeout(() => { holdTimer = null; if (moved) return; dragging = true; startRefDrag(card, y); }, 300);
+      holdTimer = setTimeout(() => {
+        holdTimer = null; if (moved) return;
+        if (!refEditMode) { enterRefEdit(); return; }
+        dragging = true; startRefDrag(card, y);
+      }, DELAY());
     };
     const move = (x, y, e) => {
       if (refDrag && refDrag.card === card) { if (e && e.cancelable) e.preventDefault(); moveRefDrag(y); return; }
@@ -4654,6 +4704,8 @@ function openReferenceSheet(initialTab) {
     const counts = {};
     DATA.getVisibleExercises(userId).forEach(e => { counts[e.cat] = (counts[e.cat] || 0) + 1; });
     const editingClass = catEditMode ? " cat-editing" : "";
+    // Как у мышц/движений: правка — по долгому удержанию, «+ Добавить» — внизу
+    // списка, «Готово» — только в режиме правки. Кнопки-переключателя нет.
     listEl.innerHTML = `
       <div class="cat-sheet-list${editingClass}">
         ${cats.length ? cats.map(c => {
@@ -4668,10 +4720,9 @@ function openReferenceSheet(initialTab) {
               </div>
             </div>`;
         }).join("") : `<p class="exd-empty">Групп пока нет.</p>`}
-      </div>`;
-    actionsEl.innerHTML = `
-      <button class="cat-done-btn ref-groups-toggle">${catEditMode ? "Готово" : "Настроить"}</button>
-      <button class="cat-item-add">+ Добавить новую группу</button>`;
+      </div>
+      <button class="ref-add-inline" id="ref-add-group">+ Добавить новую группу</button>`;
+    actionsEl.innerHTML = catEditMode ? `<button class="cat-done-btn ref-groups-toggle">Готово</button>` : "";
 
     listEl.querySelectorAll(".cat-item-wrap[data-cat]").forEach(wrap => {
       const cat = wrap.dataset.cat;
@@ -4682,8 +4733,8 @@ function openReferenceSheet(initialTab) {
       wireNameClick(wrap, cat, nameEl);
     });
     const toggle = actionsEl.querySelector(".ref-groups-toggle");
-    if (toggle) toggle.addEventListener("click", () => { catEditMode ? exitEditMode() : enterEditMode(); });
-    const addBtn = actionsEl.querySelector(".cat-item-add");
+    if (toggle) toggle.addEventListener("click", () => exitEditMode());
+    const addBtn = listEl.querySelector("#ref-add-group");
     if (addBtn) addBtn.addEventListener("click", openAddCatModal);
   }
 
@@ -4692,14 +4743,35 @@ function openReferenceSheet(initialTab) {
   requestAnimationFrame(() => backdrop.classList.add("open"));
 }
 
-// Скролл-скрытие шапки (как на YouTube): при прокрутке вниз добавляет
-// .hdr-collapsed на targetEl (CSS прячет поиск/чипы), при прокрутке вверх снимает.
-function wireHeaderCollapse(scrollEl, targetEl, threshold = 36) {
+// Скролл-скрытие шапки (как на YouTube): при прокрутке вниз плавно схлопывает
+// collapseEl (поиск/чипы) до высоты 0, при прокрутке вверх — разворачивает.
+// Анимируем реальную height в JS (надёжно и плавно; CSS grid-fr-транзишн в
+// некоторых движках не работает). Состояние храним на самом элементе, чтобы
+// экран можно было сбросить извне (см. initExercisesScreen).
+function wireHeaderCollapse(scrollEl, collapseEl, threshold = 36) {
+  if (!scrollEl || !collapseEl) return;
   let last = scrollEl.scrollTop || 0;
+  const isCollapsed = () => collapseEl.dataset.collapsed === "1";
+  const set = c => {
+    if (c === isCollapsed()) return;
+    collapseEl.dataset.collapsed = c ? "1" : "0";
+    const start = c ? collapseEl.scrollHeight + "px" : "0px";
+    const target = c ? "0px" : collapseEl.scrollHeight + "px";
+    collapseEl.style.height = start;
+    void collapseEl.offsetHeight;   // коммитим start
+    // Target в следующем кадре — иначе движок схлопывает обе правки в одну и
+    // транзишн не запускается. (В фоновой вкладке rAF троттлится — на устройстве
+    // с видимой вкладкой отрабатывает штатно и плавно.)
+    requestAnimationFrame(() => { collapseEl.style.height = target; });
+    if (!c) {   // после раскрытия вернуть auto, чтобы контент мог меняться
+      const done = () => { collapseEl.style.height = ""; collapseEl.removeEventListener("transitionend", done); };
+      collapseEl.addEventListener("transitionend", done);
+    }
+  };
   scrollEl.addEventListener("scroll", () => {
     const st = scrollEl.scrollTop;
-    if (st > last + 4 && st > threshold) targetEl.classList.add("hdr-collapsed");
-    else if (st < last - 4) targetEl.classList.remove("hdr-collapsed");
+    if (st > last + 4 && st > threshold) set(true);
+    else if (st < last - 4) set(false);
     last = st;
   }, { passive: true });
 }
@@ -4967,84 +5039,116 @@ $("exercise-form-add-step").addEventListener("click", () => {
   tas[tas.length - 1]?.focus();
 });
 
+// Полный редактор упражнения по модели Атласа (#6). Динамическая модалка со
+// всеми полями ex.atlas: тип/категория, оборудование, уровень, целевые/синергисты/
+// стабилизаторы (выбор из справочника мышц), движения, техника, частые ошибки,
+// противопоказания, референс, медиа, совет. Сохраняет в own-оверлей (copy-on-write).
 function openExerciseForm(exerciseId) {
-  _editingExerciseId = exerciseId;
   const userId = DATA.getCurrentUser();
+  const ex = exerciseId ? DATA.getVisibleExercises(userId).find(e => e.id === exerciseId) : null;
+  if (exerciseId && !ex) return;
+  const a = (ex && ex.atlas) || {};
+  const roleNames = arr => (arr || []).map(o => o.muscle);
+  const muscleNames = DATA.refMuscles(userId).map(m => m.name);
+  const moveNames = DATA.refMovements(userId).map(m => m.name);
+  const cats = DATA.getAllCategories(userId);
+  const LEVELS = ["Глобальное", "Региональное", "Локальное"];
+  const curLevel = LEVEL_LABELS[a.level] || a.level || "";
+  let technique = (ex && Array.isArray(ex.steps) ? ex.steps.join("\n") : (a.technique || ""));
+  let mistakes = (a.mistakes || []).join("\n");
 
-  if (exerciseId) {
-    const ex = DATA.getVisibleExercises(userId).find(e => e.id === exerciseId);
-    if (!ex) return;
-    exerciseFormTitle.textContent = "Редактировать упражнение";
-    exerciseFormName.value = ex.name;
-    exerciseFormTypeGroup.querySelectorAll(".ex-form-chip").forEach(c => c.classList.toggle("selected", c.dataset.type === ex.type));
-    buildCategoryChips(ex.cat);
-    $("exercise-form-media").value = ex.media || "";
-    const mus = ex.muscles || {};
-    $("exercise-form-m-agonists").value     = mus.agonists || "";
-    $("exercise-form-m-synergists").value   = mus.synergists || "";
-    $("exercise-form-m-stabilizers").value  = mus.stabilizers || "";
-    $("exercise-form-m-distributors").value = mus.distributors || "";
-    $("exercise-form-tip").value = ex.tip || "";
-    renderFormSteps(Array.isArray(ex.steps) ? ex.steps : []);
-  } else {
-    exerciseFormTitle.textContent = "Новое упражнение";
-    exerciseFormName.value = "";
-    exerciseFormTypeGroup.querySelectorAll(".ex-form-chip").forEach(c => c.classList.toggle("selected", c.dataset.type === "strength"));
-    buildCategoryChips("Ноги");
-    $("exercise-form-media").value = "";
-    ["agonists", "synergists", "stabilizers", "distributors"].forEach(k => { $(`exercise-form-m-${k}`).value = ""; });
-    $("exercise-form-tip").value = "";
-    renderFormSteps([]);
-  }
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop open ref-form-backdrop";
+  bd.style.zIndex = "60";
+  bd.innerHTML = `
+    <div class="modal modal-form ref-form">
+      <h2 class="modal-title">${ex ? "Редактировать упражнение" : "Новое упражнение"}</h2>
+      <div class="ex-form-field"><label class="ex-form-label">Название</label>
+        <input class="ex-form-input" id="ef-name" type="text" placeholder="Например, Гакк-приседания" value="${escHtml(ex ? ex.name : "")}"></div>
+      <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips" id="ef-type"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Категория</label><div class="ex-form-chips" id="ef-cat"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Оборудование</label>
+        <input class="ex-form-input" id="ef-equip" type="text" placeholder="Например, Штанга" value="${escHtml(a.equipment || "")}"></div>
+      <div class="ex-form-field"><label class="ex-form-label">Уровень</label><div class="ex-form-chips" id="ef-level"></div></div>
+      <div class="ex-form-group-label">Рабочие мышцы</div>
+      <div class="ex-form-field"><label class="ex-form-label">Целевые</label><div class="ex-form-chips ef-mus" id="ef-target"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Синергисты</label><div class="ex-form-chips ef-mus" id="ef-syn"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Стабилизаторы</label><div class="ex-form-chips ef-mus" id="ef-stab"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Движения</label><div class="ex-form-chips" id="ef-moves"></div></div>
+      <div class="ex-form-group-label">Техника и заметки</div>
+      <div class="ex-form-field"><label class="ex-form-label">Техника (по шагу на строку)</label>
+        <textarea class="ex-form-input ex-form-textarea" id="ef-tech" rows="4" placeholder="Один шаг — одна строка">${escHtml(technique)}</textarea></div>
+      <div class="ex-form-field"><label class="ex-form-label">Частые ошибки (по одной на строку)</label>
+        <textarea class="ex-form-input ex-form-textarea" id="ef-mistakes" rows="3">${escHtml(mistakes)}</textarea></div>
+      <div class="ex-form-field"><label class="ex-form-label">Противопоказания</label>
+        <textarea class="ex-form-input ex-form-textarea" id="ef-contra" rows="2">${escHtml(a.contraindications || "")}</textarea></div>
+      <div class="ex-form-field"><label class="ex-form-label">Совет</label>
+        <textarea class="ex-form-input ex-form-textarea" id="ef-tip" rows="2">${escHtml(ex ? (ex.tip || "") : "")}</textarea></div>
+      <div class="ex-form-field"><label class="ex-form-label">Ссылка на медиа (фото/гиф/видео)</label>
+        <input class="ex-form-input" id="ef-media" type="url" inputmode="url" placeholder="https://…" value="${escHtml(ex ? (ex.media || "") : "")}"></div>
+      <div class="ex-form-field"><label class="ex-form-label">Ссылка-референс</label>
+        <input class="ex-form-input" id="ef-ref" type="url" inputmode="url" placeholder="https://…" value="${escHtml(a.referenceUrl || "")}"></div>
+      <div class="modal-form-actions">
+        <button class="btn-chip" data-act="cancel">Отмена</button>
+        <button class="btn-chip primary" data-act="save">Сохранить</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
 
-  exerciseFormBackdrop.querySelector(".modal").scrollTop = 0;
-  openModal(exerciseFormBackdrop);
-  setTimeout(() => exerciseFormName.focus(), 280);
-}
+  const typeSel  = refChipSelect(bd.querySelector("#ef-type"), ["Силовое", "Бег"], [ex && ex.type === "run" ? "Бег" : "Силовое"], false);
+  const catSel   = refChipSelect(bd.querySelector("#ef-cat"), cats, [ex ? ex.cat : (cats[0] || "Ноги")], false);
+  const levelSel = refChipSelect(bd.querySelector("#ef-level"), LEVELS, curLevel ? [curLevel] : [], false);
+  const targetSel = refChipSelect(bd.querySelector("#ef-target"), muscleNames, roleNames(a.target), true);
+  const synSel    = refChipSelect(bd.querySelector("#ef-syn"), muscleNames, roleNames(a.synergist), true);
+  const stabSel   = refChipSelect(bd.querySelector("#ef-stab"), muscleNames, roleNames(a.stabilizer), true);
+  const moveSel   = refChipSelect(bd.querySelector("#ef-moves"), moveNames, a.categories || [], true);
 
-exerciseFormTypeGroup.querySelectorAll(".ex-form-chip").forEach(chip => {
-  chip.addEventListener("click", () => {
-    exerciseFormTypeGroup.querySelectorAll(".ex-form-chip").forEach(c => c.classList.remove("selected"));
-    chip.classList.add("selected");
+  // сохранить пучок у мышцы, если он уже был задан (иначе пусто)
+  const toRoles = (names, prev) => names.map(n => {
+    const old = (prev || []).find(o => o.muscle === n);
+    return { muscle: n, bundle: old ? old.bundle : "" };
   });
-});
 
-$("exercise-form-save").addEventListener("click", () => {
-  const userId = DATA.getCurrentUser();
-  const name = exerciseFormName.value.trim();
-  if (!name) { showToast("Введи название упражнения"); return; }
-
-  const type = exerciseFormTypeGroup.querySelector(".ex-form-chip.selected")?.dataset.type || "strength";
-  const cat  = exerciseFormCatGroup.querySelector(".ex-form-chip.selected")?.dataset.cat || "Другое";
-  const media = $("exercise-form-media").value;
-  const muscles = {
-    agonists:     $("exercise-form-m-agonists").value,
-    synergists:   $("exercise-form-m-synergists").value,
-    stabilizers:  $("exercise-form-m-stabilizers").value,
-    distributors: $("exercise-form-m-distributors").value,
-  };
-  const steps = collectFormSteps();
-  const tip = $("exercise-form-tip").value;
-
-  let savedId = _editingExerciseId;
-  if (_editingExerciseId) {
-    DATA.updateOwnExercise(userId, _editingExerciseId, { name, type, cat, media, muscles, steps, tip });
-    SyncQueue.push("exercise:update", { id: _editingExerciseId });
-    showToast("Упражнение обновлено");
-  } else {
-    const ex = DATA.addExercise(userId, { name, type, cat, media, muscles, steps, tip });
-    savedId = ex.id;
-    SyncQueue.push("exercise:create", { name });
-    showToast("Упражнение добавлено");
-  }
-
-  closeModal(exerciseFormBackdrop);
-  renderExercisesList(exercisesSearch.value);
-  // Если форму открыли с экрана деталей — возвращаемся туда с обновлёнными данными.
-  if (savedId && SCREENS.exerciseDetail.classList.contains("active")) {
-    openExerciseDetail(savedId);
-  }
-});
+  const close = () => bd.remove();
+  bd.addEventListener("click", e => { if (e.target === bd) close(); });
+  bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
+  bd.querySelector('[data-act="save"]').addEventListener("click", () => {
+    const name = bd.querySelector("#ef-name").value.trim();
+    if (!name) { bd.querySelector("#ef-name").focus(); showToast("Введи название упражнения"); return; }
+    const atlas = Object.assign((ex && ex.atlas) ? JSON.parse(JSON.stringify(ex.atlas)) : {}, {
+      equipment: bd.querySelector("#ef-equip").value.trim(),
+      level: levelSel.getOne() || "",
+      target:     toRoles(targetSel.get(), a.target),
+      synergist:  toRoles(synSel.get(), a.synergist),
+      stabilizer: toRoles(stabSel.get(), a.stabilizer),
+      categories: moveSel.get(),
+      technique: bd.querySelector("#ef-tech").value.trim(),
+      mistakes: bd.querySelector("#ef-mistakes").value.split("\n").map(s => s.trim()).filter(Boolean),
+      contraindications: bd.querySelector("#ef-contra").value.trim(),
+      referenceUrl: bd.querySelector("#ef-ref").value.trim(),
+    });
+    const payload = {
+      name, type: typeSel.getOne() === "Бег" ? "run" : "strength",
+      cat: catSel.getOne() || "Другое",
+      media: bd.querySelector("#ef-media").value.trim(),
+      tip: bd.querySelector("#ef-tip").value.trim(),
+      atlas,
+    };
+    let savedId = exerciseId;
+    if (exerciseId) {
+      DATA.updateOwnExercise(userId, exerciseId, payload);
+      SyncQueue.push("exercise:update", { id: exerciseId });
+      showToast("Упражнение обновлено");
+    } else {
+      savedId = DATA.addExercise(userId, payload).id;
+      SyncQueue.push("exercise:create", { name });
+      showToast("Упражнение добавлено");
+    }
+    close();
+    renderExercisesList(exercisesSearch.value);
+    if (savedId && SCREENS.exerciseDetail.classList.contains("active")) openExerciseDetail(savedId);
+  });
+}
 
 /* ==========================================================================
    Screen: detail view (просмотр тренировки из истории)
