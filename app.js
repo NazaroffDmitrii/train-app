@@ -1409,12 +1409,24 @@ function historyItemHtml(w) {
 // в детальном экране) — переиспользуется свайпом по карточке истории. rerender —
 // колбэк перерисовки текущего списка (шторка или экран «История»).
 function deleteWorkoutWithUndo(workout, rerender) {
+  const label = workout.name || (workout.type === "run" ? "Пробежка" : "Силовая тренировка");
+  openConfirmModal({
+    title: "Удалить тренировку?",
+    message: `«${label}» (${fmtDate(workout.startedAt)}) будет удалена. Вернуть можно в настройках → «Недавно удалённые».`,
+    confirmLabel: "Удалить",
+    onConfirm: () => doDeleteWorkout(workout, rerender, label),
+  });
+}
+function doDeleteWorkout(workout, rerender, label) {
   const userId = DATA.getCurrentUser();
   // Снимки для отката.
   const histSnap = [...DATA.getWorkoutHistory(userId)];
   const idxSnap  = [...DATA.getWorkoutIndex(userId)];
   const recSnap  = JSON.parse(JSON.stringify(DATA.getRecords(userId)));
   const binId = workout._remoteBinId; // удалим и сам бин на JSONBin (если не отменят)
+  // В корзину — полная тренировка + её запись индекса (для восстановления на неделю).
+  const idxEntry = DATA.getWorkoutIndex(userId).find(e => e.id === workout.id) || null;
+  const trashId = Trash.push(userId, { type: "workout", label, sub: fmtDate(workout.startedAt), data: { workout: JSON.parse(JSON.stringify(workout)), index: idxEntry ? JSON.parse(JSON.stringify(idxEntry)) : null } });
   DATA.deleteWorkout(userId, workout.id);
 
   // Пересчёт рекордов только при полной локальной истории (см. detail-delete-btn).
@@ -1430,9 +1442,11 @@ function deleteWorkoutWithUndo(workout, rerender) {
     if (!undone && binId) Storage.deleteBin(binId).catch(e => console.warn("deleteBin failed", e));
   }, 6000);
 
-  showUndoToast("Тренировка удалена", () => {
+  // Быстрая отмена + недельная корзина. При отмене чистим и запись корзины.
+  showUndoToast("Тренировка удалена — или верни позже в «Недавно удалённых»", () => {
     undone = true;
     clearTimeout(purgeTimer);
+    Trash.remove(userId, trashId);
     DATA.saveWorkoutHistory(userId, histSnap);
     DATA.saveWorkoutIndex(userId, idxSnap);
     if (recsRecomputed) { DATA.saveRecords(userId, recSnap); SyncQueue.push("user:update", {}); }
@@ -1489,18 +1503,13 @@ function wireHistoryItemSwipe(wrap, rerender) {
     active = false;
     if (!horiz) return;
     if (dx <= -DEL) {
-      row.style.transition = "transform 0.16s ease";
-      row.style.transform = "translateX(-110%)";
-      wrap.style.height = wrap.offsetHeight + "px";
-      requestAnimationFrame(() => {
-        wrap.style.transition = "height 0.18s ease, opacity 0.18s ease";
-        wrap.style.height = "0"; wrap.style.opacity = "0";
-      });
-      setTimeout(() => {
-        const w = DATA.getWorkoutHistory(DATA.getCurrentUser()).find(x => x.id === wId);
-        if (w) deleteWorkoutWithUndo(w, rerender);
-        else rerender(DATA.getCurrentUser());
-      }, 200);
+      // Возвращаем карточку на место и спрашиваем подтверждение (удаление внутри
+      // deleteWorkoutWithUndo). Убирается карточка уже при re-render после подтверждения.
+      row.style.transition = "transform 0.18s ease"; row.style.transform = "";
+      wrap.classList.remove("will-delete");
+      setTimeout(() => wrap.classList.remove("swiping"), 200);
+      const w = DATA.getWorkoutHistory(DATA.getCurrentUser()).find(x => x.id === wId);
+      if (w) deleteWorkoutWithUndo(w, rerender);
     } else {
       row.style.transition = "transform 0.18s ease";
       row.style.transform = "";
@@ -1770,6 +1779,73 @@ document.querySelectorAll(".pill").forEach(pill => {
    Settings modal
    ========================================================================== */
 $("settings-close").addEventListener("click", () => closeModal(settingsModalBackdrop));
+
+// «Недавно удалённые» — корзина на 7 дней со всеми удалёнными элементами и
+// восстановлением. Открывается из настроек.
+$("recently-deleted-btn").addEventListener("click", () => {
+  closeModal(settingsModalBackdrop);
+  openRecentlyDeletedSheet();
+});
+
+function openRecentlyDeletedSheet() {
+  const userId = DATA.getCurrentUser();
+  const TYPE_LABEL = { exercise: "Упражнение", muscle: "Мышца", movement: "Движение", category: "Группа", workout: "Тренировка", template: "Шаблон" };
+  const bd = document.createElement("div");
+  bd.className = "bottom-sheet-backdrop";
+  bd.style.cursor = "pointer";
+  const close = () => { bd.classList.remove("open"); setTimeout(() => bd.remove(), 300); };
+  bd.addEventListener("click", e => { if (e.target === bd) close(); });
+
+  bd.innerHTML = `
+    <div class="bottom-sheet ref-sheet">
+      <div class="ref-sheet-drag"><div class="bottom-sheet-handle"></div></div>
+      <div class="cat-sheet-head"><span class="cat-sheet-title">Недавно удалённые</span></div>
+      <div class="ref-sheet-list" id="trash-list"></div>
+    </div>`;
+
+  const render = () => {
+    const items = Trash.all(userId);
+    const listEl = bd.querySelector("#trash-list");
+    if (!items.length) {
+      listEl.innerHTML = `<p class="exd-empty">Здесь пусто. Сюда попадают удалённые за последние 7 дней элементы — их можно вернуть.</p>`;
+      return;
+    }
+    const dayMs = 24 * 60 * 60 * 1000;
+    listEl.innerHTML = items.map(it => {
+      const daysLeft = Math.max(0, Math.ceil((TRASH_TTL_MS - (Date.now() - it.deletedAt)) / dayMs));
+      const left = daysLeft <= 1 ? "истекает сегодня" : `ещё ${daysLeft} дн.`;
+      return `<div class="trash-row" data-id="${escHtml(it.id)}">
+        <div class="trash-row-body">
+          <div class="trash-row-name">${escHtml(it.label || "Без названия")}</div>
+          <div class="trash-row-meta">${escHtml(it.sub || TYPE_LABEL[it.type] || "")} · ${left}</div>
+        </div>
+        <button class="trash-restore-btn" data-id="${escHtml(it.id)}">Вернуть</button>
+      </div>`;
+    }).join("");
+    listEl.querySelectorAll(".trash-restore-btn").forEach(b => b.addEventListener("click", () => {
+      if (restoreFromTrash(userId, b.dataset.id)) {
+        showToast("Восстановлено");
+        try { if (typeof window.onAtlasUpdated === "function") window.onAtlasUpdated(); } catch {}
+        refreshAfterTrashRestore();
+        render();
+      } else showToast("Не удалось восстановить");
+    }));
+  };
+  render();
+
+  document.body.appendChild(bd);
+  requestAnimationFrame(() => bd.classList.add("open"));
+  const sheetEl = bd.querySelector(".bottom-sheet");
+  const dragZone = bd.querySelector(".ref-sheet-drag");
+  if (sheetEl && dragZone) wireSheetDragClose(sheetEl, dragZone, close);
+}
+
+// Обновить видимый экран после восстановления из корзины (best-effort).
+function refreshAfterTrashRestore() {
+  try { if (SCREENS.menu && SCREENS.menu.classList.contains("active")) refreshMenu(); } catch {}
+  try { if (SCREENS.exercises && SCREENS.exercises.classList.contains("active") && typeof exercisesSearch !== "undefined") renderExercisesList(exercisesSearch.value); } catch {}
+  try { if (SCREENS.templates && SCREENS.templates.classList.contains("active") && typeof renderTemplatesList === "function") renderTemplatesList(); } catch {}
+}
 
 /* ==========================================================================
    Облачная синхронизация теперь автоматическая и построчная (bridge.js →
@@ -2395,6 +2471,115 @@ function openConfirmModal({ title, message, confirmLabel = "Удалить", can
   backdrop.querySelector('[data-act="cancel"]').addEventListener("click", close);
   backdrop.querySelector('[data-act="ok"]').addEventListener("click", () => { close(); onConfirm && onConfirm(); });
   backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
+}
+
+/* ============================================================
+   Корзина «Недавно удалённые» — мягкое удаление на 7 дней.
+   Любое удаление в приложении кладёт запись сюда (тип + подпись + данные для
+   восстановления). Настройки → «Недавно удалённые» показывает всё в общей куче и
+   позволяет вернуть. Просроченные (> 7 дней) вычищаются при каждом чтении.
+   ============================================================ */
+const TRASH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const Trash = {
+  _key: (u) => `train_trash_${u}`,
+  all(userId) {
+    let arr = [];
+    try { arr = JSON.parse(localStorage.getItem(this._key(userId)) || "[]"); } catch {}
+    if (!Array.isArray(arr)) arr = [];
+    const now = Date.now();
+    const fresh = arr.filter(x => x && typeof x.deletedAt === "number" && (now - x.deletedAt) < TRASH_TTL_MS);
+    if (fresh.length !== arr.length) { try { localStorage.setItem(this._key(userId), JSON.stringify(fresh)); } catch {} }
+    return fresh.sort((a, b) => b.deletedAt - a.deletedAt);
+  },
+  push(userId, entry) {
+    const arr = this.all(userId);
+    const rec = Object.assign({ id: "trash_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), deletedAt: Date.now() }, entry);
+    arr.unshift(rec);
+    try { localStorage.setItem(this._key(userId), JSON.stringify(arr)); } catch {}
+    return rec.id;
+  },
+  get(userId, id) { return this.all(userId).find(x => x.id === id) || null; },
+  remove(userId, id) {
+    const arr = this.all(userId).filter(x => x.id !== id);
+    try { localStorage.setItem(this._key(userId), JSON.stringify(arr)); } catch {}
+  },
+};
+
+// Восстановление по типу. Каждый обработчик возвращает вставленный элемент в
+// нужный список (идемпотентно — не плодит дублей) и досылает событие синка.
+const TRASH_RESTORE = {
+  exercise(userId, d) {
+    if (d.own) { const l = DATA.getOwnExercises(userId); if (!l.some(e => e.id === d.own.id)) l.push(d.own); DATA.saveOwnExercises(userId, l); }
+    if (d.exId) DATA.unhideExercise(userId, d.exId);
+    SyncQueue.push("exercise:create", {});
+  },
+  category(userId, d) {
+    DATA.addCategory(userId, d.name);
+    if (d.color) DATA.setCategoryColor(userId, d.name, d.color);
+    SyncQueue.push("user:update", {});
+  },
+  workout(userId, d) {
+    const hist = DATA.getWorkoutHistory(userId);
+    if (!hist.some(w => w.id === d.workout.id)) { hist.push(d.workout); DATA.saveWorkoutHistory(userId, hist); }
+    if (d.index) { const idx = DATA.getWorkoutIndex(userId); if (!idx.some(e => e.id === d.index.id)) { idx.push(d.index); DATA.saveWorkoutIndex(userId, idx); } }
+    DATA.recomputeRecords(userId);
+    SyncQueue.push("workout:create", {}); SyncQueue.push("user:update", {});
+  },
+  template(userId, d) {
+    const l = DATA.getTemplates(userId); if (!l.some(t => t.id === d.template.id)) l.push(d.template); DATA.saveTemplates(userId, l);
+    SyncQueue.push("template:create", {});
+  },
+  muscle(userId, d) { trashRestoreRef(userId, "muscle", d); },
+  movement(userId, d) { trashRestoreRef(userId, "movement", d); },
+};
+
+// Восстановить мышцу/движение: личное — в own-оверлей; общее (админ) — обратно в
+// атлас (кэш) и в БД (реконструируем строки по текущим маппингам групп/имён).
+function trashRestoreRef(userId, kind, d) {
+  if (d.shared) {
+    const a = DATA.atlasSnapshot();
+    const arr = kind === "muscle" ? a.muscles : a.categories;
+    if (!arr.some(x => x.id === d.item.id)) arr.push(d.item);
+    (d.links || []).forEach(l => {
+      const dup = a.muscleCategoryLinks.some(x => x.muscle === l.muscle && x.category === l.category && (x.bundle || "") === (l.bundle || ""));
+      if (!dup) a.muscleCategoryLinks.push(l);
+    });
+    DATA.commitAtlas(a);
+    if (DATA.isAdmin() && typeof DB !== "undefined" && typeof Auth !== "undefined" && Auth.isSignedIn()) {
+      trashReinsertSharedToDB(kind, d, DATA.atlasSnapshot()).catch(e => console.warn("restore shared→DB", e));
+    }
+  } else {
+    if (kind === "muscle") { const l = DATA.getOwnMuscles(userId); if (!l.some(x => x.id === d.item.id)) l.push(d.item); DATA.saveOwnMuscles(userId, l); }
+    else { const l = DATA.getOwnMovements(userId); if (!l.some(x => x.id === d.item.id)) l.push(d.item); DATA.saveOwnMovements(userId, l); }
+  }
+}
+async function trashReinsertSharedToDB(kind, d, a) {
+  const gid = (a.groupRows.find(g => g.name === d.item.group) || {}).id || null;
+  if (kind === "muscle") {
+    const pos = a.muscles.findIndex(m => m.id === d.item.id);
+    await DB.saveAtlasMuscles({ id: d.item.id, name: d.item.name, group_id: gid, visible: !!d.item.visible, bundles: d.item.bundles || [], position: pos });
+    const vById = {}; a.categories.forEach(v => { vById[v.name] = v.id; });
+    const rows = (d.links || []).filter(l => vById[l.category]).map(l => ({ id: "al_" + d.item.id + "_" + vById[l.category], muscle_id: d.item.id, bundle: l.bundle || "", movement_id: vById[l.category] }));
+    if (rows.length) await DB.saveAtlasLinks(rows);
+  } else {
+    const pos = a.categories.findIndex(m => m.id === d.item.id);
+    await DB.saveAtlasMovements({ id: d.item.id, name: d.item.name, group_id: gid, type: d.item.type || "База", position: pos });
+    const mById = {}; a.muscles.forEach(m => { mById[m.name] = m.id; });
+    const rows = (d.links || []).filter(l => mById[l.muscle]).map(l => ({ id: "al_" + mById[l.muscle] + "_" + d.item.id, muscle_id: mById[l.muscle], bundle: l.bundle || "", movement_id: d.item.id }));
+    if (rows.length) await DB.saveAtlasLinks(rows);
+  }
+}
+
+// Восстановить запись из корзины: применяем обработчик, убираем из корзины,
+// перерисовываем текущий экран. Возвращает true при успехе.
+function restoreFromTrash(userId, id) {
+  const entry = Trash.get(userId, id);
+  if (!entry) return false;
+  const handler = TRASH_RESTORE[entry.type];
+  if (!handler) return false;
+  try { handler(userId, entry.data || {}); } catch (e) { console.warn("restore failed", e); return false; }
+  Trash.remove(userId, id);
+  return true;
 }
 
 /* — Список упражнений — */
@@ -3808,30 +3993,25 @@ function wireExRowSwipe(wrap, userId) {
     active = false;
     if (!horiz) return;
     if (dx <= -DEL) {
-      row.style.transition = "transform 0.16s ease";
-      row.style.transform = "translateX(-110%)";
-      wrap.style.height = wrap.offsetHeight + "px";
-      requestAnimationFrame(() => {
-        wrap.style.transition = "height 0.18s ease, opacity 0.18s ease";
-        wrap.style.height = "0"; wrap.style.opacity = "0";
-      });
-      setTimeout(() => {
-        const allExs = DATA.getVisibleExercises(userId);
-        const ex = allExs.find(e => e.id === exId);
-        const exName = ex ? ex.name : exId;
-        const snapshot = [...DATA.getOwnExercises(userId)];
-        const hiddenSnapshot = [...DATA.getHiddenIds(userId)];
-        DATA.deleteOwnExercise(userId, exId);
-        SyncQueue.push("exercise:delete", { id: exId });
-        renderExercisesList(exercisesSearch.value);
-        showUndoToast(`Упражнение «${exName}» удалено`, () => {
-          DATA.saveOwnExercises(userId, snapshot);
-          DATA.saveHiddenIds(userId, hiddenSnapshot); // базовое было скрыто — вернуть
-          SyncQueue.push("exercise:create", {});
+      // Мягкое удаление с подтверждением: карточку не убираем, пока не подтвердили.
+      row.style.transition = "transform 0.18s ease"; row.style.transform = "";
+      wrap.classList.remove("will-delete", "swiping-left", "swiping-right");
+      setTimeout(() => wrap.classList.remove("swiping"), 200);
+      const ex = DATA.getVisibleExercises(userId).find(e => e.id === exId);
+      const exName = ex ? ex.name : exId;
+      openConfirmModal({
+        title: "Удалить упражнение?",
+        message: `«${exName}» будет удалено. Вернуть можно в настройках → «Недавно удалённые» (7 дней).`,
+        confirmLabel: "Удалить",
+        onConfirm: () => {
+          const own = DATA.getOwnExercises(userId).find(e => e.id === exId) || null;
+          Trash.push(userId, { type: "exercise", label: exName, sub: "Упражнение", data: { own: own ? JSON.parse(JSON.stringify(own)) : null, exId } });
+          DATA.deleteOwnExercise(userId, exId);
+          SyncQueue.push("exercise:delete", { id: exId });
           renderExercisesList(exercisesSearch.value);
-          showToast("Восстановлено");
-        });
-      }, 200);
+          showToast("Удалено — можно вернуть в «Недавно удалённых»");
+        },
+      });
     } else if (dx >= DEL) {
       row.style.transition = "transform 0.18s ease";
       row.style.transform = "";
@@ -4391,18 +4571,11 @@ function openReferenceSheet(initialTab, focusName) {
   }
 
   function removeCategory(cat) {
-    const catSnapshot = [...DATA.getAllCategories(userId)];
-    const exSnapshot  = [...DATA.getOwnExercises(userId)];
+    Trash.push(userId, { type: "category", label: cat, sub: "Группа", data: { name: cat, color: DATA.getCategoryColors(userId)[cat] || null } });
     DATA.deleteCategory(userId, cat);
     renderExercisesList(exercisesSearch.value);
     renderContent();
-    showUndoToast(`Категория «${cat}» удалена`, () => {
-      DATA.saveAllCategories(userId, catSnapshot);
-      DATA.saveOwnExercises(userId, exSnapshot);
-      renderExercisesList(exercisesSearch.value);
-      renderContent();
-      showToast("Восстановлено");
-    });
+    showToast("Удалено — можно вернуть в «Недавно удалённых»");
   }
 
   function openAddCatModal() {
@@ -4513,14 +4686,16 @@ function openReferenceSheet(initialTab, focusName) {
       active = false;
       if (!horiz) return;
       if (dx <= -DEL) {
-        item.style.transition = "transform 0.16s ease";
-        item.style.transform = "translateX(-110%)";
-        wrap.style.height = wrap.offsetHeight + "px";
-        requestAnimationFrame(() => {
-          wrap.style.transition = "height 0.16s ease, opacity 0.16s ease";
-          wrap.style.height = "0"; wrap.style.opacity = "0";
+        // Мягкое удаление с подтверждением — карточку возвращаем на место до ответа.
+        item.style.transition = "transform 0.18s ease"; item.style.transform = "";
+        wrap.classList.remove("will-delete", "swiping-left", "swiping-right");
+        setTimeout(() => wrap.classList.remove("swiping"), 200);
+        openConfirmModal({
+          title: "Удалить группу?",
+          message: `«${cat}» будет удалена, упражнения перейдут в другую группу. Вернуть можно в настройках → «Недавно удалённые».`,
+          confirmLabel: "Удалить",
+          onConfirm: () => removeCategory(cat),
         });
-        setTimeout(() => removeCategory(cat), 180);
       } else if (dx >= DEL) {
         item.style.transition = "transform 0.18s ease"; item.style.transform = "";
         wrap.classList.remove("will-edit", "swiping-left", "swiping-right");
@@ -4777,10 +4952,34 @@ function openReferenceSheet(initialTab, focusName) {
       if (!horiz) return;
       if (swiped) wrap.dataset.swiped = "1";
       if (dx <= -DEL) {
-        card.style.transition = "transform 0.16s ease"; card.style.transform = "translateX(-110%)";
-        wrap.style.height = wrap.offsetHeight + "px";
-        requestAnimationFrame(() => { wrap.style.transition = "height 0.16s ease, opacity 0.16s ease"; wrap.style.height = "0"; wrap.style.opacity = "0"; });
-        setTimeout(() => { const canDel = refItemIsOwn({ id: wrap.dataset.id }) || DATA.isAdmin(); (canDel ? deleteRefItem : hideRefItem)(wrap.dataset.kind, wrap.dataset.id); }, 170);
+        const kind = wrap.dataset.kind, id = wrap.dataset.id;
+        const item = (kind === "muscle" ? DATA.refMuscles(userId) : DATA.refMovements(userId)).find(x => x.id === id);
+        const willDelete = item && (refItemIsOwn(item) || DATA.isAdmin());
+        const snapBack = () => {
+          card.style.transition = "transform 0.18s ease"; card.style.transform = "";
+          wrap.classList.remove("will-delete", "swiping-left", "swiping-right");
+          setTimeout(() => wrap.classList.remove("swiping"), 200);
+        };
+        if (willDelete) {
+          // УДАЛЕНИЕ необратимо (своё — из личных; общее у админа — из общей базы И
+          // БД, для всех). Поэтому спрашиваем подтверждение, а карточку не убираем,
+          // пока не подтвердили (иначе — как случилось у пользователя — мышца
+          // исчезала мгновенно без отмены). Скрытие (не-админ, общий элемент)
+          // обратимо (раздел «Скрытые») — там подтверждение не нужно.
+          snapBack();
+          const shared = item && !refItemIsOwn(item);
+          openConfirmModal({
+            title: `Удалить ${kind === "muscle" ? "мышцу" : "движение"}?`,
+            message: `«${item.name}» будет удалено безвозвратно${shared ? " из общей базы — для всех пользователей" : ""}.`,
+            confirmLabel: "Удалить",
+            onConfirm: () => deleteRefItem(kind, id),
+          });
+        } else {
+          card.style.transition = "transform 0.16s ease"; card.style.transform = "translateX(-110%)";
+          wrap.style.height = wrap.offsetHeight + "px";
+          requestAnimationFrame(() => { wrap.style.transition = "height 0.16s ease, opacity 0.16s ease"; wrap.style.height = "0"; wrap.style.opacity = "0"; });
+          setTimeout(() => hideRefItem(kind, id), 170);
+        }
       } else if (dx >= DEL) {
         card.style.transition = "transform 0.18s ease"; card.style.transform = "";
         wrap.classList.remove("will-edit", "swiping-left", "swiping-right");
@@ -4880,14 +5079,21 @@ function openReferenceSheet(initialTab, focusName) {
     const list = kind === "muscle" ? DATA.refMuscles(userId) : DATA.refMovements(userId);
     const item = list.find(x => x.id === id); if (!item) return;
     const own = refItemIsOwn(item);
+    const label = kind === "muscle" ? "Мышца" : "Движение";
     if (own) {
+      Trash.push(userId, { type: kind, label: item.name, sub: label, data: { item: JSON.parse(JSON.stringify(item)) } });
       if (kind === "muscle") DATA.saveOwnMuscles(userId, DATA.getOwnMuscles(userId).filter(x => x.id !== id));
       else                   DATA.saveOwnMovements(userId, DATA.getOwnMovements(userId).filter(x => x.id !== id));
       renderContent();
-      showToast("Удалено");
+      showToast("Удалено — можно вернуть в «Недавно удалённых»");
     } else if (DATA.isAdmin()) {
       // Общий элемент удаляет только админ — из общей базы (оптимистично + БД).
-      refAdminDeleteShared(kind, item).then(() => { renderContent(); showToast("Удалено из общей базы"); })
+      // В корзину кладём строку атласа + её связи, чтобы восстановление вернуло и то, и другое.
+      const a0 = DATA.atlasSnapshot();
+      const atlasItem = (kind === "muscle" ? a0.muscles : a0.categories).find(x => x.id === id) || item;
+      const links = a0.muscleCategoryLinks.filter(l => kind === "muscle" ? l.muscle === item.name : l.category === item.name);
+      Trash.push(userId, { type: kind, label: item.name, sub: `${label} (общая)`, data: { shared: true, item: JSON.parse(JSON.stringify(atlasItem)), links: JSON.parse(JSON.stringify(links)) } });
+      refAdminDeleteShared(kind, item).then(() => { renderContent(); showToast("Удалено — можно вернуть в «Недавно удалённых»"); })
         .catch(err => { showToast("Не удалось удалить: " + (err && err.message || err)); });
     }
   }
@@ -6506,15 +6712,19 @@ function tplStartWorkout(id) {
 
 function deleteTemplateWithUndo(id) {
   const userId = DATA.getCurrentUser();
-  const snapshot = [...DATA.getTemplates(userId)];
-  DATA.deleteTemplate(userId, id);
-  SyncQueue.push("template:delete", { templateId: id });
-  renderTemplatesList();
-  showUndoToast("Шаблон удалён", () => {
-    DATA.saveTemplates(userId, snapshot);
-    SyncQueue.push("template:create", {}); // повторно зальёт список шаблонов
-    renderTemplatesList();
-    showToast("Восстановлено");
+  const tpl = DATA.getTemplates(userId).find(t => t.id === id);
+  if (!tpl) return;
+  openConfirmModal({
+    title: "Удалить шаблон?",
+    message: `«${tpl.name || "Шаблон"}» будет удалён. Вернуть можно в настройках → «Недавно удалённые».`,
+    confirmLabel: "Удалить",
+    onConfirm: () => {
+      Trash.push(userId, { type: "template", label: tpl.name || "Шаблон", sub: "Шаблон", data: { template: JSON.parse(JSON.stringify(tpl)) } });
+      DATA.deleteTemplate(userId, id);
+      SyncQueue.push("template:delete", { templateId: id });
+      renderTemplatesList();
+      showToast("Удалено — можно вернуть в «Недавно удалённых»");
+    },
   });
 }
 
@@ -6708,14 +6918,11 @@ function wireTplCardSwipe(wrap, id) {
     active = false;
     if (!horiz) return;
     if (dx <= -DEL) {
-      row.style.transition = "transform 0.16s ease";
-      row.style.transform = "translateX(-110%)";
-      wrap.style.height = wrap.offsetHeight + "px";
-      requestAnimationFrame(() => {
-        wrap.style.transition = "height 0.18s ease, opacity 0.18s ease";
-        wrap.style.height = "0"; wrap.style.opacity = "0";
-      });
-      setTimeout(() => deleteTemplateWithUndo(id), 200);
+      // Возврат карточки + подтверждение (удаление/корзина внутри).
+      row.style.transition = "transform 0.18s ease"; row.style.transform = "";
+      wrap.classList.remove("will-delete");
+      setTimeout(() => wrap.classList.remove("swiping"), 200);
+      deleteTemplateWithUndo(id);
     } else {
       row.style.transition = "transform 0.18s ease";
       row.style.transform = "";
