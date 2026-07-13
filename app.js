@@ -3677,6 +3677,7 @@ function renderExercisesList(query) {
     });
     const rows = sorted.map(ex => `
       <div class="ex-row-wrap" data-id="${escHtml(ex.id)}" data-cat="${escHtml(cat)}">
+        <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
         <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
         <div class="ex-row tappable" data-id="${escHtml(ex.id)}"${accentStyle}>
           <span class="ex-row-body">
@@ -3768,23 +3769,24 @@ function wireExRowSwipe(wrap, userId) {
     if (!decided) {
       if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
       decided = true;
-      horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+      horiz = Math.abs(mx) > Math.abs(my);
       if (!horiz) { active = false; return; }
       wrap.classList.add("swiping");
       try { row.setPointerCapture(e.pointerId); } catch {}
     }
     if (!horiz) return;
-    dx = Math.max(-MAX, Math.min(0, mx));
-    if (dx < -4) didSwipe = true;
+    dx = Math.max(-MAX, Math.min(MAX, mx));
+    if (Math.abs(dx) > 4) didSwipe = true;
     row.style.transform = `translateX(${dx}px)`;
     wrap.classList.toggle("will-delete", dx <= -DEL);
+    wrap.classList.toggle("will-edit", dx >= DEL);
   });
   // Во время горизонтального свайпа гасим вертикальный скролл (п.2).
   row.addEventListener("touchmove", e => {
     if (!active) return;
     const t = e.touches[0]; if (!t) return;
     const mx = t.clientX - sx, my = t.clientY - sy;
-    if (horiz || (Math.abs(mx) >= 8 && mx < 0 && Math.abs(mx) > Math.abs(my))) {
+    if (horiz || (Math.abs(mx) >= 8 && Math.abs(mx) > Math.abs(my))) {
       if (e.cancelable) e.preventDefault();
     }
   }, { passive: false });
@@ -3817,10 +3819,16 @@ function wireExRowSwipe(wrap, userId) {
           showToast("Восстановлено");
         });
       }, 200);
+    } else if (dx >= DEL) {
+      row.style.transition = "transform 0.18s ease";
+      row.style.transform = "";
+      wrap.classList.remove("will-edit");
+      setTimeout(() => wrap.classList.remove("swiping"), 200);
+      openExerciseForm(exId);
     } else {
       row.style.transition = "transform 0.18s ease";
       row.style.transform = "";
-      wrap.classList.remove("will-delete");
+      wrap.classList.remove("will-delete", "will-edit");
       setTimeout(() => wrap.classList.remove("swiping"), 200);
     }
   };
@@ -3970,6 +3978,7 @@ $("exercises-done-btn").addEventListener("click", exitExListEditMode);
 
 /* — Экран деталей упражнения: медиа, рабочие мышцы, техника, действия — */
 let _detailExerciseId = null;
+let _exdReturnScreen = "exercises";
 
 function isHttpUrl(url) {
   return /^https?:\/\//i.test((url || "").trim());
@@ -3981,12 +3990,12 @@ function splitMuscles(str) {
   return (str || "").split(",").map(s => s.trim()).filter(Boolean);
 }
 
-function openExerciseDetail(exerciseId) {
+function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   const userId = DATA.getCurrentUser();
   const ex = DATA.getVisibleExercises(userId).find(e => e.id === exerciseId);
   if (!ex) return;
   _detailExerciseId = exerciseId;
-  const otherUser = DATA.USERS.find(u => u.id !== userId);
+  _exdReturnScreen = returnScreen;
 
   const color = DATA.getCategoryColor(userId, ex.cat);
   $("exd-title").textContent = ex.name;
@@ -4101,29 +4110,12 @@ function openExerciseDetail(exerciseId) {
   const body = metaSection + movementsSection + musclesSection + stepsSection
     + mistakesSection + differencesSection + extraSection + contraSection + refSection + tipSection;
   $("exd-body").innerHTML = mediaHtml +
-    (body || `<p class="exd-empty">Техника и мышцы пока не заполнены — нажми «Править», чтобы добавить.</p>`);
-
-  // Кнопка «Поделиться» имеет смысл только если есть второй пользователь.
-  const shareBtn = $("exd-share-btn");
-  shareBtn.style.display = otherUser ? "" : "none";
-  shareBtn.title = otherUser ? `Поделиться с ${otherUser.name}` : "Поделиться";
-
-  $("exd-edit-btn").onclick = () => openExerciseForm(exerciseId);
-
-  shareBtn.onclick = async () => {
-    if (!otherUser) return;
-    shareBtn.disabled = true;
-    const result = await SyncQueue.shareExercise(exerciseId, userId, otherUser.id);
-    shareBtn.disabled = false;
-    if (result === "shared")    showToast(`Упражнение передано ${otherUser.name}`);
-    if (result === "duplicate") showToast(`У ${otherUser.name} уже есть такое упражнение`);
-    if (result === "not_found") showToast("Упражнение не найдено");
-  };
+    (body || `<p class="exd-empty">Техника и мышцы пока не заполнены.</p>`);
 
   goToScreen("exerciseDetail");
 }
 
-$("exd-back-btn").addEventListener("click", () => goToScreen("exercises"));
+$("exd-back-btn").addEventListener("click", () => goToScreen(_exdReturnScreen));
 
 // Единое поведение шторки (bottom-sheet): закрытие ТОЛЬКО перетаскиванием
 // верхней зоны (dragZone — обычно ручка+шапка), а не из любой точки — иначе
@@ -4187,10 +4179,12 @@ function muscleExerciseRoles(userId, muscleName) {
   return byRole;
 }
 
-function openMuscleDetailScreen(muscleId) {
+let _msdReturnScreen = "exercises";
+function openMuscleDetailScreen(muscleId, returnScreen = "exercises") {
   const userId = DATA.getCurrentUser();
   const m = DATA.refMuscles(userId).find(x => x.id === muscleId);
   if (!m) return;
+  _msdReturnScreen = returnScreen;
 
   $("msd-title").textContent = m.name;
   const color = DATA.getCategoryColor(userId, m.group);
@@ -4228,12 +4222,12 @@ function openMuscleDetailScreen(muscleId) {
   const editBtn = $("msd-edit-btn");
   const canEdit = refCanEdit(m);
   editBtn.style.display = canEdit ? "" : "none";
-  editBtn.onclick = () => openMuscleForm(m, () => openMuscleDetailScreen(muscleId));
+  editBtn.onclick = () => openMuscleForm(m, () => openMuscleDetailScreen(muscleId, _msdReturnScreen));
 
   goToScreen("muscleDetail");
 }
 
-$("msd-back-btn").addEventListener("click", () => goToScreen("exercises"));
+$("msd-back-btn").addEventListener("click", () => goToScreen(_msdReturnScreen));
 
 // «Отдельное окно» со списком СВОИХ упражнений, где эта мышца работает —
 // попасть сюда можно только с экрана мышцы (кнопка в футере). Модалка (не
@@ -4268,7 +4262,7 @@ function openMuscleExercisesModal(muscleName) {
     card.addEventListener("click", () => {
       const exId = card.dataset.id;
       close();
-      setTimeout(() => openExerciseDetail(exId), 260);
+      setTimeout(() => openExerciseDetail(exId, "muscleDetail"), 260);
     });
   });
 
@@ -4497,12 +4491,15 @@ function openReferenceSheet(initialTab, focusName) {
   }
 
   function wireCatGesture(wrap, cat) {
-    let holdTimer = null, sx = 0, sy = 0, moved = false, dragStarted = false;
+    let holdTimer = null, sx = 0, sy = 0, moved = false, dragStarted = false, skip = false;
     const DELAY = () => curEditMode() ? 150 : 430;
     const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
 
     const begin = (x, y, target) => {
-      if (target && target.closest("input")) return;
+      // Тап внутри развёрнутого состава группы (ячейки мышц/движений) —
+      // это переход по ссылке (crossNav), а не сворачивание группы.
+      skip = !!(target && target.closest(".cat-item-detail-block, input"));
+      if (skip) return;
       moved = false; dragStarted = false; sx = x; sy = y;
       clearHold();
       holdTimer = setTimeout(() => {
@@ -4514,6 +4511,7 @@ function openReferenceSheet(initialTab, focusName) {
       }, DELAY());
     };
     const move = (x, y, e) => {
+      if (skip) return;
       if (catDrag && catDrag.wrap === wrap) {
         if (e && e.cancelable) e.preventDefault();
         moveCatDrag(y); return;
@@ -4521,6 +4519,7 @@ function openReferenceSheet(initialTab, focusName) {
       if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); }
     };
     const finish = () => {
+      if (skip) { skip = false; return; }
       clearHold();
       if (catDrag && catDrag.wrap === wrap) { endCatDrag(); return; }
       // Обычный тап (не свайп, не драг, не правка) — показать инфо о группе (п.9).
@@ -4875,7 +4874,7 @@ function openReferenceSheet(initialTab, focusName) {
           const color = DATA.getCategoryColor(userId, c);
           const expanded = !editMode && groupExpanded.has(c);
           return `
-            <div class="cat-item-wrap${expanded ? " expanded" : ""}" data-cat="${escHtml(c)}">
+            <div class="cat-item-wrap${expanded ? " expanded" : ""}" data-cat="${escHtml(c)}" style="--cat-color:${escHtml(color)}">
               <div class="cat-item-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
               <div class="cat-item-delete">${SVG_DEL} Удалить</div>
               <div class="cat-item" data-cat="${escHtml(c)}" style="--cat-color:${escHtml(color)}">

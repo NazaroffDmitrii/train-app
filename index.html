@@ -1403,7 +1403,7 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   opacity: 0; transition: opacity 0.12s ease;
 }
 .ref-card-del { justify-content: flex-end; background: var(--red); color: #fff; }
-.ref-card-edit-slot { justify-content: flex-start; background: var(--accent); color: #fff; }
+.ref-card-edit-slot { justify-content: flex-start; background: var(--grey); color: #fff; }
 .ref-card-del svg, .ref-card-edit-slot svg { width: 18px; height: 18px; }
 .ref-card-wrap.swiping .ref-card-del,
 .ref-card-wrap.swiping .ref-card-edit-slot { opacity: 0.92; }
@@ -1946,7 +1946,7 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   transition: opacity 0.12s ease;
 }
 .cat-item-delete { justify-content: flex-end; padding-right: 16px; background: var(--red); color: #fff; }
-.cat-item-edit-slot { justify-content: flex-start; padding-left: 16px; background: var(--accent); color: #fff; }
+.cat-item-edit-slot { justify-content: flex-start; padding-left: 16px; background: var(--grey); color: #fff; }
 .cat-item-delete svg, .cat-item-edit-slot svg { width: 17px; height: 17px; }
 .cat-item-wrap.swiping .cat-item-delete,
 .cat-item-wrap.swiping .cat-item-edit-slot { opacity: 0.9; }
@@ -1969,7 +1969,9 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   position: relative; z-index: 1; padding-left: 16px; padding-right: 16px; padding-bottom: 14px;
 }
 .cat-item-wrap.expanded .cat-item-detail-block {
-  background: var(--panel-hi); border: 1px solid var(--border-subtle); border-top: none;
+  background: var(--panel-hi);
+  border: 1px solid var(--border-subtle); border-top: none;
+  border-left: 3px solid var(--cat-color, transparent);
   border-radius: 0 0 var(--radius-md) var(--radius-md); margin-top: -1px; padding-top: 10px;
 }
 .cat-sheet-list.cat-editing .cat-item-wrap:not(.dragging) {
