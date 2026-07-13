@@ -3778,6 +3778,8 @@ function wireExRowSwipe(wrap, userId) {
     dx = Math.max(-MAX, Math.min(MAX, mx));
     if (Math.abs(dx) > 4) didSwipe = true;
     row.style.transform = `translateX(${dx}px)`;
+    wrap.classList.toggle("swiping-left", dx < 0);
+    wrap.classList.toggle("swiping-right", dx > 0);
     wrap.classList.toggle("will-delete", dx <= -DEL);
     wrap.classList.toggle("will-edit", dx >= DEL);
   });
@@ -3822,13 +3824,13 @@ function wireExRowSwipe(wrap, userId) {
     } else if (dx >= DEL) {
       row.style.transition = "transform 0.18s ease";
       row.style.transform = "";
-      wrap.classList.remove("will-edit");
+      wrap.classList.remove("will-edit", "swiping-left", "swiping-right");
       setTimeout(() => wrap.classList.remove("swiping"), 200);
       openExerciseForm(exId);
     } else {
       row.style.transition = "transform 0.18s ease";
       row.style.transform = "";
-      wrap.classList.remove("will-delete", "will-edit");
+      wrap.classList.remove("will-delete", "will-edit", "swiping-left", "swiping-right");
       setTimeout(() => wrap.classList.remove("swiping"), 200);
     }
   };
@@ -4228,21 +4230,29 @@ function openMuscleDetailScreen(muscleId, returnScreen = "exercises") {
 }
 
 // Возврат из карточки мышцы. Обычно это имя экрана; но если мышца открыта ИЗ
-// шторки-справочника, _msdReturnScreen — функция, которая заново открывает
-// шторку на вкладке «Мышцы» (поверх экрана «Упражнения»), чтобы «назад» вернул
-// туда, откуда пришли, а не сразу в общий список (см. сценарий п.5).
+// шторки-справочника, _msdReturnScreen — функция, которая ПОКАЗЫВАЕТ обратно ту
+// же самую (спрятанную, а не закрытую) шторку — с сохранённой вкладкой,
+// раскрытой группой и скроллом, — чтобы «назад» вернул ровно туда, откуда пришли
+// (см. сценарий п.5).
 $("msd-back-btn").addEventListener("click", () => {
   if (typeof _msdReturnScreen === "function") _msdReturnScreen();
   else goToScreen(_msdReturnScreen);
 });
 
-// Переоткрыть шторку-справочник поверх экрана «Упражнения» (используется как
-// «назад» из карточки мышцы/движения, открытой из шторки). Сначала активируем
-// экран «Упражнения» под шторкой — тогда сворачивание шторки вернёт именно
-// туда, а не на карточку, с которой пришли.
-function reopenRefSheet(tab) {
-  goToScreen("exercises");
-  openReferenceSheet(tab);
+// Шторка-справочник, открытая в данный момент (для скрытия/показа при заходе в
+// карточку мышцы и возврате). Ставится в openReferenceSheet, снимается в close().
+let _refSheetEl = null;
+// Спрятать шторку (сохранив её DOM и состояние), уходя в карточку мышцы.
+function hideRefSheet() { if (_refSheetEl) { _refSheetEl.style.display = "none"; return true; } return false; }
+// Показать шторку обратно на «назад»: активируем «Упражнения» под ней, затем
+// снимаем display:none. Если шторки уже нет (была закрыта) — просто «Упражнения».
+function refSheetBackReturn() {
+  if (_refSheetEl && document.body.contains(_refSheetEl)) {
+    goToScreen("exercises");
+    _refSheetEl.style.display = "";
+  } else {
+    goToScreen("exercises");
+  }
 }
 
 // «Отдельное окно» со списком СВОИХ упражнений, где эта мышца работает —
@@ -4317,8 +4327,10 @@ function openReferenceSheet(initialTab, focusName) {
   backdrop.className = "bottom-sheet-backdrop";
   // iOS: click не стреляет по non-interactive div без cursor:pointer
   backdrop.style.cursor = "pointer";
+  _refSheetEl = backdrop;  // для скрытия/показа при заходе в карточку мышцы (п.5)
 
   function close() {
+    if (_refSheetEl === backdrop) _refSheetEl = null;
     backdrop.classList.remove("open");
     setTimeout(() => backdrop.remove(), 300);
   }
@@ -4461,6 +4473,8 @@ function openReferenceSheet(initialTab, focusName) {
       dx = Math.max(-MAX, Math.min(MAX, mx));
       if (Math.abs(dx) > 4) swiped = true;
       item.style.transform = `translateX(${dx}px)`;
+      wrap.classList.toggle("swiping-left", dx < 0);
+      wrap.classList.toggle("swiping-right", dx > 0);
       wrap.classList.toggle("will-delete", dx <= -DEL);
       wrap.classList.toggle("will-edit", dx >= DEL);
     });
@@ -4488,14 +4502,14 @@ function openReferenceSheet(initialTab, focusName) {
         setTimeout(() => removeCategory(cat), 180);
       } else if (dx >= DEL) {
         item.style.transition = "transform 0.18s ease"; item.style.transform = "";
-        wrap.classList.remove("will-edit");
+        wrap.classList.remove("will-edit", "swiping-left", "swiping-right");
         setTimeout(() => wrap.classList.remove("swiping"), 200);
         const nameEl = wrap.querySelector(".cat-item-name-text");
         if (nameEl) startCatRename(wrap, cat, nameEl);
       } else {
         item.style.transition = "transform 0.18s ease";
         item.style.transform = "";
-        wrap.classList.remove("will-delete", "will-edit");
+        wrap.classList.remove("will-delete", "will-edit", "swiping-left", "swiping-right");
         setTimeout(() => wrap.classList.remove("swiping"), 200);
       }
     };
@@ -4696,7 +4710,7 @@ function openReferenceSheet(initialTab, focusName) {
       if (wrap.dataset.swiped) { delete wrap.dataset.swiped; return; }  // клик после свайпа глушим
       if (curEditMode()) return;                          // #5: тап в правке — ничего
       const kind = wrap.dataset.kind, id = wrap.dataset.id;
-      if (kind === "muscle") { close(); openMuscleDetailScreen(id, () => reopenRefSheet("muscles")); return; }
+      if (kind === "muscle") { hideRefSheet(); openMuscleDetailScreen(id, refSheetBackReturn); return; }
       const set = refExpanded.movements;
       set.has(id) ? set.delete(id) : set.add(id);        // разворот, без схлопывания других
       renderContent();
@@ -4729,6 +4743,8 @@ function openReferenceSheet(initialTab, focusName) {
       dx = Math.max(-MAX, Math.min(MAX, mx));
       if (Math.abs(dx) > 4) swiped = true;
       card.style.transform = `translateX(${dx}px)`;
+      wrap.classList.toggle("swiping-left", dx < 0);
+      wrap.classList.toggle("swiping-right", dx > 0);
       wrap.classList.toggle("will-delete", dx <= -DEL);
       wrap.classList.toggle("will-edit", dx >= DEL);
     });
@@ -4746,12 +4762,12 @@ function openReferenceSheet(initialTab, focusName) {
         setTimeout(() => { const canDel = refItemIsOwn({ id: wrap.dataset.id }) || DATA.isAdmin(); (canDel ? deleteRefItem : hideRefItem)(wrap.dataset.kind, wrap.dataset.id); }, 170);
       } else if (dx >= DEL) {
         card.style.transition = "transform 0.18s ease"; card.style.transform = "";
-        wrap.classList.remove("will-edit");
+        wrap.classList.remove("will-edit", "swiping-left", "swiping-right");
         setTimeout(() => wrap.classList.remove("swiping"), 200);
         openRefEditor(wrap.dataset.kind, wrap.dataset.id);
       } else {
         card.style.transition = "transform 0.18s ease"; card.style.transform = "";
-        wrap.classList.remove("will-delete", "will-edit");
+        wrap.classList.remove("will-delete", "will-edit", "swiping-left", "swiping-right");
         setTimeout(() => wrap.classList.remove("swiping"), 200);
       }
     };
@@ -4860,7 +4876,7 @@ function openReferenceSheet(initialTab, focusName) {
   function crossNav(gotoKind, name) {
     if (gotoKind === "muscle") {
       const found = DATA.refMuscles(userId).find(x => x.name === name);
-      if (found) { close(); openMuscleDetailScreen(found.id, () => reopenRefSheet("muscles")); }
+      if (found) { hideRefSheet(); openMuscleDetailScreen(found.id, refSheetBackReturn); }
       return;
     }
     const found = DATA.refMovements(userId).find(x => x.name === name);
@@ -4953,8 +4969,8 @@ function openReferenceSheet(initialTab, focusName) {
         if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
       });
     } else if (found && refTab === "muscles") {
-      close();
-      openMuscleDetailScreen(found.id, () => reopenRefSheet("muscles"));
+      hideRefSheet();
+      openMuscleDetailScreen(found.id, refSheetBackReturn);
     }
   }
 }
@@ -5064,32 +5080,61 @@ function refChipSelect(container, options, selected, multi) {
   return { get: () => [...sel], getOne: () => [...sel][0] || "" };
 }
 
-// Выпадающий выбор для формы упражнения (вместо длинного перечисления чипов).
-// multi=true: выбранные показываются чипами с ✕, снизу — селект «＋ добавить»
-// (после выбора остаётся, пока есть неиспользованные варианты — так можно
-// добавить несколько). multi=false: один селект без добавления (одиночный выбор).
+// Выпадающий выбор для форм (вместо длинного перечисления чипов). Кастомный
+// виджет: список раскрывается ВНИЗ прямо под кнопкой-триггером (инлайн, не
+// нативный <select>, который всплывал в произвольном месте).
+// multi=true: выбранные показываются чипами с ✕, снизу — кнопка «＋ добавить»,
+// раскрывающая оставшиеся варианты (так можно добавить несколько).
+// multi=false: один триггер с текущим значением; после выбора список сворачивается.
 function refDropdownSelect(container, options, selected, multi) {
-  const sel = multi ? [...new Set(selected)] : (selected[0] != null ? [selected[0]] : []);
+  const sel = multi ? [...new Set(selected)] : (selected[0] != null && selected[0] !== "" ? [selected[0]] : []);
+  let open = false;
+
+  // Клик мимо — свернуть открытый список (снимаем слушатель, когда форма закрыта).
+  const onDocPointer = (e) => {
+    if (!document.body.contains(container)) { document.removeEventListener("pointerdown", onDocPointer, true); return; }
+    if (open && !container.contains(e.target)) { open = false; render(); }
+  };
+  document.addEventListener("pointerdown", onDocPointer, true);
+
   const render = () => {
-    if (multi) {
-      const chips = sel.map(v =>
-        `<span class="ef-dd-chip" data-v="${escHtml(v)}">${escHtml(v)}<button type="button" class="ef-dd-x" aria-label="Убрать">×</button></span>`).join("");
-      const rest = options.filter(o => !sel.includes(o));
-      const addSel = rest.length
-        ? `<select class="ef-dd-select ef-dd-add"><option value="">＋ добавить…</option>${rest.map(o => `<option value="${escHtml(o)}">${escHtml(o)}</option>`).join("")}</select>`
-        : "";
-      container.innerHTML = (chips ? `<div class="ef-dd-chips">${chips}</div>` : "") + addSel;
-      const add = container.querySelector(".ef-dd-add");
-      if (add) add.addEventListener("change", () => { if (add.value) { sel.push(add.value); render(); } });
-      container.querySelectorAll(".ef-dd-x").forEach(x => x.addEventListener("click", () => {
-        const v = x.parentElement.dataset.v;
-        const i = sel.indexOf(v); if (i !== -1) sel.splice(i, 1); render();
-      }));
-    } else {
-      container.innerHTML =
-        `<select class="ef-dd-select"><option value="">— не выбрано —</option>${options.map(o => `<option value="${escHtml(o)}"${o === sel[0] ? " selected" : ""}>${escHtml(o)}</option>`).join("")}</select>`;
-      container.querySelector(".ef-dd-select").addEventListener("change", e => { sel[0] = e.target.value; });
+    const rest = options.filter(o => !sel.includes(o));
+    let html = "";
+    if (multi && sel.length) {
+      html += `<div class="ef-dd-chips">` + sel.map(v =>
+        `<span class="ef-dd-chip" data-v="${escHtml(v)}">${escHtml(v)}<button type="button" class="ef-dd-x" aria-label="Убрать">×</button></span>`).join("") + `</div>`;
     }
+    const listOpts = multi ? rest : options;
+    const showTrigger = multi ? rest.length > 0 : true;
+    if (showTrigger) {
+      const label = multi ? "＋ добавить…" : (sel[0] || "— не выбрано —");
+      const isPlaceholder = multi || !sel[0];
+      html += `<div class="ef-dd-field${open ? " open" : ""}">
+        <button type="button" class="ef-dd-trigger${isPlaceholder ? " placeholder" : ""}">
+          <span class="ef-dd-trigger-label">${escHtml(label)}</span><span class="ef-dd-caret">⌄</span>
+        </button>
+        ${open ? `<div class="ef-dd-panel">${
+          listOpts.length
+            ? listOpts.map(o => `<button type="button" class="ef-dd-opt${!multi && o === sel[0] ? " sel" : ""}" data-v="${escHtml(o)}">${escHtml(o)}</button>`).join("")
+            : `<div class="ef-dd-empty">Все добавлены</div>`
+        }</div>` : ""}
+      </div>`;
+    }
+    container.innerHTML = html;
+
+    const trig = container.querySelector(".ef-dd-trigger");
+    if (trig) trig.addEventListener("click", e => { e.stopPropagation(); open = !open; render(); });
+    container.querySelectorAll(".ef-dd-opt").forEach(opt => opt.addEventListener("click", e => {
+      e.stopPropagation();
+      const v = opt.dataset.v;
+      if (multi) { if (!sel.includes(v)) sel.push(v); } else { sel[0] = v; }
+      open = false; render();
+    }));
+    container.querySelectorAll(".ef-dd-x").forEach(x => x.addEventListener("click", e => {
+      e.stopPropagation();
+      const v = x.parentElement.dataset.v;
+      const i = sel.indexOf(v); if (i !== -1) sel.splice(i, 1); render();
+    }));
   };
   render();
   return { get: () => [...sel], getOne: () => sel[0] || "" };
@@ -5113,12 +5158,12 @@ function openMuscleForm(existing, onSaved) {
       ${readOnly ? `<p class="ref-form-note">Общую мышцу может менять только администратор. Вы можете её скрыть у себя.</p>` : ""}
       <div class="ex-form-field"><label class="ex-form-label">Название</label>
         <input class="ex-form-input" id="rf-name" type="text" placeholder="Например, Большая грудная" value="${escHtml(existing ? existing.name : "")}"></div>
-      <div class="ex-form-field"><label class="ex-form-label">Группа</label><div class="ex-form-chips" id="rf-groups"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Группа</label><div class="ex-form-dd" id="rf-groups"></div></div>
       <div class="ex-form-field"><button type="button" class="ref-toggle" id="rf-visible" aria-pressed="${existing && existing.visible ? "true" : "false"}"><span class="ref-toggle-dot"></span>Поверхностная — рост виден внешне</button></div>
       <div class="ex-form-field"><label class="ex-form-label">Пучки</label>
         <div class="ref-chips-edit" id="rf-bundles"></div>
         <input class="ex-form-input" id="rf-bundle-add" type="text" placeholder="+ добавить пучок, Enter"></div>
-      <div class="ex-form-field"><label class="ex-form-label">Участвует в движениях</label><div class="ex-form-chips" id="rf-moves"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Участвует в движениях</label><div class="ex-form-dd" id="rf-moves"></div></div>
       <div class="modal-form-actions">
         <button class="btn-chip" data-act="cancel">Закрыть</button>
         ${readOnly ? "" : `<button class="btn-chip primary" data-act="save">Сохранить</button>`}
@@ -5127,8 +5172,8 @@ function openMuscleForm(existing, onSaved) {
   document.body.appendChild(bd);
   bd.style.zIndex = "60";
 
-  const groupSel = refChipSelect(bd.querySelector("#rf-groups"), groups, existing ? [existing.group] : [groups[0]], false);
-  const moveSel = refChipSelect(bd.querySelector("#rf-moves"), allMoves, curMoves, true);
+  const groupSel = refDropdownSelect(bd.querySelector("#rf-groups"), groups, existing ? [existing.group] : [groups[0]], false);
+  const moveSel = refDropdownSelect(bd.querySelector("#rf-moves"), allMoves, curMoves, true);
   const visBtn = bd.querySelector("#rf-visible");
   visBtn.addEventListener("click", () => visBtn.setAttribute("aria-pressed", visBtn.getAttribute("aria-pressed") === "true" ? "false" : "true"));
 
@@ -5144,7 +5189,7 @@ function openMuscleForm(existing, onSaved) {
     if (e.key === "Enter") { e.preventDefault(); const v = bundleAdd.value.trim(); if (v) { bundles.push(v); bundleAdd.value = ""; renderBundles(); } }
   });
 
-  if (readOnly) bd.querySelectorAll("input,button.ex-form-chip,#rf-visible,#rf-bundle-add").forEach(el => { el.disabled = true; });
+  if (readOnly) bd.querySelectorAll("input,button.ex-form-chip,.ef-dd-trigger,.ef-dd-x,#rf-visible,#rf-bundle-add").forEach(el => { el.disabled = true; });
 
   const close = () => bd.remove();
   bd.addEventListener("click", e => { if (e.target === bd) close(); });
@@ -5178,9 +5223,9 @@ function openMovementForm(existing, onSaved) {
       ${readOnly ? `<p class="ref-form-note">Общее движение может менять только администратор. Вы можете его скрыть у себя.</p>` : ""}
       <div class="ex-form-field"><label class="ex-form-label">Название</label>
         <input class="ex-form-input" id="rf-name" type="text" placeholder="Например, Движение рук вперёд" value="${escHtml(existing ? existing.name : "")}"></div>
-      <div class="ex-form-field"><label class="ex-form-label">Группа</label><div class="ex-form-chips" id="rf-groups"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips" id="rf-type"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Работающие мышцы</label><div class="ex-form-chips" id="rf-muscles"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Группа</label><div class="ex-form-dd" id="rf-groups"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips ex-form-2col" id="rf-type"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Работающие мышцы</label><div class="ex-form-dd" id="rf-muscles"></div></div>
       <div class="modal-form-actions">
         <button class="btn-chip" data-act="cancel">Закрыть</button>
         ${readOnly ? "" : `<button class="btn-chip primary" data-act="save">Сохранить</button>`}
@@ -5189,11 +5234,11 @@ function openMovementForm(existing, onSaved) {
   document.body.appendChild(bd);
   bd.style.zIndex = "60";
 
-  const groupSel = refChipSelect(bd.querySelector("#rf-groups"), groups, existing ? [existing.group] : [groups[0]], false);
+  const groupSel = refDropdownSelect(bd.querySelector("#rf-groups"), groups, existing ? [existing.group] : [groups[0]], false);
   const typeSel = refChipSelect(bd.querySelector("#rf-type"), ["База", "Опция"], [type], false);
-  const muscleSel = refChipSelect(bd.querySelector("#rf-muscles"), allMuscles, curMuscles, true);
+  const muscleSel = refDropdownSelect(bd.querySelector("#rf-muscles"), allMuscles, curMuscles, true);
 
-  if (readOnly) bd.querySelectorAll("input,button.ex-form-chip").forEach(el => { el.disabled = true; });
+  if (readOnly) bd.querySelectorAll("input,button.ex-form-chip,.ef-dd-trigger,.ef-dd-x").forEach(el => { el.disabled = true; });
 
   const close = () => bd.remove();
   bd.addEventListener("click", e => { if (e.target === bd) close(); });
@@ -5361,7 +5406,7 @@ function openExerciseForm(exerciseId) {
     }
     close();
     renderExercisesList(exercisesSearch.value);
-    if (savedId && SCREENS.exerciseDetail.classList.contains("active")) openExerciseDetail(savedId);
+    if (savedId && SCREENS.exerciseDetail.classList.contains("active")) openExerciseDetail(savedId, _exdReturnScreen);
   });
 }
 

@@ -1405,8 +1405,8 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 .ref-card-del { justify-content: flex-end; background: var(--red); color: #fff; }
 .ref-card-edit-slot { justify-content: flex-start; background: var(--grey); color: #fff; }
 .ref-card-del svg, .ref-card-edit-slot svg { width: 18px; height: 18px; }
-.ref-card-wrap.swiping .ref-card-del,
-.ref-card-wrap.swiping .ref-card-edit-slot { opacity: 0.92; }
+.ref-card-wrap.swiping-left .ref-card-del { opacity: 0.92; }
+.ref-card-wrap.swiping-right .ref-card-edit-slot { opacity: 0.92; }
 .ref-card-wrap.will-delete .ref-card-del { opacity: 1; }
 .ref-card-wrap.will-edit .ref-card-edit-slot { opacity: 1; }
 .ref-card-wrap .ref-card { position: relative; z-index: 1; }
@@ -1651,7 +1651,7 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   transition: opacity 0.12s ease;
 }
 .ex-row-delete svg { width: 17px; height: 17px; }
-.ex-row-wrap.swiping .ex-row-delete { opacity: 0.9; }
+.ex-row-wrap.swiping-left .ex-row-delete { opacity: 0.9; }
 .ex-row-wrap.will-delete .ex-row-delete { opacity: 1; }
 .ex-row-edit-slot {
   position: absolute; inset: 0; z-index: 0;
@@ -1661,7 +1661,10 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   transition: opacity 0.12s ease;
 }
 .ex-row-edit-slot svg { width: 17px; height: 17px; }
-.ex-row-wrap.swiping .ex-row-edit-slot { opacity: 0.9; }
+/* Плашки перекрывают друг друга (обе inset:0). Показываем ТОЛЬКО ту, что
+   соответствует направлению свайпа — иначе красная «Удалить» (поверх) перекрыла
+   бы серую «Изменить» при свайпе вправо. */
+.ex-row-wrap.swiping-right .ex-row-edit-slot { opacity: 0.9; }
 .ex-row-wrap.will-edit .ex-row-edit-slot { opacity: 1; }
 .ex-row {
   display: flex; align-items: center; gap: 12px;
@@ -1717,17 +1720,33 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 /* «Тип» — две равные кнопки в два столбца во всю ширину. */
 .ex-form-chips.ex-form-2col { display: flex; gap: 8px; }
 .ex-form-chips.ex-form-2col .ex-form-chip { flex: 1; justify-content: center; text-align: center; padding: 12px; font-size: 14px; }
-/* Выпадающие поля формы упражнения (Категория/Уровень/мышцы/движения). */
+/* Выпадающие поля форм (Категория/Уровень/мышцы/движения) — кастомный дропдаун,
+   раскрывается вниз прямо под кнопкой. */
 .ex-form-dd { display: flex; flex-direction: column; gap: 8px; }
-.ex-form-dd .ef-dd-select {
-  width: 100%; padding: 11px 14px; border-radius: 12px; font-size: 14.5px;
+.ex-form-dd .ef-dd-field { display: flex; flex-direction: column; }
+.ex-form-dd .ef-dd-trigger {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 11px 14px; border-radius: 12px; font-size: 14.5px; text-align: left;
   background: var(--panel-raised); border: 1px solid var(--border-subtle); color: var(--text-primary);
-  -webkit-appearance: none; appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b8b97' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
-  background-repeat: no-repeat; background-position: right 12px center; padding-right: 38px;
 }
-.ex-form-dd .ef-dd-select:focus { border-color: var(--accent); outline: none; }
-.ex-form-dd .ef-dd-add { color: var(--accent-bright); }
+.ex-form-dd .ef-dd-trigger.placeholder { color: var(--accent-bright); }
+.ex-form-dd .ef-dd-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-form-dd .ef-dd-caret { flex: none; color: var(--text-tertiary); font-size: 16px; line-height: 1; transition: transform 0.15s ease; }
+.ex-form-dd .ef-dd-field.open .ef-dd-trigger { border-color: var(--accent); }
+.ex-form-dd .ef-dd-field.open .ef-dd-caret { transform: rotate(180deg); }
+.ex-form-dd .ef-dd-panel {
+  margin-top: 6px; max-height: 220px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px; padding: 4px;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle); border-radius: 12px;
+  scrollbar-width: none;
+}
+.ex-form-dd .ef-dd-panel::-webkit-scrollbar { display: none; }
+.ex-form-dd .ef-dd-opt {
+  text-align: left; padding: 10px 12px; border-radius: 9px; font-size: 14px; color: var(--text-secondary);
+}
+.ex-form-dd .ef-dd-opt:active { background: var(--panel-hi); }
+.ex-form-dd .ef-dd-opt.sel { background: var(--accent-soft); color: var(--accent-bright); font-weight: 650; }
+.ex-form-dd .ef-dd-empty { padding: 10px 12px; font-size: 13px; color: var(--text-tertiary); }
 .ex-form-dd .ef-dd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ex-form-dd .ef-dd-chip {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1973,8 +1992,8 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 .cat-item-delete { justify-content: flex-end; padding-right: 16px; background: var(--red); color: #fff; }
 .cat-item-edit-slot { justify-content: flex-start; padding-left: 16px; background: var(--grey); color: #fff; }
 .cat-item-delete svg, .cat-item-edit-slot svg { width: 17px; height: 17px; }
-.cat-item-wrap.swiping .cat-item-delete,
-.cat-item-wrap.swiping .cat-item-edit-slot { opacity: 0.9; }
+.cat-item-wrap.swiping-left .cat-item-delete { opacity: 0.9; }
+.cat-item-wrap.swiping-right .cat-item-edit-slot { opacity: 0.9; }
 .cat-item-wrap.will-delete .cat-item-delete { opacity: 1; }
 .cat-item-wrap.will-edit .cat-item-edit-slot { opacity: 1; }
 .cat-item { position: relative; z-index: 1; }
