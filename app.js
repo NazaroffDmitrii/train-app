@@ -1256,7 +1256,7 @@ window.addEventListener("pagehide", () => SyncQueue.flush());
 /* ==========================================================================
    Screen switching
    ========================================================================== */
-const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), constructor: $("screen-constructor") };
+const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), muscleDetail: $("screen-muscle-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), constructor: $("screen-constructor") };
 
 function goToScreen(name, opts = {}) {
   Object.values(SCREENS).forEach(s => s && s.classList.remove("active"));
@@ -3497,10 +3497,12 @@ function refHiddenSection(kind, hiddenItems) {
   return `<div class="ref-group-label ref-hidden-head">Скрытые · ${hiddenItems.length}</div>${cards}`;
 }
 
-// Карточка справочника с обёрткой для свайп-удаления — ровно как строки
-// упражнений (.ex-row-wrap): под карточкой лежит слот «Удалить/Скрыть»,
-// открывается свайпом влево. В обычном режиме тап разворачивает; в правке тап
-// открывает форму, долгое удержание — драг. meta — звезда (мышца) / бейдж (движение).
+// Карточка справочника с обёрткой для двустороннего свайпа — ровно как строки
+// упражнений: под карточкой лежат слоты «Изменить» (вправо) и «Удалить/Скрыть»
+// (влево). В обычном режиме тап по мышце открывает полноэкранную деталь, по
+// движению — раскрывает список мышц на месте. В правке тап ничего не делает —
+// правка только через свайп вправо (см. openReferenceSheet). meta — звезда
+// (мышца) / бейдж (движение).
 function refCardHtml(kind, m, opts) {
   const { editMode, expanded, color, detail, meta } = opts;
   const own = refItemIsOwn(m);
@@ -3508,6 +3510,7 @@ function refCardHtml(kind, m, opts) {
   const ownBadge = own ? `<span class="ref-own-badge">моё</span>` : "";
   const chev = editMode ? "" : `<span class="ref-card-chev">${expanded ? "⌄" : "›"}</span>`;
   return `<div class="ref-card-wrap" data-kind="${kind}" data-id="${escHtml(m.id)}">
+    <div class="ref-card-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
     <div class="ref-card-del">${canDelete ? SVG_REF_TRASH : SVG_REF_HIDE}<span>${canDelete ? "Удалить" : "Скрыть"}</span></div>
     <div class="ref-card${editMode ? " ref-card-editing" : " ref-card-tap"}${expanded ? " expanded" : ""}" style="border-left-color:${escHtml(color)}">
       <div class="ref-card-top"><span class="ref-card-name">${escHtml(m.name)}</span>${ownBadge}${meta || ""}${chev}</div>${detail}
@@ -3515,39 +3518,24 @@ function refCardHtml(kind, m, opts) {
   </div>`;
 }
 
-// Детали мышцы (разворот карточки): пучки + группа + движения, в которых
-// участвует (2-колоночные кликабельные ячейки → переход к движению).
-function muscleDetailHtml(m, moves) {
-  const bundles = (m.bundles || []).length
-    ? `<div class="ref-detail-label">Пучки</div><div class="ref-chips">${m.bundles.map(b => `<span class="ref-chip">${escHtml(b)}</span>`).join("")}</div>` : "";
-  const grp = `<div class="ref-detail-label">Группа</div><div class="ref-detail-val">${escHtml(m.group || "—")}</div>`;
-  const vis = `<div class="ref-detail-val ref-detail-muted">${m.visible ? "★ Поверхностная — рост виден внешне" : "Глубокая — рост внешне не виден"}</div>`;
-  const cells = moves.length
-    ? `<div class="ref-detail-label">Участвует в движениях</div><div class="ref-cells">${moves.map(mv => `<button class="ref-cell" data-goto="movement" data-name="${escHtml(mv)}">${escHtml(mv)}</button>`).join("")}</div>`
-    : `<div class="ref-detail-empty">Движения не заданы</div>`;
-  return `<div class="ref-card-detail">${grp}${vis}${bundles}${cells}</div>`;
-}
-
-// Детали движения (разворот): работающие мышцы, 2-колоночные кликабельные ячейки
-// (→ переход к деталке мышцы).
+// Детали движения (разворот, инлайн): только работающие мышцы, ОДНИМ столбцом
+// (тип уже показан бейджем в шапке карточки — не дублируем).
 function movementDetailHtml(mv, muscles) {
-  const badge = mv.type === "База" ? "Базовое движение" : "Опциональное движение";
   const cells = muscles.length
     ? `<div class="ref-detail-label">Работающие мышцы</div><div class="ref-cells">${muscles.map(mn => `<button class="ref-cell" data-goto="muscle" data-name="${escHtml(mn)}">${escHtml(mn)}</button>`).join("")}</div>`
     : `<div class="ref-detail-empty">Мышцы не заданы</div>`;
-  return `<div class="ref-card-detail"><div class="ref-detail-val ref-detail-muted">${badge}</div>${cells}</div>`;
+  return `<div class="ref-card-detail">${cells}</div>`;
 }
 
 // ── Вкладка «Мышцы» шторки-справочника — рендер в переданный контейнер ────────
-// Квадратик (не точка) перед группой; тап по карточке разворачивает подробности.
+// Квадратик (не точка) перед группой; тап по карточке открывает полноэкранную
+// деталь мышцы (анатомия) — см. openMuscleDetailScreen.
 function renderMusclesTab(container, query, opts) {
   opts = opts || {};
   const editMode = !!opts.editMode;
-  const expandedIds = opts.expandedIds || new Set();
   const userId = DATA.getCurrentUser();
   const q = (query || "").trim().toLowerCase();
   const muscles = DATA.refMuscles(userId);
-  const movesByMuscle = DATA.refMovesByMuscle(userId);
   const filtered = muscles.filter(m => !q || m.name.toLowerCase().includes(q)
     || (m.bundles || []).some(b => b.toLowerCase().includes(q)));
   const byGroup = {};
@@ -3560,9 +3548,7 @@ function renderMusclesTab(container, query, opts) {
     byGroup[g].sort((a, b) => oIdx(a.id) - oIdx(b.id));   // пользовательский порядок (drag)
     const cards = byGroup[g].map(m => {
       const star = m.visible ? `<span class="ref-star" title="Поверхностная — рост виден внешне">★</span>` : "";
-      const expanded = !editMode && expandedIds.has(m.id);
-      const detail = expanded ? muscleDetailHtml(m, [...(movesByMuscle[m.name] || [])]) : "";
-      return refCardHtml("muscle", m, { editMode, expanded, color, detail, meta: star });
+      return refCardHtml("muscle", m, { editMode, expanded: false, color, detail: "", meta: star });
     }).join("");
     return `<div class="ref-group-label"><span class="ref-sq" style="background:${escHtml(color)}"></span>${escHtml(g)}<span class="ref-count" style="margin-left:auto">${byGroup[g].length}</span></div>${cards}`;
   }).join("");
@@ -3570,8 +3556,7 @@ function renderMusclesTab(container, query, opts) {
     const hiddenSet = new Set(DATA.getHiddenMuscleIds(userId));
     html += refHiddenSection("muscle", DATA.atlasMuscles().filter(m => hiddenSet.has(m.id)));
   }
-  const addHtml = (opts.addLabel && !q) ? `<button class="ref-add-inline">${escHtml(opts.addLabel)}</button>` : "";
-  container.innerHTML = (html || `<p class="empty-state">Ничего не найдено</p>`) + addHtml;
+  container.innerHTML = html || `<p class="empty-state">Ничего не найдено</p>`;
 }
 
 // ── Вкладка «Движения» шторки-справочника ────────────────────────────────────
@@ -3607,8 +3592,7 @@ function renderMovementsTab(container, query, opts) {
     const hiddenSet = new Set(DATA.getHiddenMovementIds(userId));
     html += refHiddenSection("movement", DATA.atlasMovements().filter(m => hiddenSet.has(m.id)));
   }
-  const addHtml = (opts.addLabel && !q) ? `<button class="ref-add-inline">${escHtml(opts.addLabel)}</button>` : "";
-  container.innerHTML = (html || `<p class="empty-state">Ничего не найдено</p>`) + addHtml;
+  container.innerHTML = html || `<p class="empty-state">Ничего не найдено</p>`;
 }
 
 function renderCatTabs(userId, presentCats) {
@@ -4141,24 +4125,182 @@ function openExerciseDetail(exerciseId) {
 
 $("exd-back-btn").addEventListener("click", () => goToScreen("exercises"));
 
+// Единое поведение шторки (bottom-sheet): закрытие ТОЛЬКО перетаскиванием
+// верхней зоны (dragZone — обычно ручка+шапка), а не из любой точки — иначе
+// конфликтует со скроллом/тапами содержимого. Лист следует за пальцем;
+// отпускание за порогом (110px) ИЛИ быстрым флингом вниз — закрывает, иначе
+// возврат на место. Общая реализация для ВСЕХ шторок, которые строим/чиним —
+// одна функция гарантирует одинаковое поведение везде (см. эталон — шторка
+// главного меню setupSheetDrag).
+function wireSheetDragClose(sheetEl, dragZone, onClose) {
+  let startY = 0, startX = 0, dy = 0, active = false, decided = false, vert = false, hist = [];
+  const vel = () => { if (hist.length < 2) return 0; const f = hist[0], l = hist[hist.length - 1], dt = l.t - f.t; return dt <= 0 ? 0 : (l.y - f.y) / dt; };
+  const down = (y, x) => { active = true; decided = false; vert = false; dy = 0; startY = y; startX = x; hist = [{ y, t: performance.now() }]; sheetEl.style.transition = "none"; };
+  const moveTo = (y, x, e) => {
+    if (!active) return;
+    const d = y - startY, dx = x - startX;
+    hist.push({ y, t: performance.now() }); if (hist.length > 5) hist.shift();
+    if (!decided) {
+      if (Math.abs(d) < 6 && Math.abs(dx) < 6) return;
+      decided = true;
+      vert = d > 0 && Math.abs(d) > Math.abs(dx);
+      if (!vert) { active = false; sheetEl.style.transition = ""; return; }
+    }
+    dy = Math.max(0, d);
+    if (e && e.cancelable) e.preventDefault();
+    sheetEl.style.transform = `translateY(${dy}px)`;
+  };
+  const up = () => {
+    if (!active) return;
+    active = false;
+    sheetEl.style.transition = "";
+    if (!vert) return;
+    const fling = vel() > 0.45;
+    if (dy > 110 || fling) { sheetEl.style.transition = "transform 0.22s ease"; sheetEl.style.transform = `translateY(${sheetEl.offsetHeight}px)`; onClose(); }
+    else sheetEl.style.transform = "";
+  };
+  dragZone.addEventListener("touchstart", e => down(e.touches[0].clientY, e.touches[0].clientX), { passive: true });
+  dragZone.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) moveTo(t.clientY, t.clientX, e); }, { passive: false });
+  dragZone.addEventListener("touchend", up);
+  dragZone.addEventListener("touchcancel", up);
+  dragZone.addEventListener("mousedown", e => { down(e.clientY, e.clientX); const mm = ev => moveTo(ev.clientY, ev.clientX, ev); const mu = () => { up(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); }; window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu); });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Полноэкранная деталь мышцы — открывается ТОЛЬКО тапом по мышце в справочнике
+   (не входит в обычную навигацию). Анатомия (Начало/Прикрепление/Функции) — из
+   личного конспекта Anki (window.MUSCLE_ANATOMY, см. muscle-anatomy.js), без
+   фото и без раздела «Упражнение» из конспекта — вместо него перекрёстная
+   ссылка на СВОИ упражнения из атласа этого приложения (по target/synergist/
+   stabilizer). Список этих упражнений — отдельное окно (модалка), в него
+   можно попасть только с этого экрана.
+   ══════════════════════════════════════════════════════════════════════════ */
+function muscleExerciseRoles(userId, muscleName) {
+  const exs = DATA.getVisibleExercises(userId);
+  const byRole = { target: [], synergist: [], stabilizer: [] };
+  exs.forEach(ex => {
+    const a = ex.atlas; if (!a) return;
+    ["target", "synergist", "stabilizer"].forEach(role => {
+      if ((a[role] || []).some(o => o.muscle === muscleName)) byRole[role].push(ex);
+    });
+  });
+  return byRole;
+}
+
+function openMuscleDetailScreen(muscleId) {
+  const userId = DATA.getCurrentUser();
+  const m = DATA.refMuscles(userId).find(x => x.id === muscleId);
+  if (!m) return;
+
+  $("msd-title").textContent = m.name;
+  const color = DATA.getCategoryColor(userId, m.group);
+  $("msd-meta").innerHTML = `<span class="exd-cat-dot" style="background:${escHtml(color)}"></span>${escHtml(m.group)}${m.visible ? " · ★ поверхностная" : ""}`;
+
+  const bundlesHtml = (m.bundles || []).length
+    ? `<div class="ref-detail-label">Пучки</div><div class="ref-chips">${m.bundles.map(b => `<span class="ref-chip">${escHtml(b)}</span>`).join("")}</div>`
+    : "";
+  const anatomy = (window.MUSCLE_ANATOMY && window.MUSCLE_ANATOMY[m.name]) || "";
+  const anatomyHtml = anatomy
+    ? `<div class="ref-detail-label">Анатомия</div><div class="msd-anatomy">${anatomy}</div>`
+    : `<p class="exd-empty">Анатомические данные для этой мышцы пока не добавлены.</p>`;
+  const links = DATA.refMovesByMuscle(userId);
+  const moves = [...(links[m.name] || [])];
+  const movesHtml = moves.length
+    ? `<div class="ref-detail-label">Участвует в движениях</div><div class="ref-cells">${moves.map(mv => `<button class="ref-cell" data-goto="movement" data-name="${escHtml(mv)}">${escHtml(mv)}</button>`).join("")}</div>`
+    : "";
+
+  $("msd-body").innerHTML = bundlesHtml + anatomyHtml + movesHtml;
+  $("msd-body").querySelectorAll('.ref-cell[data-goto="movement"]').forEach(cell => {
+    cell.addEventListener("click", () => {
+      goToScreen("exercises");
+      initExercisesScreen();
+      openReferenceSheet("movements", cell.dataset.name);
+    });
+  });
+
+  const byRole = muscleExerciseRoles(userId, m.name);
+  const total = byRole.target.length + byRole.synergist.length + byRole.stabilizer.length;
+  const exBtn = $("msd-exercises-btn");
+  exBtn.textContent = total ? `Упражнения с этой мышцей (${total})` : "Упражнений пока нет";
+  exBtn.disabled = !total;
+  exBtn.onclick = () => openMuscleExercisesModal(m.name);
+
+  const editBtn = $("msd-edit-btn");
+  const canEdit = refCanEdit(m);
+  editBtn.style.display = canEdit ? "" : "none";
+  editBtn.onclick = () => openMuscleForm(m, () => openMuscleDetailScreen(muscleId));
+
+  goToScreen("muscleDetail");
+}
+
+$("msd-back-btn").addEventListener("click", () => goToScreen("exercises"));
+
+// «Отдельное окно» со списком СВОИХ упражнений, где эта мышца работает —
+// попасть сюда можно только с экрана мышцы (кнопка в футере). Модалка (не
+// полноценный «экран»): закрывается — экран мышцы под ней остаётся как был.
+// Свайп-закрытие — та же единая функция wireSheetDragClose, что и у шторки.
+function openMuscleExercisesModal(muscleName) {
+  const userId = DATA.getCurrentUser();
+  const byRole = muscleExerciseRoles(userId, muscleName);
+  const ROLE_LABELS = { target: "Целевая мышца", synergist: "Синергист", stabilizer: "Стабилизатор" };
+  const total = byRole.target.length + byRole.synergist.length + byRole.stabilizer.length;
+
+  const bd = document.createElement("div");
+  bd.className = "bottom-sheet-backdrop";
+  bd.style.cursor = "pointer";
+  const close = () => { bd.classList.remove("open"); setTimeout(() => bd.remove(), 300); };
+  bd.addEventListener("click", e => { if (e.target === bd) close(); });
+
+  const section = key => byRole[key].length ? `
+    <div class="ref-group-label">${escHtml(ROLE_LABELS[key])} · ${byRole[key].length}</div>
+    ${byRole[key].map(ex => `<div class="ref-card ref-card-tap" data-id="${escHtml(ex.id)}"><div class="ref-card-top"><span class="ref-card-name">${escHtml(ex.name)}</span><span class="ref-card-chev">›</span></div></div>`).join("")}
+  ` : "";
+
+  bd.innerHTML = `
+    <div class="bottom-sheet ref-sheet">
+      <div class="ref-sheet-drag"><div class="bottom-sheet-handle"></div></div>
+      <div class="cat-sheet-head"><span class="cat-sheet-title">${escHtml(muscleName)}</span><span class="cat-sheet-count">${total} упр.</span></div>
+      <div class="ref-sheet-list">
+        ${total ? section("target") + section("synergist") + section("stabilizer") : `<p class="exd-empty">В базе пока нет упражнений с этой мышцей.</p>`}
+      </div>
+    </div>`;
+  bd.querySelectorAll(".ref-card[data-id]").forEach(card => {
+    card.addEventListener("click", () => {
+      const exId = card.dataset.id;
+      close();
+      setTimeout(() => openExerciseDetail(exId), 260);
+    });
+  });
+
+  document.body.appendChild(bd);
+  requestAnimationFrame(() => bd.classList.add("open"));
+  const sheetEl = bd.querySelector(".bottom-sheet");
+  const dragZone = bd.querySelector(".ref-sheet-drag");
+  if (sheetEl && dragZone) wireSheetDragClose(sheetEl, dragZone, close);
+}
+
 /* — Управление категориями v2: свайп-удаление, долгое нажатие = редактирование/перестановка — */
 // Шторка «Справочник» (открывается шестерёнкой на экране «Упражнения»).
-// Три вкладки: Мышцы / Движения / Группы. «Группы» = прежний менеджер категорий
-// (переименование/перетаскивание/удаление/добавление/цвета) с кнопкой, которая
-// на лету меняет подпись «Настроить»↔«Готово», не меняя высоту шторки.
-function openReferenceSheet(initialTab) {
+// Три вкладки: Группы / Движения / Мышцы. «Группы» = прежний менеджер категорий
+// (переименование/перетаскивание/удаление/добавление/цвета).
+function openReferenceSheet(initialTab, focusName) {
   const userId = DATA.getCurrentUser();
   const existing = $("cat-manager-backdrop");
   if (existing) existing.remove();
 
-  let refTab = initialTab || "muscles";   // muscles | movements | groups
+  // Порядок вкладок: Группы, Движения, Мышцы (п.8).
+  let refTab = initialTab || "groups";
   let refQuery = "";
-  let refExpanded = { muscles: new Set(), movements: new Set() };  // id развёрнутых карточек (мультивыбор)
-  let refEditMode = false;   // режим правки вкладок Мышцы/Движения
+  let refExpanded = { movements: new Set() };  // id развёрнутых карточек движений (мультивыбор; у мышц теперь полноэкранная деталь)
+  let groupExpanded = new Set();  // раскрытые группы (п.9)
+  // Режим правки — ОТДЕЛЬНО у каждой вкладки; переключение вкладки ВСЕГДА
+  // гасит правку (во всех вкладках разом), не переносит её на новую (п.4).
+  let editModeByTab = { groups: false, movements: false, muscles: false };
   let refDrag = null;        // перетаскивание карточки мышцы/движения
-  let catEditMode = false;
   let catDrag = null;
-  let editEnteredAt = 0;   // момент входа в правку — гасим клик-переименование сразу после входа (#5)
+  let editEnteredAt = 0;   // момент входа в правку — гасим клик-переименование сразу после входа
+
+  const curEditMode = () => editModeByTab[refTab];
 
   const backdrop = document.createElement("div");
   backdrop.id = "cat-manager-backdrop";
@@ -4178,22 +4320,22 @@ function openReferenceSheet(initialTab) {
   });
 
   const SVG_DEL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
+  const SVG_PLUS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
 
   function getListEl() { return backdrop.querySelector(".cat-sheet-list"); }
 
-  // Вход/выход правки групп — по долгому удержанию (как у мышц/движений);
-  // перерисовываем содержимое, чтобы показать/убрать «Готово» и стиль правки.
+  // Вход/выход правки — общая пара для ВСЕХ трёх вкладок; работает с состоянием
+  // ТЕКУЩЕЙ вкладки (editModeByTab[refTab]).
   function enterEditMode() {
-    if (catEditMode) return;
-    catEditMode = true;
+    if (curEditMode()) return;
+    editModeByTab[refTab] = true;
     editEnteredAt = Date.now();
     haptic(22);
     renderContent();
   }
-
   function exitEditMode() {
-    if (!catEditMode) return;
-    catEditMode = false;
+    if (!curEditMode()) return;
+    editModeByTab[refTab] = false;
     renderContent();
   }
 
@@ -4210,12 +4352,12 @@ function openReferenceSheet(initialTab) {
     const exSnapshot  = [...DATA.getOwnExercises(userId)];
     DATA.deleteCategory(userId, cat);
     renderExercisesList(exercisesSearch.value);
-    render();
+    renderContent();
     showUndoToast(`Категория «${cat}» удалена`, () => {
       DATA.saveAllCategories(userId, catSnapshot);
       DATA.saveOwnExercises(userId, exSnapshot);
       renderExercisesList(exercisesSearch.value);
-      render();
+      renderContent();
       showToast("Восстановлено");
     });
   }
@@ -4243,7 +4385,7 @@ function openReferenceSheet(initialTab) {
       if (!v) return;
       DATA.addCategory(userId, v);
       renderExercisesList(exercisesSearch.value);
-      render();
+      renderContent();
       closeMod();
     };
     addBd.querySelector('[data-act="cancel"]').addEventListener("click", closeMod);
@@ -4274,27 +4416,21 @@ function openReferenceSheet(initialTab) {
       span.title = next || cat;
       span.textContent = next || cat;
       inp.replaceWith(span);
-      wireNameClick(wrap, next || cat, span);
     };
     inp.addEventListener("blur", commit);
     inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+    inp.addEventListener("pointerdown", e => e.stopPropagation());
   }
 
-  function wireNameClick(wrap, cat, nameEl) {
-    nameEl.addEventListener("click", e => {
-      if (!catEditMode) return;
-      // #5: клик сразу после входа в правку (тот же тап долгого удержания) НЕ
-      // должен открывать переименование с выделением текста и клавиатурой.
-      if (Date.now() - editEnteredAt < 500) return;
-      e.stopPropagation();
-      startCatRename(wrap, cat, nameEl);
-    });
-  }
-
+  // Свайп категории: ВЛЕВО — удалить (как раньше), ВПРАВО — переименовать
+  // (п.5: правка ячейки теперь всегда через свайп вправо, не через тап в
+  // режиме правки). Свайп работает только ВНЕ режима правки — в правке ячейка
+  // только перетаскивается (эталон — упражнения).
   function wireCatSwipe(wrap, item, cat) {
     let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
     const MAX = 100, DEL = 72;
     item.addEventListener("pointerdown", e => {
+      if (curEditMode()) return;
       if (e.target.closest("input")) return;
       sx = e.clientX; sy = e.clientY; dx = 0;
       active = true; decided = false; horiz = false; swiped = false;
@@ -4306,23 +4442,24 @@ function openReferenceSheet(initialTab) {
       if (!decided) {
         if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
         decided = true;
-        horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+        horiz = Math.abs(mx) > Math.abs(my);
         if (!horiz) { active = false; return; }
         wrap.classList.add("swiping");
         try { item.setPointerCapture(e.pointerId); } catch {}
       }
       if (!horiz) return;
-      dx = Math.max(-MAX, Math.min(0, mx));
-      if (dx < -4) swiped = true;
+      dx = Math.max(-MAX, Math.min(MAX, mx));
+      if (Math.abs(dx) > 4) swiped = true;
       item.style.transform = `translateX(${dx}px)`;
       wrap.classList.toggle("will-delete", dx <= -DEL);
+      wrap.classList.toggle("will-edit", dx >= DEL);
     });
     // Во время горизонтального свайпа гасим вертикальный скролл (п.2).
     item.addEventListener("touchmove", e => {
       if (!active) return;
       const t = e.touches[0]; if (!t) return;
       const mx = t.clientX - sx, my = t.clientY - sy;
-      if (horiz || (Math.abs(mx) >= 8 && mx < 0 && Math.abs(mx) > Math.abs(my))) {
+      if (horiz || (Math.abs(mx) >= 8 && Math.abs(mx) > Math.abs(my))) {
         if (e.cancelable) e.preventDefault();
       }
     }, { passive: false });
@@ -4339,10 +4476,16 @@ function openReferenceSheet(initialTab) {
           wrap.style.height = "0"; wrap.style.opacity = "0";
         });
         setTimeout(() => removeCategory(cat), 180);
+      } else if (dx >= DEL) {
+        item.style.transition = "transform 0.18s ease"; item.style.transform = "";
+        wrap.classList.remove("will-edit");
+        setTimeout(() => wrap.classList.remove("swiping"), 200);
+        const nameEl = wrap.querySelector(".cat-item-name-text");
+        if (nameEl) startCatRename(wrap, cat, nameEl);
       } else {
         item.style.transition = "transform 0.18s ease";
         item.style.transform = "";
-        wrap.classList.remove("will-delete");
+        wrap.classList.remove("will-delete", "will-edit");
         setTimeout(() => wrap.classList.remove("swiping"), 200);
       }
     };
@@ -4355,7 +4498,7 @@ function openReferenceSheet(initialTab) {
 
   function wireCatGesture(wrap, cat) {
     let holdTimer = null, sx = 0, sy = 0, moved = false, dragStarted = false;
-    const DELAY = () => catEditMode ? 150 : 430;
+    const DELAY = () => curEditMode() ? 150 : 430;
     const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
 
     const begin = (x, y, target) => {
@@ -4365,7 +4508,7 @@ function openReferenceSheet(initialTab) {
       holdTimer = setTimeout(() => {
         holdTimer = null;
         if (moved) return;
-        if (!catEditMode) { enterEditMode(); return; }
+        if (!curEditMode()) { enterEditMode(); return; }
         dragStarted = true;
         startCatDrag(wrap, cat, y);
       }, DELAY());
@@ -4379,7 +4522,9 @@ function openReferenceSheet(initialTab) {
     };
     const finish = () => {
       clearHold();
-      if (catDrag && catDrag.wrap === wrap) endCatDrag();
+      if (catDrag && catDrag.wrap === wrap) { endCatDrag(); return; }
+      // Обычный тап (не свайп, не драг, не правка) — показать инфо о группе (п.9).
+      if (!moved && !curEditMode()) toggleGroupExpand(cat);
     };
 
     wrap.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
@@ -4392,6 +4537,11 @@ function openReferenceSheet(initialTab) {
     wrap.addEventListener("click", e => {
       if (dragStarted) { e.stopPropagation(); dragStarted = false; }
     }, true);
+  }
+
+  function toggleGroupExpand(cat) {
+    groupExpanded.has(cat) ? groupExpanded.delete(cat) : groupExpanded.add(cat);
+    renderContent();
   }
 
   function startCatDrag(wrap, cat, pointerY) {
@@ -4435,24 +4585,25 @@ function openReferenceSheet(initialTab) {
     saveCatOrder();
   }
 
-  // Каркас шторки: вкладки + поиск постоянны; при вводе в поиск перерисовываем
-  // только список (renderContent), чтобы не терять фокус поля. Поиск — только на
-  // «Мышцах» (на «Движениях»/«Группах» не нужен). Высота шторки фиксирована в CSS,
-  // поэтому появление/скрытие поиска её не меняет.
+  // Каркас шторки: вкладки (Группы/Движения/Мышцы) + поиск+«+» — присутствуют на
+  // ВСЕХ трёх вкладках (п.7). Зона перетаскивания для закрытия — ТОЛЬКО ручка
+  // (как в шторке главного меню, см. setupSheetDrag) — вкладки-кнопки и остальной
+  // контент туда не входят, иначе жест конфликтует с тапами по кнопкам.
   function render() {
-    const searchHidden = refTab !== "muscles" ? " hidden" : "";
+    const ph = { groups: "Поиск группы…", movements: "Поиск движения…", muscles: "Поиск мышцы…" }[refTab];
     backdrop.innerHTML = `
       <div class="bottom-sheet ref-sheet">
         <div class="ref-sheet-drag">
           <div class="bottom-sheet-handle"></div>
-          <div class="ref-sheet-tabs">
-            <button class="ref-sheet-tab${refTab === "muscles" ? " active" : ""}" data-tab="muscles">Мышцы</button>
-            <button class="ref-sheet-tab${refTab === "movements" ? " active" : ""}" data-tab="movements">Движения</button>
-            <button class="ref-sheet-tab${refTab === "groups" ? " active" : ""}" data-tab="groups">Группы</button>
-          </div>
         </div>
-        <div class="ref-sheet-search-wrap${searchHidden}">
-          <input class="ref-sheet-search" type="text" placeholder="Поиск мышцы…" value="${escHtml(refQuery)}">
+        <div class="ref-sheet-tabs">
+          <button class="ref-sheet-tab${refTab === "groups" ? " active" : ""}" data-tab="groups">Группы</button>
+          <button class="ref-sheet-tab${refTab === "movements" ? " active" : ""}" data-tab="movements">Движения</button>
+          <button class="ref-sheet-tab${refTab === "muscles" ? " active" : ""}" data-tab="muscles">Мышцы</button>
+        </div>
+        <div class="ref-sheet-search-wrap">
+          <input class="ref-sheet-search" type="text" placeholder="${ph}" value="${escHtml(refQuery)}">
+          <button class="ref-sheet-add-btn" title="Добавить">${SVG_PLUS}</button>
         </div>
         <div class="ref-sheet-list"></div>
         <div class="ref-sheet-actions"></div>
@@ -4460,7 +4611,8 @@ function openReferenceSheet(initialTab) {
 
     backdrop.querySelectorAll(".ref-sheet-tab").forEach(b => b.addEventListener("click", () => {
       if (refTab === b.dataset.tab) return;
-      if (catEditMode) exitEditMode();
+      // #4: переключение вкладки ВСЕГДА гасит правку — в любой вкладке.
+      Object.keys(editModeByTab).forEach(k => { editModeByTab[k] = false; });
       refTab = b.dataset.tab;
       refQuery = "";
       render();
@@ -4468,93 +4620,58 @@ function openReferenceSheet(initialTab) {
 
     const searchInp = backdrop.querySelector(".ref-sheet-search");
     if (searchInp) searchInp.addEventListener("input", () => { refQuery = searchInp.value; renderContent(); });
+    const addBtn = backdrop.querySelector(".ref-sheet-add-btn");
+    if (addBtn) addBtn.addEventListener("click", () => {
+      if (refTab === "muscles") openMuscleForm(null, () => renderContent());
+      else if (refTab === "movements") openMovementForm(null, () => renderContent());
+      else openAddCatModal();
+    });
 
     renderContent();
 
-    const handle = backdrop.querySelector(".bottom-sheet-handle");
-    if (handle) handle.addEventListener("click", close);
-    // #1: свайп-закрытие и скролл-скрытие поиска перевешиваем на СВЕЖИЙ .bottom-sheet
-    // при каждом render (переключение вкладок пересобирает разметку).
-    wireSheetChrome();
-  }
-
-  // Закрытие перетаскиванием ВЕРХНЕЙ ЗОНЫ (ручка + вкладки), как в шторке
-  // главного меню — не из любой точки, чтобы не мешать скроллу/тапам списка.
-  // Лист следует за пальцем; отпускание за порогом ИЛИ с быстрым флингом вниз —
-  // закрывает, иначе возврат. Единое поведение шторок (см. setupSheetDrag/пикер).
-  function wireSheetChrome() {
+    // Закрытие — единая функция (см. верх файла), только зона ручки.
     const sheetEl = backdrop.querySelector(".bottom-sheet");
     const dragZone = backdrop.querySelector(".ref-sheet-drag");
-    if (!sheetEl || !dragZone) return;
-    let startY = 0, startX = 0, dy = 0, active = false, decided = false, vert = false, hist = [];
-    const vel = () => { if (hist.length < 2) return 0; const f = hist[0], l = hist[hist.length - 1], dt = l.t - f.t; return dt <= 0 ? 0 : (l.y - f.y) / dt; };
-    const down = (y, x) => { active = true; decided = false; vert = false; dy = 0; startY = y; startX = x; hist = [{ y, t: performance.now() }]; sheetEl.style.transition = "none"; };
-    const moveTo = (y, x, e) => {
-      if (!active) return;
-      const d = y - startY, dx = x - startX;
-      hist.push({ y, t: performance.now() }); if (hist.length > 5) hist.shift();
-      if (!decided) {
-        if (Math.abs(d) < 6 && Math.abs(dx) < 6) return;
-        decided = true;
-        vert = d > 0 && Math.abs(d) > Math.abs(dx);
-        if (!vert) { active = false; sheetEl.style.transition = ""; return; }
-      }
-      dy = Math.max(0, d);
-      if (e && e.cancelable) e.preventDefault();
-      sheetEl.style.transform = `translateY(${dy}px)`;
-    };
-    const up = () => {
-      if (!active) return;
-      active = false;
-      sheetEl.style.transition = "";
-      if (!vert) return;
-      const fling = vel() > 0.45;
-      if (dy > 110 || fling) { sheetEl.style.transition = "transform 0.22s ease"; sheetEl.style.transform = `translateY(${sheetEl.offsetHeight}px)`; close(); }
-      else sheetEl.style.transform = "";
-    };
-    dragZone.addEventListener("touchstart", e => down(e.touches[0].clientY, e.touches[0].clientX), { passive: true });
-    dragZone.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) moveTo(t.clientY, t.clientX, e); }, { passive: false });
-    dragZone.addEventListener("touchend", up);
-    dragZone.addEventListener("touchcancel", up);
-    dragZone.addEventListener("mousedown", e => { down(e.clientY, e.clientX); const mm = ev => moveTo(ev.clientY, ev.clientX, ev); const mu = () => { up(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); }; window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu); });
+    if (sheetEl && dragZone) wireSheetDragClose(sheetEl, dragZone, close);
   }
 
   function renderContent() {
     const listEl = backdrop.querySelector(".ref-sheet-list");
     const actionsEl = backdrop.querySelector(".ref-sheet-actions");
     if (!listEl) return;
+    const editMode = curEditMode();
     if (refTab === "muscles" || refTab === "movements") {
       const isMus = refTab === "muscles";
       (isMus ? renderMusclesTab : renderMovementsTab)(listEl, refQuery, {
-        expandedIds: refExpanded[refTab], editMode: refEditMode,
-        addLabel: isMus ? "+ Добавить мышцу" : "+ Добавить движение",
+        expandedIds: refExpanded.movements, editMode,
       });
-      // Кнопок-переключателей нет: правка — по долгому удержанию (эталон
-      // упражнений); «+ Добавить» — последней строкой списка; «Готово» —
-      // только в режиме правки.
-      actionsEl.innerHTML = refEditMode ? `<button class="cat-done-btn ref-edit-toggle">Готово</button>` : "";
-      const doneBtn = actionsEl.querySelector(".ref-edit-toggle");
-      if (doneBtn) doneBtn.addEventListener("click", () => { refEditMode = false; renderContent(); });
       wireRefCards(listEl);
-      // Каждая карточка: свайп влево — удалить/скрыть; долгое удержание — войти в
-      // правку / тащить (эталон строк упражнений).
+      // Каждая карточка: свайп влево — удалить/скрыть, вправо — изменить;
+      // долгое удержание — войти в правку / тащить (эталон строк упражнений).
       listEl.querySelectorAll(".ref-card-wrap[data-id]").forEach(wrap => {
         wireRefSwipe(wrap);
         wireRefGesture(wrap);
       });
     } else {
-      listEl.onclick = null;
-      renderGroupsInto(listEl, actionsEl);
+      renderGroupsInto(listEl, editMode);
     }
+    listEl.classList.toggle("ref-editing", editMode);
+    // Плавающая «Готово» — единый стиль с упражнениями (fixed-пилюля), появляется
+    // только в режиме правки текущей вкладки.
+    actionsEl.innerHTML = `<button class="exercises-float-done ref-done-btn">Готово</button>`;
+    const doneBtn = actionsEl.querySelector(".ref-done-btn");
+    doneBtn.classList.toggle("visible", editMode);
+    doneBtn.addEventListener("click", () => exitEditMode());
   }
 
-  // Тап: «+ Добавить»; ячейка деталей → переход; «вернуть» у скрытых. Обычный
-  // режим — тап по карточке разворачивает; режим правки — тап открывает полную
-  // форму (эталон упражнений: тап в правке = редактирование).
+  // Клики по содержимому текущей вкладки. Обычный режим: тап по карточке
+  // мышцы открывает полноэкранную деталь (анатомия), тап по движению —
+  // раскрывает список мышц на месте; тап по группе (Группы) — раскрывает
+  // мышцы/движения группы. Ячейка перекрёстной ссылки — переход. «Вернуть» у
+  // скрытых. В РЕЖИМЕ ПРАВКИ тап по карточке теперь НИЧЕГО не делает (п.5) —
+  // правка только через свайп вправо, вход в правку — долгим удержанием.
   function wireRefCards(listEl) {
     listEl.onclick = (e) => {
-      const addBtn = e.target.closest(".ref-add-inline");
-      if (addBtn) { return refTab === "muscles" ? openMuscleForm(null, () => renderContent()) : openMovementForm(null, () => renderContent()); }
       const cell = e.target.closest(".ref-cell[data-goto]");
       if (cell) { crossNav(cell.dataset.goto, cell.dataset.name); return; }
       const unhideBtn = e.target.closest('.ref-card-act[data-act="unhide"]');
@@ -4562,22 +4679,24 @@ function openReferenceSheet(initialTab) {
       const wrap = e.target.closest(".ref-card-wrap[data-kind]");
       if (!wrap) return;
       if (wrap.dataset.swiped) { delete wrap.dataset.swiped; return; }  // клик после свайпа глушим
+      if (curEditMode()) return;                          // #5: тап в правке — ничего
       const kind = wrap.dataset.kind, id = wrap.dataset.id;
-      if (refEditMode) return openRefEditor(kind, id);   // тап в правке → полная форма
-      const key = kind === "muscle" ? "muscles" : "movements";
-      const set = refExpanded[key];
+      if (kind === "muscle") { close(); openMuscleDetailScreen(id); return; }
+      const set = refExpanded.movements;
       set.has(id) ? set.delete(id) : set.add(id);        // разворот, без схлопывания других
       renderContent();
     };
   }
 
-  // Свайп влево по карточке → «Удалить/Скрыть» (как строки упражнений wireExRowSwipe).
+  // Свайп по карточке: ВЛЕВО — «Удалить/Скрыть», ВПРАВО — «Изменить» (полная
+  // форма). Свайп работает только ВНЕ режима правки (в правке ячейка тащится).
   function wireRefSwipe(wrap) {
     const card = wrap.querySelector(".ref-card");
     if (!card) return;
     let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
     const MAX = 104, DEL = 74;
     card.addEventListener("pointerdown", e => {
+      if (curEditMode()) return;
       sx = e.clientX; sy = e.clientY; dx = 0; active = true; decided = false; horiz = false; swiped = false;
       card.style.transition = "";
     });
@@ -4586,16 +4705,17 @@ function openReferenceSheet(initialTab) {
       const mx = e.clientX - sx, my = e.clientY - sy;
       if (!decided) {
         if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
-        decided = true; horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+        decided = true; horiz = Math.abs(mx) > Math.abs(my);
         if (!horiz) { active = false; return; }
         wrap.classList.add("swiping");
         try { card.setPointerCapture(e.pointerId); } catch {}
       }
       if (!horiz) return;
-      dx = Math.max(-MAX, Math.min(0, mx));
-      if (dx < -4) swiped = true;
+      dx = Math.max(-MAX, Math.min(MAX, mx));
+      if (Math.abs(dx) > 4) swiped = true;
       card.style.transform = `translateX(${dx}px)`;
       wrap.classList.toggle("will-delete", dx <= -DEL);
+      wrap.classList.toggle("will-edit", dx >= DEL);
     });
     card.addEventListener("touchmove", e => {
       if (active && horiz && e.cancelable) e.preventDefault();
@@ -4609,9 +4729,14 @@ function openReferenceSheet(initialTab) {
         wrap.style.height = wrap.offsetHeight + "px";
         requestAnimationFrame(() => { wrap.style.transition = "height 0.16s ease, opacity 0.16s ease"; wrap.style.height = "0"; wrap.style.opacity = "0"; });
         setTimeout(() => { const canDel = refItemIsOwn({ id: wrap.dataset.id }) || DATA.isAdmin(); (canDel ? deleteRefItem : hideRefItem)(wrap.dataset.kind, wrap.dataset.id); }, 170);
+      } else if (dx >= DEL) {
+        card.style.transition = "transform 0.18s ease"; card.style.transform = "";
+        wrap.classList.remove("will-edit");
+        setTimeout(() => wrap.classList.remove("swiping"), 200);
+        openRefEditor(wrap.dataset.kind, wrap.dataset.id);
       } else {
         card.style.transition = "transform 0.18s ease"; card.style.transform = "";
-        wrap.classList.remove("will-delete");
+        wrap.classList.remove("will-delete", "will-edit");
         setTimeout(() => wrap.classList.remove("swiping"), 200);
       }
     };
@@ -4626,23 +4751,18 @@ function openReferenceSheet(initialTab) {
     if (kind === "muscle") openMuscleForm(item, after); else openMovementForm(item, after);
   }
 
-  function enterRefEdit() {
-    if (refEditMode) return;
-    refEditMode = true; haptic(22); renderContent();
-  }
-
   // Долгое удержание на карточке (эталон упражнений): вне правки — войти в
   // правку; в правке — тащить (реордер внутри группы; границы групп/секции
   // «Скрытые» не пускают). На отпускании drag — сохраняем порядок.
   function wireRefGesture(wrap) {
     let holdTimer = null, sx = 0, sy = 0, moved = false, dragging = false;
-    const DELAY = () => refEditMode ? 150 : 430;
+    const DELAY = () => curEditMode() ? 150 : 430;
     const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
     const begin = (x, y) => {
       moved = false; dragging = false; sx = x; sy = y; clearHold();
       holdTimer = setTimeout(() => {
         holdTimer = null; if (moved) return;
-        if (!refEditMode) { enterRefEdit(); return; }
+        if (!curEditMode()) { enterEditMode(); return; }
         dragging = true; startRefDrag(wrap, y);
       }, DELAY());
     };
@@ -4720,15 +4840,18 @@ function openReferenceSheet(initialTab) {
     }
   }
 
-  // Переход мышца↔движение по имени: находим id в целевом справочнике, открываем
-  // ту вкладку с развёрнутой карточкой и подкручиваем её в зону видимости.
+  // Переход мышца↔движение по имени: мышца → полноэкранная деталь; движение —
+  // открыть вкладку «Движения» с развёрнутой карточкой и подскроллом к ней.
   function crossNav(gotoKind, name) {
-    const isMuscle = gotoKind === "muscle";
-    const list = isMuscle ? DATA.refMuscles(userId) : DATA.refMovements(userId);
-    const found = list.find(x => x.name === name);
+    if (gotoKind === "muscle") {
+      const found = DATA.refMuscles(userId).find(x => x.name === name);
+      if (found) { close(); openMuscleDetailScreen(found.id); }
+      return;
+    }
+    const found = DATA.refMovements(userId).find(x => x.name === name);
     if (!found) return;
-    refTab = isMuscle ? "muscles" : "movements";
-    refExpanded[refTab].add(found.id);
+    refTab = "movements";
+    refExpanded.movements.add(found.id);
     refQuery = "";
     render();
     requestAnimationFrame(() => {
@@ -4737,49 +4860,88 @@ function openReferenceSheet(initialTab) {
     });
   }
 
-  // Вкладка «Группы» = прежний менеджер категорий (группы == категории).
-  function renderGroupsInto(listEl, actionsEl) {
-    const cats = DATA.getAllCategories(userId);
+  // Вкладка «Группы» = прежний менеджер категорий (группы == категории) + тап
+  // по группе раскрывает её состав (мышцы/движения, п.9). Поиск по имени группы.
+  function renderGroupsInto(listEl, editMode) {
+    const q = refQuery.trim().toLowerCase();
+    const allCats = DATA.getAllCategories(userId);
+    const cats = q ? allCats.filter(c => c.toLowerCase().includes(q)) : allCats;
     const counts = {};
     DATA.getVisibleExercises(userId).forEach(e => { counts[e.cat] = (counts[e.cat] || 0) + 1; });
-    const editingClass = catEditMode ? " cat-editing" : "";
-    // Как у мышц/движений: правка — по долгому удержанию, «+ Добавить» — внизу
-    // списка, «Готово» — только в режиме правки. Кнопки-переключателя нет.
+    const editingClass = editMode ? " cat-editing" : "";
     listEl.innerHTML = `
       <div class="cat-sheet-list${editingClass}">
         ${cats.length ? cats.map(c => {
           const color = DATA.getCategoryColor(userId, c);
+          const expanded = !editMode && groupExpanded.has(c);
           return `
-            <div class="cat-item-wrap" data-cat="${escHtml(c)}">
+            <div class="cat-item-wrap${expanded ? " expanded" : ""}" data-cat="${escHtml(c)}">
+              <div class="cat-item-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
               <div class="cat-item-delete">${SVG_DEL} Удалить</div>
               <div class="cat-item" data-cat="${escHtml(c)}" style="--cat-color:${escHtml(color)}">
                 <span class="cat-item-sq" style="background:${escHtml(color)}"></span>
                 <span class="cat-item-name-text" title="${escHtml(c)}">${escHtml(c)}</span>
                 <span class="cat-item-count">${counts[c] || 0}</span>
+                ${editMode ? "" : `<span class="ref-card-chev">${expanded ? "⌄" : "›"}</span>`}
               </div>
+              ${expanded ? groupDetailHtml(c) : ""}
             </div>`;
-        }).join("") : `<p class="exd-empty">Групп пока нет.</p>`}
-      </div>
-      <button class="ref-add-inline" id="ref-add-group">+ Добавить новую группу</button>`;
-    actionsEl.innerHTML = catEditMode ? `<button class="cat-done-btn ref-groups-toggle">Готово</button>` : "";
+        }).join("") : `<p class="exd-empty">${q ? "Ничего не найдено" : "Групп пока нет."}</p>`}
+      </div>`;
+
+    listEl.onclick = (e) => {
+      const cell = e.target.closest(".ref-cell[data-goto]");
+      if (cell) crossNav(cell.dataset.goto, cell.dataset.name);
+    };
 
     listEl.querySelectorAll(".cat-item-wrap[data-cat]").forEach(wrap => {
       const cat = wrap.dataset.cat;
       const item = wrap.querySelector(".cat-item");
-      const nameEl = wrap.querySelector(".cat-item-name-text");
       wireCatSwipe(wrap, item, cat);
       wireCatGesture(wrap, cat);
-      wireNameClick(wrap, cat, nameEl);
     });
-    const toggle = actionsEl.querySelector(".ref-groups-toggle");
-    if (toggle) toggle.addEventListener("click", () => exitEditMode());
-    const addBtn = listEl.querySelector("#ref-add-group");
-    if (addBtn) addBtn.addEventListener("click", openAddCatModal);
+  }
+
+  // Инфо о группе (п.9): мышцы и движения этой группы, одним столбцом,
+  // кликабельны (переход к мышце/движению).
+  function groupDetailHtml(cat) {
+    const muscles = DATA.refMuscles(userId).filter(m => m.group === cat);
+    const moves = DATA.refMovements(userId).filter(m => m.group === cat);
+    const musHtml = muscles.length
+      ? `<div class="ref-detail-label">Мышцы группы</div><div class="ref-cells">${muscles.map(m => `<button class="ref-cell" data-goto="muscle" data-name="${escHtml(m.name)}">${escHtml(m.name)}</button>`).join("")}</div>`
+      : "";
+    const movHtml = moves.length
+      ? `<div class="ref-detail-label">Движения группы</div><div class="ref-cells">${moves.map(m => `<button class="ref-cell" data-goto="movement" data-name="${escHtml(m.name)}">${escHtml(m.name)}</button>`).join("")}</div>`
+      : "";
+    const empty = (!muscles.length && !moves.length) ? `<div class="ref-detail-empty">В этой группе пока пусто</div>` : "";
+    return `<div class="ref-card-detail cat-item-detail-block">${musHtml}${movHtml}${empty}</div>`;
   }
 
   document.body.appendChild(backdrop);
   render();
   requestAnimationFrame(() => backdrop.classList.add("open"));
+
+  // focusName (опц.) — сразу подсветить конкретный элемент при открытии:
+  // движение — раскрыть карточку и подскроллить; мышца — открыть её
+  // полноэкранную деталь вместо шторки (см. openMuscleDetailScreen, вызывается
+  // при переходе «Участвует в движениях» → клик по мышце теперь ведёт обратно
+  // в справочник, а не наоборот — см. использование ниже).
+  if (focusName) {
+    const found = refTab === "movements"
+      ? DATA.refMovements(userId).find(x => x.name === focusName)
+      : refTab === "muscles" ? DATA.refMuscles(userId).find(x => x.name === focusName) : null;
+    if (found && refTab === "movements") {
+      refExpanded.movements.add(found.id);
+      renderContent();
+      requestAnimationFrame(() => {
+        const el = backdrop.querySelector(`.ref-card[data-id="${CSS.escape(found.id)}"]`);
+        if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+      });
+    } else if (found && refTab === "muscles") {
+      close();
+      openMuscleDetailScreen(found.id);
+    }
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -6658,6 +6820,7 @@ if ("serviceWorker" in navigator) {
     "screen-templates":       "templates-back-btn",
     "screen-detail":          "detail-back-btn",
     "screen-exercise-detail": "exd-back-btn",
+    "screen-muscle-detail":   "msd-back-btn",
   };
   const EDGE = 26;          // зона старта у левого края, px
   const THRESHOLD = 0.32;   // доля ширины для срабатывания

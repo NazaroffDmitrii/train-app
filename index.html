@@ -1382,19 +1382,28 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   border-left: 3px solid var(--tab-color, transparent);
   border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 8px;
 }
-/* Обёртка карточки со слотом свайп-удаления (как строки упражнений) */
-.ref-card-wrap { position: relative; margin-bottom: 8px; }
+/* Обёртка карточки со слотами двустороннего свайпа (как строки упражнений):
+   влево — «Удалить/Скрыть», вправо — «Изменить». user-select:none — иначе
+   долгое удержание на входе в правку выделяет слово под пальцем. */
+.ref-card-wrap {
+  position: relative; margin-bottom: 8px;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
 .ref-card-wrap .ref-card { margin-bottom: 0; }
 .ref-card-wrap.swiping { touch-action: pan-y; }
-.ref-card-del {
+.ref-card-del, .ref-card-edit-slot {
   position: absolute; inset: 0; border-radius: var(--radius-md);
-  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
-  padding: 0 20px; background: var(--red); color: #fff; font-size: 14px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 20px; font-size: 14px; font-weight: 700;
   opacity: 0; transition: opacity 0.12s ease;
 }
-.ref-card-del svg { width: 18px; height: 18px; }
-.ref-card-wrap.swiping .ref-card-del { opacity: 0.92; }
+.ref-card-del { justify-content: flex-end; background: var(--red); color: #fff; }
+.ref-card-edit-slot { justify-content: flex-start; background: var(--accent); color: #fff; }
+.ref-card-del svg, .ref-card-edit-slot svg { width: 18px; height: 18px; }
+.ref-card-wrap.swiping .ref-card-del,
+.ref-card-wrap.swiping .ref-card-edit-slot { opacity: 0.92; }
 .ref-card-wrap.will-delete .ref-card-del { opacity: 1; }
+.ref-card-wrap.will-edit .ref-card-edit-slot { opacity: 1; }
 .ref-card-wrap .ref-card { position: relative; z-index: 1; }
 .ref-card-wrap.ref-dragging { z-index: 20; box-shadow: 0 8px 24px rgba(0,0,0,0.45); }
 .ref-card-top { display: flex; align-items: center; gap: 8px; }
@@ -1426,7 +1435,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .ref-detail-val { font-size: 14px; font-weight: 600; color: var(--text-primary); }
 .ref-detail-val.ref-detail-muted { font-size: 12.5px; font-weight: 500; color: var(--text-tertiary); margin-top: 4px; }
 .ref-detail-empty { font-size: 12.5px; color: var(--text-tertiary); margin-top: 8px; }
-.ref-cells { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+.ref-cells { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 4px; }
 .ref-cell {
   padding: 10px 11px; border-radius: 10px; text-align: left;
   background: var(--panel); border: 1px solid var(--border-subtle);
@@ -1476,10 +1485,14 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 }
 .ref-chip-edit button { width: 18px; height: 18px; border-radius: 6px; background: var(--panel); color: var(--text-tertiary); font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center; }
 
-/* ── Шторка «Справочник» (шестерёнка): вкладки Мышцы / Движения / Группы ───── */
-/* Высота ФИКСИРОВАНА (#4): переключение вкладок и появление/скрытие поиска не
+/* ── Шторка «Справочник» (шестерёнка): вкладки Группы / Движения / Мышцы ───── */
+/* Высота ФИКСИРОВАНА: переключение вкладок и появление/скрытие поиска не
    меняют размер шторки — лишний/недостающий блок компенсирует список. */
 .ref-sheet { height: 82vh; display: flex; flex-direction: column; }
+/* Зона перетаскивания для ЗАКРЫТИЯ — ТОЛЬКО ручка (эталон — шторка главного
+   меню, .sheet-drag-area): вкладки и поиск туда не входят, иначе жест
+   конфликтует с тапами по кнопкам. */
+.ref-sheet-drag { flex: none; padding-bottom: 10px; touch-action: none; cursor: grab; }
 .ref-sheet-tabs { display: flex; gap: 8px; margin-bottom: 12px; flex: none; }
 .ref-sheet-tab {
   flex: 1; min-width: 0; padding: 11px 4px; border-radius: 13px;
@@ -1489,20 +1502,30 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .ref-sheet-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-/* Верхняя зона перетаскивания шторки (ручка + вкладки) — за неё закрываем. */
-.ref-sheet-drag { flex: none; cursor: grab; touch-action: none; }
-.ref-sheet-search-wrap { flex: none; margin-bottom: 10px; }
+/* Поиск + «+» рядом (п.7) — присутствуют на всех трёх вкладках. */
+.ref-sheet-search-wrap { flex: none; margin-bottom: 10px; display: flex; gap: 8px; align-items: center; }
 .ref-sheet-search-wrap.hidden { display: none; }
 .ref-sheet-search {
-  width: 100%; padding: 11px 16px;
+  flex: 1; min-width: 0; padding: 11px 16px;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
   border-radius: 13px; font-size: 15px; color: var(--text-primary);
   transition: border-color 0.15s ease;
 }
 .ref-sheet-search:focus { border-color: var(--accent); }
+.ref-sheet-add-btn {
+  flex: none; width: 44px; height: 44px; border-radius: 13px;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.ref-sheet-add-btn svg { width: 18px; height: 18px; }
+.ref-sheet-add-btn:active { opacity: 0.85; }
 .ref-sheet-list { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; min-height: 120px; scrollbar-width: none; }
-.ref-sheet-list::-webkit-scrollbar { display: none; }   /* #5: без ползунка */
-.ref-sheet-actions { flex: none; padding-top: 10px; }
+.ref-sheet-list::-webkit-scrollbar { display: none; }   /* без ползунка */
+.ref-sheet-actions { flex: none; }
+
+/* Режим правки: карточки/строки покачиваются (эталон — упражнения/категории). */
+.ref-sheet-list.ref-editing .ref-card-wrap:not(.ref-dragging) { animation: catJiggle 0.3s ease-in-out infinite; }
+.ref-sheet-list.ref-editing .ref-card-wrap:nth-child(even):not(.ref-dragging) { animation-delay: -0.15s; }
 
 .exercises-search-wrap { flex: none; padding: 12px 20px 2px; }
 .exercises-search {
@@ -1763,6 +1786,30 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .exd-warn-icon { flex: none; font-size: 15px; line-height: 1.35; }
 .exd-warn b { color: #f87171; }
 
+/* ── Анатомия мышцы (личный конспект Anki: Начало/Прикрепление/Функции) ──────
+   Разметка приходит как есть (div/strong/i/em/ul/ol/li/b) — стилизуем теги
+   напрямую, не переразбирая контент. <b> верхнего уровня — имя пучка мышцы
+   («Верхняя часть» и т.п.), делит текст на подсекции. <strong><i>…</i></strong>
+   (и <b><i>…</i></b>) — заголовки «Начало:»/«Прикрепление:»/«Основные
+   функции:» — не курсивом, акцентным цветом. Остальной <i> (внутри списков —
+   названия частей мышцы) — обычный курсив. */
+.msd-anatomy { font-size: 14px; line-height: 1.6; color: var(--text-secondary); }
+.msd-anatomy > b {
+  display: block; font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--accent-bright);
+  margin: 18px 0 8px; padding-top: 14px; border-top: 1px solid var(--border-subtle);
+}
+.msd-anatomy > b:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.msd-anatomy div { margin: 12px 0 4px; }
+.msd-anatomy div:first-child { margin-top: 0; }
+.msd-anatomy strong { color: var(--text-primary); font-weight: 700; }
+.msd-anatomy strong i, .msd-anatomy b i { font-style: normal; color: var(--accent-bright); }
+.msd-anatomy i { font-style: italic; }
+.msd-anatomy ul, .msd-anatomy ol { margin: 4px 0 4px 20px; padding: 0; }
+.msd-anatomy ul ul, .msd-anatomy ol ul, .msd-anatomy ul ol, .msd-anatomy ol ol { margin: 4px 0 4px 18px; }
+.msd-anatomy li { margin-bottom: 5px; }
+.msd-anatomy em { font-style: normal; color: var(--text-tertiary); }
+
 /* ── Конструктор тренировок ──────────────────────────────────────────────── */
 .wk-card { background: var(--panel-raised); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 4px 14px 14px; margin-bottom: 12px; }
 .wk-set-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 12px 0; font-size: 15px; font-weight: 700; color: var(--text-primary); }
@@ -1876,21 +1923,28 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
 }
 .cat-item-wrap input { -webkit-user-select: text; user-select: text; }
-.cat-item-delete {
+.cat-item-delete, .cat-item-edit-slot {
   position: absolute; inset: 0; z-index: 0;
-  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
-  padding-right: 16px; border-radius: var(--radius-md);
-  background: var(--red); color: #fff; font-size: 13px; font-weight: 700; opacity: 0;
+  display: flex; align-items: center; gap: 6px;
+  border-radius: var(--radius-md);
+  font-size: 13px; font-weight: 700; opacity: 0;
   transition: opacity 0.12s ease;
 }
-.cat-item-delete svg { width: 17px; height: 17px; }
-.cat-item-wrap.swiping .cat-item-delete { opacity: 0.9; }
+.cat-item-delete { justify-content: flex-end; padding-right: 16px; background: var(--red); color: #fff; }
+.cat-item-edit-slot { justify-content: flex-start; padding-left: 16px; background: var(--accent); color: #fff; }
+.cat-item-delete svg, .cat-item-edit-slot svg { width: 17px; height: 17px; }
+.cat-item-wrap.swiping .cat-item-delete,
+.cat-item-wrap.swiping .cat-item-edit-slot { opacity: 0.9; }
 .cat-item-wrap.will-delete .cat-item-delete { opacity: 1; }
+.cat-item-wrap.will-edit .cat-item-edit-slot { opacity: 1; }
 .cat-item { position: relative; z-index: 1; }
 .cat-item-name-text {
   flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600;
   color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Разворот группы (п.9): состав (мышцы/движения), как у мышц/движений. */
+.cat-item-wrap.expanded .cat-item { background: var(--panel-hi); }
+.cat-item-detail-block { position: relative; z-index: 1; padding-left: 16px; padding-right: 16px; padding-bottom: 14px; }
 .cat-sheet-list.cat-editing .cat-item-wrap:not(.dragging) {
   animation: catJiggle 0.3s ease-in-out infinite;
 }
@@ -1901,31 +1955,6 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   100% { transform: rotate(-0.55deg); }
 }
 .cat-item-wrap.dragging { animation: none !important; z-index: 20; box-shadow: 0 8px 24px rgba(0,0,0,0.45); }
-.cat-done-btn {
-  width: 100%; padding: 13px; border-radius: var(--radius-sm);
-  background: var(--accent); color: #fff;
-  font-size: 14.5px; font-weight: 700; cursor: pointer; margin-bottom: 8px;
-  transition: opacity 0.15s ease;
-}
-.cat-done-btn:active { opacity: 0.85; }
-.cat-item-add {
-  display: flex; align-items: center; justify-content: center;
-  width: 100%; padding: 14px 16px;
-  background: transparent; border: 1.5px dashed var(--border-strong); border-radius: var(--radius-md);
-  color: var(--text-tertiary); font-size: 14.5px; font-style: italic; cursor: pointer;
-  transition: background 0.15s ease;
-}
-.cat-item-add:active { background: rgba(255,255,255,0.03); }
-/* «+ Добавить» последней строкой списка справочника (вместо кнопки-переключателя) */
-.ref-add-inline {
-  display: flex; align-items: center; justify-content: center;
-  width: 100%; padding: 14px 16px; margin-top: 8px;
-  background: transparent; border: 1.5px dashed var(--border-strong); border-radius: var(--radius-md);
-  color: var(--text-tertiary); font-size: 14.5px; font-style: italic;
-  transition: background 0.15s ease;
-}
-.ref-add-inline:active { background: rgba(255,255,255,0.03); }
-
 /* ── Редактор техники в форме упражнения ── */
 .ex-form-textarea { min-height: 64px; resize: vertical; line-height: 1.45; font-family: inherit; }
 .ex-steps-list { display: flex; flex-direction: column; gap: 8px; }
@@ -2867,6 +2896,27 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
     </div>
   </section>
 
+  <!-- ===== ЭКРАН: деталь мышцы (анатомия) — открывается только тапом по мышце ===== -->
+  <section id="screen-muscle-detail" class="screen screen-detail slide-right">
+    <div class="detail-screen-header">
+      <button class="btn-chip" id="msd-back-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      </button>
+      <div style="flex:1;min-width:0;">
+        <div class="detail-screen-title" id="msd-title">Мышца</div>
+        <div class="detail-screen-meta" id="msd-meta"></div>
+      </div>
+    </div>
+    <div class="detail-screen-body" id="msd-body"></div>
+    <div class="exd-footer">
+      <button class="btn-chip exd-footer-edit" id="msd-edit-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        Изменить
+      </button>
+      <button class="btn-chip primary exd-footer-edit" id="msd-exercises-btn">Упражнения с этой мышцей</button>
+    </div>
+  </section>
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -2875,6 +2925,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 <script src="sync.js"></script>
 <script src="lib.js"></script>
 <script src="atlas-seed.js"></script>
+<script src="muscle-anatomy.js"></script>
 <script src="auth.js"></script>
 <script src="db.js"></script>
 <script src="app.js"></script>
