@@ -1334,11 +1334,14 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   max-width: calc(100vw - 32px); white-space: normal; text-align: left;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
-.toast.actionable { pointer-events: auto; }
+/* Тост с кнопкой «Отменить» — во всю ширину, текст занимает всё место (иначе
+   flex сжимал его в узкий столбик по центру), кнопка прижата вправо. */
+.toast.actionable { pointer-events: auto; width: calc(100vw - 32px); }
+.toast-text { flex: 1; min-width: 0; }
 /* Когда плавающая «Готово» видна (режим правки шторки/списков) — поднимаем
    тост выше неё, иначе они накладываются друг на друга у нижнего края. */
 body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-bottom)); }
-.toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 13.5px; padding: 2px 2px; white-space: nowrap; }
+.toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 13.5px; padding: 2px 2px; white-space: nowrap; flex: none; }
 /* ============ Screen 5: exercises ============ */
 .screen-exercises { display: flex; flex-direction: column; background: var(--bg-base); }
 

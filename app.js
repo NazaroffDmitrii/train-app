@@ -4349,8 +4349,14 @@ function openReferenceSheet(initialTab, focusName) {
     backdrop.classList.remove("open");
     setTimeout(() => backdrop.remove(), 300);
   }
-  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
+  // Не закрывать шторку, если поверх неё открыта форма/модалка (правка мышцы,
+  // движения и т.п.) — иначе тап по форме через elementFromPoint читается как
+  // «клик мимо листа» и рушит шторку; закрыв форму, пользователь оказывался бы
+  // в «Упражнениях», а не там, откуда открыл правку.
+  const closeBlocked = () => !!document.querySelector(".ref-form-backdrop, .modal-backdrop.open") || backdrop.style.display === "none";
+  backdrop.addEventListener("click", e => { if (e.target === backdrop && !closeBlocked()) close(); });
   backdrop.addEventListener("touchend", e => {
+    if (closeBlocked()) return;
     const t = e.changedTouches[0];
     const el = t && document.elementFromPoint(t.clientX, t.clientY);
     if (el && !el.closest(".bottom-sheet")) close();
@@ -4900,10 +4906,20 @@ function openReferenceSheet(initialTab, focusName) {
     refExpanded.movements.add(found.id);
     refQuery = "";
     render();
-    requestAnimationFrame(() => {
-      const el = backdrop.querySelector(`.ref-card[data-id="${CSS.escape(found.id)}"]`);
-      if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
-    });
+    // Прокрутить список к раскрытой карточке движения (детерминированно через
+    // scrollTop — scrollIntoView со smooth здесь не срабатывал, список оставался
+    // вверху). rAF + запасной setTimeout — на случай, если лейаут ещё не готов.
+    const scrollToMove = () => {
+      const list = backdrop.querySelector(".ref-sheet-list");
+      // data-id висит на ОБёртке .ref-card-wrap, а не на .ref-card (важно!).
+      const wrap = backdrop.querySelector(`.ref-card-wrap[data-id="${CSS.escape(found.id)}"]`);
+      if (!list || !wrap) return;
+      const lr = list.getBoundingClientRect(), cr = wrap.getBoundingClientRect();
+      const delta = (cr.top - lr.top) - (list.clientHeight - cr.height) / 2;
+      list.scrollTop = Math.max(0, list.scrollTop + delta);
+    };
+    requestAnimationFrame(scrollToMove);
+    setTimeout(scrollToMove, 60);
   }
 
   // Вкладка «Группы» = прежний менеджер категорий (группы == категории) + тап
