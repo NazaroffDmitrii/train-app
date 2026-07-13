@@ -1259,10 +1259,20 @@ window.addEventListener("pagehide", () => SyncQueue.flush());
 const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), muscleDetail: $("screen-muscle-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), constructor: $("screen-constructor") };
 
 function goToScreen(name, opts = {}) {
-  Object.values(SCREENS).forEach(s => s && s.classList.remove("active"));
+  // opts.instant — переключить БЕЗ кроссфейд-анимации (0.32s). Нужно, когда
+  // переключение происходит под перекрывающей шторкой: иначе, сняв шторку, мы
+  // увидели бы недоигранный кроссфейд (вспышку прежнего экрана) — см. заход в
+  // карточку мышцы из справочника (п. про мигание).
+  const allScreens = Object.values(SCREENS).filter(Boolean);
+  if (opts.instant) allScreens.forEach(s => { s.style.transition = "none"; });
+  allScreens.forEach(s => s.classList.remove("active"));
   const target = SCREENS[name];
-  if (!target) return;
+  if (!target) { if (opts.instant) allScreens.forEach(s => { s.style.transition = ""; }); return; }
   target.classList.add("active");
+  if (opts.instant) {
+    void target.offsetWidth;  // применить мгновенное состояние до восстановления перехода
+    requestAnimationFrame(() => allScreens.forEach(s => { s.style.transition = ""; }));
+  }
 
   // "profile" сюда сознательно НЕ включён (в отличие от остальных экранов):
   // renderProfiles() — асинхронная и решает, что показать (переключатель/форма
@@ -3754,7 +3764,8 @@ function wireExRowSwipe(wrap, userId) {
   if (!row) return;
   const exId = row.dataset.id;
   let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, didSwipe = false;
-  const MAX = 110, DEL = 80;
+  // MAX подобран так, чтобы при свайпе полностью показывалась надпись «Изменить».
+  const MAX = 120, DEL = 80;
 
   row.addEventListener("pointerdown", e => {
     if (_exListEditMode) return;
@@ -4182,7 +4193,7 @@ function muscleExerciseRoles(userId, muscleName) {
 }
 
 let _msdReturnScreen = "exercises";
-function openMuscleDetailScreen(muscleId, returnScreen = "exercises") {
+function openMuscleDetailScreen(muscleId, returnScreen = "exercises", instant = false) {
   const userId = DATA.getCurrentUser();
   const m = DATA.refMuscles(userId).find(x => x.id === muscleId);
   if (!m) return;
@@ -4226,7 +4237,7 @@ function openMuscleDetailScreen(muscleId, returnScreen = "exercises") {
   editBtn.style.display = canEdit ? "" : "none";
   editBtn.onclick = () => openMuscleForm(m, () => openMuscleDetailScreen(muscleId, _msdReturnScreen));
 
-  goToScreen("muscleDetail");
+  goToScreen("muscleDetail", { instant });
 }
 
 // Возврат из карточки мышцы. Обычно это имя экрана; но если мышца открыта ИЗ
@@ -4242,14 +4253,18 @@ $("msd-back-btn").addEventListener("click", () => {
 // Шторка-справочник, открытая в данный момент (для скрытия/показа при заходе в
 // карточку мышцы и возврате). Ставится в openReferenceSheet, снимается в close().
 let _refSheetEl = null;
-// Спрятать шторку (сохранив её DOM и состояние), уходя в карточку мышцы.
+// Спрятать шторку (сохранив её DOM и состояние: вкладку, раскрытую группу,
+// скролл), уходя в карточку мышцы. ВАЖНО: вызывать ПОСЛЕ openMuscleDetailScreen —
+// карточка уже активна под шторкой, поэтому её скрытие сразу открывает карточку,
+// без промежуточной вспышки экрана «Упражнения».
 function hideRefSheet() { if (_refSheetEl) { _refSheetEl.style.display = "none"; return true; } return false; }
-// Показать шторку обратно на «назад»: активируем «Упражнения» под ней, затем
-// снимаем display:none. Если шторки уже нет (была закрыта) — просто «Упражнения».
+// Показать шторку обратно на «назад». Порядок обратный: СНАЧАЛА показываем шторку
+// (она перекрывает экран), ПОТОМ меняем экран под ней на «Упражнения» — иначе на
+// миг мелькнул бы экран при переключении. Если шторки уже нет — просто «Упражнения».
 function refSheetBackReturn() {
   if (_refSheetEl && document.body.contains(_refSheetEl)) {
-    goToScreen("exercises");
     _refSheetEl.style.display = "";
+    goToScreen("exercises", { instant: true });  // под шторкой — без кроссфейда
   } else {
     goToScreen("exercises");
   }
@@ -4450,7 +4465,7 @@ function openReferenceSheet(initialTab, focusName) {
   // только перетаскивается (эталон — упражнения).
   function wireCatSwipe(wrap, item, cat) {
     let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
-    const MAX = 100, DEL = 72;
+    const MAX = 120, DEL = 72;  // MAX — чтобы «Изменить» показывалось полностью
     item.addEventListener("pointerdown", e => {
       if (curEditMode()) return;
       if (e.target.closest("input")) return;
@@ -4710,7 +4725,7 @@ function openReferenceSheet(initialTab, focusName) {
       if (wrap.dataset.swiped) { delete wrap.dataset.swiped; return; }  // клик после свайпа глушим
       if (curEditMode()) return;                          // #5: тап в правке — ничего
       const kind = wrap.dataset.kind, id = wrap.dataset.id;
-      if (kind === "muscle") { hideRefSheet(); openMuscleDetailScreen(id, refSheetBackReturn); return; }
+      if (kind === "muscle") { openMuscleDetailScreen(id, refSheetBackReturn, true); hideRefSheet(); return; }
       const set = refExpanded.movements;
       set.has(id) ? set.delete(id) : set.add(id);        // разворот, без схлопывания других
       renderContent();
@@ -4723,7 +4738,7 @@ function openReferenceSheet(initialTab, focusName) {
     const card = wrap.querySelector(".ref-card");
     if (!card) return;
     let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
-    const MAX = 104, DEL = 74;
+    const MAX = 128, DEL = 74;  // MAX — чтобы «Изменить» показывалось полностью
     card.addEventListener("pointerdown", e => {
       if (curEditMode()) return;
       sx = e.clientX; sy = e.clientY; dx = 0; active = true; decided = false; horiz = false; swiped = false;
@@ -4876,7 +4891,7 @@ function openReferenceSheet(initialTab, focusName) {
   function crossNav(gotoKind, name) {
     if (gotoKind === "muscle") {
       const found = DATA.refMuscles(userId).find(x => x.name === name);
-      if (found) { hideRefSheet(); openMuscleDetailScreen(found.id, refSheetBackReturn); }
+      if (found) { openMuscleDetailScreen(found.id, refSheetBackReturn, true); hideRefSheet(); }
       return;
     }
     const found = DATA.refMovements(userId).find(x => x.name === name);
@@ -4969,8 +4984,8 @@ function openReferenceSheet(initialTab, focusName) {
         if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
       });
     } else if (found && refTab === "muscles") {
+      openMuscleDetailScreen(found.id, refSheetBackReturn, true);
       hideRefSheet();
-      openMuscleDetailScreen(found.id, refSheetBackReturn);
     }
   }
 }
@@ -6928,7 +6943,11 @@ if ("serviceWorker" in navigator) {
   function blocked() {
     if (typeof _exEdit !== "undefined" && _exEdit) return true;   // идёт перестановка
     if (typeof _tplDrag !== "undefined" && _tplDrag) return true; // тащим упражнение в шаблоне
-    return !!document.querySelector(".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open");
+    // Спрятанная (display:none) шторка-справочник — та, из которой мы ушли в
+    // карточку мышцы, — НЕ должна блокировать свайп-назад: она видимо закрыта.
+    const sheets = document.querySelectorAll(".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open");
+    for (const s of sheets) { if (s.style.display !== "none") return true; }
+    return false;
   }
   function down(x, y) {
     active = false; decided = false; horiz = false; dx = 0; screen = null;
