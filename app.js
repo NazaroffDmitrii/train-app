@@ -1443,7 +1443,7 @@ function doDeleteWorkout(workout, rerender, label) {
   }, 6000);
 
   // Быстрая отмена + недельная корзина. При отмене чистим и запись корзины.
-  showUndoToast("Тренировка удалена — или верни позже в «Недавно удалённых»", () => {
+  showUndoToast("Тренировка удалена", () => {
     undone = true;
     clearTimeout(purgeTimer);
     Trash.remove(userId, trashId);
@@ -4005,11 +4005,20 @@ function wireExRowSwipe(wrap, userId) {
         confirmLabel: "Удалить",
         onConfirm: () => {
           const own = DATA.getOwnExercises(userId).find(e => e.id === exId) || null;
-          Trash.push(userId, { type: "exercise", label: exName, sub: "Упражнение", data: { own: own ? JSON.parse(JSON.stringify(own)) : null, exId } });
+          const trashId = Trash.push(userId, { type: "exercise", label: exName, sub: "Упражнение", data: { own: own ? JSON.parse(JSON.stringify(own)) : null, exId } });
+          const snapshot = [...DATA.getOwnExercises(userId)];
+          const hiddenSnapshot = [...DATA.getHiddenIds(userId)];
           DATA.deleteOwnExercise(userId, exId);
           SyncQueue.push("exercise:delete", { id: exId });
           renderExercisesList(exercisesSearch.value);
-          showToast("Удалено — можно вернуть в «Недавно удалённых»");
+          showUndoToast(`Упражнение «${exName}» удалено`, () => {
+            Trash.remove(userId, trashId);
+            DATA.saveOwnExercises(userId, snapshot);
+            DATA.saveHiddenIds(userId, hiddenSnapshot);
+            SyncQueue.push("exercise:create", {});
+            renderExercisesList(exercisesSearch.value);
+            showToast("Восстановлено");
+          });
         },
       });
     } else if (dx >= DEL) {
@@ -4571,11 +4580,20 @@ function openReferenceSheet(initialTab, focusName) {
   }
 
   function removeCategory(cat) {
-    Trash.push(userId, { type: "category", label: cat, sub: "Группа", data: { name: cat, color: DATA.getCategoryColors(userId)[cat] || null } });
+    const trashId = Trash.push(userId, { type: "category", label: cat, sub: "Группа", data: { name: cat, color: DATA.getCategoryColors(userId)[cat] || null } });
+    const catSnapshot = [...DATA.getAllCategories(userId)];
+    const exSnapshot  = [...DATA.getOwnExercises(userId)];
     DATA.deleteCategory(userId, cat);
     renderExercisesList(exercisesSearch.value);
     renderContent();
-    showToast("Удалено — можно вернуть в «Недавно удалённых»");
+    showUndoToast(`Группа «${cat}» удалена`, () => {
+      Trash.remove(userId, trashId);
+      DATA.saveAllCategories(userId, catSnapshot);
+      DATA.saveOwnExercises(userId, exSnapshot);
+      renderExercisesList(exercisesSearch.value);
+      renderContent();
+      showToast("Восстановлено");
+    });
   }
 
   function openAddCatModal() {
@@ -5080,20 +5098,25 @@ function openReferenceSheet(initialTab, focusName) {
     const item = list.find(x => x.id === id); if (!item) return;
     const own = refItemIsOwn(item);
     const label = kind === "muscle" ? "Мышца" : "Движение";
+    const undoToast = (trashId) => showUndoToast(`${label} «${item.name}» удалено`, () => {
+      restoreFromTrash(userId, trashId);   // вернёт личное в оверлей / общее в атлас+БД и уберёт из корзины
+      renderContent();
+      showToast("Восстановлено");
+    });
     if (own) {
-      Trash.push(userId, { type: kind, label: item.name, sub: label, data: { item: JSON.parse(JSON.stringify(item)) } });
+      const trashId = Trash.push(userId, { type: kind, label: item.name, sub: label, data: { item: JSON.parse(JSON.stringify(item)) } });
       if (kind === "muscle") DATA.saveOwnMuscles(userId, DATA.getOwnMuscles(userId).filter(x => x.id !== id));
       else                   DATA.saveOwnMovements(userId, DATA.getOwnMovements(userId).filter(x => x.id !== id));
       renderContent();
-      showToast("Удалено — можно вернуть в «Недавно удалённых»");
+      undoToast(trashId);
     } else if (DATA.isAdmin()) {
       // Общий элемент удаляет только админ — из общей базы (оптимистично + БД).
       // В корзину кладём строку атласа + её связи, чтобы восстановление вернуло и то, и другое.
       const a0 = DATA.atlasSnapshot();
       const atlasItem = (kind === "muscle" ? a0.muscles : a0.categories).find(x => x.id === id) || item;
       const links = a0.muscleCategoryLinks.filter(l => kind === "muscle" ? l.muscle === item.name : l.category === item.name);
-      Trash.push(userId, { type: kind, label: item.name, sub: `${label} (общая)`, data: { shared: true, item: JSON.parse(JSON.stringify(atlasItem)), links: JSON.parse(JSON.stringify(links)) } });
-      refAdminDeleteShared(kind, item).then(() => { renderContent(); showToast("Удалено — можно вернуть в «Недавно удалённых»"); })
+      const trashId = Trash.push(userId, { type: kind, label: item.name, sub: `${label} (общая)`, data: { shared: true, item: JSON.parse(JSON.stringify(atlasItem)), links: JSON.parse(JSON.stringify(links)) } });
+      refAdminDeleteShared(kind, item).then(() => { renderContent(); undoToast(trashId); })
         .catch(err => { showToast("Не удалось удалить: " + (err && err.message || err)); });
     }
   }
@@ -6719,11 +6742,18 @@ function deleteTemplateWithUndo(id) {
     message: `«${tpl.name || "Шаблон"}» будет удалён. Вернуть можно в настройках → «Недавно удалённые».`,
     confirmLabel: "Удалить",
     onConfirm: () => {
-      Trash.push(userId, { type: "template", label: tpl.name || "Шаблон", sub: "Шаблон", data: { template: JSON.parse(JSON.stringify(tpl)) } });
+      const trashId = Trash.push(userId, { type: "template", label: tpl.name || "Шаблон", sub: "Шаблон", data: { template: JSON.parse(JSON.stringify(tpl)) } });
+      const snapshot = [...DATA.getTemplates(userId)];
       DATA.deleteTemplate(userId, id);
       SyncQueue.push("template:delete", { templateId: id });
       renderTemplatesList();
-      showToast("Удалено — можно вернуть в «Недавно удалённых»");
+      showUndoToast("Шаблон удалён", () => {
+        Trash.remove(userId, trashId);
+        DATA.saveTemplates(userId, snapshot);
+        SyncQueue.push("template:create", {});
+        renderTemplatesList();
+        showToast("Восстановлено");
+      });
     },
   });
 }
