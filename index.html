@@ -38,6 +38,7 @@
   --red: #f87171;
   --red-soft: rgba(248, 113, 113, 0.14);
   --amber: #fbbf24;
+  --grey: #5e5e6b;
 
   --avatar-dima-bg: #4b3fb0;
   --avatar-dima-fg: #c9c2ff;
@@ -1334,6 +1335,9 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.actionable { pointer-events: auto; }
+/* Когда плавающая «Готово» видна (режим правки шторки/списков) — поднимаем
+   тост выше неё, иначе они накладываются друг на друга у нижнего края. */
+body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-bottom)); }
 .toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 13.5px; padding: 2px 2px; white-space: nowrap; }
 /* ============ Screen 5: exercises ============ */
 .screen-exercises { display: flex; flex-direction: column; background: var(--bg-base); }
@@ -1347,11 +1351,12 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .exercises-header-top { display: flex; align-items: center; gap: 12px; }
 .exercises-header-title { flex: 1; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
 .exercises-add-btn {
-  flex: none; width: 38px; height: 38px; border-radius: 12px;
+  flex: none; width: 44px; height: 44px; border-radius: 13px;
   background: var(--accent); color: #fff;
   display: flex; align-items: center; justify-content: center;
 }
 .exercises-add-btn svg { width: 18px; height: 18px; }
+.exercises-add-btn:active { opacity: 0.85; }
 
 /* ── Подвкладки «Атлас» (Упражнения / Мышцы / Движения / Группы) ──────────── */
 .atlas-subtabs {
@@ -1527,9 +1532,9 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .ref-sheet-list.ref-editing .ref-card-wrap:not(.ref-dragging) { animation: catJiggle 0.3s ease-in-out infinite; }
 .ref-sheet-list.ref-editing .ref-card-wrap:nth-child(even):not(.ref-dragging) { animation-delay: -0.15s; }
 
-.exercises-search-wrap { flex: none; padding: 12px 20px 2px; }
+.exercises-search-wrap { flex: none; padding: 12px 20px 2px; display: flex; gap: 8px; align-items: center; }
 .exercises-search {
-  width: 100%; padding: 11px 16px;
+  flex: 1; min-width: 0; padding: 11px 16px;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
   border-radius: 14px; font-size: 15px; color: var(--text-primary);
   transition: border-color 0.15s ease;
@@ -1648,6 +1653,16 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .ex-row-delete svg { width: 17px; height: 17px; }
 .ex-row-wrap.swiping .ex-row-delete { opacity: 0.9; }
 .ex-row-wrap.will-delete .ex-row-delete { opacity: 1; }
+.ex-row-edit-slot {
+  position: absolute; inset: 0; z-index: 0;
+  display: flex; align-items: center; justify-content: flex-start; gap: 6px;
+  padding-left: 16px; border-radius: var(--radius-md);
+  background: var(--grey); color: #fff; font-size: 13px; font-weight: 700; opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ex-row-edit-slot svg { width: 17px; height: 17px; }
+.ex-row-wrap.swiping .ex-row-edit-slot { opacity: 0.9; }
+.ex-row-wrap.will-edit .ex-row-edit-slot { opacity: 1; }
 .ex-row {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 14px;
@@ -1942,9 +1957,21 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600;
   color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* Разворот группы (п.9): состав (мышцы/движения), как у мышц/движений. */
-.cat-item-wrap.expanded .cat-item { background: var(--panel-hi); }
-.cat-item-detail-block { position: relative; z-index: 1; padding-left: 16px; padding-right: 16px; padding-bottom: 14px; }
+/* Разворот группы (п.9): состав (мышцы/движения), как у мышц/движений. Шапка
+   и блок состава — разные DOM-узлы (сиблинги), поэтому подсветку красим на
+   обоих и визуально сшиваем их в одну карточку (без двойной границы посередине). */
+.cat-item-wrap.expanded .cat-item {
+  background: var(--panel-hi);
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+}
+.cat-item-detail-block {
+  position: relative; z-index: 1; padding-left: 16px; padding-right: 16px; padding-bottom: 14px;
+}
+.cat-item-wrap.expanded .cat-item-detail-block {
+  background: var(--panel-hi); border: 1px solid var(--border-subtle); border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md); margin-top: -1px; padding-top: 10px;
+}
 .cat-sheet-list.cat-editing .cat-item-wrap:not(.dragging) {
   animation: catJiggle 0.3s ease-in-out infinite;
 }
@@ -2517,13 +2544,13 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
         </button>
         <div class="exercises-header-title">Упражнения</div>
-        <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </button>
       </div>
     </div>
     <div class="exercises-search-wrap">
       <input class="exercises-search" id="exercises-search" placeholder="Поиск упражнения…" type="text">
+      <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
     </div>
     <div class="ex-cat-tabs-wrap">
       <div class="ex-cat-tabs" id="ex-cat-tabs"></div>
@@ -2885,15 +2912,6 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
       </div>
     </div>
     <div class="detail-screen-body" id="exd-body"></div>
-    <div class="exd-footer">
-      <button class="btn-chip exd-footer-edit" id="exd-edit-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-        Править
-      </button>
-      <button class="btn-chip exd-footer-icon" id="exd-share-btn" title="Поделиться">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-      </button>
-    </div>
   </section>
 
   <!-- ===== ЭКРАН: деталь мышцы (анатомия) — открывается только тапом по мышце ===== -->
