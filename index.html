@@ -1714,6 +1714,31 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   background: var(--panel-raised); border: 1px solid var(--border-subtle); color: var(--text-secondary);
 }
 .ex-form-chip.selected { background: var(--accent); border-color: transparent; color: #fff; }
+/* «Тип» — две равные кнопки в два столбца во всю ширину. */
+.ex-form-chips.ex-form-2col { display: flex; gap: 8px; }
+.ex-form-chips.ex-form-2col .ex-form-chip { flex: 1; justify-content: center; text-align: center; padding: 12px; font-size: 14px; }
+/* Выпадающие поля формы упражнения (Категория/Уровень/мышцы/движения). */
+.ex-form-dd { display: flex; flex-direction: column; gap: 8px; }
+.ex-form-dd .ef-dd-select {
+  width: 100%; padding: 11px 14px; border-radius: 12px; font-size: 14.5px;
+  background: var(--panel-raised); border: 1px solid var(--border-subtle); color: var(--text-primary);
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b8b97' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat; background-position: right 12px center; padding-right: 38px;
+}
+.ex-form-dd .ef-dd-select:focus { border-color: var(--accent); outline: none; }
+.ex-form-dd .ef-dd-add { color: var(--accent-bright); }
+.ex-form-dd .ef-dd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ex-form-dd .ef-dd-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 8px 7px 12px; border-radius: 11px; font-size: 13.5px; font-weight: 600;
+  background: var(--accent-soft); border: 1px solid transparent; color: var(--accent-bright);
+}
+.ex-form-dd .ef-dd-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%; font-size: 15px; line-height: 1;
+  background: rgba(255,255,255,0.08); color: var(--text-secondary);
+}
 .modal.modal-form { align-items: stretch; text-align: left; gap: 14px; }
 .modal.modal-form { overflow-x: hidden; }
 .modal.modal-form.modal-scroll { max-width: min(380px, calc(100vw - 32px)); max-height: 84vh; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }

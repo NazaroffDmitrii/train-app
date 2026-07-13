@@ -3463,8 +3463,8 @@ function initExercisesScreen() {
 
 $("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goToScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
-// Шестерёнка → шторка «Справочник» с вкладками Мышцы / Движения / Группы.
-$("ex-cat-manage-btn").addEventListener("click", () => openReferenceSheet("muscles"));
+// Шестерёнка → шторка «Справочник»; открывается на вкладке «Группы» (первой).
+$("ex-cat-manage-btn").addEventListener("click", () => openReferenceSheet("groups"));
 
 // Порядок групп для справочника: как у пользователя (getAllCategories), но только
 // группы Атласа; недостающие добавляем в каноничном порядке.
@@ -4227,7 +4227,23 @@ function openMuscleDetailScreen(muscleId, returnScreen = "exercises") {
   goToScreen("muscleDetail");
 }
 
-$("msd-back-btn").addEventListener("click", () => goToScreen(_msdReturnScreen));
+// Возврат из карточки мышцы. Обычно это имя экрана; но если мышца открыта ИЗ
+// шторки-справочника, _msdReturnScreen — функция, которая заново открывает
+// шторку на вкладке «Мышцы» (поверх экрана «Упражнения»), чтобы «назад» вернул
+// туда, откуда пришли, а не сразу в общий список (см. сценарий п.5).
+$("msd-back-btn").addEventListener("click", () => {
+  if (typeof _msdReturnScreen === "function") _msdReturnScreen();
+  else goToScreen(_msdReturnScreen);
+});
+
+// Переоткрыть шторку-справочник поверх экрана «Упражнения» (используется как
+// «назад» из карточки мышцы/движения, открытой из шторки). Сначала активируем
+// экран «Упражнения» под шторкой — тогда сворачивание шторки вернёт именно
+// туда, а не на карточку, с которой пришли.
+function reopenRefSheet(tab) {
+  goToScreen("exercises");
+  openReferenceSheet(tab);
+}
 
 // «Отдельное окно» со списком СВОИХ упражнений, где эта мышца работает —
 // попасть сюда можно только с экрана мышцы (кнопка в футере). Модалка (не
@@ -4680,7 +4696,7 @@ function openReferenceSheet(initialTab, focusName) {
       if (wrap.dataset.swiped) { delete wrap.dataset.swiped; return; }  // клик после свайпа глушим
       if (curEditMode()) return;                          // #5: тап в правке — ничего
       const kind = wrap.dataset.kind, id = wrap.dataset.id;
-      if (kind === "muscle") { close(); openMuscleDetailScreen(id); return; }
+      if (kind === "muscle") { close(); openMuscleDetailScreen(id, () => reopenRefSheet("muscles")); return; }
       const set = refExpanded.movements;
       set.has(id) ? set.delete(id) : set.add(id);        // разворот, без схлопывания других
       renderContent();
@@ -4844,7 +4860,7 @@ function openReferenceSheet(initialTab, focusName) {
   function crossNav(gotoKind, name) {
     if (gotoKind === "muscle") {
       const found = DATA.refMuscles(userId).find(x => x.name === name);
-      if (found) { close(); openMuscleDetailScreen(found.id); }
+      if (found) { close(); openMuscleDetailScreen(found.id, () => reopenRefSheet("muscles")); }
       return;
     }
     const found = DATA.refMovements(userId).find(x => x.name === name);
@@ -4938,7 +4954,7 @@ function openReferenceSheet(initialTab, focusName) {
       });
     } else if (found && refTab === "muscles") {
       close();
-      openMuscleDetailScreen(found.id);
+      openMuscleDetailScreen(found.id, () => reopenRefSheet("muscles"));
     }
   }
 }
@@ -5046,6 +5062,37 @@ function refChipSelect(container, options, selected, multi) {
   };
   render();
   return { get: () => [...sel], getOne: () => [...sel][0] || "" };
+}
+
+// Выпадающий выбор для формы упражнения (вместо длинного перечисления чипов).
+// multi=true: выбранные показываются чипами с ✕, снизу — селект «＋ добавить»
+// (после выбора остаётся, пока есть неиспользованные варианты — так можно
+// добавить несколько). multi=false: один селект без добавления (одиночный выбор).
+function refDropdownSelect(container, options, selected, multi) {
+  const sel = multi ? [...new Set(selected)] : (selected[0] != null ? [selected[0]] : []);
+  const render = () => {
+    if (multi) {
+      const chips = sel.map(v =>
+        `<span class="ef-dd-chip" data-v="${escHtml(v)}">${escHtml(v)}<button type="button" class="ef-dd-x" aria-label="Убрать">×</button></span>`).join("");
+      const rest = options.filter(o => !sel.includes(o));
+      const addSel = rest.length
+        ? `<select class="ef-dd-select ef-dd-add"><option value="">＋ добавить…</option>${rest.map(o => `<option value="${escHtml(o)}">${escHtml(o)}</option>`).join("")}</select>`
+        : "";
+      container.innerHTML = (chips ? `<div class="ef-dd-chips">${chips}</div>` : "") + addSel;
+      const add = container.querySelector(".ef-dd-add");
+      if (add) add.addEventListener("change", () => { if (add.value) { sel.push(add.value); render(); } });
+      container.querySelectorAll(".ef-dd-x").forEach(x => x.addEventListener("click", () => {
+        const v = x.parentElement.dataset.v;
+        const i = sel.indexOf(v); if (i !== -1) sel.splice(i, 1); render();
+      }));
+    } else {
+      container.innerHTML =
+        `<select class="ef-dd-select"><option value="">— не выбрано —</option>${options.map(o => `<option value="${escHtml(o)}"${o === sel[0] ? " selected" : ""}>${escHtml(o)}</option>`).join("")}</select>`;
+      container.querySelector(".ef-dd-select").addEventListener("change", e => { sel[0] = e.target.value; });
+    }
+  };
+  render();
+  return { get: () => [...sel], getOne: () => sel[0] || "" };
 }
 
 // Форма мышцы. onSaved() — колбэк после сохранения (перерисовать шторку).
@@ -5232,16 +5279,16 @@ function openExerciseForm(exerciseId) {
       <h2 class="modal-title">${ex ? "Редактировать упражнение" : "Новое упражнение"}</h2>
       <div class="ex-form-field"><label class="ex-form-label">Название</label>
         <input class="ex-form-input" id="ef-name" type="text" placeholder="Например, Гакк-приседания" value="${escHtml(ex ? ex.name : "")}"></div>
-      <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips" id="ef-type"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Категория</label><div class="ex-form-chips" id="ef-cat"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips ex-form-2col" id="ef-type"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Категория</label><div class="ex-form-dd" id="ef-cat"></div></div>
       <div class="ex-form-field"><label class="ex-form-label">Оборудование</label>
         <input class="ex-form-input" id="ef-equip" type="text" placeholder="Например, Штанга" value="${escHtml(a.equipment || "")}"></div>
-      <div class="ex-form-field"><label class="ex-form-label">Уровень</label><div class="ex-form-chips" id="ef-level"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Уровень</label><div class="ex-form-dd" id="ef-level"></div></div>
       <div class="ex-form-group-label">Рабочие мышцы</div>
-      <div class="ex-form-field"><label class="ex-form-label">Целевые</label><div class="ex-form-chips ef-mus" id="ef-target"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Синергисты</label><div class="ex-form-chips ef-mus" id="ef-syn"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Стабилизаторы</label><div class="ex-form-chips ef-mus" id="ef-stab"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Движения</label><div class="ex-form-chips" id="ef-moves"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Целевые</label><div class="ex-form-dd" id="ef-target"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Синергисты</label><div class="ex-form-dd" id="ef-syn"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Стабилизаторы</label><div class="ex-form-dd" id="ef-stab"></div></div>
+      <div class="ex-form-field"><label class="ex-form-label">Движения</label><div class="ex-form-dd" id="ef-moves"></div></div>
       <div class="ex-form-group-label">Техника и заметки</div>
       <div class="ex-form-field"><label class="ex-form-label">Техника (по шагу на строку)</label>
         <textarea class="ex-form-input ex-form-textarea" id="ef-tech" rows="4" placeholder="Один шаг — одна строка">${escHtml(technique)}</textarea></div>
@@ -5262,13 +5309,14 @@ function openExerciseForm(exerciseId) {
     </div>`;
   document.body.appendChild(bd);
 
+  // Тип — две равные кнопки (два столбца); остальное — выпадающие списки.
   const typeSel  = refChipSelect(bd.querySelector("#ef-type"), ["Силовое", "Бег"], [ex && ex.type === "run" ? "Бег" : "Силовое"], false);
-  const catSel   = refChipSelect(bd.querySelector("#ef-cat"), cats, [ex ? ex.cat : (cats[0] || "Ноги")], false);
-  const levelSel = refChipSelect(bd.querySelector("#ef-level"), LEVELS, curLevel ? [curLevel] : [], false);
-  const targetSel = refChipSelect(bd.querySelector("#ef-target"), muscleNames, roleNames(a.target), true);
-  const synSel    = refChipSelect(bd.querySelector("#ef-syn"), muscleNames, roleNames(a.synergist), true);
-  const stabSel   = refChipSelect(bd.querySelector("#ef-stab"), muscleNames, roleNames(a.stabilizer), true);
-  const moveSel   = refChipSelect(bd.querySelector("#ef-moves"), moveNames, a.categories || [], true);
+  const catSel   = refDropdownSelect(bd.querySelector("#ef-cat"), cats, [ex ? ex.cat : (cats[0] || "Ноги")], false);
+  const levelSel = refDropdownSelect(bd.querySelector("#ef-level"), LEVELS, curLevel ? [curLevel] : [], false);
+  const targetSel = refDropdownSelect(bd.querySelector("#ef-target"), muscleNames, roleNames(a.target), true);
+  const synSel    = refDropdownSelect(bd.querySelector("#ef-syn"), muscleNames, roleNames(a.synergist), true);
+  const stabSel   = refDropdownSelect(bd.querySelector("#ef-stab"), muscleNames, roleNames(a.stabilizer), true);
+  const moveSel   = refDropdownSelect(bd.querySelector("#ef-moves"), moveNames, a.categories || [], true);
 
   // сохранить пучок у мышцы, если он уже был задан (иначе пусто)
   const toRoles = (names, prev) => names.map(n => {
