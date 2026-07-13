@@ -390,6 +390,22 @@
     return `<div class="wk-chips">${list.map(n =>
       `<button class="wk-chip ${cls}${activeSet.has(n) ? " active" : ""}" data-${attr}="${esc(n)}">${esc(n)}</button>`).join("")}</div>`;
   }
+  // Выпадающий выбор (как в форме мышц): выбранное — чипами с ✕, снизу — раскрытие
+  // вниз со списком оставшихся. Открытый список запоминается в workout.uiOpen,
+  // чтобы переживать полный re-render. data-<attr> на чипе и опции переиспользует
+  // тот же тумблер, что и раньше (клик по чипу снимает, по опции — добавляет).
+  function ddHtml(kind, options, selectedNames, attr, placeholder, chipMod) {
+    const openK = workout.uiOpen === kind;
+    const chips = selectedNames.length ? `<div class="wk-dd-chips">${selectedNames.map(n =>
+      `<span class="wk-dd-chip${chipMod ? " " + chipMod : ""}" data-${attr}="${esc(n)}">${esc(n)}<span class="wk-dd-x">×</span></span>`).join("")}</div>` : "";
+    const rest = options.filter(o => !selectedNames.includes(o));
+    const trigger = `<button class="wk-dd-trigger${openK ? " open" : ""}" data-ddtoggle="${kind}"><span>${esc(placeholder)}</span><span class="wk-dd-caret">⌄</span></button>`;
+    const panel = openK ? `<div class="wk-dd-panel">${
+      rest.length ? rest.map(o => `<button class="wk-dd-opt" data-${attr}="${esc(o)}">${esc(o)}</button>`).join("")
+                  : `<div class="wk-dd-empty">Все добавлены</div>`
+    }</div>` : "";
+    return `<div class="wk-dd">${chips}${trigger}${panel}</div>`;
+  }
 
   function render() {
     const el = $("constructor-scroll");
@@ -427,16 +443,16 @@
           </div>
           <div class="wk-field">
             <span class="wk-label">Доступное оборудование</span>
-            ${chipsHtml("equip", EQUIP_TAGS, new Set(EQUIP_TAGS.filter(t => !equipOffSet.has(t))), "equip")}
-            <p class="wk-hint">Выключенное исключается из генерации.</p>
+            ${ddHtml("equip", EQUIP_TAGS, EQUIP_TAGS.filter(t => !equipOffSet.has(t)), "equip", "＋ добавить оборудование")}
+            <p class="wk-hint">В списке — доступное; чего нет в зале, убери крестиком.</p>
           </div>
           <div class="wk-field">
             <span class="wk-label">Приоритет (+${workout.priorityBonus} подх.)</span>
-            ${chipsHtml("prio", baseNames, prioritySet, "prio")}
+            ${ddHtml("prio", baseNames, [...prioritySet], "prio", "＋ добавить движение в приоритет")}
           </div>
           <div class="wk-field">
             <span class="wk-label">Ограничения (не грузить)</span>
-            ${chipsHtml("restr warn", baseNames, restrictSet, "restr")}
+            ${ddHtml("restr", baseNames, [...restrictSet], "restr", "＋ добавить ограничение", "warn")}
           </div>
         </div>` : `<p class="wk-set-sum">Готовность: <b>${esc(workout.readiness)}</b> · цель ${workout.target} · дней: ${workout.days.length}</p>`}
       </div>
@@ -461,11 +477,11 @@
         ${covered.length ? `<div class="wk-chips">${covered.map(n => `<span class="wk-cov-chip">${esc(n)} <b>${cov[n]}</b></span>`).join("")}</div>` : `<p class="wk-hint">Движения не покрыты — сгенерируй план.</p>`}
       </div>`;
 
-    // — Предупреждения —
+    // — Замечания (сгруппированы в карточку с заголовком — так читаются удобнее) —
     const warns = warnings();
-    const warnHtml = `<div class="wk-warns">${warns.length
-      ? warns.map(w => `<div class="wk-warn ${w.t}">${esc(w.m)}</div>`).join("")
-      : `<div class="wk-ok">✓ ${multi ? "Микроцикл сбалансирован." : "Движения закрыты, объём в норме."}</div>`}</div>`;
+    const warnHtml = warns.length
+      ? `<div class="wk-card wk-warns-card"><div class="wk-card-head">Замечания <span class="wk-warns-count">${warns.length}</span></div><div class="wk-warns">${warns.map(w => `<div class="wk-warn ${w.t}">${esc(w.m)}</div>`).join("")}</div></div>`
+      : `<div class="wk-ok">✓ ${multi ? "Микроцикл сбалансирован." : "Движения закрыты, объём в норме."}</div>`;
 
     // — План (упражнения активного дня) —
     const items = activeDay().items;
@@ -491,14 +507,18 @@
       </div>`;
     }).join("")}</div>` : `<p class="wk-empty">План пуст. Настрой параметры и нажми «Сгенерировать».</p>`;
 
+    // Ручное добавление — доступно всегда (план можно собрать и без генерации).
+    const addManual = `<button class="wk-add-manual" id="wk-add">＋ Добавить упражнение вручную</button>`;
     const actions = items.length || multi ? `
       <div class="wk-actions">
-        <button class="wk-act" id="wk-fill">+ Дополнить день</button>
-        <button class="wk-act primary" id="wk-save">Сохранить как шаблон${multi ? "ы" : ""}</button>
-        <button class="wk-act danger" id="wk-clear">Очистить</button>
+        <button class="wk-act primary wk-act-full" id="wk-save">Сохранить как шаблон${multi ? "ы" : ""}</button>
+        <div class="wk-actions-row">
+          <button class="wk-act" id="wk-fill">＋ Дополнить день</button>
+          <button class="wk-act wk-act-clear" id="wk-clear">Очистить план</button>
+        </div>
       </div>` : "";
 
-    el.innerHTML = settings + daysHtml + (items.length || covered.length ? covHtml + warnHtml : "") + planHtml + actions;
+    el.innerHTML = settings + daysHtml + (items.length || covered.length ? covHtml + warnHtml : "") + planHtml + addManual + actions;
     wire();
     persist();
   }
@@ -510,9 +530,10 @@
     $("wk-set-toggle") && $("wk-set-toggle").addEventListener("click", () => { workout.settingsOpen = !(workout.settingsOpen !== false); render(); });
     on("[data-readiness]", "click", n => { workout.readiness = n.dataset.readiness; workout.target = READINESS[workout.readiness].target; render(); });
     on("[data-split]", "click", n => { workout.splitDays = Math.max(1, Math.min(6, +n.dataset.split || 1)); render(); });
-    on("[data-equip]", "click", n => { const t = n.dataset.equip; const i = workout.equipOff.indexOf(t); if (i >= 0) workout.equipOff.splice(i, 1); else workout.equipOff.push(t); render(); });
-    on("[data-prio]", "click", n => { const t = n.dataset.prio; const i = workout.priority.indexOf(t); if (i >= 0) workout.priority.splice(i, 1); else workout.priority.push(t); render(); });
-    on("[data-restr]", "click", n => { const t = n.dataset.restr; const i = workout.restrictions.indexOf(t); if (i >= 0) workout.restrictions.splice(i, 1); else workout.restrictions.push(t); render(); });
+    on("[data-ddtoggle]", "click", n => { const k = n.dataset.ddtoggle; workout.uiOpen = workout.uiOpen === k ? null : k; render(); });
+    on("[data-equip]", "click", n => { const t = n.dataset.equip; const i = workout.equipOff.indexOf(t); if (i >= 0) workout.equipOff.splice(i, 1); else workout.equipOff.push(t); workout.uiOpen = null; render(); });
+    on("[data-prio]", "click", n => { const t = n.dataset.prio; const i = workout.priority.indexOf(t); if (i >= 0) workout.priority.splice(i, 1); else workout.priority.push(t); workout.uiOpen = null; render(); });
+    on("[data-restr]", "click", n => { const t = n.dataset.restr; const i = workout.restrictions.indexOf(t); if (i >= 0) workout.restrictions.splice(i, 1); else workout.restrictions.push(t); workout.uiOpen = null; render(); });
     on("[data-day]", "click", n => { workout.active = +n.dataset.day; render(); });
     on("[data-regen]", "click", n => regenItem(+n.dataset.regen));
     on("[data-remove]", "click", n => removeItem(+n.dataset.remove));
@@ -525,6 +546,43 @@
     $("wk-fill") && $("wk-fill").addEventListener("click", fillDay);
     $("wk-clear") && $("wk-clear").addEventListener("click", () => { activeDay().items = []; render(); });
     $("wk-save") && $("wk-save").addEventListener("click", saveAsTemplates);
+    $("wk-add") && $("wk-add").addEventListener("click", openExercisePicker);
+  }
+
+  // Ручной выбор упражнения в план активного дня (модалка с поиском по базе).
+  function openExercisePicker() {
+    if (!exercises.length) { showToast("В базе нет упражнений"); return; }
+    const bd = document.createElement("div");
+    bd.className = "modal-backdrop open ref-form-backdrop";
+    bd.style.zIndex = "60";
+    bd.innerHTML = `
+      <div class="modal modal-form modal-scroll wk-picker">
+        <h2 class="modal-title">Добавить упражнение</h2>
+        <input class="ex-form-input" id="wk-pick-search" type="text" placeholder="Поиск по названию…" autocomplete="off">
+        <div class="wk-pick-list" id="wk-pick-list"></div>
+        <div class="modal-form-actions"><button class="btn-chip" data-act="cancel">Закрыть</button></div>
+      </div>`;
+    document.body.appendChild(bd);
+    const close = () => bd.remove();
+    bd.addEventListener("click", e => { if (e.target === bd) close(); });
+    bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
+    const listEl = $("wk-pick-list"), inp = $("wk-pick-search");
+    const renderList = () => {
+      const q = inp.value.trim().toLowerCase();
+      const pool = exercises.filter(e => !q || (e.name || "").toLowerCase().includes(q))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || "", "ru")).slice(0, 300);
+      listEl.innerHTML = pool.length
+        ? pool.map(e => { const mv = exBaseCats(e).join(" · "); return `<button class="wk-pick-item" data-id="${esc(e.id)}"><span class="wk-pick-name">${esc(e.name)}</span>${mv ? `<span class="wk-pick-mv">${esc(mv)}</span>` : ""}</button>`; }).join("")
+        : `<p class="wk-hint" style="text-align:center;padding:20px">Ничего не найдено</p>`;
+      listEl.querySelectorAll(".wk-pick-item").forEach(b => b.addEventListener("click", () => {
+        const e = exById(b.dataset.id); if (!e) return;
+        activeDay().items.push({ exId: e.id, sets: setsForEx(e), reps: workout.reps || "8–12", rpe: READINESS[workout.readiness].rpe });
+        close(); render(); showToast("Упражнение добавлено");
+      }));
+    };
+    renderList();
+    inp.addEventListener("input", renderList);
+    setTimeout(() => inp.focus(), 60);
   }
 
   /* ── Публичный API ───────────────────────────────────────────────────────── */

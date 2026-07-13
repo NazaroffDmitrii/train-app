@@ -1530,10 +1530,25 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 .ref-sheet-list { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; min-height: 120px; scrollbar-width: none; }
 .ref-sheet-list::-webkit-scrollbar { display: none; }   /* без ползунка */
 .ref-sheet-actions { flex: none; }
-/* «Недавно удалённые» — строки корзины */
+/* «Недавно удалённые» — строки корзины (свайп влево = удалить навсегда) */
+.trash-row-wrap {
+  position: relative; overflow: hidden; border-radius: var(--radius-md); margin-bottom: 8px;
+  -webkit-user-select: none; user-select: none;
+}
+.trash-row-del {
+  position: absolute; inset: 0; z-index: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  padding-right: 16px; border-radius: var(--radius-md);
+  background: var(--red); color: #fff; font-size: 13px; font-weight: 700; opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.trash-row-del svg { width: 17px; height: 17px; }
+.trash-row-wrap.swiping .trash-row-del { opacity: 0.9; }
+.trash-row-wrap.will-delete .trash-row-del { opacity: 1; }
 .trash-row {
+  position: relative; z-index: 1;
   display: flex; align-items: center; gap: 12px;
-  padding: 13px 14px; margin-bottom: 8px; border-radius: var(--radius-md);
+  padding: 13px 14px; border-radius: var(--radius-md);
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
 }
 .trash-row-body { flex: 1; min-width: 0; }
@@ -1544,6 +1559,8 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   background: var(--accent-soft); color: var(--accent-bright);
 }
 .trash-restore-btn:active { opacity: 0.8; }
+.trash-clear-btn { flex: none; font-size: 13px; font-weight: 700; color: var(--red); padding: 4px 6px; }
+.trash-clear-btn:active { opacity: 0.7; }
 
 /* Режим правки: карточки/строки покачиваются (эталон — упражнения/категории). */
 .ref-sheet-list.ref-editing .ref-card-wrap:not(.ref-dragging) { animation: catJiggle 0.3s ease-in-out infinite; }
@@ -1938,10 +1955,43 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 .wk-mini { padding: 6px 11px; border-radius: 9px; background: var(--bg-base); border: 1px solid var(--border-subtle); font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .wk-mini.danger { color: #f87171; margin-left: auto; }
 .wk-empty { color: var(--text-tertiary); font-size: 14px; text-align: center; padding: 30px 10px; }
-.wk-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 10px; }
-.wk-act { flex: 1; min-width: 130px; padding: 13px; border-radius: var(--radius-md); background: var(--panel-raised); border: 1px solid var(--border-subtle); font-size: 14px; font-weight: 650; color: var(--text-primary); }
+.wk-actions { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
+.wk-actions-row { display: flex; gap: 8px; }
+.wk-act { flex: 1; min-width: 0; padding: 13px; border-radius: var(--radius-md); background: var(--panel-raised); border: 1px solid var(--border-subtle); font-size: 14px; font-weight: 650; color: var(--text-primary); }
 .wk-act.primary { background: var(--accent); border-color: transparent; color: #fff; }
-.wk-act.danger { color: #f87171; flex: none; min-width: 0; }
+.wk-act-full { width: 100%; }
+.wk-act-clear { color: #f87171; }
+.wk-add-manual {
+  width: 100%; margin-bottom: 14px; padding: 14px; border-radius: var(--radius-md);
+  background: transparent; border: 1.5px dashed var(--border-strong);
+  color: var(--accent-bright); font-size: 14.5px; font-weight: 700;
+}
+.wk-add-manual:active { background: var(--panel-raised); }
+/* Замечания — карточка с заголовком и счётчиком */
+.wk-warns-card { padding: 4px 14px 12px; }
+.wk-warns-count { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 700; color: #fcd34d; background: rgba(245,158,11,0.14); padding: 2px 8px; border-radius: 8px; }
+/* Выпадающие поля конструктора (оборудование/приоритет/ограничения) */
+.wk-dd { display: flex; flex-direction: column; gap: 8px; }
+.wk-dd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wk-dd-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 8px 7px 12px; border-radius: 11px; background: var(--accent-soft); color: var(--accent-bright); font-size: 12.5px; font-weight: 600; }
+.wk-dd-chip.warn { background: rgba(245,158,11,0.14); color: #fcd34d; }
+.wk-dd-x { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; background: rgba(255,255,255,0.09); color: inherit; font-size: 14px; line-height: 1; }
+.wk-dd-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 13px; border-radius: 12px; background: var(--bg-base); border: 1px solid var(--border-subtle); color: var(--accent-bright); font-size: 13.5px; font-weight: 600; text-align: left; }
+.wk-dd-trigger.open { border-color: var(--accent); }
+.wk-dd-caret { flex: none; color: var(--text-tertiary); font-size: 15px; transition: transform 0.15s ease; }
+.wk-dd-trigger.open .wk-dd-caret { transform: rotate(180deg); }
+.wk-dd-panel { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: var(--bg-base); border: 1px solid var(--border-subtle); border-radius: 12px; scrollbar-width: none; }
+.wk-dd-panel::-webkit-scrollbar { display: none; }
+.wk-dd-opt { text-align: left; padding: 10px 12px; border-radius: 9px; font-size: 13.5px; color: var(--text-secondary); }
+.wk-dd-opt:active { background: var(--panel-raised); }
+.wk-dd-empty { padding: 10px 12px; font-size: 12.5px; color: var(--text-tertiary); }
+/* Пикер ручного добавления упражнения */
+.wk-pick-list { display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow-y: auto; scrollbar-width: none; margin: 2px 0; }
+.wk-pick-list::-webkit-scrollbar { display: none; }
+.wk-pick-item { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 11px 13px; border-radius: 12px; background: var(--panel-raised); border: 1px solid var(--border-subtle); }
+.wk-pick-item:active { background: var(--panel-hi); }
+.wk-pick-name { font-size: 14.5px; font-weight: 650; color: var(--text-primary); }
+.wk-pick-mv { font-size: 12px; color: var(--text-tertiary); }
 
 /* ── Перепривязка старых упражнений ──────────────────────────────────────── */
 .s-orphan-banner {
