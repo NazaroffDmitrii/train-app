@@ -31,6 +31,7 @@
   const LEVEL_RU = { global: "глобальные", regional: "региональные", local: "локальные",
     "глобальные": "глобальные", "региональные": "региональные", "локальные": "локальные" };
   const DAY_LETTERS = ["A", "Б", "В", "Г", "Д", "Е"];
+  const WK_TRASH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 
   // оборудование: свободный текст базы → один основной тег (приоритет сверху вниз)
   const EQUIP_RULES = [
@@ -97,7 +98,8 @@
 
   /* ── Хелперы таксономии ──────────────────────────────────────────────────── */
   function baseCats() { return categories.filter(c => c.type === "База"); }
-  function activeDay() { if (workout.active >= workout.days.length) workout.active = workout.days.length - 1; return workout.days[workout.active]; }
+  function activeDay() { if (workout.active === "all") return workout.days[0] || { items: [] }; if (workout.active >= workout.days.length) workout.active = workout.days.length - 1; return workout.days[workout.active]; }
+  function totalVolume() { return workout.days.reduce((s, d) => s + dayVolume(d), 0); }
   function exById(id) { return exercises.find(e => e.id === id); }
   function exBaseCats(e) { return (e.categories || []).filter(cn => { const c = categories.find(x => x.name === cn); return c && c.type === "База"; }); }
   function exOptCats(e) { return (e.categories || []).filter(cn => { const c = categories.find(x => x.name === cn); return c && c.type === "Опция"; }); }
@@ -301,9 +303,10 @@
     day.items.sort((a, b) => { const ea = exById(a.exId), eb = exById(b.exId); return (rank[CHAR[exCharacter(ea)]] - rank[CHAR[exCharacter(eb)]]) || (exBaseCats(eb).length - exBaseCats(ea).length); });
     render();
   }
-  function regenItem(idx) { const it = activeDay().items[idx]; const e = exById(it.exId); if (!e) return; const alts = alternatives(e); if (!alts.length) { showToast("Нет других вариантов"); return; } it.exId = randPick(alts).id; render(); }
-  function removeItem(idx) { activeDay().items.splice(idx, 1); render(); }
-  function moveItem(idx, dir) { const it = activeDay().items; const j = idx + dir; if (j < 0 || j >= it.length) return; const t = it[idx]; it[idx] = it[j]; it[j] = t; render(); }
+  function regenItem(di, i) { const d = workout.days[+di]; if (!d) return; const it = d.items[i]; const e = exById(it.exId); if (!e) return; const alts = alternatives(e); if (!alts.length) { showToast("Нет других вариантов"); return; } it.exId = randPick(alts).id; render(); }
+  function removeItem(di, i) { const d = workout.days[+di]; if (!d) return; d.items.splice(i, 1); render(); }
+  // Перенос упражнения в другой день (кнопкой-выбором дня в карточке).
+  function moveToDay(di, i, target) { const src = workout.days[+di], dst = workout.days[+target]; if (!src || !dst || +di === +target) return; const it = src.items.splice(i, 1)[0]; if (it) dst.items.push(it); render(); showToast("Перенесено в «" + dst.name + "»"); }
 
   /* ── Предупреждения ──────────────────────────────────────────────────────── */
   function warnings() {
@@ -458,67 +461,108 @@
       </div>
       <button class="wk-generate" id="wk-generate">⟳ Сгенерировать план</button>`;
 
-    // — Дни —
+    const isAll = workout.active === "all";
+    const rank = { "глобальные": "Г", "региональные": "Р", "локальные": "Л" };
+
+    // — Вкладки дней + «Целая» (при многодневном сплите) —
     let daysHtml = "";
     if (multi) {
       daysHtml = `<div class="wk-days">${workout.days.map((d, i) => `
-        <button class="wk-day${i === workout.active ? " active" : ""}${dayVolume(d) > VOL_MAX ? " over" : ""}" data-day="${i}">
+        <button class="wk-day${!isAll && i === workout.active ? " active" : ""}${dayVolume(d) > VOL_MAX ? " over" : ""}" data-day="${i}">
           <span class="wk-day-name">${esc(d.name)}</span><span class="wk-day-vol">${dayVolume(d)}п</span>
-        </button>`).join("")}</div>`;
+        </button>`).join("")}
+        <button class="wk-day wk-day-all${isAll ? " active" : ""}" data-day="all">
+          <span class="wk-day-name">Целая</span><span class="wk-day-vol">${totalVolume()}п</span>
+        </button></div>`;
     }
 
-    // — Покрытие (движения активного дня) —
-    const cov = coverage();
-    const covered = baseCats().map(c => c.name).filter(n => (cov[n] || 0) > 0);
-    const total = dayVolume(activeDay());
-    const covHtml = `
-      <div class="wk-card">
-        <div class="wk-card-head">Покрытие${multi ? " · " + esc(activeDay().name) : ""} <span class="wk-vol-badge${total > VOL_MAX ? " over" : total > VOL_WARN ? " high" : ""}">${total} подх.</span></div>
-        ${covered.length ? `<div class="wk-chips">${covered.map(n => `<span class="wk-cov-chip">${esc(n)} <b>${cov[n]}</b></span>`).join("")}</div>` : `<p class="wk-hint">Движения не покрыты — сгенерируй план.</p>`}
+    // — Покрытие: карточка по набору движений —
+    const covCard = (title, cov, total) => {
+      const covered = baseCats().map(c => c.name).filter(n => (cov[n] || 0) > 0);
+      return `<div class="wk-card">
+        <div class="wk-card-head">${esc(title)} <span class="wk-vol-badge${total > VOL_MAX ? " over" : total > VOL_WARN ? " high" : ""}">${total} подх.</span></div>
+        ${covered.length ? `<div class="wk-chips">${covered.map(n => `<span class="wk-cov-chip">${esc(n)} <b>${cov[n]}</b></span>`).join("")}</div>` : `<p class="wk-hint">Движения не покрыты — сгенерируй или добавь упражнения.</p>`}
       </div>`;
+    };
+    let covHtml = "";
+    if (isAll) covHtml = covCard("Общее покрытие за микроцикл", microCoverage(), totalVolume());
+    else if (multi) covHtml = covCard("День «" + activeDay().name + "»", coverage(), dayVolume(activeDay())) + covCard("Общее за микроцикл", microCoverage(), totalVolume());
+    else covHtml = covCard("Покрытие", coverage(), dayVolume(activeDay()));
 
-    // — Замечания (сгруппированы в карточку с заголовком — так читаются удобнее) —
+    // — Замечания стопкой: одно за раз, счётчик «i / N», листается стрелками/свайпом —
     const warns = warnings();
-    const warnHtml = warns.length
-      ? `<div class="wk-card wk-warns-card"><div class="wk-card-head">Замечания <span class="wk-warns-count">${warns.length}</span></div><div class="wk-warns">${warns.map(w => `<div class="wk-warn ${w.t}">${esc(w.m)}</div>`).join("")}</div></div>`
-      : `<div class="wk-ok">✓ ${multi ? "Микроцикл сбалансирован." : "Движения закрыты, объём в норме."}</div>`;
+    let warnHtml;
+    if (!warns.length) {
+      warnHtml = `<div class="wk-ok">✓ ${multi ? "Микроцикл сбалансирован." : "Движения закрыты, объём в норме."}</div>`;
+    } else {
+      if (workout.warnIdx == null || workout.warnIdx >= warns.length) workout.warnIdx = warns.length - 1;
+      if (workout.warnIdx < 0) workout.warnIdx = 0;
+      const wi = workout.warnIdx, w = warns[wi];
+      const dots = warns.map((_, i) => `<span class="wk-warn-dot${i === wi ? " on" : ""}"></span>`).join("");
+      warnHtml = `<div class="wk-card wk-warns-card">
+        <div class="wk-card-head">Замечания <span class="wk-warns-count">${wi + 1} / ${warns.length}</span></div>
+        <div class="wk-warn-stack" id="wk-warn-stack"><div class="wk-warn ${w.t}">${esc(w.m)}</div></div>
+        ${warns.length > 1 ? `<div class="wk-warn-nav">
+          <button class="wk-warn-arrow" data-warnnav="-1"${wi === 0 ? " disabled" : ""}>‹</button>
+          <div class="wk-warn-dots">${dots}</div>
+          <button class="wk-warn-arrow" data-warnnav="1"${wi === warns.length - 1 ? " disabled" : ""}>›</button>
+        </div>` : ""}
+      </div>`;
+    }
 
-    // — План (упражнения активного дня) —
-    const items = activeDay().items;
-    const rank = { "глобальные": "Г", "региональные": "Р", "локальные": "Л" };
-    const planHtml = items.length ? `<div class="wk-plan">${items.map((it, i) => {
+    // — Карточка упражнения плана: свайп влево = удалить, удержание = перетащить,
+    //   ⟳ = другой вариант, ряд дней (много-день) = быстрый перенос —
+    const itemHtml = (it, di, i) => {
       const e = exById(it.exId);
       const nm = e ? e.name : "Упражнение недоступно";
       const mv = e ? exBaseCats(e).join(" · ") : "";
       const ch = e ? rank[exCharacter(e)] : "";
-      return `<div class="wk-item">
-        <div class="wk-item-top">
-          <span class="wk-item-lvl">${ch}</span>
-          <span class="wk-item-name">${esc(nm)}</span>
-          <span class="wk-item-sets">${it.sets}×${esc(it.reps || "")}</span>
-        </div>
-        ${mv ? `<div class="wk-item-mv">${esc(mv)}</div>` : ""}
-        <div class="wk-item-actions">
-          <button class="wk-mini" data-regen="${i}" title="Другой вариант">⟳ другой</button>
-          <button class="wk-mini" data-up="${i}">↑</button>
-          <button class="wk-mini" data-down="${i}">↓</button>
-          <button class="wk-mini danger" data-remove="${i}">✕</button>
+      const dayChips = multi ? `<div class="wk-item-days">${workout.days.map((d, dj) =>
+        `<button class="wk-item-day${dj === di ? " cur" : ""}" data-moveto="${dj}" data-di="${di}" data-i="${i}">${esc(d.name)}</button>`).join("")}</div>` : "";
+      return `<div class="wk-item-wrap" data-di="${di}" data-i="${i}">
+        <div class="wk-item-del">${WK_TRASH}Удалить</div>
+        <div class="wk-item">
+          <div class="wk-item-top">
+            <span class="wk-item-lvl">${ch}</span>
+            <span class="wk-item-name">${esc(nm)}</span>
+            <span class="wk-item-sets">${it.sets}×${esc(it.reps || "")}</span>
+            <button class="wk-item-regen" data-regen data-di="${di}" data-i="${i}" title="Другой вариант">⟳</button>
+          </div>
+          ${mv ? `<div class="wk-item-mv">${esc(mv)}</div>` : ""}
+          ${dayChips}
         </div>
       </div>`;
-    }).join("")}</div>` : `<p class="wk-empty">План пуст. Настрой параметры и нажми «Сгенерировать».</p>`;
+    };
+
+    // — План: активный день или «Целая» (все дни секциями) —
+    const emptyMsg = `<p class="wk-empty">План пуст. Настрой параметры и нажми «Сгенерировать» или добавь упражнение вручную.</p>`;
+    let planHtml;
+    if (isAll) {
+      planHtml = `<div class="wk-plan-all">${workout.days.map((d, di) => `
+        <div class="wk-day-sec" data-di="${di}">
+          <div class="wk-day-sec-head">${esc(d.name)} <span class="wk-day-sec-vol">${dayVolume(d)}п</span></div>
+          <div class="wk-plan" data-di="${di}">${d.items.length ? d.items.map((it, i) => itemHtml(it, di, i)).join("") : `<p class="wk-hint" style="padding:6px 2px">Пусто — перетащи или перенеси сюда упражнение.</p>`}</div>
+        </div>`).join("")}</div>`;
+    } else {
+      const items = activeDay().items;
+      planHtml = items.length
+        ? `<div class="wk-plan" data-di="${workout.active}">${items.map((it, i) => itemHtml(it, workout.active, i)).join("")}</div>`
+        : emptyMsg;
+    }
+    const hasAny = workout.days.some(d => d.items.length);
 
     // Ручное добавление — доступно всегда (план можно собрать и без генерации).
     const addManual = `<button class="wk-add-manual" id="wk-add">＋ Добавить упражнение вручную</button>`;
-    const actions = items.length || multi ? `
+    const actions = hasAny || multi ? `
       <div class="wk-actions">
         <button class="wk-act primary wk-act-full" id="wk-save">Сохранить как шаблон${multi ? "ы" : ""}</button>
         <div class="wk-actions-row">
-          <button class="wk-act" id="wk-fill">＋ Дополнить день</button>
-          <button class="wk-act wk-act-clear" id="wk-clear">Очистить план</button>
+          <button class="wk-act" id="wk-fill">＋ Дополнить ${isAll ? "дни" : "день"}</button>
+          <button class="wk-act wk-act-clear" id="wk-clear">Очистить ${isAll ? "всё" : "день"}</button>
         </div>
       </div>` : "";
 
-    el.innerHTML = settings + daysHtml + (items.length || covered.length ? covHtml + warnHtml : "") + planHtml + addManual + actions;
+    el.innerHTML = settings + daysHtml + (hasAny ? covHtml + warnHtml : "") + planHtml + addManual + actions;
     wire();
     persist();
   }
@@ -534,19 +578,142 @@
     on("[data-equip]", "click", n => { const t = n.dataset.equip; const i = workout.equipOff.indexOf(t); if (i >= 0) workout.equipOff.splice(i, 1); else workout.equipOff.push(t); workout.uiOpen = null; render(); });
     on("[data-prio]", "click", n => { const t = n.dataset.prio; const i = workout.priority.indexOf(t); if (i >= 0) workout.priority.splice(i, 1); else workout.priority.push(t); workout.uiOpen = null; render(); });
     on("[data-restr]", "click", n => { const t = n.dataset.restr; const i = workout.restrictions.indexOf(t); if (i >= 0) workout.restrictions.splice(i, 1); else workout.restrictions.push(t); workout.uiOpen = null; render(); });
-    on("[data-day]", "click", n => { workout.active = +n.dataset.day; render(); });
-    on("[data-regen]", "click", n => regenItem(+n.dataset.regen));
-    on("[data-remove]", "click", n => removeItem(+n.dataset.remove));
-    on("[data-up]", "click", n => moveItem(+n.dataset.up, -1));
-    on("[data-down]", "click", n => moveItem(+n.dataset.down, 1));
+    on("[data-day]", "click", n => { workout.active = n.dataset.day === "all" ? "all" : +n.dataset.day; render(); });
+    on("[data-regen]", "click", n => regenItem(n.dataset.di, +n.dataset.i));
+    on("[data-moveto]", "click", n => moveToDay(n.dataset.di, +n.dataset.i, +n.dataset.moveto));
+    on("[data-warnnav]", "click", n => { workout.warnIdx = (workout.warnIdx || 0) + (+n.dataset.warnnav); render(); });
+    // Свайп влево = удалить, долгое удержание = перетащить (реордер внутри дня).
+    el.querySelectorAll(".wk-item-wrap").forEach(wrap => { wireItemSwipe(wrap); wireItemDrag(wrap); });
+    // Свайп по стопке замечаний — листать вперёд/назад.
+    const warnStack = $("wk-warn-stack"); if (warnStack) wireWarnSwipe(warnStack);
 
     const tgt = $("wk-target"); if (tgt) tgt.addEventListener("change", () => { workout.target = Math.max(0, +tgt.value || 0); persist(); });
     const reps = $("wk-reps"); if (reps) reps.addEventListener("change", () => { workout.reps = reps.value; persist(); });
     $("wk-generate") && $("wk-generate").addEventListener("click", generate);
     $("wk-fill") && $("wk-fill").addEventListener("click", fillDay);
-    $("wk-clear") && $("wk-clear").addEventListener("click", () => { activeDay().items = []; render(); });
+    $("wk-clear") && $("wk-clear").addEventListener("click", () => { if (workout.active === "all") workout.days.forEach(d => d.items = []); else activeDay().items = []; render(); });
     $("wk-save") && $("wk-save").addEventListener("click", saveAsTemplates);
     $("wk-add") && $("wk-add").addEventListener("click", openExercisePicker);
+  }
+
+  // Свайп влево по карточке плана → удалить (порог 80px).
+  function wireItemSwipe(wrap) {
+    const row = wrap.querySelector(".wk-item");
+    if (!row) return;
+    let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
+    const MAX = 96, DEL = 80;
+    row.addEventListener("pointerdown", e => {
+      if (e.target.closest("button")) return;
+      sx = e.clientX; sy = e.clientY; dx = 0; active = true; decided = false; horiz = false; swiped = false;
+      row.style.transition = "";
+    });
+    row.addEventListener("pointermove", e => {
+      if (!active || wrap.classList.contains("wk-dragging")) return;
+      const mx = e.clientX - sx, my = e.clientY - sy;
+      if (!decided) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        decided = true; horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+        if (!horiz) { active = false; return; }
+        wrap.classList.add("swiping");
+        try { row.setPointerCapture(e.pointerId); } catch {}
+      }
+      if (!horiz) return;
+      dx = Math.max(-MAX, Math.min(0, mx)); if (dx < -4) swiped = true;
+      row.style.transform = `translateX(${dx}px)`;
+      wrap.classList.toggle("will-delete", dx <= -DEL);
+    });
+    row.addEventListener("touchmove", e => { if (active && horiz && e.cancelable) e.preventDefault(); }, { passive: false });
+    const settle = () => {
+      if (!active) return; active = false;
+      if (!horiz) return;
+      if (dx <= -DEL) {
+        row.style.transition = "transform 0.16s ease"; row.style.transform = "translateX(-110%)";
+        wrap.style.height = wrap.offsetHeight + "px";
+        requestAnimationFrame(() => { wrap.style.transition = "height 0.16s ease, opacity 0.16s ease"; wrap.style.height = "0"; wrap.style.opacity = "0"; });
+        setTimeout(() => removeItem(wrap.dataset.di, +wrap.dataset.i), 170);
+      } else {
+        row.style.transition = "transform 0.18s ease"; row.style.transform = "";
+        wrap.classList.remove("will-delete");
+        setTimeout(() => wrap.classList.remove("swiping"), 200);
+      }
+    };
+    row.addEventListener("pointerup", settle);
+    row.addEventListener("pointercancel", settle);
+    row.addEventListener("click", e => { if (swiped) { e.stopPropagation(); e.preventDefault(); swiped = false; } }, true);
+  }
+
+  // Долгое удержание → перетаскивание для смены порядка ВНУТРИ дня/секции.
+  // Между днями переносим кнопками-днями в карточке (быстрый выбор).
+  function wireItemDrag(wrap) {
+    const row = wrap.querySelector(".wk-item");
+    if (!row) return;
+    let holdTimer = null, dragging = false, listEl = null, startY = 0, sy = 0, sx = 0, moved = false;
+    const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+    const begin = (x, y, target) => {
+      if (target && target.closest("button")) return;
+      sx = x; sy = y; moved = false; clearHold();
+      holdTimer = setTimeout(() => { holdTimer = null; if (moved) return; startDrag(y); }, 380);
+    };
+    const startDrag = (y) => {
+      dragging = true; startY = y;
+      listEl = wrap.closest(".wk-plan");
+      wrap.classList.add("wk-dragging");
+      if (window.haptic) try { haptic(18); } catch {}
+    };
+    const move = (x, y, e) => {
+      if (!dragging) { if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); } return; }
+      if (e && e.cancelable) e.preventDefault();
+      wrap.style.transform = `translateY(${y - startY}px)`;
+      const sibs = [...listEl.querySelectorAll(".wk-item-wrap:not(.wk-dragging)")];
+      for (const s of sibs) {
+        const r = s.getBoundingClientRect();
+        if (y > r.top && y < r.bottom) {
+          const before = y < r.top + r.height / 2;
+          listEl.insertBefore(wrap, before ? s : s.nextSibling);
+          startY = y; wrap.style.transform = "";
+          break;
+        }
+      }
+    };
+    const finish = () => {
+      clearHold();
+      if (!dragging) return;
+      dragging = false;
+      wrap.classList.remove("wk-dragging"); wrap.style.transform = "";
+      const di = +listEl.dataset.di;
+      const d = workout.days[di]; if (!d) { render(); return; }
+      const order = [...listEl.querySelectorAll(".wk-item-wrap")].map(w => +w.dataset.i);
+      d.items = order.map(i => d.items[i]).filter(Boolean);
+      render();
+    };
+    row.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
+    row.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
+    row.addEventListener("touchend", finish);
+    row.addEventListener("touchcancel", finish);
+    row.addEventListener("mousedown", e => begin(e.clientX, e.clientY, e.target));
+    window.addEventListener("mousemove", e => { if (dragging || holdTimer) move(e.clientX, e.clientY, null); });
+    window.addEventListener("mouseup", () => { if (dragging || holdTimer) finish(); });
+  }
+
+  // Свайп по стопке замечаний → предыдущее/следующее.
+  function wireWarnSwipe(stack) {
+    let sx = 0, sy = 0, active = false, decided = false, horiz = false;
+    stack.addEventListener("pointerdown", e => { sx = e.clientX; sy = e.clientY; active = true; decided = false; horiz = false; });
+    stack.addEventListener("pointermove", e => {
+      if (!active) return;
+      const mx = e.clientX - sx, my = e.clientY - sy;
+      if (!decided) { if (Math.abs(mx) < 10 && Math.abs(my) < 10) return; decided = true; horiz = Math.abs(mx) > Math.abs(my); if (!horiz) active = false; }
+    });
+    const end = e => {
+      if (!active || !horiz) { active = false; return; }
+      active = false;
+      const mx = e.clientX - sx;
+      if (Math.abs(mx) < 40) return;
+      workout.warnIdx = (workout.warnIdx || 0) + (mx < 0 ? 1 : -1);
+      render();
+    };
+    stack.addEventListener("pointerup", end);
+    stack.addEventListener("pointercancel", () => { active = false; });
   }
 
   // Ручной выбор упражнения в план активного дня (модалка с поиском по базе).
