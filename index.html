@@ -1968,13 +1968,24 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 .wk-item-day { padding: 5px 11px; border-radius: 8px; background: var(--bg-base); border: 1px solid var(--border-subtle); font-size: 12px; font-weight: 650; color: var(--text-secondary); }
 .wk-item-day.cur { background: var(--accent-soft); border-color: transparent; color: var(--accent-bright); }
 .wk-empty { color: var(--text-tertiary); font-size: 14px; text-align: center; padding: 30px 10px; }
-/* Вкладка «Целая» + секции по дням */
+/* Вкладка «Целая»: плоский список — заголовки-дни и карточки соседи (для
+   перетаскивания между днями, как группы категорий в списке упражнений). */
 .wk-day-all .wk-day-name { color: var(--accent-bright); }
 .wk-day-all.active .wk-day-name { color: #fff; }
-.wk-plan-all { display: flex; flex-direction: column; gap: 16px; margin-bottom: 14px; }
-.wk-day-sec { display: flex; flex-direction: column; gap: 10px; }
+.wk-plan-flat .wk-day-sec-head { padding: 6px 2px 2px; }
+.wk-plan-flat .wk-day-sec-head:first-child { padding-top: 0; }
 .wk-day-sec-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); }
 .wk-day-sec-vol { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.wk-sec-empty { font-size: 13px; color: var(--text-tertiary); padding: 8px 2px; border: 1.5px dashed var(--border-subtle); border-radius: var(--radius-md); text-align: center; }
+/* Режим правки плана — покачивание + плавающая «Готово» (как в упражнениях) */
+.wk-plan.wk-editing .wk-item-wrap:not(.wk-dragging) { animation: exJiggle 0.32s ease-in-out infinite; }
+.wk-plan.wk-editing .wk-item-wrap:nth-child(even):not(.wk-dragging) { animation-delay: -0.16s; }
+.wk-edit-done {
+  position: fixed; bottom: calc(var(--safe-bottom) + 22px); left: 50%; transform: translateX(-50%);
+  z-index: 60; padding: 13px 36px; border-radius: 24px; background: var(--accent); color: #fff;
+  font-size: 15px; font-weight: 700; box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+}
+.wk-edit-done:active { transform: translateX(-50%) scale(0.96); }
 /* Стопка замечаний со свайпом */
 .wk-warn-stack { touch-action: pan-y; }
 .wk-warn-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
