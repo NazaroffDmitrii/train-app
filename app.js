@@ -6,6 +6,32 @@ function escHtml(s) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// Тоннаж одного подхода. Вес может быть отрицательным (упражнения с помощью —
+// гравитрон и т.п., где меньшее по модулю число = меньше помощи = лучше
+// результат): такой подход не должен УМЕНЬШАТЬ общий тоннаж тренировки —
+// он просто не участвует в его сумме (вклад — 0, а не отрицательное число).
+function setVolume(s) {
+  return Math.max(0, (s.weight || 0) * (s.reps || 0));
+}
+
+// Учесть один выполненный подход в рекордах упражнения. maxWeight — старт с
+// null ("рекорда ещё нет"), а не 0: для упражнений с помощью вес всегда
+// отрицательный (гравитрон и т.п.), и с плавающим порогом 0 первый же подход
+// никогда не стал бы рекордом (-40 не больше 0). Чем ближе к нулю — тем
+// результат лучше, а раз -5 больше -40, обычное «максимум» уже работает
+// правильно — не нужно отдельно инвертировать сравнение, только не
+// заслонять его нулевым порогом по умолчанию.
+function applySetToRecord(recs, exerciseId, s) {
+  if (!recs[exerciseId]) recs[exerciseId] = { maxWeight: null, repsAtMaxWeight: 0, maxReps: 0, weightAtMaxReps: null, maxVolume: 0 };
+  const r = recs[exerciseId];
+  if (r.maxWeight === null || s.weight > r.maxWeight || (s.weight === r.maxWeight && s.reps > r.repsAtMaxWeight)) {
+    r.maxWeight = s.weight; r.repsAtMaxWeight = s.reps;
+  }
+  if (s.reps > r.maxReps || (s.reps === r.maxReps && (r.weightAtMaxReps === null || s.weight > r.weightAtMaxReps))) {
+    r.maxReps = s.reps; r.weightAtMaxReps = s.weight;
+  }
+}
+
 Storage.configure({
   enabled: CONFIG.ENABLED,
   baseUrl: CONFIG.SUPABASE_URL,
@@ -787,17 +813,8 @@ const DATA = (() => {
       if (workout.type !== "strength") return;
       const recs = ls(`train_records_${userId}`, {});
       (workout.exercises || []).forEach(ex => {
-        const exVol = ex.sets.filter(s => s.done).reduce((a, s) => a + (s.weight || 0) * (s.reps || 0), 0);
-        ex.sets.filter(s => s.done && s.weight > 0 && s.reps > 0).forEach(s => {
-          if (!recs[ex.exerciseId]) recs[ex.exerciseId] = { maxWeight: 0, repsAtMaxWeight: 0, maxReps: 0, weightAtMaxReps: 0, maxVolume: 0 };
-          const r = recs[ex.exerciseId];
-          if (s.weight > r.maxWeight || (s.weight === r.maxWeight && s.reps > r.repsAtMaxWeight)) {
-            r.maxWeight = s.weight; r.repsAtMaxWeight = s.reps;
-          }
-          if (s.reps > r.maxReps || (s.reps === r.maxReps && s.weight > r.weightAtMaxReps)) {
-            r.maxReps = s.reps; r.weightAtMaxReps = s.weight;
-          }
-        });
+        const exVol = ex.sets.filter(s => s.done).reduce((a, s) => a + setVolume(s), 0);
+        ex.sets.filter(s => s.done && s.reps > 0).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
         if (recs[ex.exerciseId]) recs[ex.exerciseId].maxVolume = Math.max(recs[ex.exerciseId].maxVolume || 0, exVol);
       });
       lsSet(`train_records_${userId}`, recs);
@@ -815,13 +832,8 @@ const DATA = (() => {
       this.getWorkoutHistory(userId).forEach(w => {
         if (w.type !== "strength") return;
         (w.exercises || []).forEach(ex => {
-          const exVol = ex.sets.filter(s => s.done).reduce((a, s) => a + (s.weight || 0) * (s.reps || 0), 0);
-          ex.sets.filter(s => s.done && s.weight > 0 && s.reps > 0).forEach(s => {
-            if (!recs[ex.exerciseId]) recs[ex.exerciseId] = { maxWeight: 0, repsAtMaxWeight: 0, maxReps: 0, weightAtMaxReps: 0, maxVolume: 0 };
-            const r = recs[ex.exerciseId];
-            if (s.weight > r.maxWeight || (s.weight === r.maxWeight && s.reps > r.repsAtMaxWeight)) { r.maxWeight = s.weight; r.repsAtMaxWeight = s.reps; }
-            if (s.reps > r.maxReps || (s.reps === r.maxReps && s.weight > r.weightAtMaxReps)) { r.maxReps = s.reps; r.weightAtMaxReps = s.weight; }
-          });
+          const exVol = ex.sets.filter(s => s.done).reduce((a, s) => a + setVolume(s), 0);
+          ex.sets.filter(s => s.done && s.reps > 0).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
           if (recs[ex.exerciseId]) recs[ex.exerciseId].maxVolume = Math.max(recs[ex.exerciseId].maxVolume || 0, exVol);
         });
       });
@@ -886,7 +898,9 @@ const DATA = (() => {
         .filter(w => w.type === "strength" && (w.exercises || []).some(e => e.exerciseId === exerciseId));
       const points = history.map(w => {
         const block = w.exercises.find(e => e.exerciseId === exerciseId);
-        const doneSets = block.sets.filter(s => s.done && s.weight > 0 && s.reps > 0);
+        // Вес не фильтруем по > 0: для упражнений с помощью (гравитрон и т.п.)
+        // он отрицательный, и график прогресса иначе всегда был бы пустым.
+        const doneSets = block.sets.filter(s => s.done && s.reps > 0);
         if (!doneSets.length) return null;
         const top = doneSets.reduce((a, b) => (b.weight > a.weight || (b.weight === a.weight && b.reps > a.reps)) ? b : a);
         return { date: w.startedAt, weight: top.weight, reps: top.reps };
@@ -2591,7 +2605,7 @@ function discardActiveWorkout() {
 function openFinishConfirmModal(exCount, doneSets) {
   if (document.getElementById("finish-confirm-cancel")) return;
   const volume = (_workout.exercises || []).reduce((v, ex) =>
-    v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
+    v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + setVolume(s), 0), 0);
   const durationSec = Math.floor((Date.now() - _workout.startedAt) / 1000);
 
   const backdrop = document.createElement("div");
@@ -2971,9 +2985,11 @@ function renderExerciseList() {
     // «Прошлый раз» больше не выводим отдельной строкой — прошлые значения
     // показываются только подсказкой-тенью в пустых полях (см. renderSetsInBlock), п.4.
 
-    // Рекорд веса — компактный бейдж в шапке (как в макете 03).
+    // Рекорд веса — компактный бейдж в шапке (как в макете 03). Вес может
+    // быть отрицательным (упражнения с помощью) — рекорд есть, если он вообще
+    // был поставлен хоть раз (см. applySetToRecord: null = рекорда ещё нет).
     let prChip = "";
-    if (rec && rec.maxWeight > 0) {
+    if (rec && rec.maxWeight != null) {
       prChip = `<span class="ex-pr-chip" title="Рекорд: ${rec.maxWeight} кг × ${rec.repsAtMaxWeight}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 17l-6.3 4.4L8 14 2 9.4h7.6z"/></svg>
         ${rec.maxWeight} кг
@@ -3085,7 +3101,10 @@ function renderSetsInBlock(block, ex, lastWorkout) {
     row.className = "set-row";
     row.innerHTML = `
       <span class="set-num">${sIdx + 1}</span>
-      <div class="set-field"><input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : "кг"}" value="${set.weight || ""}" step="0.5" ${prev ? 'class="has-prev"' : ""}></div>
+      <div class="set-field set-field-weight${(set.weight || 0) < 0 ? " negative" : ""}">
+        <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.): чем ближе к нулю, тем лучше результат">±</button>
+        <input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : "кг"}" value="${set.weight || ""}" step="0.5" ${prev ? 'class="has-prev"' : ""}>
+      </div>
       <div class="set-field"><input type="number" inputmode="numeric" placeholder="${prev ? prev.reps : "повт"}" value="${set.reps || ""}" ${prev ? 'class="has-prev"' : ""}></div>
       <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe || "—"}</button>
       <button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
@@ -3095,8 +3114,22 @@ function renderSetsInBlock(block, ex, lastWorkout) {
 
     // Weight input
     const weightInput = row.querySelectorAll("input")[0];
+    const weightField = row.querySelector(".set-field-weight");
+    const markNegative = () => weightField.classList.toggle("negative", (parseFloat(weightInput.value) || 0) < 0);
     weightInput.addEventListener("change", () => {
       ex.sets[sIdx].weight = parseFloat(weightInput.value) || 0;
+      markNegative();
+      saveWorkoutState(); updateSummaryBar();
+    });
+    // ± — переключить знак веса. Нужно для упражнений с помощью (гравитрон
+    // и т.п.): виртуальная цифровая клавиатура (inputmode="decimal") на
+    // многих устройствах не даёт набрать "-", поэтому это единственный
+    // надёжный способ ввести отрицательный вес независимо от клавиатуры.
+    row.querySelector(".set-sign-btn").addEventListener("click", () => {
+      const next = -(parseFloat(weightInput.value) || 0);
+      weightInput.value = next || "";
+      ex.sets[sIdx].weight = next;
+      markNegative();
       saveWorkoutState(); updateSummaryBar();
     });
 
@@ -3216,7 +3249,7 @@ function wireSetRowSwipe(wrap, row, onDelete) {
 function updateSummaryBar() {
   const exs = (_workout && _workout.exercises) || [];
   const doneSets = exs.reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
-  const volume   = exs.reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + (s.weight || 0) * (s.reps || 0), 0), 0);
+  const volume   = exs.reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + setVolume(s), 0), 0);
   $("sum-exercises").textContent = exs.length;
   $("sum-sets").textContent = doneSets;
   $("sum-volume").textContent = volume.toLocaleString("ru-RU"); // как в модалке завершения и статистике
@@ -6322,7 +6355,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
     const records   = DATA.getRecords(userId);
     const allEx     = workout.exercises || [];
     const totalSets = allEx.reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
-    const totalVol  = allEx.reduce((v, ex) => v + ex.sets.reduce((a, s) => a + (s.done ? (s.weight || 0) * (s.reps || 0) : 0), 0), 0);
+    const totalVol  = allEx.reduce((v, ex) => v + ex.sets.reduce((a, s) => a + (s.done ? setVolume(s) : 0), 0), 0);
 
     // Длительность в компактном виде: до часа «52 мин», от часа «1:04 ч».
     const statTimeHTML = (sec) => {
@@ -6337,8 +6370,9 @@ function openDetailScreen(workout, returnScreen = "menu") {
     // сливаться с золотом рекорда.
     const rpeClass = (v) => v >= 9 ? "hi" : v >= 7 ? "mid" : "lo";
     // Подход считается рекордным, если его вес×повторы совпадают с текущим
-    // личным максимумом по весу для этого упражнения.
-    const isPrSet = (rec, s) => !!rec && s.weight > 0 && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight;
+    // личным максимумом по весу для этого упражнения (вес может быть
+    // отрицательным — упражнения с помощью, см. applySetToRecord).
+    const isPrSet = (rec, s) => !!rec && rec.maxWeight != null && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight;
 
     body.innerHTML = `
       <div class="wd-statgrid">
@@ -6351,7 +6385,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
         const exDef    = exercises.find(e => e.id === ex.exerciseId) || { name: ex.name || "Упражнение недоступно" };
         const doneSets = ex.sets.filter(s => s.done);
         const rec      = records[ex.exerciseId];
-        const exVol    = doneSets.reduce((v, s) => v + (s.weight || 0) * (s.reps || 0), 0);
+        const exVol    = doneSets.reduce((v, s) => v + setVolume(s), 0);
         const hasPr    = doneSets.some(s => isPrSet(rec, s));
         // Тоннаж-рекорд: максимальный объём за одну тренировку для упражнения.
         const volPr    = !!rec && exVol > 0 && exVol >= (rec.maxVolume || 0);
@@ -6702,7 +6736,7 @@ function initStatsScreen() {
 
   // Тоннаж
   let volume = 0;
-  strength.forEach(w => (w.exercises||[]).forEach(ex => (ex.sets||[]).filter(s=>s.done&&s.weight>0&&s.reps>0).forEach(s=>{ volume+=s.weight*s.reps; })));
+  strength.forEach(w => (w.exercises||[]).forEach(ex => (ex.sets||[]).filter(s=>s.done&&s.reps>0).forEach(s=>{ volume+=setVolume(s); })));
 
   // Время
   let totalMs = 0;
@@ -6742,17 +6776,25 @@ function initStatsScreen() {
     workouts.filter(w=>w.type==="strength").sort((a,b)=>a.startedAt-b.startedAt).forEach(w => {
       const ex = (w.exercises||[]).find(e=>e.exerciseId===_statsSelectedExId);
       if (!ex) return;
-      const done = (ex.sets||[]).filter(s=>s.done&&s.weight>0&&s.reps>0);
+      // Вес — без фильтра по >0 (упражнения с помощью работают в минусе, см.
+      // getExerciseProgress); тоннаж по-прежнему через setVolume — минус в
+      // тоннаж не идёт.
+      const done = (ex.sets||[]).filter(s=>s.done&&s.reps>0);
       if (!done.length) return;
-      graphPoints.push({ ts: w.startedAt, maxWeight: Math.max(...done.map(s=>s.weight)), volume: Math.round(done.reduce((a,s)=>a+s.weight*s.reps,0)) });
+      graphPoints.push({ ts: w.startedAt, maxWeight: Math.max(...done.map(s=>s.weight||0)), volume: Math.round(done.reduce((a,s)=>a+setVolume(s),0)) });
     });
   }
 
   // Прогресс за период — отдельной ячейкой под графиком
   const gpInPeriod = graphPoints.filter(p=>p.ts>=ps);
   let progTxt = "—", progValCls = "";
-  if (gpInPeriod.length>=2 && gpInPeriod[0].maxWeight>0) {
-    const pct = Math.round((gpInPeriod[gpInPeriod.length-1].maxWeight - gpInPeriod[0].maxWeight)/gpInPeriod[0].maxWeight*100);
+  if (gpInPeriod.length>=2 && gpInPeriod[0].maxWeight!==0) {
+    // Знаменатель — |первое значение|, а не само число: для упражнений с
+    // помощью вес отрицательный, и деление на отрицательное число развернуло
+    // бы знак (реальное улучшение — приближение к нулю — показалось бы
+    // регрессом). |x| работает верно в обоих случаях.
+    const first = gpInPeriod[0].maxWeight, last = gpInPeriod[gpInPeriod.length-1].maxWeight;
+    const pct = Math.round((last - first) / Math.abs(first) * 100);
     progTxt = pct>0?`+${pct}%`:`${pct}%`;
     progValCls = pct>0?" up":pct<0?" down":"";
   }
@@ -7100,10 +7142,15 @@ function renderProgressChart(points, opts = {}) {
   const xs = points.map(p => p.x), ys = points.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   let minY = Math.min(...ys), maxY = Math.max(...ys);
+  // Реальные данные не уходят в минус (дистанция/темп/вес обычной штанги) —
+  // тогда зажимаем низ оси в 0, не отдавая пустой отступ под несуществующие
+  // отрицательные значения. Но упражнения с помощью (гравитрон) — вес
+  // изначально отрицательный: тут зажимать в 0 нельзя, иначе график схлопнется.
+  const rawMinNonNegative = minY >= 0;
   if (minY === maxY) { minY -= 1; maxY += 1; }
   const yPad = (maxY - minY) * 0.18;
   minY -= yPad; maxY += yPad;
-  if (minY < 0) minY = 0; // дистанция/темп/вес не уходят в минус
+  if (minY < 0 && rawMinNonNegative) minY = 0;
 
   const xPos = x => (maxX === minX ? padL + innerW / 2 : padL + ((x - minX) / (maxX - minX)) * innerW);
   const yPos = y => padT + innerH - ((y - minY) / (maxY - minY)) * innerH;

@@ -47,7 +47,9 @@ function secToPaceStr(totalSec) {
 // При 1 повторе это и есть сам вес (формула Эпли его слегка завышает, поэтому
 // 1 повтор обрабатываем отдельно). Возвращает целое число килограммов.
 function estimate1RM(weight, reps) {
-  if (!weight || !reps || reps < 1) return 0;
+  // weight <= 0 — упражнение с помощью (гравитрон и т.п.): формула 1ПМ для
+  // штангиста тут не применима, оценку просто не показываем.
+  if (!weight || weight <= 0 || !reps || reps < 1) return 0;
   if (reps === 1) return Math.round(weight);
   return Math.round(weight * (1 + reps / 30));
 }

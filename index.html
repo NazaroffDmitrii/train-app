@@ -834,6 +834,22 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   padding: 0 4px;
 }
 
+/* Поле веса с кнопкой ±: упражнения с помощью (гравитрон и т.п.) — вес
+   отрицательный, и виртуальная клавиатура (inputmode="decimal") на многих
+   устройствах не даёт набрать "-", поэтому знак переключается кнопкой, а не
+   набором с клавиатуры. */
+.set-field-weight { justify-content: flex-start; padding-left: 3px; gap: 1px; }
+.set-field-weight input { flex: 1; width: auto; }
+.set-sign-btn {
+  flex: none; width: 20px; height: 30px; border-radius: 7px;
+  background: var(--panel-hi); border: none; color: var(--text-tertiary);
+  font-size: 13px; font-weight: 800; line-height: 1;
+}
+.set-sign-btn:active { background: var(--accent-soft); color: var(--accent-bright); }
+.set-field-weight.negative { border-color: var(--accent); }
+.set-field-weight.negative input { color: var(--accent-bright); }
+.set-field-weight.negative .set-sign-btn { background: var(--accent-soft); color: var(--accent-bright); }
+
 .rpe-btn {
   height: 42px; border-radius: 10px; width: 100%;
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
