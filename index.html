@@ -837,13 +837,18 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 /* Поле веса с кнопкой ±: упражнения с помощью (гравитрон и т.п.) — вес
    отрицательный, и виртуальная клавиатура (inputmode="decimal") на многих
    устройствах не даёт набрать "-", поэтому знак переключается кнопкой, а не
-   набором с клавиатуры. */
-.set-field-weight { justify-content: flex-start; padding-left: 3px; gap: 1px; }
-.set-field-weight input { flex: 1; width: auto; }
+   набором с клавиатуры.
+   min-width:0 — обязателен и на самой ячейке (она грид-элемент .set-row), и
+   на инпуте внутри неё (он теперь не единственный флекс-элемент, а делит
+   место с кнопкой): без этого оба по умолчанию отказываются сжиматься уже
+   своего "естественного" содержимого, колонка веса раздувается и вытесняет
+   повторы/RPE/галочку за край экрана. */
+.set-field-weight { justify-content: flex-start; padding: 0 4px 0 4px; gap: 4px; min-width: 0; }
+.set-field-weight input { flex: 1; width: auto; min-width: 0; padding: 0 2px; }
 .set-sign-btn {
-  flex: none; width: 20px; height: 30px; border-radius: 7px;
+  flex: none; width: 26px; height: 34px; border-radius: 8px;
   background: var(--panel-hi); border: none; color: var(--text-tertiary);
-  font-size: 13px; font-weight: 800; line-height: 1;
+  font-size: 16px; font-weight: 800; line-height: 1;
 }
 .set-sign-btn:active { background: var(--accent-soft); color: var(--accent-bright); }
 .set-field-weight.negative { border-color: var(--accent); }
