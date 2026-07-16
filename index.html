@@ -901,16 +901,15 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .set-dropset-btn:active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
 .set-dropset-btn svg { width: 16px; height: 16px; }
 
-/* Дроп-сет — визуально продолжение подхода, а не отдельная строка: отступ
-   слева вместо номера (своего номера и галочки "выполнено" у него нет — см.
-   renderSetsInBlock), фон как у обычной строки (без заливки без рамки — она
-   не читалась как что-то осмысленное). Три поля (без номера и галочки), RPE
-   получает всю освободившуюся справа ширину (50+6+40=96px), но сама кнопка
-   остаётся обычного размера и стоит по центру этой ширины — там же, где
-   раньше была ЕЁ СЕРЕДИНА между rpe и галочкой основного подхода. */
-.set-row-wrap-drop { margin-left: 30px; }
-.set-row-wrap-drop .set-row { grid-template-columns: 1fr 1fr 96px; }
-.set-row-wrap-drop .rpe-btn { width: 50px; justify-self: center; }
+/* Дроп-сет — компактный "мини-подход" под основным, а не строка той же
+   ширины: три уменьшенных поля (без номера и без галочки "выполнено" — см.
+   renderSetsInBlock), сдвинутые правее и НЕ растянутые на всю ширину строки
+   (grid-template-columns — фиксированные px, а не 1fr, поэтому лишнее место
+   справа просто остаётся пустым, а не отдаётся полям). */
+.set-row-wrap-drop { margin-left: 40px; }
+.set-row-wrap-drop .set-row { grid-template-columns: 92px 92px 44px; justify-content: start; }
+.set-row-wrap-drop .set-field { height: 34px; }
+.set-row-wrap-drop .rpe-btn { height: 34px; }
 .set-note-input {
   display: block; box-sizing: border-box;
   width: calc(100% - 28px);
