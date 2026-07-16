@@ -113,6 +113,7 @@ const Sync = (() => {
         categories:     DATA.getAllCategories(userId),
         categoryColors: DATA.getCategoryColors(userId),
         exerciseOrder:  DATA.getExerciseOrder(userId),
+        exerciseGroups: DATA.getExerciseGroups(userId),
         history:        DATA.getWorkoutHistory(userId).map(stripLocal),
         active:         active ? stripLocal(active) : null,
       },
@@ -130,6 +131,7 @@ const Sync = (() => {
     if (Array.isArray(d.categories))     DATA.saveAllCategories(userId, d.categories);
     if (d.categoryColors)                DATA.saveCategoryColors(userId, d.categoryColors);
     if (d.exerciseOrder !== undefined)   DATA.saveExerciseOrder(userId, d.exerciseOrder);
+    if (Array.isArray(d.exerciseGroups)) DATA.saveExerciseGroups(userId, d.exerciseGroups);
     if (Array.isArray(d.history))        DATA.saveWorkoutHistory(userId, d.history);
     if (d.active) DATA.saveActiveWorkout(userId, d.active);
     else          DATA.clearActiveWorkout(userId);
