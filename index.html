@@ -1904,21 +1904,23 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 }
 .ex-row-chevron-group { transition: transform 0.18s ease; }
 .ex-row-wrap-group.expanded .ex-row-chevron-group { transform: rotate(90deg); }
-/* Раскрытая группа — единая карточка с шапкой (эталон: разворот категории в
-   справочнике, .cat-item-wrap.expanded) — шапка и состав визуально сшиты,
-   без отдельных пилюль/отступа-скобки у вариантов. */
-.ex-row-wrap-group.expanded .ex-row-group {
+/* Раскрытая группа — ОДНА цельная карточка: рамку/фон/акцентную полосу несёт
+   сама обёртка, а шапка и состав внутри — прозрачные. Так нет стыка двух
+   отдельных боксов (раньше на нём был виден разрыв), и «дёрганье» в режиме
+   правки крутит единый бокс без трещины по шву. */
+.ex-row-wrap-group.expanded {
   background: var(--panel-hi);
-  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
-  border-bottom-color: transparent;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--cat-color, transparent);
+  border-radius: var(--radius-md);
+}
+.ex-row-wrap-group.expanded .ex-row-group {
+  background: transparent; border: none; border-radius: 0;
 }
 .ex-row-group-members:empty { display: none; }
 .ex-row-wrap-group.expanded .ex-row-group-members {
-  background: var(--panel-hi);
-  border: 1px solid var(--border-subtle); border-top: none;
-  border-left: 3px solid var(--cat-color, transparent);
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
-  margin-top: -1px; padding: 6px 10px 10px;
+  background: transparent; border: none; border-radius: 0;
+  padding: 2px 10px 10px;
   display: flex; flex-direction: column; gap: 6px;
 }
 /* Вложенные варианты — среднее между полностью отдельной пилюлей (было) и

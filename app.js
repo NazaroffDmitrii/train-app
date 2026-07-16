@@ -4456,10 +4456,17 @@ function wireExRowGesture(wrap, userId) {
     if (_exListDrag && _exListDrag.wrap === wrap) endExDrag();
   };
 
-  wrap.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
-  wrap.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
-  wrap.addEventListener("touchend",   finish);
-  wrap.addEventListener("mousedown",  e => begin(e.clientX, e.clientY, e.target));
+  // Вариант внутри группы: гасим всплытие жеста к обёртке-группе — иначе тот
+  // же touchstart запускал бы ЕЩЁ и жест самой группы (drag/hold), конкурируя
+  // со свайпом-редактированием/удалением варианта и перехватывая его на
+  // реальном тач-устройстве. Свайп живёт на .ex-row (ниже по дереву) — его
+  // этот stopPropagation не трогает, а собственный жест варианта (на этой же
+  // обёртке) продолжает работать.
+  const nested = () => wrap.classList.contains("ex-row-wrap-nested");
+  wrap.addEventListener("touchstart", e => { if (nested()) e.stopPropagation(); const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
+  wrap.addEventListener("touchmove",  e => { if (nested()) e.stopPropagation(); const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
+  wrap.addEventListener("touchend",   e => { if (nested()) e.stopPropagation(); finish(); });
+  wrap.addEventListener("mousedown",  e => { if (nested()) e.stopPropagation(); begin(e.clientX, e.clientY, e.target); });
   wrap.addEventListener("mousemove",  e => { if (_exListDrag) move(e.clientX, e.clientY, null); });
   wrap.addEventListener("mouseup",    finish);
   wrap.addEventListener("click", e => {
