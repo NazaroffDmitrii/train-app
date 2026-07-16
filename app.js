@@ -3275,7 +3275,7 @@ function renderPickerList(query) {
     const expanded = _pickerGroupExpanded.has(item.id);
     const memberRows = expanded ? item.members.map(exItemHtml).join("") : "";
     return `
-    <div class="picker-item-group-wrap${expanded ? " expanded" : ""}" data-group-id="${escHtml(item.id)}">
+    <div class="picker-item-group-wrap${expanded ? " expanded" : ""}" data-group-id="${escHtml(item.id)}" style="--cat-color:${escHtml(color)}">
       <div class="picker-item picker-item-group" data-group-id="${escHtml(item.id)}" style="--cat-color:${escHtml(color)}">
         <span class="picker-item-name">${escHtml(item.name)}</span>
         <span class="picker-item-group-badge">${item.members.length}</span>
@@ -4064,14 +4064,14 @@ function renderExercisesList(query) {
           </div>
         </div>`;
       const expanded = _exGroupExpanded.has(item.id);
-      // Раскрытые варианты — вложенные, но обычные строки упражнения (тот же
-      // тап-в-деталь/свайп), просто визуально внутри карточки группы —
-      // «аккордеон вниз», без отдельной шторки.
+      // Раскрытые варианты — вложенные строки упражнения (тот же тап-в-деталь/
+      // свайп), но плоские, без своей рамки/пилюли — единая карточка группы,
+      // как разворот категории в справочнике (см. .cat-item-wrap.expanded).
       const memberRows = expanded ? item.members.map(ex => `
         <div class="ex-row-wrap ex-row-wrap-nested" data-id="${escHtml(ex.id)}" data-cat="${escHtml(cat)}">
           <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
           <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
-          <div class="ex-row tappable" data-id="${escHtml(ex.id)}"${accentStyle}>
+          <div class="ex-row tappable" data-id="${escHtml(ex.id)}">
             <span class="ex-row-body">
               <span class="ex-row-name">${escHtml(ex.name)}</span>
             </span>
@@ -4079,7 +4079,7 @@ function renderExercisesList(query) {
           </div>
         </div>`).join("") : "";
       return `
-      <div class="ex-row-wrap ex-row-wrap-group${expanded ? " expanded" : ""}" data-group-id="${escHtml(item.id)}" data-cat="${escHtml(cat)}">
+      <div class="ex-row-wrap ex-row-wrap-group${expanded ? " expanded" : ""}" data-group-id="${escHtml(item.id)}" data-cat="${escHtml(cat)}" style="--cat-color:${escHtml(color)}">
         <div class="ex-row ex-row-group tappable" data-group-id="${escHtml(item.id)}"${accentStyle}>
           <span class="ex-row-body">
             <span class="ex-row-name">${escHtml(item.name)}</span>
@@ -5909,9 +5909,9 @@ function openExerciseForm(exerciseId) {
       <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips ex-form-2col" id="ef-type"></div></div>
       <div class="ex-form-field"><label class="ex-form-label">Категория</label><div class="ex-form-dd" id="ef-cat"></div></div>
       <div class="ex-form-field"><label class="ex-form-label">Группа</label>
-        <div class="ex-form-dd">
+        <div class="ex-form-dd ef-combo">
           <input class="ex-form-input" id="ef-group" type="text" autocomplete="off" placeholder="Например, Жим лёжа" value="${escHtml(curGroupName)}">
-          <div class="ef-dd-panel" id="ef-group-panel"></div>
+          <div class="ef-dd-panel ef-combo-panel" id="ef-group-panel"></div>
         </div>
         <p class="ex-form-hint">Похожие варианты одного упражнения (штанга/гантели/тренажёр) — впиши общее имя, они схлопнутся в одну строку в списке.</p></div>
       <div class="ex-form-field"><label class="ex-form-label">Оборудование</label>

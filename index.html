@@ -1179,13 +1179,28 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   flex: none; font-size: 11px; font-weight: 700; color: var(--text-tertiary);
   background: var(--panel-raised); border-radius: 8px; padding: 2px 7px;
 }
-/* Раскрытие группы в пикере — аккордеоном вниз, как во вкладке «Упражнения». */
-.picker-item-group-members:empty { display: none; }
-.picker-item-group-members {
-  display: flex; flex-direction: column; gap: 0;
-  margin: -2px 0 8px 14px; padding-left: 12px;
-  border-left: 2px solid var(--border-subtle);
+/* Раскрытие группы в пикере — единая карточка с шапкой (аккордеон вниз, как
+   во вкладке «Упражнения» / разворот категории в справочнике), без отдельных
+   пилюль-с-отступом у вариантов. */
+.picker-item-group-wrap { margin-bottom: 8px; }
+.picker-item-group-wrap.expanded .picker-item-group {
+  background: var(--panel-hi);
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
 }
+.picker-item-group-members:empty { display: none; }
+.picker-item-group-wrap.expanded .picker-item-group-members {
+  background: var(--panel-hi);
+  border: 1px solid var(--border-subtle); border-top: none;
+  border-left: 3px solid var(--cat-color, transparent);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  margin-top: -1px; padding: 2px 14px 6px;
+}
+.picker-item-group-members .picker-item {
+  background: transparent; border: none; border-radius: 0;
+  border-bottom: 1px solid var(--border-subtle); padding: 10px 2px; margin-bottom: 0;
+}
+.picker-item-group-members .picker-item:last-child { border-bottom: none; }
 
 /* ============ Screen: detail view ============ */
 .screen-detail { display: flex; flex-direction: column; background: var(--bg-base); }
@@ -1792,6 +1807,15 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 }
 .ex-form-dd .ef-dd-opt:active { background: var(--panel-hi); }
 .ex-form-dd .ef-dd-opt.sel { background: var(--accent-soft); color: var(--accent-bright); font-weight: 650; }
+
+/* Подсказки поля «Группа» — всплывают ПОВЕРХ формы от самого поля, а не
+   раздвигают её (как обычный выпадающий список ниже) — иначе список полей
+   формы прыгает при каждом фокусе/вводе. */
+.ef-combo { position: relative; }
+.ef-combo .ef-combo-panel {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.4);
+}
 .ex-form-dd .ef-dd-empty { padding: 10px 12px; font-size: 13px; color: var(--text-tertiary); }
 .ex-form-dd .ef-dd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ex-form-dd .ef-dd-chip {
@@ -1850,13 +1874,29 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 }
 .ex-row-chevron-group { transition: transform 0.18s ease; }
 .ex-row-wrap-group.expanded .ex-row-chevron-group { transform: rotate(90deg); }
-.ex-row-group-members:empty { display: none; }
-.ex-row-group-members {
-  display: flex; flex-direction: column; gap: 8px;
-  margin: 8px 0 0 14px; padding-left: 12px;
-  border-left: 2px solid var(--border-subtle);
+/* Раскрытая группа — единая карточка с шапкой (эталон: разворот категории в
+   справочнике, .cat-item-wrap.expanded) — шапка и состав визуально сшиты,
+   без отдельных пилюль/отступа-скобки у вариантов. */
+.ex-row-wrap-group.expanded .ex-row-group {
+  background: var(--panel-hi);
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
 }
-.ex-row-wrap-group.expanded .ex-row-group { border-radius: var(--radius-md) var(--radius-md) 0 0; }
+.ex-row-group-members:empty { display: none; }
+.ex-row-wrap-group.expanded .ex-row-group-members {
+  background: var(--panel-hi);
+  border: 1px solid var(--border-subtle); border-top: none;
+  border-left: 3px solid var(--cat-color, transparent);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  margin-top: -1px; padding: 2px 14px 6px;
+}
+/* Вложенные варианты — плоские строки внутри карточки группы, без своей рамки/пилюли. */
+.ex-row-wrap-nested { margin-bottom: 0; border-radius: 0; }
+.ex-row-wrap-nested .ex-row {
+  background: transparent; border: none; border-radius: 0; border-bottom: 1px solid var(--border-subtle);
+  padding: 10px 2px;
+}
+.ex-row-wrap-nested:last-child .ex-row { border-bottom: none; }
 
 /* ── Экран деталей упражнения ── */
 .exd-cat-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
