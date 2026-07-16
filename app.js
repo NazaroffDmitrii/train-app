@@ -814,7 +814,10 @@ const DATA = (() => {
       const recs = ls(`train_records_${userId}`, {});
       (workout.exercises || []).forEach(ex => {
         const exVol = ex.sets.filter(s => s.done).reduce((a, s) => a + setVolume(s), 0);
-        ex.sets.filter(s => s.done && s.reps > 0).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
+        // Дроп-сет (s.dropSet) — не самостоятельная попытка на свежих силах, а
+        // облегчённое продолжение предыдущего подхода, поэтому в рекорды
+        // (макс. вес/повторы) не идёт; в тоннаж выше — идёт, это честная работа.
+        ex.sets.filter(s => s.done && s.reps > 0 && !s.dropSet).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
         if (recs[ex.exerciseId]) recs[ex.exerciseId].maxVolume = Math.max(recs[ex.exerciseId].maxVolume || 0, exVol);
       });
       lsSet(`train_records_${userId}`, recs);
@@ -833,7 +836,10 @@ const DATA = (() => {
         if (w.type !== "strength") return;
         (w.exercises || []).forEach(ex => {
           const exVol = ex.sets.filter(s => s.done).reduce((a, s) => a + setVolume(s), 0);
-          ex.sets.filter(s => s.done && s.reps > 0).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
+          // Дроп-сет (s.dropSet) — не самостоятельная попытка на свежих силах, а
+        // облегчённое продолжение предыдущего подхода, поэтому в рекорды
+        // (макс. вес/повторы) не идёт; в тоннаж выше — идёт, это честная работа.
+        ex.sets.filter(s => s.done && s.reps > 0 && !s.dropSet).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
           if (recs[ex.exerciseId]) recs[ex.exerciseId].maxVolume = Math.max(recs[ex.exerciseId].maxVolume || 0, exVol);
         });
       });
@@ -3018,6 +3024,9 @@ function renderExerciseList() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Добавить подход
         </button>
+        <button class="set-dropset-btn" title="Добавить дроп-сет (тот же подход со сброшенным весом сразу после)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="15" y2="12"/><line x1="4" y1="18" x2="10" y2="18"/></svg>
+        </button>
         <button class="set-note-btn ${ex.note ? "has-note" : ""}" title="Заметка">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L13 14l-4 1 1-4 6.5-6.5z"/></svg>
         </button>
@@ -3059,6 +3068,20 @@ function renderExerciseList() {
       updateSummaryBar();
     });
 
+    // Add drop-set — то же упражнение сразу со сброшенным весом, без отдыха
+    // между ним и предыдущим подходом. Помечается ex.sets[i].dropSet=true:
+    // считается в тоннаж (реальная работа), но не в рекорды (см. applySetToRecord)
+    // и не потеряется к следующей тренировке, как терялось бы при обычном подходе.
+    block.querySelector(".set-dropset-btn").addEventListener("click", () => {
+      if (!ex.sets.length) { showToast("Сначала добавь обычный подход"); return; }
+      haptic();
+      const last = ex.sets[ex.sets.length - 1];
+      ex.sets.push({ weight: last.weight, reps: 0, rpe: 0, done: false, dropSet: true });
+      saveWorkoutState();
+      renderSetsInBlock(block, ex, lastWorkout);
+      updateSummaryBar();
+    });
+
     // Note toggle
     const noteBtn   = block.querySelector(".set-note-btn");
     const noteInput = block.querySelector(".set-note-input");
@@ -3090,17 +3113,25 @@ function renderSetsInBlock(block, ex, lastWorkout) {
   const lastExData  = lastWorkout ? lastWorkout.exercises.find(e => e.exerciseId === ex.exerciseId) : null;
   const lastSets    = lastExData  ? lastExData.sets.filter(s => s.done) : [];
 
+  // Нумерация: дроп-сет — не свой номер, а продолжение предыдущего обычного
+  // подхода ("1.1", "1.2"...), см. .set-dropset-btn.
+  let mainNum = 0, dropNum = 0;
+  const labels = ex.sets.map(s => {
+    if (s.dropSet) { dropNum++; return `${mainNum || 1}.${dropNum}`; }
+    mainNum++; dropNum = 0; return `${mainNum}`;
+  });
+
   ex.sets.forEach((set, sIdx) => {
     const prev = lastSets[sIdx];
     const wrap = document.createElement("div");
-    wrap.className = "set-row-wrap";
+    wrap.className = "set-row-wrap" + (set.dropSet ? " set-row-wrap-drop" : "");
     const del = document.createElement("div");
     del.className = "set-row-delete";
     del.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>Удалить</span>`;
     const row = document.createElement("div");
     row.className = "set-row";
     row.innerHTML = `
-      <span class="set-num">${sIdx + 1}</span>
+      <span class="set-num">${labels[sIdx]}</span>
       <div class="set-field set-field-weight${(set.weight || 0) < 0 ? " negative" : ""}">
         <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.): чем ближе к нулю, тем лучше результат">±</button>
         <input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : "кг"}" value="${set.weight || ""}" step="0.5" ${prev ? 'class="has-prev"' : ""}>
@@ -3170,7 +3201,7 @@ function renderSetsInBlock(block, ex, lastWorkout) {
       saveWorkoutState();
       renderSetsInBlock(block, ex, lastWorkout);
       updateSummaryBar();
-      showToast("Подход удалён");
+      showToast(set.dropSet ? "Дроп-сет удалён" : "Подход удалён");
     });
     tbody.appendChild(wrap);
   });
@@ -6372,7 +6403,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
     // Подход считается рекордным, если его вес×повторы совпадают с текущим
     // личным максимумом по весу для этого упражнения (вес может быть
     // отрицательным — упражнения с помощью, см. applySetToRecord).
-    const isPrSet = (rec, s) => !!rec && rec.maxWeight != null && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight;
+    const isPrSet = (rec, s) => !!rec && rec.maxWeight != null && !s.dropSet && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight;
 
     body.innerHTML = `
       <div class="wd-statgrid">
@@ -6393,6 +6424,14 @@ function openDetailScreen(workout, returnScreen = "menu") {
         // Рекорд подсвечиваем только у ПЕРВОГО подхода с рекордным весом:
         // если следующие подходы повторяют тот же вес — это уже не рекорд.
         let prShown    = false;
+        // Та же нумерация "1.1", что и на экране тренировки — иначе к
+        // следующей тренировке уже и по истории не понять, что подход был
+        // дроп-сетом, а не самостоятельной попыткой.
+        let mainNum = 0, dropNum = 0;
+        const setLabels = doneSets.map(s => {
+          if (s.dropSet) { dropNum++; return `${mainNum || 1}.${dropNum}`; }
+          mainNum++; dropNum = 0; return `${mainNum}`;
+        });
         return `<div class="wd-ex">
           <div class="wd-ex-head">
             <span class="wd-ex-name">${escHtml(exDef.name)}</span>
@@ -6410,8 +6449,8 @@ function openDetailScreen(workout, returnScreen = "menu") {
               ${doneSets.map((s, i) => {
                 const pr = !prShown && isPrSet(rec, s);
                 if (pr) prShown = true;
-                return `<div class="wd-set">
-                  <span class="wd-set-num">${i + 1}</span>
+                return `<div class="wd-set${s.dropSet ? " wd-set-drop" : ""}">
+                  <span class="wd-set-num">${setLabels[i]}</span>
                   <div class="wd-cell${pr ? " pr" : ""}">${pr ? "★ " : ""}${s.weight || "—"}</div>
                   <div class="wd-cell">${s.reps}</div>
                   ${anyRpe ? `<div class="wd-cell wd-rpe ${s.rpe ? rpeClass(s.rpe) : "none"}">${s.rpe || "—"}</div>` : ""}
@@ -6505,16 +6544,23 @@ function openDetailEditMode(workout) {
               <span class="wd-col-del"></span>
             </div>
             <div class="wd-sets">
-              ${doneSets.map((s, i) => `
-                <div class="wd-set de-set-row" data-ex="${exIdx}" data-si="${s._si}">
-                  <span class="wd-set-num">${i + 1}</span>
+              ${(function () {
+                let mainNum = 0, dropNum = 0;
+                const labels = doneSets.map(s => {
+                  if (s.dropSet) { dropNum++; return `${mainNum || 1}.${dropNum}`; }
+                  mainNum++; dropNum = 0; return `${mainNum}`;
+                });
+                return doneSets.map((s, i) => `
+                <div class="wd-set de-set-row${s.dropSet ? " wd-set-drop" : ""}" data-ex="${exIdx}" data-si="${s._si}">
+                  <span class="wd-set-num">${labels[i]}</span>
                   <input class="wd-cell-input de-weight" type="number" inputmode="decimal" step="0.5" value="${s.weight || 0}">
                   <input class="wd-cell-input de-reps" type="number" inputmode="numeric" value="${s.reps || 0}">
                   <input class="wd-cell-input wd-rpe de-rpe" type="number" inputmode="numeric" min="0" max="10" value="${s.rpe || ""}" placeholder="—">
                   <button class="wd-del-set de-del-set" data-ex="${exIdx}" data-si="${s._si}" title="Удалить подход">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   </button>
-                </div>`).join("")}
+                </div>`).join("");
+              })()}
             </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
         </div>`;
       }).join("");

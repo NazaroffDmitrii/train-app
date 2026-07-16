@@ -753,6 +753,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .workout-scroll.ex-editing .ex-block .rpe-btn,
 .workout-scroll.ex-editing .ex-block .set-done-btn,
 .workout-scroll.ex-editing .ex-block .add-set-btn,
+.workout-scroll.ex-editing .ex-block .set-dropset-btn,
 .workout-scroll.ex-editing .ex-block .set-note-btn { pointer-events: none; }
 .ex-block.dragging {
   z-index: 20; cursor: grabbing;
@@ -838,15 +839,18 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
    отрицательный, и виртуальная клавиатура (inputmode="decimal") на многих
    устройствах не даёт набрать "-", поэтому знак переключается кнопкой, а не
    набором с клавиатуры.
-   min-width:0 — обязателен и на самой ячейке (она грид-элемент .set-row), и
-   на инпуте внутри неё (он теперь не единственный флекс-элемент, а делит
-   место с кнопкой): без этого оба по умолчанию отказываются сжиматься уже
-   своего "естественного" содержимого, колонка веса раздувается и вытесняет
-   повторы/RPE/галочку за край экрана. */
-.set-field-weight { justify-content: flex-start; padding: 0 4px 0 4px; gap: 4px; min-width: 0; }
-.set-field-weight input { flex: 1; width: auto; min-width: 0; padding: 0 2px; }
+   Кнопка — абсолютным оверлеем поверх поля (не участвует в флексе), а не
+   рядом с инпутом: тогда сам инпут остаётся на всю ширину и число стоит по
+   центру ровно как в обычном поле, а не смещено кнопкой влево.
+   min-width:0 на самом инпуте — обязателен: он грид-элемент (.set-row —
+   CSS Grid), и без этого отказывается сжиматься уже "естественного" размера
+   содержимого, из-за чего колонка веса раздувалась и вытесняла повторы/RPE/
+   галочку за край экрана. */
+.set-field-weight { position: relative; }
+.set-field-weight input { min-width: 0; }
 .set-sign-btn {
-  flex: none; width: 26px; height: 34px; border-radius: 8px;
+  position: absolute; left: 4px; top: 50%; transform: translateY(-50%);
+  width: 26px; height: 34px; border-radius: 8px;
   background: var(--panel-hi); border: none; color: var(--text-tertiary);
   font-size: 16px; font-weight: 800; line-height: 1;
 }
@@ -888,6 +892,21 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .set-note-btn.has-note { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
 .set-note-btn svg { width: 15px; height: 15px; }
+.set-dropset-btn {
+  width: 44px; height: 38px; border-radius: 10px; flex: none;
+  background: var(--panel-raised); border: 1px dashed var(--border-strong);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary);
+}
+.set-dropset-btn:active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
+.set-dropset-btn svg { width: 16px; height: 16px; }
+
+/* Дроп-сет — визуально продолжение подхода, а не отдельная строка: небольшой
+   отступ слева и приглушённый номер ("1.1"), без своей рамки/пилюли —
+   тот же приём "мягкой вложенности", что и у вариантов группы упражнений. */
+.set-row-wrap-drop { margin-left: 16px; }
+.set-row-wrap-drop .set-row { background: var(--panel-hi); }
+.set-row-wrap-drop .set-num { font-size: 10.5px; color: var(--text-tertiary); }
 .set-note-input {
   display: block; box-sizing: border-box;
   width: calc(100% - 28px);
@@ -1333,6 +1352,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .wd-sets { display: flex; flex-direction: column; gap: 6px; }
 .wd-set { display: flex; align-items: center; gap: 7px; }
 .wd-set-num { width: 16px; flex: none; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
+/* Дроп-сет в истории — та же вложенность, что и на экране тренировки: чтобы
+   к следующей тренировке не забыть, что это было облегчённое продолжение,
+   а не самостоятельная попытка. */
+.wd-set-drop { margin-left: 16px; }
+.wd-set-drop .wd-set-num { font-size: 10px; }
+.wd-set-drop .wd-cell, .wd-set-drop .wd-cell-input { background: var(--panel); }
 .wd-cell {
   flex: 1; text-align: center; border-radius: 10px; padding: 7px 0;
   font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
