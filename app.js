@@ -1339,6 +1339,13 @@ window.addEventListener("pagehide", () => SyncQueue.flush());
 const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), muscleDetail: $("screen-muscle-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), constructor: $("screen-constructor") };
 
 function goToScreen(name, opts = {}) {
+  // Формы редактирования (упражнение/мышца/движение — см. .ref-form-backdrop)
+  // никогда не должны быть местом, куда можно "вернуться назад": если экран
+  // меняется, пока форма открыта, закрываем её сразу — иначе она молча
+  // остаётся висеть поверх (goToScreen переключает только экраны, не модалки)
+  // и неожиданно "всплывает" при следующем переходе назад.
+  document.querySelectorAll(".ref-form-backdrop").forEach(bd => bd.remove());
+
   // opts.instant — переключить БЕЗ кроссфейд-анимации (0.32s). Нужно, когда
   // переключение происходит под перекрывающей шторкой: иначе, сняв шторку, мы
   // увидели бы недоигранный кроссфейд (вспышку прежнего экрана) — см. заход в
