@@ -1325,13 +1325,25 @@ function updateOnlineStatus() {
 window.addEventListener("online",  () => { updateOnlineStatus(); SyncQueue.flush(); });
 window.addEventListener("offline", updateOnlineStatus);
 
+// Закрыть любую зависшую форму редактирования (упражнение/мышца/движение —
+// см. .ref-form-backdrop) сразу, не дожидаясь следующего goToScreen. На iOS
+// PWA страница не перезагружается при сворачивании — она замирает как есть
+// и потом просто "просыпается" с тем же DOM; если форма осталась открытой,
+// без этой чистки она осталась бы видна(!) при возврате в приложение (мигание
+// перед тем, как её на следующем переходе экрана всё равно уберёт goToScreen —
+// сама чистка в goToScreen синхронна и мигать не может, а вот "оживший" при
+// возврате в приложение кадр с формой — может).
+function closeStaleExerciseForms() {
+  document.querySelectorAll(".ref-form-backdrop").forEach(bd => bd.remove());
+}
+
 // Сворачивание приложения / уход со страницы — пробуем дослать всё
 // несинхронизированное прямо сейчас, не дожидаясь обычной задержки
 // (раздел 6.1: активная тренировка должна переживать переключение приложений).
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") SyncQueue.flush();
+  if (document.visibilityState === "hidden") { SyncQueue.flush(); closeStaleExerciseForms(); }
 });
-window.addEventListener("pagehide", () => SyncQueue.flush());
+window.addEventListener("pagehide", () => { SyncQueue.flush(); closeStaleExerciseForms(); });
 
 /* ==========================================================================
    Screen switching
@@ -1339,12 +1351,10 @@ window.addEventListener("pagehide", () => SyncQueue.flush());
 const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), muscleDetail: $("screen-muscle-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), constructor: $("screen-constructor") };
 
 function goToScreen(name, opts = {}) {
-  // Формы редактирования (упражнение/мышца/движение — см. .ref-form-backdrop)
-  // никогда не должны быть местом, куда можно "вернуться назад": если экран
-  // меняется, пока форма открыта, закрываем её сразу — иначе она молча
-  // остаётся висеть поверх (goToScreen переключает только экраны, не модалки)
-  // и неожиданно "всплывает" при следующем переходе назад.
-  document.querySelectorAll(".ref-form-backdrop").forEach(bd => bd.remove());
+  // Формы редактирования никогда не должны быть местом, куда можно "вернуться
+  // назад" — если экран меняется, пока форма открыта, закрываем её сразу
+  // (см. closeStaleExerciseForms — тот же приём и на сворачивание приложения).
+  closeStaleExerciseForms();
 
   // opts.instant — переключить БЕЗ кроссфейд-анимации (0.32s). Нужно, когда
   // переключение происходит под перекрывающей шторкой: иначе, сняв шторку, мы
