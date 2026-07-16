@@ -403,6 +403,20 @@ const DATA = (() => {
       return group;
     },
 
+    // Создать НОВУЮ группу напрямую (drag-and-drop слияние двух упражнений,
+    // см. performMerge) — в отличие от setExerciseGroupByName, не ищет
+    // существующую группу по имени: два слияния подряд с одинаковой
+    // заглушкой-названием ("Новая группа") не должны случайно схлопнуться
+    // в одну и ту же группу — каждое слияние заводит свою запись.
+    createExerciseGroup(userId, name, exerciseIds) {
+      const list = this.getExerciseGroups(userId);
+      const group = { id: `grp_${Date.now()}`, name: (name || "Новая группа").trim() || "Новая группа" };
+      list.push(group);
+      this.saveExerciseGroups(userId, list);
+      exerciseIds.forEach(id => this.updateOwnExercise(userId, id, { groupId: group.id }));
+      return group;
+    },
+
     // Переименовать группу (инлайн-правка в режиме редактирования списка).
     renameExerciseGroup(userId, groupId, newName) {
       newName = (newName || "").trim();
@@ -3814,6 +3828,7 @@ let _exercisesCatFilter = "all";
 let _exercisesShowHidden = false;
 let _exListEditMode = false;
 let _exListDrag = null;
+let _mergeHover = null; // { target, timer, armed } — наведение на цель слияния при перетаскивании (см. moveExDrag)
 let _exGroupExpanded = new Set(); // id раскрытых групп упражнений (аккордеон в списке)
 // Роли рабочих мышц — фиксированный порядок и подписи для деталей/формы.
 const MUSCLE_ROLES = [
@@ -4146,14 +4161,17 @@ function renderExercisesList(query) {
   // варианты внутри раскрытой группы: это обычные упражнения, ничем не хуже.
   exercisesScroll.querySelectorAll(".ex-row-wrap[data-id]").forEach(wrap => wireExRowSwipe(wrap, userId));
 
-  // Драг-перестановка — только на элементы верхнего уровня (обычные строки и
-  // сами группы целиком); вложенные варианты внутри раскрытой группы не
-  // перетаскиваются отдельно — «вынуть» вариант наружу это отдельный шаг.
+  // Драг-перестановка — на элементы верхнего уровня (обычные строки и сами
+  // группы целиком), а также на варианты внутри раскрытой группы: их
+  // перетаскивание начинается с "вынимания" наружу (см. promoteNestedRow в
+  // wireExRowGesture), дальше они ничем не отличаются от обычной строки —
+  // в т.ч. могут слиться в другую группу (см. performMerge).
   [...exercisesScroll.children].forEach(wrap => {
     if (wrap.matches(".ex-row-wrap[data-id]") || wrap.matches(".ex-row-wrap-group[data-group-id]")) {
       wireExRowGesture(wrap, userId);
     }
   });
+  exercisesScroll.querySelectorAll(".ex-row-wrap-nested").forEach(wrap => wireExRowGesture(wrap, userId));
 }
 
 function startExNameEdit(wrap, exId, userId) {
@@ -4378,7 +4396,13 @@ function wireExRowGesture(wrap, userId) {
       if (moved) return;
       if (!_exListEditMode) { enterExListEditMode(); return; }
       dragStarted = true;
-      startExDrag(wrap, y);
+      // Вариант внутри раскрытой группы — "вынимаем" его наружу перед стартом
+      // перетаскивания: он становится обычной строкой верхнего уровня и дальше
+      // ничем не отличается от любого упражнения (в т.ч. может слиться в другую
+      // группу, см. performMerge) — как вынимание иконки из папки на iOS.
+      const dragWrap = wrap.parentElement && wrap.parentElement.classList.contains("ex-row-group-members")
+        ? promoteNestedRow(wrap) : wrap;
+      startExDrag(dragWrap, y);
     }, DELAY());
   };
   const move = (x, y, e) => {
@@ -4404,6 +4428,22 @@ function wireExRowGesture(wrap, userId) {
   }, true);
 }
 
+// Вынуть вариант из раскрытой группы наружу, на верхний уровень списка (рядом
+// с самой группой) — физически, до начала drag: дальше вся остальная механика
+// (перестановка/слияние/смена категории) работает с ним как с любой обычной
+// строкой, без отдельного кода. dataset.promotedGroupId запоминает, откуда он
+// родом — endExDrag снимет с него groupId, если слияние не произошло.
+function promoteNestedRow(wrap) {
+  const groupWrap = wrap.closest(".ex-row-wrap-group");
+  wrap.classList.remove("ex-row-wrap-nested");
+  wrap.dataset.promotedGroupId = (groupWrap && groupWrap.dataset.groupId) || "";
+  if (groupWrap) {
+    wrap.dataset.cat = groupWrap.dataset.cat;
+    exercisesScroll.insertBefore(wrap, groupWrap.nextSibling);
+  }
+  return wrap;
+}
+
 function startExDrag(wrap, pointerY) {
   if (_exListDrag) return;
   const top = wrap.getBoundingClientRect().top;
@@ -4413,22 +4453,63 @@ function startExDrag(wrap, pointerY) {
   haptic(18);
 }
 
+// Наведение на цель слияния во время перетаскивания — как на iOS: задержался
+// над другой строкой (не просто прошёл мимо) — она "вооружается" подсветкой,
+// и если отпустить прямо сейчас, произойдёт слияние в группу вместо перестановки
+// позиций. Сменился target — таймер и подсветка сбрасываются.
+function updateMergeHover(target) {
+  if (_mergeHover && _mergeHover.target === target) return;
+  if (_mergeHover) {
+    clearTimeout(_mergeHover.timer);
+    _mergeHover.target.classList.remove("ex-merge-candidate", "ex-merge-armed");
+    _mergeHover = null;
+  }
+  if (!target) return;
+  target.classList.add("ex-merge-candidate");
+  const timer = setTimeout(() => {
+    if (_mergeHover && _mergeHover.target === target) {
+      _mergeHover.armed = true;
+      target.classList.add("ex-merge-armed");
+      haptic(14);
+    }
+  }, 450);
+  _mergeHover = { target, timer, armed: false };
+}
+
 function moveExDrag(pointerY) {
   const d = _exListDrag; if (!d) return;
   const h = d.wrap.getBoundingClientRect().height;
   const center = (pointerY - d.grabDy) + h / 2;
 
-  // Ищем позицию вставки: первый элемент (не сам drag), чей центр выше нашего
-  let insertBeforeEl = null;
-  for (const child of exercisesScroll.children) {
-    if (child === d.wrap) continue;
-    const r = child.getBoundingClientRect();
-    if (r.top + r.height / 2 > center) { insertBeforeEl = child; break; }
+  // Группу саму по себе никогда не сливаем наведением (перемещение группы на
+  // группу/упражнение — просто перестановка, см. согласованное поведение);
+  // слияние доступно только когда тащат обычное упражнение (в т.ч. только что
+  // вынутое из другой группы — см. promoteNestedRow).
+  const canMerge = !d.wrap.dataset.groupId;
+  let mergeTarget = null;
+  if (canMerge) {
+    for (const child of exercisesScroll.children) {
+      if (child === d.wrap) continue;
+      if (!(child.matches(".ex-row-wrap[data-id]") || child.matches(".ex-row-wrap-group[data-group-id]"))) continue;
+      const r = child.getBoundingClientRect();
+      if (center > r.top && center < r.bottom) { mergeTarget = child; break; }
+    }
   }
+  updateMergeHover(mergeTarget);
 
-  const curNext = d.wrap.nextElementSibling;
-  if (insertBeforeEl !== curNext && insertBeforeEl !== d.wrap) {
-    exercisesScroll.insertBefore(d.wrap, insertBeforeEl); // null → в конец
+  // Пока наведены на цель слияния — не переставляем строки (иконка на iOS не
+  // расталкивает соседей, пока просто "висит" над другой иконкой).
+  if (!mergeTarget) {
+    let insertBeforeEl = null;
+    for (const child of exercisesScroll.children) {
+      if (child === d.wrap) continue;
+      const r = child.getBoundingClientRect();
+      if (r.top + r.height / 2 > center) { insertBeforeEl = child; break; }
+    }
+    const curNext = d.wrap.nextElementSibling;
+    if (insertBeforeEl !== curNext && insertBeforeEl !== d.wrap) {
+      exercisesScroll.insertBefore(d.wrap, insertBeforeEl); // null → в конец
+    }
   }
 
   const rect = d.wrap.getBoundingClientRect();
@@ -4447,17 +4528,73 @@ function _exDragGetCat(wrap) {
   return null;
 }
 
+// Слияние по отпусканию над "вооружённой" целью (см. updateMergeHover).
+// draggedWrap — всегда обычное упражнение (moveExDrag не даёт "вооружиться",
+// когда тащат группу). targetWrap — либо тоже упражнение (оба сливаются в
+// НОВУЮ группу), либо уже существующая группа (draggedWrap просто входит в неё).
+function performMerge(userId, draggedWrap, targetWrap) {
+  haptic(20);
+  const exId = draggedWrap.dataset.id;
+  if (targetWrap.dataset.groupId) {
+    const group = DATA.getExerciseGroups(userId).find(g => g.id === targetWrap.dataset.groupId);
+    if (group) { DATA.setExerciseGroupByName(userId, exId, group.name); SyncQueue.push("exercise:update", { id: exId, groupId: group.id }); }
+    renderExercisesList(exercisesSearch.value);
+    return;
+  }
+  const targetId = targetWrap.dataset.id;
+  const targetEx = DATA.getVisibleExercises(userId).find(e => e.id === targetId);
+  const group = DATA.createExerciseGroup(userId, targetEx ? targetEx.name : "Новая группа", [targetId, exId]);
+  SyncQueue.push("exercise:update", { id: exId, groupId: group.id });
+  renderExercisesList(exercisesSearch.value);
+  // Сразу предложить переименовать — как на iOS при создании новой папки:
+  // фокус и выделенный текст, чтобы можно было сразу начать печатать имя.
+  requestAnimationFrame(() => {
+    const wrap = exercisesScroll.querySelector(`.ex-row-wrap-group[data-group-id="${CSS.escape(group.id)}"]`);
+    if (wrap) startGroupNameEdit(wrap, group.id, userId);
+  });
+}
+
 function endExDrag() {
   const d = _exListDrag; if (!d) return;
   _exListDrag = null;
+
+  const merge = _mergeHover;
+  if (merge) {
+    clearTimeout(merge.timer);
+    merge.target.classList.remove("ex-merge-candidate", "ex-merge-armed");
+    _mergeHover = null;
+  }
+
   d.wrap.style.transition = "transform 0.18s ease";
   d.wrap.style.transform = "";
   d.wrap.classList.remove("ex-dragging");
   setTimeout(() => { d.wrap.style.transition = ""; }, 200);
 
+  const userId = DATA.getCurrentUser();
+
+  if (merge && merge.armed) {
+    performMerge(userId, d.wrap, merge.target);
+    return;
+  }
+
+  saveExOrder();
+
+  // Вынутый из группы вариант, который никуда не слился — просто отвязываем
+  // от группы (плюс переносим категорию, если заодно перетащили в другую).
+  if (d.wrap.dataset.promotedGroupId !== undefined) {
+    delete d.wrap.dataset.promotedGroupId;
+    const exId = d.wrap.dataset.id;
+    const newCat = _exDragGetCat(d.wrap);
+    const patch = { groupId: null };
+    if (newCat && newCat !== d.wrap.dataset.cat) patch.cat = newCat;
+    DATA.updateOwnExercise(userId, exId, patch);
+    SyncQueue.push("exercise:update", { id: exId });
+    renderExercisesList(exercisesSearch.value);
+    return;
+  }
+
   // Обновляем категорию упражнения (или ВСЕХ вариантов группы разом) если
   // строка переместилась в другую категорию.
-  const userId = DATA.getCurrentUser();
   const newCat = _exDragGetCat(d.wrap);
   if (newCat && newCat !== d.wrap.dataset.cat) {
     if (d.wrap.dataset.groupId) {
@@ -4477,8 +4614,6 @@ function endExDrag() {
     if (row) row.style.borderLeftColor = color;
     d.wrap.dataset.cat = newCat;
   }
-
-  saveExOrder();
 }
 
 $("exercises-done-btn").addEventListener("click", exitExListEditMode);

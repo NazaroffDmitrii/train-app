@@ -954,6 +954,16 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .ex-list-editing .ex-row { animation: catJiggle 0.35s ease infinite alternate; }
 .ex-list-editing .ex-row-wrap:nth-child(even) .ex-row { animation-delay: -0.15s; }
 .ex-row-wrap.ex-dragging { z-index: 100; opacity: 0.88; position: relative; }
+
+/* Наведение цели слияния при перетаскивании (drag-and-drop в группу, как на
+   iOS): лёгкая подсветка сразу, "бамп" — когда задержался достаточно, чтобы
+   отпускание создало/пополнило группу. */
+.ex-merge-candidate .ex-row { background: var(--accent-soft); transition: background 0.15s ease, transform 0.15s ease; }
+.ex-merge-armed .ex-row {
+  background: var(--accent-soft); border-color: var(--accent);
+  transform: scale(1.035); box-shadow: 0 0 0 2px var(--accent), 0 6px 18px rgba(0,0,0,0.35);
+  animation: none;
+}
 .bottom-sheet-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
 
 .rpe-grid {
