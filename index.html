@@ -953,6 +953,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .bottom-sheet-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border-strong); margin: 0 auto 18px; cursor: pointer; touch-action: manipulation; }
 .ex-list-editing .ex-row { animation: catJiggle 0.35s ease infinite alternate; }
 .ex-list-editing .ex-row-wrap:nth-child(even) .ex-row { animation-delay: -0.15s; }
+/* Шапка группы и её раскрытые варианты должны дёргаться СИНХРОННО, одним
+   куском — иначе на стыке виден "разрыв" (шапка и тело качаются в разной
+   фазе). Раз шапка и вложенные строки лежат в разных родителях, их локальный
+   :nth-child(even) не совпадает — фиксируем фазу в 0 явно для всей карточки
+   (!important — иначе более специфичное правило :nth-child(even) выше побеждает). */
+.ex-list-editing .ex-row-wrap-group .ex-row { animation-delay: 0s !important; }
 .ex-row-wrap.ex-dragging { z-index: 100; opacity: 0.88; position: relative; }
 
 /* Наведение цели слияния при перетаскивании (drag-and-drop в группу, как на

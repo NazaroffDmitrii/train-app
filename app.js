@@ -4382,6 +4382,25 @@ function saveExOrder() {
   if (ids.length) DATA.saveExerciseOrder(DATA.getCurrentUser(), ids);
 }
 
+// Поставить новосозданную группу в пользовательском порядке НА МЕСТО цели
+// слияния (см. performMerge) — иначе у нового group:<id> нет позиции в
+// customOrder, и она проваливается в конец списка (для "не найдено в
+// порядке" сортировка отправляет элемент последним).
+function pinGroupOrderAtTarget(userId, groupId, targetOrderKey) {
+  const groupKey = `group:${groupId}`;
+  let order = DATA.getExerciseOrder(userId);
+  if (!Array.isArray(order)) {
+    order = [...exercisesScroll.children]
+      .filter(el => el.matches(".ex-row-wrap[data-id]") || el.matches(".ex-row-wrap-group[data-group-id]"))
+      .map(w => w.dataset.id || `group:${w.dataset.groupId}`);
+  }
+  order = order.filter(k => k !== groupKey);
+  const idx = order.indexOf(targetOrderKey);
+  if (idx === -1) order.push(groupKey);
+  else order.splice(idx, 0, groupKey);
+  DATA.saveExerciseOrder(userId, order);
+}
+
 function wireExRowGesture(wrap, userId) {
   let holdTimer = null, sx = 0, sy = 0, moved = false, dragStarted = false;
   const DELAY = () => _exListEditMode ? 150 : 430;
@@ -4537,7 +4556,12 @@ function performMerge(userId, draggedWrap, targetWrap) {
   const exId = draggedWrap.dataset.id;
   if (targetWrap.dataset.groupId) {
     const group = DATA.getExerciseGroups(userId).find(g => g.id === targetWrap.dataset.groupId);
-    if (group) { DATA.setExerciseGroupByName(userId, exId, group.name); SyncQueue.push("exercise:update", { id: exId, groupId: group.id }); }
+    if (group) {
+      DATA.setExerciseGroupByName(userId, exId, group.name);
+      SyncQueue.push("exercise:update", { id: exId, groupId: group.id });
+      // Раскрываем сразу — иначе непонятно, что перетаскивание вообще сработало.
+      _exGroupExpanded.add(group.id);
+    }
     renderExercisesList(exercisesSearch.value);
     return;
   }
@@ -4545,6 +4569,11 @@ function performMerge(userId, draggedWrap, targetWrap) {
   const targetEx = DATA.getVisibleExercises(userId).find(e => e.id === targetId);
   const group = DATA.createExerciseGroup(userId, targetEx ? targetEx.name : "Новая группа", [targetId, exId]);
   SyncQueue.push("exercise:update", { id: exId, groupId: group.id });
+  // Встаёт на место цели (иначе у новой группы нет позиции в customOrder, и
+  // она проваливается в самый низ), и сразу раскрывается — видно, что именно
+  // слилось, а не просто "что-то пропало".
+  pinGroupOrderAtTarget(userId, group.id, targetId);
+  _exGroupExpanded.add(group.id);
   renderExercisesList(exercisesSearch.value);
   // Сразу предложить переименовать — как на iOS при создании новой папки:
   // фокус и выделенный текст, чтобы можно было сразу начать печатать имя.
