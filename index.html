@@ -1179,6 +1179,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   flex: none; font-size: 11px; font-weight: 700; color: var(--text-tertiary);
   background: var(--panel-raised); border-radius: 8px; padding: 2px 7px;
 }
+/* Раскрытие группы в пикере — аккордеоном вниз, как во вкладке «Упражнения». */
+.picker-item-group-members:empty { display: none; }
+.picker-item-group-members {
+  display: flex; flex-direction: column; gap: 0;
+  margin: -2px 0 8px 14px; padding-left: 12px;
+  border-left: 2px solid var(--border-subtle);
+}
 
 /* ============ Screen: detail view ============ */
 .screen-detail { display: flex; flex-direction: column; background: var(--bg-base); }
@@ -1834,11 +1841,22 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 .ex-row-chevron svg { width: 18px; height: 18px; }
 
 /* Строка-группа упражнений (варианты одного движения) — та же оболочка
-   .ex-row, лёгкий намёк — счётчик вариантов перед шевроном. */
+   .ex-row, лёгкий намёк — счётчик вариантов перед шевроном. Тап раскрывает
+   варианты вниз аккордеоном (без отдельной шторки) — шеврон поворачивается,
+   вложенные строки появляются внутри той же карточки-обёртки. */
 .ex-row-group-badge {
   flex: none; font-size: 11px; font-weight: 700; color: var(--text-tertiary);
   background: var(--panel-raised); border-radius: 8px; padding: 2px 7px;
 }
+.ex-row-chevron-group { transition: transform 0.18s ease; }
+.ex-row-wrap-group.expanded .ex-row-chevron-group { transform: rotate(90deg); }
+.ex-row-group-members:empty { display: none; }
+.ex-row-group-members {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 8px 0 0 14px; padding-left: 12px;
+  border-left: 2px solid var(--border-subtle);
+}
+.ex-row-wrap-group.expanded .ex-row-group { border-radius: var(--radius-md) var(--radius-md) 0 0; }
 
 /* ── Экран деталей упражнения ── */
 .exd-cat-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }

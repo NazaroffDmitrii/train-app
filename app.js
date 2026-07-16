@@ -3192,10 +3192,13 @@ let _pickerCat = "Все";   // активная вкладка-категори
 
 let _pickerSelectedId = null;
 
+let _pickerGroupExpanded = new Set(); // id раскрытых групп упражнений (аккордеон, как в списке «Упражнения»)
+
 function openExercisePicker(onSelect, selectedId) {
   _pickerOnSelect = onSelect || addExerciseToWorkout;
   _pickerSelectedId = selectedId || null;
   _pickerCat = "Все";
+  _pickerGroupExpanded = new Set();
   pickerSearch.value = "";
   renderPickerTabs();
   renderPickerList("");
@@ -3257,22 +3260,27 @@ function renderPickerList(query) {
   }
 
   const SVG_CHECK = `<svg class="picker-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>`;
-  const itemHtml = item => {
-    if (item.kind === "group") {
-      const color = DATA.getCategoryColor(userId, item.cat);
-      return `
-      <div class="picker-item picker-item-group" data-group-id="${escHtml(item.id)}" style="--cat-color:${escHtml(color)}">
-        <span class="picker-item-name">${escHtml(item.name)}</span>
-        <span class="picker-item-group-badge">${item.members.length}</span>
-      </div>`;
-    }
-    const e = item.ex;
+  const exItemHtml = e => {
     const sel = e.id === _pickerSelectedId;
     const color = DATA.getCategoryColor(userId, e.cat);
     return `
     <div class="picker-item${sel ? " selected" : ""}" data-id="${escHtml(e.id)}" style="--cat-color:${escHtml(color)}">
       <span class="picker-item-name">${escHtml(e.name)}</span>
       ${sel ? SVG_CHECK : ""}
+    </div>`;
+  };
+  const itemHtml = item => {
+    if (item.kind !== "group") return exItemHtml(item.ex);
+    const color = DATA.getCategoryColor(userId, item.cat);
+    const expanded = _pickerGroupExpanded.has(item.id);
+    const memberRows = expanded ? item.members.map(exItemHtml).join("") : "";
+    return `
+    <div class="picker-item-group-wrap${expanded ? " expanded" : ""}" data-group-id="${escHtml(item.id)}">
+      <div class="picker-item picker-item-group" data-group-id="${escHtml(item.id)}" style="--cat-color:${escHtml(color)}">
+        <span class="picker-item-name">${escHtml(item.name)}</span>
+        <span class="picker-item-group-badge">${item.members.length}</span>
+      </div>
+      <div class="picker-item-group-members">${memberRows}</div>
     </div>`;
   };
 
@@ -3298,9 +3306,10 @@ function renderPickerList(query) {
 
   pickerList.querySelectorAll(".picker-item-group").forEach(item => {
     item.addEventListener("click", () => {
-      const groupItem = items.find(i => i.kind === "group" && i.id === item.dataset.groupId);
-      if (!groupItem) return;
-      openExerciseGroupModal(groupItem.name, groupItem.members, exId => { _pickerOnSelect(exId); closeExercisePicker(); });
+      const groupId = item.dataset.groupId;
+      if (_pickerGroupExpanded.has(groupId)) _pickerGroupExpanded.delete(groupId);
+      else _pickerGroupExpanded.add(groupId);
+      renderPickerList(pickerSearch.value);
     });
   });
 }
@@ -3788,6 +3797,7 @@ let _exercisesCatFilter = "all";
 let _exercisesShowHidden = false;
 let _exListEditMode = false;
 let _exListDrag = null;
+let _exGroupExpanded = new Set(); // id раскрытых групп упражнений (аккордеон в списке)
 // Роли рабочих мышц — фиксированный порядок и подписи для деталей/формы.
 const MUSCLE_ROLES = [
   { key: "agonists",     label: "Агонисты", primary: true },
@@ -3810,6 +3820,7 @@ function initExercisesScreen() {
   _exercisesCatFilter = "all";
   _exercisesShowHidden = false;
   _exListEditMode = false;
+  _exGroupExpanded = new Set();
   exercisesSearch.placeholder = "Поиск упражнения…";
   const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.classList.remove("visible");
   const addBtn  = $("exercises-add-btn");  if (addBtn)  addBtn.hidden  = false;
@@ -4013,45 +4024,72 @@ function renderExercisesList(query) {
   if (_exListEditMode) exercisesScroll.classList.add("ex-list-editing");
   else exercisesScroll.classList.remove("ex-list-editing");
 
+  // Ключ сортировки на уровне отображаемых элементов (а не «сырых»
+  // упражнений): группа — это один пользовательский элемент со своей
+  // позицией в customOrder ("group:<id>"), как и обычное упражнение.
+  const orderKey = item => item.kind === "group" ? `group:${item.id}` : item.ex.id;
+  const displayName = item => item.kind === "group" ? item.name : item.ex.name;
+
   const itemsByCat = new Map(); // cat -> display items (для клика по группе после рендера)
   exercisesScroll.innerHTML = allOrderedCats.map(cat => {
     const color = DATA.getCategoryColor(userId, cat);
     const catExs = groups.get(cat) || [];
     const isEmpty = catExs.length === 0;
     const accentStyle = ` style="border-left-color:${escHtml(color)};"`;
-    const sorted = [...catExs].sort((a, b) => {
+    // Стабильная база по имени — дальше пересортировываем уже отображаемые
+    // элементы (см. orderKey) пользовательским порядком, если он есть.
+    const rawSorted = [...catExs].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    const items = DATA.resolveDisplayItems(userId, rawSorted, q).sort((a, b) => {
       if (customOrder) {
-        const ia = customOrder.indexOf(a.id), ib = customOrder.indexOf(b.id);
+        const ia = customOrder.indexOf(orderKey(a)), ib = customOrder.indexOf(orderKey(b));
         if (ia !== -1 || ib !== -1) {
           if (ia === -1) return 1;
           if (ib === -1) return -1;
           return ia - ib;
         }
       }
-      return a.name.localeCompare(b.name, "ru");
+      return displayName(a).localeCompare(displayName(b), "ru");
     });
-    const items = DATA.resolveDisplayItems(userId, sorted, q);
     itemsByCat.set(cat, items);
-    const rows = items.map(item => item.kind === "group" ? `
-      <div class="ex-row-wrap ex-row-wrap-group" data-group-id="${escHtml(item.id)}" data-cat="${escHtml(cat)}">
+    const rows = items.map(item => {
+      if (item.kind !== "group") return `
+        <div class="ex-row-wrap" data-id="${escHtml(item.ex.id)}" data-cat="${escHtml(cat)}">
+          <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
+          <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
+          <div class="ex-row tappable" data-id="${escHtml(item.ex.id)}"${accentStyle}>
+            <span class="ex-row-body">
+              <span class="ex-row-name">${escHtml(item.ex.name)}</span>
+            </span>
+            <span class="ex-row-chevron">${SVG_CHEVRON}</span>
+          </div>
+        </div>`;
+      const expanded = _exGroupExpanded.has(item.id);
+      // Раскрытые варианты — вложенные, но обычные строки упражнения (тот же
+      // тап-в-деталь/свайп), просто визуально внутри карточки группы —
+      // «аккордеон вниз», без отдельной шторки.
+      const memberRows = expanded ? item.members.map(ex => `
+        <div class="ex-row-wrap ex-row-wrap-nested" data-id="${escHtml(ex.id)}" data-cat="${escHtml(cat)}">
+          <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
+          <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
+          <div class="ex-row tappable" data-id="${escHtml(ex.id)}"${accentStyle}>
+            <span class="ex-row-body">
+              <span class="ex-row-name">${escHtml(ex.name)}</span>
+            </span>
+            <span class="ex-row-chevron">${SVG_CHEVRON}</span>
+          </div>
+        </div>`).join("") : "";
+      return `
+      <div class="ex-row-wrap ex-row-wrap-group${expanded ? " expanded" : ""}" data-group-id="${escHtml(item.id)}" data-cat="${escHtml(cat)}">
         <div class="ex-row ex-row-group tappable" data-group-id="${escHtml(item.id)}"${accentStyle}>
           <span class="ex-row-body">
             <span class="ex-row-name">${escHtml(item.name)}</span>
           </span>
           <span class="ex-row-group-badge">${item.members.length}</span>
-          <span class="ex-row-chevron">${SVG_CHEVRON}</span>
+          <span class="ex-row-chevron ex-row-chevron-group">${SVG_CHEVRON}</span>
         </div>
-      </div>` : `
-      <div class="ex-row-wrap" data-id="${escHtml(item.ex.id)}" data-cat="${escHtml(cat)}">
-        <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
-        <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
-        <div class="ex-row tappable" data-id="${escHtml(item.ex.id)}"${accentStyle}>
-          <span class="ex-row-body">
-            <span class="ex-row-name">${escHtml(item.ex.name)}</span>
-          </span>
-          <span class="ex-row-chevron">${SVG_CHEVRON}</span>
-        </div>
-      </div>`).join("");
+        <div class="ex-row-group-members">${memberRows}</div>
+      </div>`;
+    }).join("");
     const header = isFiltered ? "" : `
       <div class="ex-group${isEmpty ? " ex-group-empty" : ""}" data-cat="${escHtml(cat)}">
         <span class="ex-group-dot" style="background:${escHtml(color)}"></span>
@@ -4081,15 +4119,23 @@ function renderExercisesList(query) {
       const groupId = row.dataset.groupId;
       const wrap = row.closest(".ex-row-wrap-group");
       if (_exListEditMode) { startGroupNameEdit(wrap, groupId, userId); return; }
-      const items = [...itemsByCat.values()].flat();
-      const item = items.find(i => i.kind === "group" && i.id === groupId);
-      if (item) openExerciseGroupModal(item.name, item.members, exId => openExerciseDetail(exId));
+      if (_exGroupExpanded.has(groupId)) _exGroupExpanded.delete(groupId);
+      else _exGroupExpanded.add(groupId);
+      renderExercisesList(exercisesSearch.value);
     });
   });
 
-  exercisesScroll.querySelectorAll(".ex-row-wrap:not(.ex-row-wrap-group)").forEach(wrap => {
-    wireExRowSwipe(wrap, userId);
-    wireExRowGesture(wrap, userId);
+  // Свайп (изменить/удалить) — на все обёртки упражнений, включая вложенные
+  // варианты внутри раскрытой группы: это обычные упражнения, ничем не хуже.
+  exercisesScroll.querySelectorAll(".ex-row-wrap[data-id]").forEach(wrap => wireExRowSwipe(wrap, userId));
+
+  // Драг-перестановка — только на элементы верхнего уровня (обычные строки и
+  // сами группы целиком); вложенные варианты внутри раскрытой группы не
+  // перетаскиваются отдельно — «вынуть» вариант наружу это отдельный шаг.
+  [...exercisesScroll.children].forEach(wrap => {
+    if (wrap.matches(".ex-row-wrap[data-id]") || wrap.matches(".ex-row-wrap-group[data-group-id]")) {
+      wireExRowGesture(wrap, userId);
+    }
   });
 }
 
@@ -4292,7 +4338,12 @@ function exitExListEditMode() {
 }
 
 function saveExOrder() {
-  const ids = [...exercisesScroll.querySelectorAll(".ex-row-wrap[data-id]")].map(w => w.dataset.id);
+  // Только элементы верхнего уровня (прямые дети exercisesScroll) — иначе
+  // сюда попали бы и вложенные варианты внутри раскрытой группы, у которых
+  // нет собственной позиции в общем порядке (см. .ex-row-group-members).
+  const ids = [...exercisesScroll.children]
+    .filter(el => el.matches(".ex-row-wrap[data-id]") || el.matches(".ex-row-wrap-group[data-group-id]"))
+    .map(w => w.dataset.id || `group:${w.dataset.groupId}`);
   if (ids.length) DATA.saveExerciseOrder(DATA.getCurrentUser(), ids);
 }
 
@@ -4387,13 +4438,22 @@ function endExDrag() {
   d.wrap.classList.remove("ex-dragging");
   setTimeout(() => { d.wrap.style.transition = ""; }, 200);
 
-  // Обновляем категорию упражнения если оно переместилось в другую группу
+  // Обновляем категорию упражнения (или ВСЕХ вариантов группы разом) если
+  // строка переместилась в другую категорию.
   const userId = DATA.getCurrentUser();
-  const exId = d.wrap.dataset.id;
   const newCat = _exDragGetCat(d.wrap);
   if (newCat && newCat !== d.wrap.dataset.cat) {
-    DATA.updateOwnExercise(userId, exId, { cat: newCat });
-    SyncQueue.push("exercise:update", { id: exId, cat: newCat });
+    if (d.wrap.dataset.groupId) {
+      const groupId = d.wrap.dataset.groupId;
+      DATA.getVisibleExercises(userId).filter(e => e.groupId === groupId).forEach(e => {
+        DATA.updateOwnExercise(userId, e.id, { cat: newCat });
+      });
+      SyncQueue.push("exercise:update", { groupId, cat: newCat });
+    } else {
+      const exId = d.wrap.dataset.id;
+      DATA.updateOwnExercise(userId, exId, { cat: newCat });
+      SyncQueue.push("exercise:update", { id: exId, cat: newCat });
+    }
     // Обновляем цвет акцента сразу без полного ре-рендера
     const color = DATA.getCategoryColor(userId, newCat);
     const row = d.wrap.querySelector(".ex-row");
@@ -4721,41 +4781,6 @@ function openMuscleExercisesModal(muscleName) {
       const exId = card.dataset.id;
       close();
       setTimeout(() => openExerciseDetail(exId, "muscleDetail"), 260);
-    });
-  });
-
-  document.body.appendChild(bd);
-  requestAnimationFrame(() => bd.classList.add("open"));
-  const sheetEl = bd.querySelector(".bottom-sheet");
-  const dragZone = bd.querySelector(".ref-sheet-drag");
-  if (sheetEl && dragZone) wireSheetDragClose(sheetEl, dragZone, close);
-}
-
-// Список вариантов группы упражнений (жим лёжа: штанга/гантели/тренажёр…) —
-// плоский список без деления на роли (см. openMuscleExercisesModal, тот же
-// шаблон шторки). onPick(exerciseId) решает, что делать с выбором — перейти
-// в карточку (вкладка «Упражнения») или добавить в тренировку и закрыть
-// пикер сверху (см. renderPickerList) — модалка сама не знает контекст вызова.
-function openExerciseGroupModal(groupName, members, onPick) {
-  const bd = document.createElement("div");
-  bd.className = "bottom-sheet-backdrop";
-  bd.style.cursor = "pointer";
-  const close = () => { bd.classList.remove("open"); setTimeout(() => bd.remove(), 300); };
-  bd.addEventListener("click", e => { if (e.target === bd) close(); });
-
-  bd.innerHTML = `
-    <div class="bottom-sheet ref-sheet">
-      <div class="ref-sheet-drag"><div class="bottom-sheet-handle"></div></div>
-      <div class="cat-sheet-head"><span class="cat-sheet-title">${escHtml(groupName)}</span><span class="cat-sheet-count">${members.length} вариантов</span></div>
-      <div class="ref-sheet-list">
-        ${members.map(ex => `<div class="ref-card ref-card-tap" data-id="${escHtml(ex.id)}"><div class="ref-card-top"><span class="ref-card-name">${escHtml(ex.name)}</span><span class="ref-card-chev">›</span></div></div>`).join("")}
-      </div>
-    </div>`;
-  bd.querySelectorAll(".ref-card[data-id]").forEach(card => {
-    card.addEventListener("click", () => {
-      const exId = card.dataset.id;
-      close();
-      setTimeout(() => onPick(exId), 260);
     });
   });
 
@@ -5663,6 +5688,38 @@ function refDropdownSelect(container, options, selected, multi) {
   return { get: () => [...sel], getOne: () => sel[0] || "" };
 }
 
+// Автодополнение поверх обычного текстового поля (свободный ввод + подсказки
+// по уже существующим значениям) — используется полем «Группа» в форме
+// упражнения. Нативный <input list>/<datalist> не годится: WebKit (Safari,
+// в т.ч. iOS-приложение) не рисует UI даталиста вообще, подсказки просто не
+// появляются. Панель — на всех совпадающих вариантах при фокусе (пусто —
+// показать все), сужается по мере ввода; клик по варианту подставляет его.
+function wireComboSuggest(inputEl, panelEl, options) {
+  if (!inputEl || !panelEl) return;
+  let open = false;
+  const render = () => {
+    const q = inputEl.value.trim().toLowerCase();
+    const matches = options.filter(o => !q || o.toLowerCase().includes(q));
+    if (!open || !matches.length) { panelEl.innerHTML = ""; panelEl.style.display = "none"; return; }
+    panelEl.style.display = "";
+    panelEl.innerHTML = matches.map(o => `<button type="button" class="ef-dd-opt" data-v="${escHtml(o)}">${escHtml(o)}</button>`).join("");
+    panelEl.querySelectorAll(".ef-dd-opt").forEach(opt => {
+      // mousedown+preventDefault — иначе инпут теряет фокус (blur) раньше,
+      // чем успевает сработать клик, и панель закрывается без выбора.
+      opt.addEventListener("mousedown", e => {
+        e.preventDefault();
+        inputEl.value = opt.dataset.v;
+        open = false;
+        render();
+      });
+    });
+  };
+  inputEl.addEventListener("focus", () => { open = true; render(); });
+  inputEl.addEventListener("input", () => { open = true; render(); });
+  inputEl.addEventListener("blur", () => { open = false; render(); });
+  render();
+}
+
 // Форма мышцы. onSaved() — колбэк после сохранения (перерисовать шторку).
 function openMuscleForm(existing, onSaved) {
   const userId = DATA.getCurrentUser();
@@ -5852,8 +5909,10 @@ function openExerciseForm(exerciseId) {
       <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips ex-form-2col" id="ef-type"></div></div>
       <div class="ex-form-field"><label class="ex-form-label">Категория</label><div class="ex-form-dd" id="ef-cat"></div></div>
       <div class="ex-form-field"><label class="ex-form-label">Группа</label>
-        <input class="ex-form-input" id="ef-group" list="ef-group-list" type="text" placeholder="Например, Жим лёжа" value="${escHtml(curGroupName)}">
-        <datalist id="ef-group-list">${exGroups.map(g => `<option value="${escHtml(g.name)}">`).join("")}</datalist>
+        <div class="ex-form-dd">
+          <input class="ex-form-input" id="ef-group" type="text" autocomplete="off" placeholder="Например, Жим лёжа" value="${escHtml(curGroupName)}">
+          <div class="ef-dd-panel" id="ef-group-panel"></div>
+        </div>
         <p class="ex-form-hint">Похожие варианты одного упражнения (штанга/гантели/тренажёр) — впиши общее имя, они схлопнутся в одну строку в списке.</p></div>
       <div class="ex-form-field"><label class="ex-form-label">Оборудование</label>
         <input class="ex-form-input" id="ef-equip" type="text" placeholder="Например, Штанга" value="${escHtml(a.equipment || "")}"></div>
@@ -5891,6 +5950,7 @@ function openExerciseForm(exerciseId) {
   const synSel    = refDropdownSelect(bd.querySelector("#ef-syn"), muscleNames, roleNames(a.synergist), true);
   const stabSel   = refDropdownSelect(bd.querySelector("#ef-stab"), muscleNames, roleNames(a.stabilizer), true);
   const moveSel   = refDropdownSelect(bd.querySelector("#ef-moves"), moveNames, a.categories || [], true);
+  wireComboSuggest(bd.querySelector("#ef-group"), bd.querySelector("#ef-group-panel"), exGroups.map(g => g.name));
 
   // сохранить пучок у мышцы, если он уже был задан (иначе пусто)
   const toRoles = (names, prev) => names.map(n => {
