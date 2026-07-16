@@ -901,15 +901,26 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .set-dropset-btn:active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
 .set-dropset-btn svg { width: 16px; height: 16px; }
 
-/* Дроп-сет — компактный "мини-подход" под основным, а не строка той же
-   ширины: три уменьшенных поля (без номера и без галочки "выполнено" — см.
-   renderSetsInBlock), сдвинутые правее и НЕ растянутые на всю ширину строки
-   (grid-template-columns — фиксированные px, а не 1fr, поэтому лишнее место
-   справа просто остаётся пустым, а не отдаётся полям). */
-.set-row-wrap-drop { margin-left: 84px; }
-.set-row-wrap-drop .set-row { grid-template-columns: 92px 92px 44px; justify-content: start; }
-.set-row-wrap-drop .set-field { height: 34px; }
-.set-row-wrap-drop .rpe-btn { height: 34px; }
+/* Дроп-сет — "мини-подход" под основным, подвешенный на линии-дереве от его
+   веса (как в наброске): без номера, без RPE, без галочки "выполнено" — см.
+   renderSetsInBlock. Позиции ствола/веток и ширины полей — не фиксированные
+   числа (те "плывут" при другой ширине экрана), а считаются в JS (см.
+   wireDropTree) от реальных координат полей основного подхода: ствол стартует
+   строго по центру его "кг", а "повт" мини-подхода заканчивается строго там
+   же, где заканчивается его "RPE". Значения приходят как CSS-переменные
+   (--trunk-x/--mini-end-x) и inline-стили на сами мини-поля. */
+.set-group { position: relative; }
+.set-row-wrap-drop .set-row { display: block; background: var(--panel); }
+.set-drop-fields { position: relative; display: flex; gap: 6px; }
+.set-field-weight-mini, .set-field-reps-mini { height: 34px; flex: none; }
+/* --border-strong (rgba(255,255,255,.12)) слишком блёклый для тонкой 2px
+   линии — на тёмном фоне почти не виден; text-tertiary даёт читаемую, но не
+   кричащую линию, под стать приглушённому номеру подхода.
+   z-index:2 — обязателен: у .set-row уже есть z-index:1 (см. выше), и без
+   этого он перекрывал линию собственным фоном, хотя она позже в DOM. */
+.set-drop-trunk, .set-drop-branch { position: absolute; background: var(--text-tertiary); pointer-events: none; z-index: 2; }
+.set-drop-trunk { width: 2px; }
+.set-drop-branch { height: 2px; }
 .set-note-input {
   display: block; box-sizing: border-box;
   width: calc(100% - 28px);

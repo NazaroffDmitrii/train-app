@@ -3120,6 +3120,11 @@ function renderSetsInBlock(block, ex, lastWorkout) {
   let mainNum = 0;
   const labels = ex.sets.map(s => { if (s.dropSet) return ""; mainNum++; return `${mainNum}`; });
 
+  // Основной подход + все его дроп-сеты идут в общей обёртке .set-group —
+  // так их можно измерить и связать линией-деревом одним блоком (см.
+  // wireDropTree), и она не путается с деревом соседнего подхода.
+  let group = null;
+
   ex.sets.forEach((set, sIdx) => {
     const prev = lastSets[sIdx];
     const wrap = document.createElement("div");
@@ -3129,21 +3134,30 @@ function renderSetsInBlock(block, ex, lastWorkout) {
     del.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>Удалить</span>`;
     const row = document.createElement("div");
     row.className = "set-row";
-    // Дроп-сет — без своего номера (см. labels) и без галочки "выполнено":
-    // это то же усилие, что и основной подход, тут не прерываются, чтобы
-    // отметить его отдельно и отдыха между ними по смыслу нет — засчитывается
-    // выполненным сразу при добавлении (см. .set-dropset-btn).
-    row.innerHTML = `
-      ${set.dropSet ? "" : `<span class="set-num">${labels[sIdx]}</span>`}
+    // Дроп-сет — без номера, RPE и галочки "выполнено": это то же усилие, что
+    // и основной подход (тут не прерываются отмечать его отдельно, отдыха
+    // между ними по смыслу нет — засчитывается выполненным сразу при
+    // добавлении, см. .set-dropset-btn), только кг/повт, подвешенные на
+    // линии от веса основного подхода (см. wireDropTree).
+    row.innerHTML = set.dropSet ? `
+      <div class="set-drop-fields">
+        <div class="set-field set-field-weight set-field-weight-mini${(set.weight || 0) < 0 ? " negative" : ""}">
+          <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.)">±</button>
+          <input type="number" inputmode="decimal" placeholder="кг" value="${set.weight || ""}" step="0.5">
+        </div>
+        <div class="set-field set-field-reps-mini"><input type="number" inputmode="numeric" placeholder="повт" value="${set.reps || ""}"></div>
+      </div>
+    ` : `
+      <span class="set-num">${labels[sIdx]}</span>
       <div class="set-field set-field-weight${(set.weight || 0) < 0 ? " negative" : ""}">
         <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.): чем ближе к нулю, тем лучше результат">±</button>
         <input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : "кг"}" value="${set.weight || ""}" step="0.5" ${prev ? 'class="has-prev"' : ""}>
       </div>
       <div class="set-field"><input type="number" inputmode="numeric" placeholder="${prev ? prev.reps : "повт"}" value="${set.reps || ""}" ${prev ? 'class="has-prev"' : ""}></div>
       <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe || "—"}</button>
-      ${set.dropSet ? "" : `<button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
+      <button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      </button>`}
+      </button>
     `;
 
     // Weight input
@@ -3174,9 +3188,10 @@ function renderSetsInBlock(block, ex, lastWorkout) {
       saveWorkoutState(); updateSummaryBar();
     });
 
-    // RPE button — индекс упражнения берём живым (блоки могут переставляться),
-    // чтобы пикер писал RPE именно в это упражнение.
-    row.querySelector(".rpe-btn").addEventListener("click", () => {
+    // RPE button — только у обычных подходов (индекс упражнения берём живым:
+    // блоки могут переставляться, чтобы пикер писал RPE именно в него).
+    const rpeBtn = row.querySelector(".rpe-btn");
+    if (rpeBtn) rpeBtn.addEventListener("click", () => {
       openRpePicker(_workout.exercises.indexOf(ex), sIdx);
     });
 
@@ -3207,9 +3222,80 @@ function renderSetsInBlock(block, ex, lastWorkout) {
       updateSummaryBar();
       showToast(set.dropSet ? "Дроп-сет удалён" : "Подход удалён");
     });
-    tbody.appendChild(wrap);
+
+    if (!set.dropSet || !group) {
+      group = document.createElement("div");
+      group.className = "set-group";
+      tbody.appendChild(group);
+    }
+    group.appendChild(wrap);
+  });
+
+  // Линии-деревья от веса основного подхода к его дроп-сетам — считаются от
+  // реальных координат (см. wireDropTree), поэтому делаем это ПОСЛЕ того, как
+  // все строки уже в DOM и их можно измерить.
+  tbody.querySelectorAll(".set-group").forEach(wireDropTree);
+}
+
+// Соединяет основной подход с его дроп-сетами линией-деревом (см. набросок
+// пользователя): вертикальный "ствол" стартует РОВНО по центру поля веса
+// основного подхода, горизонтальные "ветки" ведут к каждому дроп-сету, а его
+// "повт" заканчивается РОВНО там же, где заканчивается RPE основного подхода.
+// Считаем через getBoundingClientRect (не фиксированные px) — иначе слетает
+// при другой ширине экрана.
+function wireDropTree(group) {
+  group.querySelectorAll(".set-drop-trunk, .set-drop-branch").forEach(el => el.remove());
+  const mainWrap = group.querySelector(".set-row-wrap:not(.set-row-wrap-drop)");
+  const dropWraps = [...group.querySelectorAll(".set-row-wrap-drop")];
+  if (!mainWrap || !dropWraps.length) return;
+
+  const groupRect = group.getBoundingClientRect();
+  const weightRect = mainWrap.querySelector(".set-field-weight").getBoundingClientRect();
+  const rpeRect = mainWrap.querySelector(".rpe-btn").getBoundingClientRect();
+  const trunkX = weightRect.left + weightRect.width / 2 - groupRect.left;
+  const endX = rpeRect.right - groupRect.left;
+
+  const BRANCH_GAP = 14; // расстояние от ствола до первого поля мини-подхода
+  const FIELD_GAP = 6;
+  const startX = trunkX + BRANCH_GAP;
+  const totalW = Math.max(0, endX - startX);
+  const weightW = Math.round(totalW * 0.42); // кг короче повт
+  const repsW = Math.max(0, totalW - weightW - FIELD_GAP);
+
+  dropWraps.forEach(w => {
+    const fields = w.querySelector(".set-drop-fields");
+    fields.style.marginLeft = startX + "px";
+    fields.querySelector(".set-field-weight-mini").style.width = weightW + "px";
+    fields.querySelector(".set-field-reps-mini").style.width = repsW + "px";
+  });
+
+  const mainBottom = mainWrap.getBoundingClientRect().bottom - groupRect.top;
+  const lastRect = dropWraps[dropWraps.length - 1].getBoundingClientRect();
+  const lastCenterY = lastRect.top + lastRect.height / 2 - groupRect.top;
+
+  const trunk = document.createElement("div");
+  trunk.className = "set-drop-trunk";
+  trunk.style.left = trunkX + "px";
+  trunk.style.top = mainBottom + "px";
+  trunk.style.height = Math.max(0, lastCenterY - mainBottom) + "px";
+  group.appendChild(trunk);
+
+  dropWraps.forEach(w => {
+    const r = w.getBoundingClientRect();
+    const centerY = r.top + r.height / 2 - groupRect.top;
+    const branch = document.createElement("div");
+    branch.className = "set-drop-branch";
+    branch.style.left = trunkX + "px";
+    branch.style.top = centerY + "px";
+    branch.style.width = BRANCH_GAP + "px";
+    group.appendChild(branch);
   });
 }
+
+// Ширина экрана могла смениться (поворот) — пересчитать все видимые деревья.
+window.addEventListener("resize", () => {
+  document.querySelectorAll(".set-group").forEach(wireDropTree);
+});
 
 // Горизонтальный свайп влево по строке подхода → раскрыть зону «Удалить»;
 // за порогом отпускания подход удаляется, иначе строка возвращается. Вертикаль
