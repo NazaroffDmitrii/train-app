@@ -901,12 +901,16 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .set-dropset-btn:active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
 .set-dropset-btn svg { width: 16px; height: 16px; }
 
-/* Дроп-сет — визуально продолжение подхода, а не отдельная строка: небольшой
-   отступ слева и приглушённый номер ("1.1"), без своей рамки/пилюли —
-   тот же приём "мягкой вложенности", что и у вариантов группы упражнений. */
-.set-row-wrap-drop { margin-left: 16px; }
-.set-row-wrap-drop .set-row { background: var(--panel-hi); }
-.set-row-wrap-drop .set-num { font-size: 10.5px; color: var(--text-tertiary); }
+/* Дроп-сет — визуально продолжение подхода, а не отдельная строка: отступ
+   слева вместо номера (своего номера и галочки "выполнено" у него нет — см.
+   renderSetsInBlock), фон как у обычной строки (без заливки без рамки — она
+   не читалась как что-то осмысленное). Три поля (без номера и галочки), RPE
+   получает всю освободившуюся справа ширину (50+6+40=96px), но сама кнопка
+   остаётся обычного размера и стоит по центру этой ширины — там же, где
+   раньше была ЕЁ СЕРЕДИНА между rpe и галочкой основного подхода. */
+.set-row-wrap-drop { margin-left: 30px; }
+.set-row-wrap-drop .set-row { grid-template-columns: 1fr 1fr 96px; }
+.set-row-wrap-drop .rpe-btn { width: 50px; justify-self: center; }
 .set-note-input {
   display: block; box-sizing: border-box;
   width: calc(100% - 28px);
@@ -1352,12 +1356,10 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .wd-sets { display: flex; flex-direction: column; gap: 6px; }
 .wd-set { display: flex; align-items: center; gap: 7px; }
 .wd-set-num { width: 16px; flex: none; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
-/* Дроп-сет в истории — та же вложенность, что и на экране тренировки: чтобы
-   к следующей тренировке не забыть, что это было облегчённое продолжение,
-   а не самостоятельная попытка. */
-.wd-set-drop { margin-left: 16px; }
-.wd-set-drop .wd-set-num { font-size: 10px; }
-.wd-set-drop .wd-cell, .wd-set-drop .wd-cell-input { background: var(--panel); }
+/* Дроп-сет в истории — та же вложенность, что и на экране тренировки (отступ
+   вместо номера — см. renderSetsInBlock/openDetailScreen); фон ячеек как у
+   обычных подходов. */
+.wd-set-drop { margin-left: 30px; }
 .wd-cell {
   flex: 1; text-align: center; border-radius: 10px; padding: 7px 0;
   font-size: 16px; font-weight: 700; letter-spacing: -0.01em;

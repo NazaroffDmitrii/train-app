@@ -3076,7 +3076,9 @@ function renderExerciseList() {
       if (!ex.sets.length) { showToast("Сначала добавь обычный подход"); return; }
       haptic();
       const last = ex.sets[ex.sets.length - 1];
-      ex.sets.push({ weight: last.weight, reps: 0, rpe: 0, done: false, dropSet: true });
+      // done:true сразу — у дроп-сета нет своей галочки (это же усилие, что и
+      // основной подход, отмечать отдельно и прерываться на это незачем).
+      ex.sets.push({ weight: last.weight, reps: 0, rpe: 0, done: true, dropSet: true });
       saveWorkoutState();
       renderSetsInBlock(block, ex, lastWorkout);
       updateSummaryBar();
@@ -3113,13 +3115,10 @@ function renderSetsInBlock(block, ex, lastWorkout) {
   const lastExData  = lastWorkout ? lastWorkout.exercises.find(e => e.exerciseId === ex.exerciseId) : null;
   const lastSets    = lastExData  ? lastExData.sets.filter(s => s.done) : [];
 
-  // Нумерация: дроп-сет — не свой номер, а продолжение предыдущего обычного
-  // подхода ("1.1", "1.2"...), см. .set-dropset-btn.
-  let mainNum = 0, dropNum = 0;
-  const labels = ex.sets.map(s => {
-    if (s.dropSet) { dropNum++; return `${mainNum || 1}.${dropNum}`; }
-    mainNum++; dropNum = 0; return `${mainNum}`;
-  });
+  // Нумерация — только у обычных подходов (дроп-сет и так понятен по отступу,
+  // отдельный номер ему не нужен, см. .set-dropset-btn).
+  let mainNum = 0;
+  const labels = ex.sets.map(s => { if (s.dropSet) return ""; mainNum++; return `${mainNum}`; });
 
   ex.sets.forEach((set, sIdx) => {
     const prev = lastSets[sIdx];
@@ -3130,17 +3129,21 @@ function renderSetsInBlock(block, ex, lastWorkout) {
     del.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>Удалить</span>`;
     const row = document.createElement("div");
     row.className = "set-row";
+    // Дроп-сет — без своего номера (см. labels) и без галочки "выполнено":
+    // это то же усилие, что и основной подход, тут не прерываются, чтобы
+    // отметить его отдельно и отдыха между ними по смыслу нет — засчитывается
+    // выполненным сразу при добавлении (см. .set-dropset-btn).
     row.innerHTML = `
-      <span class="set-num">${labels[sIdx]}</span>
+      ${set.dropSet ? "" : `<span class="set-num">${labels[sIdx]}</span>`}
       <div class="set-field set-field-weight${(set.weight || 0) < 0 ? " negative" : ""}">
         <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.): чем ближе к нулю, тем лучше результат">±</button>
         <input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : "кг"}" value="${set.weight || ""}" step="0.5" ${prev ? 'class="has-prev"' : ""}>
       </div>
       <div class="set-field"><input type="number" inputmode="numeric" placeholder="${prev ? prev.reps : "повт"}" value="${set.reps || ""}" ${prev ? 'class="has-prev"' : ""}></div>
       <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe || "—"}</button>
-      <button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
+      ${set.dropSet ? "" : `<button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      </button>
+      </button>`}
     `;
 
     // Weight input
@@ -3177,8 +3180,9 @@ function renderSetsInBlock(block, ex, lastWorkout) {
       openRpePicker(_workout.exercises.indexOf(ex), sIdx);
     });
 
-    // Done toggle
-    row.querySelector(".set-done-btn").addEventListener("click", () => {
+    // Done toggle — у дроп-сета кнопки нет (см. выше), он уже done с момента добавления.
+    const doneBtn = row.querySelector(".set-done-btn");
+    if (doneBtn) doneBtn.addEventListener("click", () => {
       haptic();
       // Snag current input values before toggling
       ex.sets[sIdx].weight = parseFloat(weightInput.value) || 0;
@@ -6424,14 +6428,10 @@ function openDetailScreen(workout, returnScreen = "menu") {
         // Рекорд подсвечиваем только у ПЕРВОГО подхода с рекордным весом:
         // если следующие подходы повторяют тот же вес — это уже не рекорд.
         let prShown    = false;
-        // Та же нумерация "1.1", что и на экране тренировки — иначе к
-        // следующей тренировке уже и по истории не понять, что подход был
-        // дроп-сетом, а не самостоятельной попыткой.
-        let mainNum = 0, dropNum = 0;
-        const setLabels = doneSets.map(s => {
-          if (s.dropSet) { dropNum++; return `${mainNum || 1}.${dropNum}`; }
-          mainNum++; dropNum = 0; return `${mainNum}`;
-        });
+        // Номер — только у обычных подходов; дроп-сет и так виден по отступу
+        // (см. .wd-set-drop), как и на экране тренировки.
+        let mainNum = 0;
+        const setLabels = doneSets.map(s => { if (s.dropSet) return ""; mainNum++; return `${mainNum}`; });
         return `<div class="wd-ex">
           <div class="wd-ex-head">
             <span class="wd-ex-name">${escHtml(exDef.name)}</span>
@@ -6545,11 +6545,8 @@ function openDetailEditMode(workout) {
             </div>
             <div class="wd-sets">
               ${(function () {
-                let mainNum = 0, dropNum = 0;
-                const labels = doneSets.map(s => {
-                  if (s.dropSet) { dropNum++; return `${mainNum || 1}.${dropNum}`; }
-                  mainNum++; dropNum = 0; return `${mainNum}`;
-                });
+                let mainNum = 0;
+                const labels = doneSets.map(s => { if (s.dropSet) return ""; mainNum++; return `${mainNum}`; });
                 return doneSets.map((s, i) => `
                 <div class="wd-set de-set-row${s.dropSet ? " wd-set-drop" : ""}" data-ex="${exIdx}" data-si="${s._si}">
                   <span class="wd-set-num">${labels[i]}</span>
