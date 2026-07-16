@@ -5696,11 +5696,14 @@ function refDropdownSelect(container, options, selected, multi) {
 // показать все), сужается по мере ввода; клик по варианту подставляет его.
 function wireComboSuggest(inputEl, panelEl, options) {
   if (!inputEl || !panelEl) return;
+  const wrap = inputEl.closest(".ef-combo");
   let open = false;
   const render = () => {
     const q = inputEl.value.trim().toLowerCase();
     const matches = options.filter(o => !q || o.toLowerCase().includes(q));
-    if (!open || !matches.length) { panelEl.innerHTML = ""; panelEl.style.display = "none"; return; }
+    const showing = open && matches.length > 0;
+    if (wrap) wrap.classList.toggle("open", showing);
+    if (!showing) { panelEl.innerHTML = ""; panelEl.style.display = "none"; return; }
     panelEl.style.display = "";
     panelEl.innerHTML = matches.map(o => `<button type="button" class="ef-dd-opt" data-v="${escHtml(o)}">${escHtml(o)}</button>`).join("");
     panelEl.querySelectorAll(".ef-dd-opt").forEach(opt => {

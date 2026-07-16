@@ -1194,13 +1194,15 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   border: 1px solid var(--border-subtle); border-top: none;
   border-left: 3px solid var(--cat-color, transparent);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
-  margin-top: -1px; padding: 2px 14px 6px;
+  margin-top: -1px; padding: 6px 10px 10px;
+  display: flex; flex-direction: column; gap: 6px;
 }
+/* Среднее между отдельной пилюлей и плоской строкой — свои мягкие уголки и
+   лёгкий фон, но без рамки/тени — плавный переход от капсулы группы. */
 .picker-item-group-members .picker-item {
-  background: transparent; border: none; border-radius: 0;
-  border-bottom: 1px solid var(--border-subtle); padding: 10px 2px; margin-bottom: 0;
+  background: var(--panel); border: none; border-radius: var(--radius-sm);
+  padding: 10px 12px; margin-bottom: 0;
 }
-.picker-item-group-members .picker-item:last-child { border-bottom: none; }
 
 /* ============ Screen: detail view ============ */
 .screen-detail { display: flex; flex-direction: column; background: var(--bg-base); }
@@ -1808,12 +1810,17 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 .ex-form-dd .ef-dd-opt:active { background: var(--panel-hi); }
 .ex-form-dd .ef-dd-opt.sel { background: var(--accent-soft); color: var(--accent-bright); font-weight: 650; }
 
-/* Подсказки поля «Группа» — всплывают ПОВЕРХ формы от самого поля, а не
-   раздвигают её (как обычный выпадающий список ниже) — иначе список полей
-   формы прыгает при каждом фокусе/вводе. */
+/* Подсказки поля «Группа» — всплывают ПОВЕРХ формы от самого поля (не
+   раздвигают её), одной плавной формой: пока список открыт, низ поля
+   выпрямляется и без зазора переходит в панель — капсула перетекает в
+   прямоугольник, а не отдельная плавающая ячейка. */
 .ef-combo { position: relative; }
+.ef-combo.open .ex-form-input {
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-color: transparent;
+}
 .ef-combo .ef-combo-panel {
-  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30;
+  position: absolute; left: 0; right: 0; top: 100%; z-index: 30;
+  margin-top: 0; border-top: none; border-radius: 0 0 var(--radius-sm) var(--radius-sm);
   box-shadow: 0 10px 28px rgba(0,0,0,0.4);
 }
 .ex-form-dd .ef-dd-empty { padding: 10px 12px; font-size: 13px; color: var(--text-tertiary); }
@@ -1888,15 +1895,19 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   border: 1px solid var(--border-subtle); border-top: none;
   border-left: 3px solid var(--cat-color, transparent);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
-  margin-top: -1px; padding: 2px 14px 6px;
+  margin-top: -1px; padding: 6px 10px 10px;
+  display: flex; flex-direction: column; gap: 6px;
 }
-/* Вложенные варианты — плоские строки внутри карточки группы, без своей рамки/пилюли. */
-.ex-row-wrap-nested { margin-bottom: 0; border-radius: 0; }
+/* Вложенные варианты — среднее между полностью отдельной пилюлей (было) и
+   плоской строкой (стало): свои мягкие скруглённые уголки и лёгкий фон,
+   но без рамки/тени/цветной полоски — плавный переход от общей капсулы
+   группы к вариантам внутри неё. */
+.ex-row-wrap-nested { margin-bottom: 0; border-radius: var(--radius-sm); }
 .ex-row-wrap-nested .ex-row {
-  background: transparent; border: none; border-radius: 0; border-bottom: 1px solid var(--border-subtle);
-  padding: 10px 2px;
+  background: var(--panel); border: none; border-radius: var(--radius-sm);
+  padding: 10px 12px;
 }
-.ex-row-wrap-nested:last-child .ex-row { border-bottom: none; }
+.ex-row-wrap-nested .ex-row.tappable:active { background: var(--panel-hi); }
 
 /* ── Экран деталей упражнения ── */
 .exd-cat-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
