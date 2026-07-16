@@ -1286,7 +1286,7 @@ function goToScreen(name, opts = {}) {
   if (name === "menu")     { refreshMenu(); }
   if (name === "workout")  { initWorkoutScreen(opts); }
   if (name === "run")      { initRunScreen(opts); }
-  if (name === "exercises") { initExercisesScreen(); }
+  if (name === "exercises") { if (opts.keepFilter) renderExercisesList(exercisesSearch.value); else initExercisesScreen(); }
   if (name === "history")  { initHistoryScreen(); }
   if (name === "stats")    { initStatsScreen(); }
   if (name === "templates") { initTemplatesScreen(); }
@@ -1799,13 +1799,18 @@ function openRecentlyDeletedSheet() {
   bd.innerHTML = `
     <div class="bottom-sheet ref-sheet">
       <div class="ref-sheet-drag"><div class="bottom-sheet-handle"></div></div>
-      <div class="cat-sheet-head"><span class="cat-sheet-title">Недавно удалённые</span></div>
+      <div class="cat-sheet-head">
+        <span class="cat-sheet-title">Недавно удалённые</span>
+        <button class="trash-clear-btn" id="trash-clear" style="display:none">Очистить</button>
+      </div>
       <div class="ref-sheet-list" id="trash-list"></div>
     </div>`;
 
   const render = () => {
     const items = Trash.all(userId);
     const listEl = bd.querySelector("#trash-list");
+    const clearBtn = bd.querySelector("#trash-clear");
+    if (clearBtn) clearBtn.style.display = items.length ? "" : "none";
     if (!items.length) {
       listEl.innerHTML = `<p class="exd-empty">Здесь пусто. Сюда попадают удалённые за последние 7 дней элементы — их можно вернуть.</p>`;
       return;
@@ -1814,15 +1819,19 @@ function openRecentlyDeletedSheet() {
     listEl.innerHTML = items.map(it => {
       const daysLeft = Math.max(0, Math.ceil((TRASH_TTL_MS - (Date.now() - it.deletedAt)) / dayMs));
       const left = daysLeft <= 1 ? "истекает сегодня" : `ещё ${daysLeft} дн.`;
-      return `<div class="trash-row" data-id="${escHtml(it.id)}">
-        <div class="trash-row-body">
-          <div class="trash-row-name">${escHtml(it.label || "Без названия")}</div>
-          <div class="trash-row-meta">${escHtml(it.sub || TYPE_LABEL[it.type] || "")} · ${left}</div>
+      return `<div class="trash-row-wrap" data-id="${escHtml(it.id)}">
+        <div class="trash-row-del">${SVG_REF_TRASH} Удалить навсегда</div>
+        <div class="trash-row">
+          <div class="trash-row-body">
+            <div class="trash-row-name">${escHtml(it.label || "Без названия")}</div>
+            <div class="trash-row-meta">${escHtml(it.sub || TYPE_LABEL[it.type] || "")} · ${left}</div>
+          </div>
+          <button class="trash-restore-btn" data-id="${escHtml(it.id)}">Вернуть</button>
         </div>
-        <button class="trash-restore-btn" data-id="${escHtml(it.id)}">Вернуть</button>
       </div>`;
     }).join("");
-    listEl.querySelectorAll(".trash-restore-btn").forEach(b => b.addEventListener("click", () => {
+    listEl.querySelectorAll(".trash-restore-btn").forEach(b => b.addEventListener("click", (e) => {
+      e.stopPropagation();
       if (restoreFromTrash(userId, b.dataset.id)) {
         showToast("Восстановлено");
         try { if (typeof window.onAtlasUpdated === "function") window.onAtlasUpdated(); } catch {}
@@ -1830,14 +1839,73 @@ function openRecentlyDeletedSheet() {
         render();
       } else showToast("Не удалось восстановить");
     }));
+    // Свайп влево по строке → удалить безвозвратно (минуя недельное хранение).
+    listEl.querySelectorAll(".trash-row-wrap").forEach(wrap => wireTrashSwipe(wrap, userId, render));
   };
   render();
+
+  bd.querySelector("#trash-clear").addEventListener("click", () => {
+    openConfirmModal({
+      title: "Очистить корзину?",
+      message: "Все элементы будут удалены безвозвратно.",
+      confirmLabel: "Очистить",
+      onConfirm: () => { try { localStorage.removeItem(Trash._key(userId)); } catch {} render(); showToast("Корзина очищена"); },
+    });
+  });
 
   document.body.appendChild(bd);
   requestAnimationFrame(() => bd.classList.add("open"));
   const sheetEl = bd.querySelector(".bottom-sheet");
   const dragZone = bd.querySelector(".ref-sheet-drag");
   if (sheetEl && dragZone) wireSheetDragClose(sheetEl, dragZone, close);
+}
+
+// Свайп влево по строке корзины → удалить элемент безвозвратно.
+function wireTrashSwipe(wrap, userId, rerender) {
+  const row = wrap.querySelector(".trash-row");
+  if (!row) return;
+  const id = wrap.dataset.id;
+  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false;
+  const MAX = 130, DEL = 80;
+  row.addEventListener("pointerdown", e => {
+    if (e.target.closest("button")) return;
+    sx = e.clientX; sy = e.clientY; dx = 0; active = true; decided = false; horiz = false;
+    row.style.transition = "";
+  });
+  row.addEventListener("pointermove", e => {
+    if (!active) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!decided) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      decided = true; horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
+      if (!horiz) { active = false; return; }
+      wrap.classList.add("swiping");
+      try { row.setPointerCapture(e.pointerId); } catch {}
+    }
+    if (!horiz) return;
+    dx = Math.max(-MAX, Math.min(0, mx));
+    row.style.transform = `translateX(${dx}px)`;
+    wrap.classList.toggle("will-delete", dx <= -DEL);
+  });
+  row.addEventListener("touchmove", e => {
+    if (active && horiz && e.cancelable) e.preventDefault();
+  }, { passive: false });
+  const settle = () => {
+    if (!active) return; active = false;
+    if (!horiz) return;
+    if (dx <= -DEL) {
+      row.style.transition = "transform 0.16s ease"; row.style.transform = "translateX(-110%)";
+      wrap.style.height = wrap.offsetHeight + "px";
+      requestAnimationFrame(() => { wrap.style.transition = "height 0.16s ease, opacity 0.16s ease"; wrap.style.height = "0"; wrap.style.opacity = "0"; });
+      setTimeout(() => { Trash.remove(userId, id); showToast("Удалено навсегда"); rerender(); }, 170);
+    } else {
+      row.style.transition = "transform 0.18s ease"; row.style.transform = "";
+      wrap.classList.remove("will-delete");
+      setTimeout(() => wrap.classList.remove("swiping"), 200);
+    }
+  };
+  row.addEventListener("pointerup", settle);
+  row.addEventListener("pointercancel", settle);
 }
 
 // Обновить видимый экран после восстановления из корзины (best-effort).
@@ -4317,7 +4385,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   goToScreen("exerciseDetail");
 }
 
-$("exd-back-btn").addEventListener("click", () => goToScreen(_exdReturnScreen));
+$("exd-back-btn").addEventListener("click", () => goToScreen(_exdReturnScreen, { keepFilter: true }));
 
 // Единое поведение шторки (bottom-sheet): закрытие ТОЛЬКО перетаскиванием
 // верхней зоны (dragZone — обычно ручка+шапка), а не из любой точки — иначе
