@@ -100,26 +100,17 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   background: var(--bg-base);
 }
 
-/* Экраны шире телефона (ПК, планшет, телефон в ландшафте): приложение остаётся
-   тем же портретным столбцом 480px — телефонная вёрстка НЕ меняется, — но
-   подаётся как центрированная «карточка-устройство» на затемнённом фоне, чтобы
-   на любой диагонали смотрелось аккуратно, а не растянутой полосой. Высота
-   ограничена, чтобы на большом мониторе это выглядело как телефон, а не сливер
-   во весь экран; на невысоких окнах (ландшафт телефона) занимает доступную
-   высоту. */
+/* Экраны шире телефона (ПК, планшет, телефон в ландшафте): приложение занимает
+   ВСЁ окно целиком. Портретная вёрстка телефона (≤480px) не затрагивается — там
+   max-width:480 и так равен ширине экрана. На ПК это даёт полную ширину, а на
+   телефоне в ландшафте — полноэкранный режим: шторки и модалки встают по краям
+   реального экрана и остаются достижимыми (см. их max-height/overflow). */
 @media (min-width: 481px) {
-  html, body { height: 100%; }
-  body {
-    background:
-      radial-gradient(1200px 600px at 50% -10%, #12131b, transparent 60%),
-      #050609;
-    display: flex; align-items: center; justify-content: center;
-    min-height: 100vh; padding: 20px;
-  }
+  body { background: var(--bg-base); }
   .app {
-    height: min(100vh - 40px, 900px);
-    border-radius: 34px;
-    box-shadow: 0 30px 90px -24px rgba(0,0,0,0.75), 0 0 0 1px var(--border-subtle);
+    max-width: none; width: 100%;
+    height: 100dvh; margin: 0;
+    border-radius: 0; box-shadow: none;
   }
 }
 
@@ -310,17 +301,56 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   position: relative;
   width: 190px; height: 190px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.025);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
   display: flex; align-items: center; justify-content: center;
   isolation: isolate;
-  transition: width 0.45s cubic-bezier(0.34,1.56,0.64,1),
-              border-radius 0.45s cubic-bezier(0.34,1.56,0.64,1),
-              transform 0.15s ease;
+  transition: transform 0.15s ease;
 }
 .start-btn:active { transform: scale(0.94); }
 
-/* Пульсирующие кольца */
+/* Неоновая рамка, переливающаяся по кругу: конический градиент с яркой дугой,
+   обрезанный маской до тонкой окантовки и вращающийся. Под ним — размытая копия
+   (сияние). Фиолетовая в покое, зелёная при активной тренировке. */
+.start-neon-ring, .start-neon-glow {
+  position: absolute; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(from 0deg,
+     rgba(124,108,230,0)    0deg,
+     rgba(124,108,230,0)    130deg,
+     rgba(167,150,255,0.85) 225deg,
+     rgba(124,108,230,1)    300deg,
+     rgba(206,196,255,1)    332deg,
+     rgba(124,108,230,0)    360deg);
+  animation: start-neon-spin 3.4s linear infinite;
+}
+/* Маска «кольцо»: заполненный градиент минус его же внутренняя часть → остаётся
+   только окантовка толщиной padding. */
+.start-neon-ring {
+  inset: 0; padding: 2px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.start-neon-glow {
+  inset: -6px; padding: 8px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  filter: blur(8px); opacity: 0.7;
+}
+@keyframes start-neon-spin { to { transform: rotate(360deg); } }
+.start-btn.active-workout .start-neon-ring,
+.start-btn.active-workout .start-neon-glow {
+  background: conic-gradient(from 0deg,
+     rgba(52,211,153,0)     0deg,
+     rgba(52,211,153,0)     130deg,
+     rgba(110,240,195,0.85) 225deg,
+     rgba(52,211,153,1)     300deg,
+     rgba(198,255,230,1)    332deg,
+     rgba(52,211,153,0)     360deg);
+}
+
+/* Пульсирующие кольца (движение/пульсация — как раньше) */
 .start-pulse-ring {
   position: absolute; border-radius: 50%; pointer-events: none;
   border: 1px solid rgba(124,108,230,0.35);
@@ -330,13 +360,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .start-btn.active-workout .start-pulse-ring {
   border-color: rgba(52,211,153,0.35);
-}
-
-/* Орбита точек — канвас */
-.start-orbit-canvas {
-  position: absolute; inset: 0;
-  pointer-events: none; border-radius: 50%;
-  width: 100%; height: 100%;
 }
 
 /* Двоеточие и таймер */
@@ -360,10 +383,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .start-btn.active-workout .start-colon-dot { background: rgba(52,211,153,0.95); }
 
-/* Состояние «больше часа» — капсула */
-.start-btn.long-workout {
-  width: 220px; border-radius: 80px;
-}
+/* Больше часа: кнопку НЕ растягиваем (капсула ломала орбиту и анимацию) —
+   уменьшаем шрифт, чтобы Ч:ММ:СС поместилось в тот же круг. */
+.start-btn.long-workout .start-timer-num { font-size: 19px; }
+.start-btn.long-workout .start-timer { gap: 1px; }
+.start-btn.long-workout .start-colon { gap: 4px; padding: 0; }
+.start-btn.long-workout .start-colon-dot { width: 3.5px; height: 3.5px; }
 
 /* ============ Bottom sheet (history) ============ */
 .sheet {
@@ -512,6 +537,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   display: flex; flex-direction: column; gap: 10px;
   transform: scale(0.94) translateY(8px);
   transition: transform 0.2s ease;
+  /* На низких экранах (телефон в ландшафте) модалка может быть выше вьюпорта —
+     ограничиваем высоту и прокручиваем содержимое внутри, иначе верх/низ
+     обрезаются и кнопки недостижимы. */
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
 }
 .modal-backdrop.open .modal { transform: scale(1) translateY(0); }
 .modal-title { margin: 2px 0 8px; font-size: 18px; font-weight: 700; text-align: center; }
@@ -1035,6 +1065,10 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   padding: 10px 20px calc(24px + var(--safe-bottom));
   transform: translateY(100%);
   transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Не выше вьюпорта — на низких экранах (ландшафт) содержимое прокручивается,
+     а не уезжает за верхний край недостижимым. */
+  max-height: calc(100dvh - 12px);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
 }
 .bottom-sheet-backdrop.open .bottom-sheet { transform: translateY(0); }
 .bottom-sheet-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border-strong); margin: 0 auto 18px; cursor: pointer; touch-action: manipulation; }
@@ -2645,6 +2679,34 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 }
 .tpl-ex-add svg { width: 16px; height: 16px; }
 
+/* ===== Адаптив (в конце — чтобы перекрывать базовые правила компонентов;
+   медиазапросы не повышают специфичность, решает порядок в исходнике) ===== */
+
+/* Низкие экраны (телефон в ландшафте) — ужимаем центральную кнопку меню, чтобы
+   она помещалась между навигацией сверху и шапкой шторки снизу. */
+@media (max-height: 560px) {
+  .start-btn { width: 148px; height: 148px; }
+  .start-timer-num { font-size: 23px; }
+  .start-btn.long-workout .start-timer-num { font-size: 16px; }
+}
+
+/* «Широко, но контент центрирован»: оболочка (шапки, фон, шторка) занимает всю
+   ширину, а содержимое прижато к центральной колонке ~640px — на ПК строки
+   подходов и карточки не растягиваются. Приём: боковой padding = max(базовый,
+   (100%−колонка)/2). На узких экранах второй аргумент ≤ базового, поэтому
+   портрет телефона не затрагивается (правило реально включается примерно с 680px). */
+@media (min-width: 481px) {
+  .menu-top,
+  .workout-header, .run-header, .detail-screen-header, .exercises-header,
+  .detail-screen-body,
+  .sheet-drag-area, .sheet-body {
+    padding-inline: max(20px, calc((100% - 640px) / 2));
+  }
+  .workout-scroll, .run-scroll, .exercises-scroll {
+    padding-inline: max(16px, calc((100% - 640px) / 2));
+  }
+}
+
 </style>
 </head>
 <body>
@@ -2755,7 +2817,8 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 
     <main class="menu-center">
       <button id="start-btn" class="start-btn" aria-label="Начать тренировку">
-        <canvas class="start-orbit-canvas" id="start-orbit-canvas"></canvas>
+        <span class="start-neon-glow"></span>
+        <span class="start-neon-ring"></span>
         <div class="start-pulse-ring" id="start-pulse-ring-1"></div>
         <div class="start-pulse-ring" id="start-pulse-ring-2"></div>
         <div class="start-timer" id="start-timer">

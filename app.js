@@ -1127,58 +1127,17 @@ const startBtn      = $("start-btn");
 
 /* ── Анимация центральной кнопки ── */
 (function initStartBtn() {
-  const canvas   = $("start-orbit-canvas");
   const timer    = $("start-timer");
   const ring1    = $("start-pulse-ring-1");
   const ring2    = $("start-pulse-ring-2");
-  if (!canvas || !timer || !ring1 || !ring2) return;
-
-  const ctx = canvas.getContext("2d");
-  let orbitAngle = 0;
-  const N_DOTS = 9;
+  if (!timer || !ring1 || !ring2) return;
 
   // Анимации кнопки нужны только когда меню реально на экране и вкладка видна.
   // Иначе (открыт экран тренировки/статистики/свёрнуто приложение) циклы зря
-  // жгли бы CPU/GPU и батарею, перерисовывая невидимую кнопку на 60 Гц.
+  // жгли бы CPU/GPU и батарею. Неоновая вращающаяся рамка — чистый CSS (см.
+  // .start-neon-ring), поэтому в JS остаются только пульсация колец, дыхание
+  // двоеточия и таймер.
   const menuActive = () => !document.hidden && screenMenu.classList.contains("active");
-
-  // Размер буфера canvas = пиксели кнопки × DPR, иначе на Retina орбита мылит.
-  // Через setTransform рисуем дальше в CSS-координатах (как будто DPR = 1).
-  function resizeCanvas() {
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width  = startBtn.offsetWidth  * dpr;
-    canvas.height = startBtn.offsetHeight * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  resizeCanvas();
-  window.addEventListener("resize", resizeCanvas);
-
-  // Орбита
-  function drawOrbit() {
-    if (!menuActive()) { requestAnimationFrame(drawOrbit); return; }
-    const W = startBtn.offsetWidth, H = startBtn.offsetHeight; // CSS-пиксели (ctx уже масштабирован)
-    const cx = W/2, cy = H/2;
-    // Точки идут по самому контуру кнопки (её рамка — на r≈W/2), а не по
-    // окружности глубоко внутри (п.3). Небольшой отступ 2.5px — чтобы точка
-    // целиком оставалась в пределах круглого канваса и не срезалась краем.
-    const rx = W/2 - 2.5, ry = H/2 - 2.5;
-    ctx.clearRect(0, 0, W, H);
-    orbitAngle += 0.004;
-    const isActive = startBtn.classList.contains("active-workout");
-    const baseColor = isActive ? "52,211,153" : "124,108,230";
-    for (let i = 0; i < N_DOTS; i++) {
-      const a = orbitAngle + (i / N_DOTS) * Math.PI * 2;
-      const x = cx + Math.cos(a) * rx;
-      const y = cy + Math.sin(a) * ry;
-      const opacity = 0.2 + 0.8 * (i / N_DOTS);
-      const size    = i % 3 === 0 ? 4.5 : 3;
-      ctx.beginPath();
-      ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${baseColor},${opacity.toFixed(2)})`;
-      ctx.fill();
-    }
-    requestAnimationFrame(drawOrbit);
-  }
 
   // Пульсация колец
   function setupPulse(r1, r2, getColor) {
@@ -1267,7 +1226,6 @@ const startBtn      = $("start-btn");
   // Запускаем
   setupPulse(ring1, ring2, () => startBtn.classList.contains("active-workout")
     ? "rgba(52,211,153,OPACITY)" : "rgba(124,108,230,OPACITY)");
-  drawOrbit();
   breatheIdle();
 
   // Экспортируем updateStartBtn в глобальный скоуп чтобы refreshMenu мог вызвать
