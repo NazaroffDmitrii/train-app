@@ -4473,9 +4473,9 @@ function renderExercisesList(query) {
   exercisesScroll.querySelectorAll(".ex-row-group").forEach(row => {
     row.addEventListener("click", () => {
       const groupId = row.dataset.groupId;
-      // В режиме правки — только перестановка; имя группы меняется свайпом
-      // вправо → форма группы (openGroupForm). Инлайн-переименование убрано.
-      if (_exListEditMode) return;
+      // Тап (в ЛЮБОМ режиме, включая правку) — свернуть/развернуть группу. В
+      // режиме правки это нужно, чтобы видеть участников перед перетаскиванием
+      // внутрь. Переименование — свайпом вправо → форма (openGroupForm).
       if (_exGroupExpanded.has(groupId)) _exGroupExpanded.delete(groupId);
       else _exGroupExpanded.add(groupId);
       renderExercisesList(exercisesSearch.value);
@@ -4739,16 +4739,35 @@ function saveExOrder() {
   // внутри групп: для группы кладём "group:<id>", а сразу за ним — id её
   // вариантов в их DOM-порядке (см. resolveDisplayItems: верхний уровень
   // читает id/group-ключи, порядок вариантов — по индексу их id).
+  const userId = DATA.getCurrentUser();
+  // Прежний порядок — чтобы у СВЁРНУТОЙ группы (её участников нет в DOM) не
+  // потерять ранее заданный порядок вариантов. Раньше он просто выпадал из
+  // списка и на следующем рендере участники сбрасывались на алфавит.
+  const prev = DATA.getExerciseOrder(userId) || [];
+  const prevIdx = id => { const i = prev.indexOf(id); return i === -1 ? Infinity : i; };
   const ids = [];
   for (const el of exercisesScroll.children) {
     if (el.matches(".ex-row-wrap[data-id]")) ids.push(el.dataset.id);
     else if (el.matches(".ex-row-wrap-group[data-group-id]")) {
-      ids.push(`group:${el.dataset.groupId}`);
+      const gid = el.dataset.groupId;
+      ids.push(`group:${gid}`);
       const container = el.querySelector(".ex-row-group-members");
-      if (container) for (const m of container.children) if (m.matches("[data-id]")) ids.push(m.dataset.id);
+      const domMembers = container
+        ? [...container.children].filter(m => m.matches("[data-id]")).map(m => m.dataset.id)
+        : [];
+      if (domMembers.length) {
+        ids.push(...domMembers);               // группа раскрыта — порядок из DOM
+      } else {
+        // группа свёрнута — берём её участников из данных и сохраняем в прежнем
+        // относительном порядке (или по алфавиту, если порядка ещё не было).
+        DATA.getVisibleExercises(userId)
+          .filter(e => e.groupId === gid)
+          .sort((a, b) => (prevIdx(a.id) - prevIdx(b.id)) || a.name.localeCompare(b.name, "ru"))
+          .forEach(e => ids.push(e.id));
+      }
     }
   }
-  if (ids.length) DATA.saveExerciseOrder(DATA.getCurrentUser(), ids);
+  if (ids.length) DATA.saveExerciseOrder(userId, ids);
 }
 
 // Поставить новосозданную группу в пользовательском порядке НА МЕСТО цели
@@ -5558,31 +5577,66 @@ function openReferenceSheet(initialTab, focusName) {
     setTimeout(() => inp.focus(), 50);
   }
 
-  function startCatRename(wrap, cat, nameEl) {
-    const inp = document.createElement("input");
-    inp.type = "text";
-    inp.value = cat;
-    inp.className = "cat-item-name";
-    nameEl.replaceWith(inp);
-    inp.focus(); inp.select();
-    const commit = () => {
-      const next = inp.value.trim();
-      if (next && next !== cat) {
-        DATA.renameCategory(userId, cat, next);
-        renderExercisesList(exercisesSearch.value);
-        wrap.dataset.cat = next;
-        const catItem = wrap.querySelector(".cat-item");
-        if (catItem) catItem.dataset.cat = next;
-      }
-      const span = document.createElement("span");
-      span.className = "cat-item-name-text";
-      span.title = next || cat;
-      span.textContent = next || cat;
-      inp.replaceWith(span);
-    };
-    inp.addEventListener("blur", commit);
-    inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
-    inp.addEventListener("pointerdown", e => e.stopPropagation());
+  // Форма группы (категории) — отдельное окно (как у упражнений/мышц/движений):
+  // название + цвет + удаление. Пришло на смену инлайн-переименованию.
+  function openCatForm(cat) {
+    const curColor = DATA.getCategoryColor(userId, cat);
+    const SWATCHES = [210,228,246,264,282,300,318,336,354,18,150,110].map(h => `hsl(${h}, 78%, 72%)`);
+    const palette = [curColor, ...SWATCHES.filter(c => c !== curColor)];
+
+    const bd = document.createElement("div");
+    bd.className = "modal-backdrop open";
+    bd.style.zIndex = "70";
+    bd.innerHTML = `
+      <div class="modal modal-form">
+        <h2 class="modal-title">Редактировать группу</h2>
+        <div class="ex-form-field"><label class="ex-form-label">Название</label>
+          <input class="ex-form-input" id="cf-name" type="text" placeholder="Название группы" value="${escHtml(cat)}"></div>
+        <div class="ex-form-field"><label class="ex-form-label">Цвет</label>
+          <div class="cat-color-row">
+            ${palette.map((c, i) => `<button type="button" class="cat-color-swatch${i === 0 ? " selected" : ""}" data-color="${escHtml(c)}" style="background:${escHtml(c)}"></button>`).join("")}
+          </div></div>
+        <button class="modal-option modal-option-full danger" id="cf-del">Удалить группу</button>
+        <div class="modal-form-actions">
+          <button class="btn-chip" data-act="cancel">Отмена</button>
+          <button class="btn-chip primary" data-act="save">Сохранить</button>
+        </div>
+      </div>`;
+    document.body.appendChild(bd);
+
+    const nameInp = bd.querySelector("#cf-name");
+    let chosenColor = curColor;
+    bd.querySelectorAll(".cat-color-swatch").forEach(sw => {
+      sw.addEventListener("click", () => {
+        chosenColor = sw.dataset.color;
+        bd.querySelectorAll(".cat-color-swatch").forEach(s => s.classList.toggle("selected", s === sw));
+      });
+    });
+
+    const close = () => bd.remove();
+    bd.addEventListener("click", e => { if (e.target === bd) close(); });
+    bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
+    bd.querySelector('[data-act="save"]').addEventListener("click", () => {
+      const next = nameInp.value.trim();
+      if (!next) { nameInp.focus(); showToast("Введи название группы"); return; }
+      const col = chosenColor || curColor;
+      if (next !== cat) DATA.renameCategory(userId, cat, next);
+      // Цвет в карте хранится по имени — задаём под финальным именем (renameCategory
+      // цвет не переносит), поэтому ставим всегда под next.
+      if (col) DATA.setCategoryColor(userId, next, col);
+      close();
+      renderExercisesList(exercisesSearch.value);
+      renderContent();
+    });
+    bd.querySelector("#cf-del").addEventListener("click", () => {
+      close();
+      openConfirmModal({
+        title: "Удалить группу?",
+        message: `«${cat}» будет удалена, упражнения перейдут в другую группу. Вернуть можно в настройках → «Недавно удалённые».`,
+        confirmLabel: "Удалить",
+        onConfirm: () => removeCategory(cat),
+      });
+    });
   }
 
   // Свайп категории: ВЛЕВО — удалить (как раньше), ВПРАВО — переименовать
@@ -5647,8 +5701,7 @@ function openReferenceSheet(initialTab, focusName) {
         item.style.transition = "transform 0.18s ease"; item.style.transform = "";
         wrap.classList.remove("will-edit", "swiping-left", "swiping-right");
         setTimeout(() => wrap.classList.remove("swiping"), 200);
-        const nameEl = wrap.querySelector(".cat-item-name-text");
-        if (nameEl) startCatRename(wrap, cat, nameEl);
+        openCatForm(cat);
       } else {
         item.style.transition = "transform 0.18s ease";
         item.style.transform = "";

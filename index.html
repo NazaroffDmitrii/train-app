@@ -388,7 +388,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 /* Больше часа: кнопку НЕ растягиваем (капсула ломала орбиту и анимацию) —
    уменьшаем шрифт, чтобы Ч:ММ:СС поместилось в тот же круг. */
-.start-btn.long-workout .start-timer-num { font-size: 19px; }
+.start-btn.long-workout .start-timer-num { font-size: 36px; }
 .start-btn.long-workout .start-timer { gap: 1px; }
 .start-btn.long-workout .start-colon { gap: 4px; padding: 0; }
 .start-btn.long-workout .start-colon-dot { width: 3.5px; height: 3.5px; }
@@ -1086,11 +1086,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .ex-list-editing .ex-row-wrap-group { animation: catJiggle 0.35s ease infinite alternate; }
 .ex-list-editing .ex-row-wrap-group:nth-child(even) { animation-delay: -0.15s; }
 .ex-list-editing .ex-row-wrap-group .ex-row { animation: none !important; }
-/* Во время активного перетаскивания замираем: поднятый под палец элемент не
-   должен вихлять (а если это вариант внутри группы — иначе он унаследовал бы
-   ещё и вращение самой качающейся группы-родителя). */
-.ex-list-editing.ex-drag-active .ex-row,
-.ex-list-editing.ex-drag-active .ex-row-wrap-group { animation: none !important; }
+/* При перетаскивании замирает ТОЛЬКО поднятый под палец элемент — остальные
+   продолжают подёргиваться (как в справочнике и шаблонах). Раньше во время drag
+   замирал весь список (класс .ex-drag-active), из-за чего пропадала анимация. */
+.ex-list-editing .ex-row-wrap.ex-dragging .ex-row,
+.ex-list-editing .ex-row-wrap-group.ex-dragging { animation: none !important; }
 .ex-row-wrap.ex-dragging { z-index: 100; opacity: 0.88; position: relative; }
 
 /* Наведение цели слияния при перетаскивании (drag-and-drop в группу, как на
@@ -2081,7 +2081,7 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 .ex-row-wrap-nested .ex-row.tappable:active { background: var(--panel-hi); }
 
 /* ── Экран деталей упражнения ── */
-.exd-cat-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.exd-cat-dot { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: middle; }
 .exd-media {
   width: 100%; aspect-ratio: 16 / 10; border-radius: var(--radius-md); overflow: hidden;
   background: repeating-linear-gradient(135deg, #1a1a26 0 12px, #16161f 12px 24px);
@@ -2327,7 +2327,8 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 .cat-item-btn svg { width: 15px; height: 15px; }
 .cat-item-btn.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
 .cat-colors { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 8px; }
-.cat-color-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; box-sizing: border-box; }
+.cat-color-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.cat-color-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; box-sizing: border-box; cursor: pointer; }
 .cat-color-swatch.selected { border-color: var(--text-primary); transform: scale(1.08); }
 .cat-add-row { display: flex; gap: 8px; align-items: center; }
 .cat-add-row input { flex: 1; }
