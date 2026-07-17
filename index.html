@@ -388,10 +388,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 /* Больше часа: кнопку НЕ растягиваем (капсула ломала орбиту и анимацию) —
    уменьшаем шрифт, чтобы Ч:ММ:СС поместилось в тот же круг. */
-.start-btn.long-workout .start-timer-num { font-size: 36px; }
-.start-btn.long-workout .start-timer { gap: 1px; }
-.start-btn.long-workout .start-colon { gap: 4px; padding: 0; }
-.start-btn.long-workout .start-colon-dot { width: 3.5px; height: 3.5px; }
+/* После часа таймер показывает Ч:ММ (без секунд) — тот же формат «две цифры»,
+   что и ММ:СС, поэтому отдельного размера для «>1ч» больше не нужно. */
 
 /* ============ Bottom sheet (history) ============ */
 .sheet {
