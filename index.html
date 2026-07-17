@@ -100,9 +100,27 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   background: var(--bg-base);
 }
 
+/* Экраны шире телефона (ПК, планшет, телефон в ландшафте): приложение остаётся
+   тем же портретным столбцом 480px — телефонная вёрстка НЕ меняется, — но
+   подаётся как центрированная «карточка-устройство» на затемнённом фоне, чтобы
+   на любой диагонали смотрелось аккуратно, а не растянутой полосой. Высота
+   ограничена, чтобы на большом мониторе это выглядело как телефон, а не сливер
+   во весь экран; на невысоких окнах (ландшафт телефона) занимает доступную
+   высоту. */
 @media (min-width: 481px) {
-  body { background: #000; }
-  .app { box-shadow: 0 0 0 1px var(--border-subtle); }
+  html, body { height: 100%; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #12131b, transparent 60%),
+      #050609;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 20px;
+  }
+  .app {
+    height: min(100vh - 40px, 900px);
+    border-radius: 34px;
+    box-shadow: 0 30px 90px -24px rgba(0,0,0,0.75), 0 0 0 1px var(--border-subtle);
+  }
 }
 
 .bg-glow {
@@ -518,20 +536,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .modal-option.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
 .modal-option.danger .modal-option-icon { color: var(--red); }
 .modal-sync-info { color: var(--text-secondary); font-size: 13px; margin: -6px 0 14px; }
-
-/* Блокировка горизонтальной ориентации */
-#landscape-block {
-  display: none;
-  position: fixed; inset: 0; z-index: 9999;
-  background: var(--bg);
-  flex-direction: column; align-items: center; justify-content: center;
-  gap: 16px; padding: 32px; text-align: center;
-}
-#landscape-block svg { width: 48px; height: 48px; color: var(--accent-bright); }
-#landscape-block p { font-size: 16px; font-weight: 600; margin: 0; }
-@media screen and (orientation: landscape) and (max-width: 900px) {
-  #landscape-block { display: flex; }
-}
 
 /* Выбор типа тренировки — ячейки в стилистике карточек истории, надпись по центру */
 .modal-option--strength, .modal-option--run { justify-content: center; text-align: center; }
@@ -2644,14 +2648,6 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
 </style>
 </head>
 <body>
-
-<div id="landscape-block">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="2" y="7" width="20" height="10" rx="2"/>
-    <path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
-  </svg>
-  <p>Поверните телефон вертикально</p>
-</div>
 
 <div class="app">
   <div class="bg-glow"></div>

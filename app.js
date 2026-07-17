@@ -2379,10 +2379,12 @@ function applyWorkoutEditorChrome() {
   if (_editingHistory) {
     finishBtn.textContent = "Сохранить";
     timerEl.textContent   = fmtDate(_workout.startedAt);
-    if (dot) dot.style.visibility = "hidden";
+    // display:none (а не visibility) — иначе скрытая точка + gap слева сдвигают
+    // дату вправо, и она выглядит не по центру пилюли.
+    if (dot) dot.style.display = "none";
   } else {
     finishBtn.textContent = "Завершить";
-    if (dot) dot.style.visibility = "";
+    if (dot) dot.style.display = "";
   }
 }
 
@@ -8179,8 +8181,6 @@ function init() {
 }
 init();
 
-// Пробуем заблокировать портретную ориентацию через API (работает на Android PWA/Chrome).
-// На iOS не поддерживается — там фолбэк: CSS-оверлей #landscape-block.
-if (screen.orientation && typeof screen.orientation.lock === "function") {
-  screen.orientation.lock("portrait").catch(() => {});
-}
+// Ориентацию больше не блокируем: приложение адаптируется под любую ширину
+// (портрет телефона — основной вид, а на широких экранах подаётся центрированной
+// карточкой-устройством, см. media (min-width: 481px) в index.html).
