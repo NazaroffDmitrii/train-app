@@ -2964,6 +2964,28 @@ function wireExBlockGestures(block, ex) {
   });
 }
 
+// Тренировка, в которой был поставлен текущий рекорд веса упражнения. Рекорд
+// (train_records) хранит только само значение (maxWeight/repsAtMaxWeight), без
+// ссылки на тренировку — поэтому ищем её в истории: самый ранний силовой
+// подход, где выполнен (не дроп-сет) сет ровно с этим весом и повторами (та же
+// проверка, что isPrSet в детали). История отсортирована по убыванию даты, так
+// что, перезаписывая match на каждом совпадении, в конце получаем самую раннюю
+// тренировку — ту, где рекорд и был впервые установлен. null — если совпадения
+// нет (например, рекорд только что поставлен в текущей, ещё не сохранённой).
+function findPrWorkout(userId, exerciseId, rec) {
+  if (!rec || rec.maxWeight == null) return null;
+  let match = null;
+  DATA.getWorkoutHistory(userId).forEach(w => {
+    if (w.type !== "strength") return;
+    const ex = (w.exercises || []).find(e => e.exerciseId === exerciseId);
+    if (!ex) return;
+    const hit = (ex.sets || []).some(s =>
+      s.done && !s.dropSet && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight);
+    if (hit) match = w;
+  });
+  return match;
+}
+
 function renderExerciseList() {
   const scroll = $("workout-scroll");
   exitExEditMode();          // любой перерендер сбрасывает режим редактирования
@@ -3092,6 +3114,22 @@ function renderExerciseList() {
       renderSetsInBlock(block, ex, lastWorkout);
       updateSummaryBar();
     });
+
+    // Тап по бейджу-рекорду (звёздочке) → открыть тренировку, где рекорд был
+    // поставлен. Визуально бейдж не меняем. stopPropagation — чтобы тап не
+    // спутался с long-press-перетаскиванием блока; в режиме правки (бейдж скрыт)
+    // не реагируем. Возврат — на экран тренировки (кнопка «назад» в детали).
+    const prChipEl = block.querySelector(".ex-pr-chip");
+    if (prChipEl) {
+      prChipEl.style.cursor = "pointer";
+      prChipEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (scroll.classList.contains("ex-editing")) return;
+        const prWorkout = findPrWorkout(userId, ex.exerciseId, rec);
+        if (prWorkout) openDetailScreen(prWorkout, "workout");
+        else showToast("Рекорд поставлен в текущей тренировке");
+      });
+    }
 
     // Note toggle
     const noteBtn   = block.querySelector(".set-note-btn");

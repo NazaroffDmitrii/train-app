@@ -933,7 +933,14 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
    из-за чего фон перекрывал и дерево, и кнопку удаления (регресс). */
 .set-row-wrap-drop.swiping .set-row,
 .set-row-wrap-drop.will-delete .set-row { z-index: 3; }
-.set-drop-fields { position: relative; display: flex; gap: 6px; }
+/* Фон — тот же var(--panel), что и у карточки: в покое шов незаметен, а при
+   свайпе это критично. Именно .set-drop-fields (а не строка) уезжает влево, и
+   без непрозрачного фона красная подложка "Удалить" просвечивала сквозь зазор
+   6px между "кг" и "повт" — узкой красной полоской. Теперь поля едут одним
+   непрозрачным блоком (как целая строка основного подхода) и открывают красное
+   только справа, чистой плашкой. Линия-дерево левее этого блока (ветка кончается
+   у его левого края), поэтому фон её не перекрывает. */
+.set-drop-fields { position: relative; display: flex; gap: 6px; background: var(--panel); }
 .set-field-weight-mini, .set-field-reps-mini { height: 34px; flex: none; }
 /* --border-strong (rgba(255,255,255,.12)) слишком блёклый для тонкой 2px
    линии — на тёмном фоне почти не виден; text-tertiary даёт читаемую, но не
