@@ -455,6 +455,17 @@ const DATA = (() => {
       return true;
     },
 
+    // Распустить группу: снять groupId со всех участников (упражнения остаются,
+    // просто перестают быть в группе) и убрать саму запись группы.
+    deleteExerciseGroup(userId, groupId) {
+      this.getVisibleExercises(userId)
+        .filter(e => e.groupId === groupId)
+        .forEach(e => this.updateOwnExercise(userId, e.id, { groupId: null }));
+      const list = this.getExerciseGroups(userId).filter(g => g.id !== groupId);
+      this.saveExerciseGroups(userId, list);
+      return true;
+    },
+
     // Схлопнуть упражнения в группы для отображения (общая точка для вкладки
     // «Упражнения» и пикера «Добавить упражнение» — списки рендерятся по-
     // разному, а эта логика — одна). exercises — уже отфильтрованный по
@@ -4425,6 +4436,7 @@ function renderExercisesList(query) {
       const memberRows = expanded ? item.members.map(ex => memberRowHtml(ex, cat)).join("") : "";
       return `
       <div class="ex-row-wrap ex-row-wrap-group${expanded ? " expanded" : ""}" data-group-id="${escHtml(item.id)}" data-cat="${escHtml(cat)}" style="--cat-color:${escHtml(color)}">
+        <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
         <div class="ex-row ex-row-group tappable" data-group-id="${escHtml(item.id)}"${accentStyle}>
           <span class="ex-row-body">
             <span class="ex-row-name">${escHtml(item.name)}</span>
@@ -4451,10 +4463,9 @@ function renderExercisesList(query) {
 
   exercisesScroll.querySelectorAll(".ex-row:not(.ex-row-group)").forEach(row => {
     row.addEventListener("click", () => {
-      if (_exListEditMode) {
-        startExNameEdit(row.closest(".ex-row-wrap"), row.dataset.id, userId);
-        return;
-      }
+      // В режиме правки строка только переставляется; имя меняется свайпом
+      // вправо → форма (как у мышц/движений). Инлайн-переименование убрано.
+      if (_exListEditMode) return;
       openExerciseDetail(row.dataset.id);
     });
   });
@@ -4462,8 +4473,9 @@ function renderExercisesList(query) {
   exercisesScroll.querySelectorAll(".ex-row-group").forEach(row => {
     row.addEventListener("click", () => {
       const groupId = row.dataset.groupId;
-      const wrap = row.closest(".ex-row-wrap-group");
-      if (_exListEditMode) { startGroupNameEdit(wrap, groupId, userId); return; }
+      // В режиме правки — только перестановка; имя группы меняется свайпом
+      // вправо → форма группы (openGroupForm). Инлайн-переименование убрано.
+      if (_exListEditMode) return;
       if (_exGroupExpanded.has(groupId)) _exGroupExpanded.delete(groupId);
       else _exGroupExpanded.add(groupId);
       renderExercisesList(exercisesSearch.value);
@@ -4473,6 +4485,8 @@ function renderExercisesList(query) {
   // Свайп (изменить/удалить) — на все обёртки упражнений, включая вложенные
   // варианты внутри раскрытой группы: это обычные упражнения, ничем не хуже.
   exercisesScroll.querySelectorAll(".ex-row-wrap[data-id]").forEach(wrap => wireExRowSwipe(wrap, userId));
+  // Свайп вправо по группе (только у свёрнутой) → форма группы (openGroupForm).
+  exercisesScroll.querySelectorAll(".ex-row-wrap-group[data-group-id]").forEach(wrap => wireGroupRowSwipe(wrap, userId));
 
   // Драг-перестановка — на элементы верхнего уровня (обычные строки и сами
   // группы целиком), а также на варианты внутри раскрытой группы: вариант
@@ -4486,83 +4500,119 @@ function renderExercisesList(query) {
   exercisesScroll.querySelectorAll(".ex-row-wrap-nested").forEach(wrap => wireExRowGesture(wrap, userId));
 }
 
-function startExNameEdit(wrap, exId, userId) {
-  if (!wrap) return;
-  const nameEl = wrap.querySelector(".ex-row-name");
-  if (!nameEl || wrap.dataset.editing) return;
-  wrap.dataset.editing = "1";
+// Свайп ВПРАВО по свёрнутой группе → форма группы (переименование/роспуск),
+// как «Изменить» у упражнений/мышц/движений. Влево не тянем (удаление группы —
+// «Распустить» внутри формы). У раскрытой группы свайп не активен (плашка
+// «Изменить» иначе растянулась бы на всю высоту с участниками).
+function wireGroupRowSwipe(wrap, userId) {
+  const row = wrap.querySelector(".ex-row-group");
+  if (!row) return;
+  const groupId = row.dataset.groupId;
+  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, didSwipe = false;
+  const MAX = 120, EDIT = 80;
 
-  const current = nameEl.textContent;
-  const inp = document.createElement("input");
-  inp.type = "text";
-  inp.value = current;
-  inp.className = "ex-row-name-input";
-  nameEl.replaceWith(inp);
-  inp.focus();
-  inp.select();
-
-  const commit = () => {
-    if (!wrap.dataset.editing) return;
-    delete wrap.dataset.editing;
-    const next = inp.value.trim();
-    if (next && next !== current) {
-      DATA.updateOwnExercise(userId, exId, { name: next });
-      SyncQueue.push("exercise:update", { id: exId });
-    }
-    const span = document.createElement("span");
-    span.className = "ex-row-name";
-    span.textContent = next || current;
-    inp.replaceWith(span);
-  };
-
-  inp.addEventListener("blur", commit);
-  inp.addEventListener("keydown", e => {
-    if (e.key === "Enter") { e.preventDefault(); inp.blur(); }
-    if (e.key === "Escape") { inp.value = current; inp.blur(); }
+  row.addEventListener("pointerdown", e => {
+    if (_exListEditMode || wrap.classList.contains("expanded")) return;
+    if (e.target.closest("button")) return;
+    sx = e.clientX; sy = e.clientY; dx = 0;
+    active = true; decided = false; horiz = false; didSwipe = false;
+    row.style.transition = "";
   });
-  // Не даём нажатию на input запустить drag-hold
-  inp.addEventListener("pointerdown", e => e.stopPropagation());
+  row.addEventListener("pointermove", e => {
+    if (!active) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!decided) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      decided = true;
+      horiz = Math.abs(mx) > Math.abs(my);
+      if (!horiz) { active = false; return; }
+      wrap.classList.add("swiping");
+      try { row.setPointerCapture(e.pointerId); } catch {}
+    }
+    if (!horiz) return;
+    dx = Math.max(0, Math.min(MAX, mx));   // только вправо
+    if (dx > 4) didSwipe = true;
+    row.style.transform = `translateX(${dx}px)`;
+    wrap.classList.toggle("swiping-right", dx > 0);
+    wrap.classList.toggle("will-edit", dx >= EDIT);
+  });
+  row.addEventListener("touchmove", e => {
+    if (!active) return;
+    const t = e.touches[0]; if (!t) return;
+    const mx = t.clientX - sx, my = t.clientY - sy;
+    if (horiz || (Math.abs(mx) >= 8 && Math.abs(mx) > Math.abs(my))) { if (e.cancelable) e.preventDefault(); }
+  }, { passive: false });
+  const settle = () => {
+    if (!active) return;
+    active = false;
+    if (!horiz) return;
+    row.style.transition = "transform 0.18s ease"; row.style.transform = "";
+    wrap.classList.remove("will-edit", "swiping-right");
+    setTimeout(() => wrap.classList.remove("swiping"), 200);
+    if (dx >= EDIT) openGroupForm(groupId);
+  };
+  row.addEventListener("pointerup", settle);
+  row.addEventListener("pointercancel", settle);
+  row.addEventListener("click", e => {
+    if (didSwipe) { e.stopPropagation(); e.preventDefault(); didSwipe = false; }
+  }, true);
 }
 
-// Переименование группы упражнений в режиме правки списка — тот же приём
-// инлайн-замены span→input, что и у обычного упражнения (startExNameEdit),
-// но правит запись в реестре групп, а не само упражнение.
-function startGroupNameEdit(wrap, groupId, userId) {
-  if (!wrap) return;
-  const nameEl = wrap.querySelector(".ex-row-name");
-  if (!nameEl || wrap.dataset.editing) return;
-  wrap.dataset.editing = "1";
+// Форма группы упражнений — своя отдельная форма (у упражнений/мышц/движений она
+// уже есть). Только имя + роспуск группы. focusName=true — сразу фокус и
+// выделение (при создании группы слиянием, как папка на iOS).
+function openGroupForm(groupId, focusName = false) {
+  const userId = DATA.getCurrentUser();
+  const group = DATA.getExerciseGroups(userId).find(g => g.id === groupId);
+  if (!group) return;
 
-  const current = nameEl.textContent;
-  const inp = document.createElement("input");
-  inp.type = "text";
-  inp.value = current;
-  inp.className = "ex-row-name-input";
-  nameEl.replaceWith(inp);
-  inp.focus();
-  inp.select();
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop open ref-form-backdrop";
+  bd.style.zIndex = "60";
+  bd.innerHTML = `
+    <div class="modal modal-form ref-form">
+      <h2 class="modal-title">Редактировать группу</h2>
+      <div class="ex-form-field"><label class="ex-form-label">Название</label>
+        <input class="ex-form-input" id="gf-name" type="text" placeholder="Название группы" value="${escHtml(group.name)}"></div>
+      <p class="ex-form-hint">Группа объединяет похожие варианты одного упражнения (штанга/гантели/тренажёр) в одну строку списка.</p>
+      <button class="modal-option modal-option-full danger" id="gf-dissolve">Распустить группу</button>
+      <div class="modal-form-actions">
+        <button class="btn-chip" data-act="cancel">Отмена</button>
+        <button class="btn-chip primary" data-act="save">Сохранить</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
 
-  const commit = () => {
-    if (!wrap.dataset.editing) return;
-    delete wrap.dataset.editing;
-    const next = inp.value.trim();
-    if (next && next !== current) {
-      DATA.renameExerciseGroup(userId, groupId, next);
+  const nameInp = bd.querySelector("#gf-name");
+  if (focusName) { nameInp.focus(); nameInp.select(); }
+
+  const close = () => bd.remove();
+  bd.addEventListener("click", e => { if (e.target === bd) close(); });
+  bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
+  bd.querySelector('[data-act="save"]').addEventListener("click", () => {
+    const name = nameInp.value.trim();
+    if (!name) { nameInp.focus(); showToast("Введи название группы"); return; }
+    if (name !== group.name) {
+      DATA.renameExerciseGroup(userId, groupId, name);
       SyncQueue.push("exercise:update", { groupId });
     }
-    const span = document.createElement("span");
-    span.className = "ex-row-name";
-    span.textContent = next || current;
-    inp.replaceWith(span);
-    if (next && next !== current) renderExercisesList(exercisesSearch.value);
-  };
-
-  inp.addEventListener("blur", commit);
-  inp.addEventListener("keydown", e => {
-    if (e.key === "Enter") { e.preventDefault(); inp.blur(); }
-    if (e.key === "Escape") { inp.value = current; inp.blur(); }
+    close();
+    renderExercisesList(exercisesSearch.value);
   });
-  inp.addEventListener("pointerdown", e => e.stopPropagation());
+  bd.querySelector("#gf-dissolve").addEventListener("click", () => {
+    openConfirmModal({
+      title: "Распустить группу?",
+      message: `Группа «${group.name}» будет расформирована. Упражнения останутся — просто перестанут быть в группе.`,
+      confirmLabel: "Распустить",
+      onConfirm: () => {
+        DATA.deleteExerciseGroup(userId, groupId);
+        SyncQueue.push("exercise:update", { groupId });
+        close();
+        renderExercisesList(exercisesSearch.value);
+        showToast("Группа расформирована");
+      },
+    });
+  });
 }
 
 function wireExRowSwipe(wrap, userId) {
@@ -4773,7 +4823,7 @@ function wireExRowGesture(wrap, userId) {
 function startExDrag(wrap, pointerY) {
   if (_exListDrag) return;
   const top = wrap.getBoundingClientRect().top;
-  _exListDrag = { wrap, grabDy: pointerY - top, ty: 0, didLiveOpen: false };
+  _exListDrag = { wrap, grabDy: pointerY - top, ty: 0, didLiveOpen: false, pointerY, raf: 0 };
   // Замираем вихляние на время drag (см. .ex-drag-active) и разрешаем поднятому
   // элементу выходить за пределы карточки группы (у .ex-row-wrap overflow:hidden —
   // иначе вынос варианта из группы обрезался бы по её краю).
@@ -4782,6 +4832,26 @@ function startExDrag(wrap, pointerY) {
   wrap.style.transition = "none";
   wrap.classList.add("ex-dragging");
   haptic(18);
+  _exListDrag.raf = requestAnimationFrame(exAutoScrollTick);
+}
+
+// Автопрокрутка списка, когда перетаскиваемый элемент подведён к верхней/нижней
+// кромке — иначе на длинном списке нельзя было бы дотащить объект дальше видимой
+// области (см. аналог autoScrollTick для блоков тренировки). После сдвига
+// прокрутки повторяем moveExDrag, чтобы элемент остался под пальцем.
+function exAutoScrollTick() {
+  const d = _exListDrag; if (!d) return;
+  const r = exercisesScroll.getBoundingClientRect();
+  const edge = 64;
+  let dy = 0;
+  if (d.pointerY < r.top + edge)         dy = -Math.ceil((r.top + edge - d.pointerY) / 4);
+  else if (d.pointerY > r.bottom - edge) dy =  Math.ceil((d.pointerY - (r.bottom - edge)) / 4);
+  if (dy) {
+    const before = exercisesScroll.scrollTop;
+    exercisesScroll.scrollTop = before + Math.max(-18, Math.min(18, dy));
+    if (exercisesScroll.scrollTop !== before) moveExDrag(d.pointerY);
+  }
+  d.raf = requestAnimationFrame(exAutoScrollTick);
 }
 
 // «Живое» раскрытие свёрнутой группы прямо во время перетаскивания (как папка
@@ -4838,6 +4908,7 @@ function updateMergeHover(target) {
 
 function moveExDrag(pointerY) {
   const d = _exListDrag; if (!d) return;
+  d.pointerY = pointerY;   // для автопрокрутки (exAutoScrollTick)
   const wrap = d.wrap;
   const isGroupDrag = !!wrap.dataset.groupId;
   const h = wrap.getBoundingClientRect().height;
@@ -4944,17 +5015,15 @@ function performMerge(userId, draggedWrap, targetWrap) {
   pinGroupOrderAtTarget(userId, group.id, targetId);
   _exGroupExpanded.add(group.id);
   renderExercisesList(exercisesSearch.value);
-  // Сразу предложить переименовать — как на iOS при создании новой папки:
-  // фокус и выделенный текст, чтобы можно было сразу начать печатать имя.
-  requestAnimationFrame(() => {
-    const wrap = exercisesScroll.querySelector(`.ex-row-wrap-group[data-group-id="${CSS.escape(group.id)}"]`);
-    if (wrap) startGroupNameEdit(wrap, group.id, userId);
-  });
+  // Сразу предложить назвать новую группу — открываем её форму с фокусом на имени
+  // (единый способ правки группы: и создание, и последующее редактирование).
+  requestAnimationFrame(() => openGroupForm(group.id, true));
 }
 
 function endExDrag() {
   const d = _exListDrag; if (!d) return;
   _exListDrag = null;
+  if (d.raf) cancelAnimationFrame(d.raf);
   const wrap = d.wrap;
 
   const merge = _mergeHover;

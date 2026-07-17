@@ -238,9 +238,10 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 /* ============ Screen 2: main menu ============ */
 .screen-menu { padding-top: calc(20px + var(--safe-top)); }
 
-/* z-index выше .menu-center (кнопка с кольцами пульсации) — чтобы волны
-   пульсации проходили ПОД панелью навигации, как они уже проходят под шторкой. */
-.menu-top { position: relative; z-index: 3; padding: 0 20px; }
+/* z-index МЕЖДУ .menu-center (кнопка с кольцами, z-index 1) и .sheet (шторка,
+   z-index 3): кольца пульсации проходят ПОД навигацией, а раскрытая шторка —
+   НАД ней (перекрывает, как и раньше). */
+.menu-top { position: relative; z-index: 2; padding: 0 20px; }
 
 .menu-brand-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -394,7 +395,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 /* ============ Bottom sheet (history) ============ */
 .sheet {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
   /* Высота подстраивается под содержимое (шапка + превью истории), а не
      зашита в 78dvh — раскрытая шторка садится ровно по контенту, как на
      макете, без пустого «хвоста» внизу. Сверху ограничена, чтобы на низких
