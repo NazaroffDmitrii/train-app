@@ -2333,6 +2333,12 @@ document.addEventListener("keydown", e => {
    Screen 3: Workout
    ========================================================================== */
 let _workout = null;      // текущая активная тренировка (объект)
+// Не null — когда экран тренировки открыт РАДИ ПРАВКИ прошлой тренировки из
+// истории (силовой): держит оригинальный объект истории, а _workout при этом —
+// его копия-черновик. В этом режиме экран не пишет в активный слот, не крутит
+// секундомер и не запускает отдых; «Завершить» превращается в «Сохранить»
+// (см. commitWorkoutEdit / cancelWorkoutEdit / applyWorkoutEditorChrome).
+let _editingHistory = null;
 let _timerInt = null;     // setInterval handle секундомера тренировки
 
 function stopWorkoutTimer() {
@@ -2341,14 +2347,68 @@ function stopWorkoutTimer() {
 
 function initWorkoutScreen({ resume = false } = {}) {
   const userId = DATA.getCurrentUser();
-  _workout = DATA.getActiveWorkout(userId);
+  // В режиме правки истории _workout уже подготовлен (копия-черновик в
+  // openWorkoutEditor) — НЕ перезатираем его активной тренировкой.
+  if (!_editingHistory) _workout = DATA.getActiveWorkout(userId);
   if (!_workout) return;
 
   $("workout-name-input").value = _workout.name || "Силовая тренировка";
   endRest(false);            // отдых не переживает навигацию — прячем пилюлю
-  startWorkoutTimer();
+  applyWorkoutEditorChrome(); // подпись кнопок/секундомера под режим (живой vs правка)
+  if (!_editingHistory) startWorkoutTimer(); // у прошлой тренировки секундомер не идёт
   renderExerciseList();
   updateSummaryBar();
+}
+
+// Открыть прошлую силовую тренировку из истории в полном редакторе заполнения
+// (тот же экран, что и во время тренировки). Правим копию — оригинал трогаем
+// только при «Сохранить» (commitWorkoutEdit → saveEditedWorkout).
+function openWorkoutEditor(workout) {
+  _editingHistory = workout;
+  _workout = JSON.parse(JSON.stringify(workout));
+  goToScreen("workout");
+}
+
+// Настроить шапку экрана тренировки под текущий режим. В живом режиме —
+// «Завершить» + пульсирующий секундомер; в правке истории — «Сохранить» + дата
+// тренировки без пульсации (секундомер прошлой тренировки не идёт).
+function applyWorkoutEditorChrome() {
+  const finishBtn = $("finish-workout-btn");
+  const timerEl   = $("workout-timer");
+  const dot       = document.querySelector(".timer-chip-dot");
+  if (_editingHistory) {
+    finishBtn.textContent = "Сохранить";
+    timerEl.textContent   = fmtDate(_workout.startedAt);
+    if (dot) dot.style.visibility = "hidden";
+  } else {
+    finishBtn.textContent = "Завершить";
+    if (dot) dot.style.visibility = "";
+  }
+}
+
+// «Сохранить» в режиме правки истории — записать черновик обратно в историю
+// через общий saveEditedWorkout (он же пересчитывает рекорды, шлёт синк,
+// обновляет список истории и открывает деталь тренировки).
+function commitWorkoutEdit() {
+  const userId = DATA.getCurrentUser();
+  _workout.name = $("workout-name-input").value || _workout.name || "Силовая тренировка";
+  const edited = _workout;
+  _editingHistory = null;
+  _workout = null;
+  exitExEditMode();
+  stopWorkoutTimer();
+  saveEditedWorkout(edited, userId);
+}
+
+// Уйти из редактора истории без сохранения — черновик просто отбрасываем
+// (в активный слот он не писался), возвращаемся к просмотру той же тренировки.
+function cancelWorkoutEdit() {
+  const original = _editingHistory;
+  _editingHistory = null;
+  _workout = null;
+  exitExEditMode();
+  stopWorkoutTimer();
+  openDetailScreen(original, _detailReturnScreen);
 }
 
 /* — Таймер на timestamp (спецификация 6.1) —
@@ -2535,6 +2595,9 @@ function carryRemoteBinId(target, userId) {
 function saveWorkoutState() {
   if (!_workout) return;
   _workout.name = $("workout-name-input").value || "Силовая тренировка";
+  // Правка истории: изменения копятся в черновике в памяти и коммитятся разом
+  // по «Сохранить». В активную тренировку и в синк ничего не пишем.
+  if (_editingHistory) return;
   carryRemoteBinId(_workout, DATA.getCurrentUser());
   DATA.saveActiveWorkout(DATA.getCurrentUser(), _workout);
   SyncQueue.push("workout:update", { workoutId: _workout.id });
@@ -2542,6 +2605,7 @@ function saveWorkoutState() {
 
 /* — Кнопки шапки — */
 $("workout-back-btn").addEventListener("click", () => {
+  if (_editingHistory) { cancelWorkoutEdit(); return; } // выход из правки истории без сохранения
   endRest(true);      // зачесть текущий отдых, прежде чем уйти с экрана
   saveWorkoutState();
   stopWorkoutTimer(); // секундомер на кнопке меню сам покажет время активной тренировки
@@ -2549,7 +2613,9 @@ $("workout-back-btn").addEventListener("click", () => {
 });
 $("workout-name-input").addEventListener("input", () => saveWorkoutState());
 
-$("finish-workout-btn").addEventListener("click", finishWorkout);
+$("finish-workout-btn").addEventListener("click", () => {
+  if (_editingHistory) commitWorkoutEdit(); else finishWorkout();
+});
 
 function finishWorkout() {
   if (!_workout) return;
@@ -3249,7 +3315,9 @@ function renderSetsInBlock(block, ex, lastWorkout) {
       ex.sets[sIdx].weight = parseFloat(weightInput.value) || 0;
       ex.sets[sIdx].reps   = parseInt(repsInput.value) || 0;
       ex.sets[sIdx].done   = !ex.sets[sIdx].done;
-      if (ex.sets[sIdx].done) startRest(); // подход выполнен — пошёл отдых
+      // Отдых — только в живой тренировке. При правке истории таймер отдыха не
+      // нужен и не должен доначислять restSec старой тренировки.
+      if (ex.sets[sIdx].done && !_editingHistory) startRest(); // подход выполнен — пошёл отдых
       saveWorkoutState();
       renderSetsInBlock(block, ex, lastWorkout);
       updateSummaryBar();
@@ -6672,6 +6740,14 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
   // Повторный тап по карандашу в режиме редактирования = отмена без сохранения.
   $("detail-edit-btn").onclick = () => {
     const editBtn = $("detail-edit-btn");
+    // Силовые правим в полном редакторе заполнения (тот же экран, что и во время
+    // тренировки) — единый код, правки применяются везде сразу. Бег — прежний
+    // инлайновый редактор в деталке (у него свои поля: дистанция/темп/пульс).
+    if (workout.type !== "run") {
+      delete editBtn.dataset.editing;
+      openWorkoutEditor(workout);
+      return;
+    }
     if (editBtn.dataset.editing === "1") {
       delete editBtn.dataset.editing;
       openDetailScreen(workout, _detailReturnScreen);
@@ -6682,139 +6758,39 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
   };
 }
 
+// Инлайновый редактор в деталке — ТОЛЬКО для бега (свои поля: дистанция, темп,
+// пульс, каденс). Силовые тренировки редактируются в полном редакторе заполнения
+// (openWorkoutEditor) — единый код с экраном «во время тренировки».
 function openDetailEditMode(workout) {
   const userId = DATA.getCurrentUser();
-  const isRun  = workout.type === "run";
-  const exDefs = DATA.getVisibleExercises(userId);
   const draft  = JSON.parse(JSON.stringify(workout));
-
-  function renderEdit() {
-    const body = $("detail-screen-body");
-    if (isRun) {
-      body.innerHTML = `
-        <div style="display:flex;flex-direction:column;gap:12px;padding-bottom:24px">
-          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Название</label>
-          <input class="ex-form-input" id="de-name" value="${escHtml(draft.name || "")}" placeholder="Название">
-          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Дистанция (км)</label>
-          <input class="ex-form-input" id="de-dist" type="number" step="0.01" value="${draft.distance || ""}">
-          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Темп (мин/км)</label>
-          <input class="ex-form-input" id="de-pace" value="${escHtml(draft.pace || "")}">
-          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Пульс ср.</label>
-          <input class="ex-form-input" id="de-hr" type="number" value="${draft.heartRate || ""}">
-          <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Каденс</label>
-          <input class="ex-form-input" id="de-cad" type="number" value="${draft.cadence || ""}">
-          <div style="display:flex;gap:8px;margin-top:4px">
-            <button class="btn-chip" id="de-cancel" style="flex:1">Отмена</button>
-            <button class="btn-chip primary" id="de-save" style="flex:1">Сохранить</button>
-          </div>
-        </div>`;
-      $("de-save").addEventListener("click", () => {
-        draft.name      = $("de-name").value.trim() || draft.name;
-        draft.distance  = parseFloat($("de-dist").value) || null;
-        draft.pace      = $("de-pace").value.trim() || null;
-        draft.heartRate = parseInt($("de-hr").value) || null;
-        draft.cadence   = parseInt($("de-cad").value) || null;
-        saveEditedWorkout(draft, userId);
-      });
-      $("de-cancel").addEventListener("click", () => openDetailScreen(workout, _detailReturnScreen));
-    } else {
-      // Форма редактирования повторяет экран просмотра (крупные ячейки # кг повт
-      // rpe), но без подсветки рекордов/RPE и без верхней сводки — так удобнее
-      // править значения.
-      const exRows = (draft.exercises || []).map((ex, exIdx) => {
-        const known = exDefs.find(e => e.id === ex.exerciseId);
-        const def = known || { name: ex.name || "Упражнение недоступно" };
-        const doneSets = ex.sets.map((s, si) => ({ ...s, _si: si })).filter(s => s.done);
-        return `<div class="wd-ex">
-          <div class="wd-ex-head">
-            <button class="de-ex-name${known ? "" : " missing"}" data-ex="${exIdx}">
-              <span>${escHtml(def.name)}</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-          </div>
-          ${doneSets.length ? `
-            <div class="wd-cols">
-              <span class="wd-col-idx">#</span>
-              <span class="wd-col">кг</span>
-              <span class="wd-col">повт</span>
-              <span class="wd-col wd-col-rpe">rpe</span>
-              <span class="wd-col-del"></span>
-            </div>
-            <div class="wd-sets">
-              ${(function () {
-                let mainNum = 0;
-                const labels = doneSets.map(s => { if (s.dropSet) return ""; mainNum++; return `${mainNum}`; });
-                return doneSets.map((s, i) => `
-                <div class="wd-set de-set-row${s.dropSet ? " wd-set-drop" : ""}" data-ex="${exIdx}" data-si="${s._si}">
-                  <span class="wd-set-num">${labels[i]}</span>
-                  <input class="wd-cell-input de-weight" type="number" inputmode="decimal" step="0.5" value="${s.weight || 0}">
-                  <input class="wd-cell-input de-reps" type="number" inputmode="numeric" value="${s.reps || 0}">
-                  <input class="wd-cell-input wd-rpe de-rpe" type="number" inputmode="numeric" min="0" max="10" value="${s.rpe || ""}" placeholder="—">
-                  <button class="wd-del-set de-del-set" data-ex="${exIdx}" data-si="${s._si}" title="Удалить подход">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                </div>`).join("");
-              })()}
-            </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
-        </div>`;
-      }).join("");
-
-      body.innerHTML = `
-        <div style="display:flex;flex-direction:column;gap:4px;padding-bottom:80px">
-          <div style="margin-bottom:8px">
-            <input class="ex-form-input" id="de-name" value="${escHtml(draft.name || "")}" placeholder="Название тренировки">
-          </div>
-          ${exRows}
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn-chip" id="de-cancel" style="flex:1;justify-content:center">Отмена</button>
-            <button class="btn-chip primary" id="de-save" style="flex:1;justify-content:center">Сохранить</button>
-          </div>
-        </div>`;
-
-      // Переносим текущие значения полей в draft, чтобы при перерисовке
-      // (удаление подхода, смена упражнения) не потерять только что введённое.
-      const syncDraft = () => {
-        draft.name = $("de-name").value.trim() || draft.name;
-        body.querySelectorAll(".de-set-row").forEach(row => {
-          const exIdx = +row.dataset.ex, si = +row.dataset.si;
-          draft.exercises[exIdx].sets[si].weight = parseFloat(row.querySelector(".de-weight").value) || 0;
-          draft.exercises[exIdx].sets[si].reps   = parseInt(row.querySelector(".de-reps").value)   || 0;
-          const rpeV = parseFloat(row.querySelector(".de-rpe").value);
-          draft.exercises[exIdx].sets[si].rpe = (!isNaN(rpeV) && rpeV > 0) ? rpeV : null;
-        });
-      };
-
-      body.querySelectorAll(".de-del-set").forEach(btn => {
-        btn.addEventListener("click", () => {
-          syncDraft();
-          draft.exercises[+btn.dataset.ex].sets[+btn.dataset.si].done = false;
-          renderEdit();
-        });
-      });
-
-      // Тап по названию упражнения — открыть пикер и переназначить упражнение
-      // (в т.ч. восстановить «Упражнение недоступно» на заново созданное).
-      body.querySelectorAll(".de-ex-name").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const exIdx = +btn.dataset.ex;
-          syncDraft();
-          openExercisePicker(newId => {
-            draft.exercises[exIdx].exerciseId = newId;
-            delete draft.exercises[exIdx].name; // стираем устаревший снимок имени
-            renderEdit(); // пикер закрывается сам после выбора
-          }, draft.exercises[exIdx].exerciseId);
-        });
-      });
-
-      $("de-save").addEventListener("click", () => {
-        syncDraft();
-        saveEditedWorkout(draft, userId);
-      });
-      $("de-cancel").addEventListener("click", () => openDetailScreen(workout, _detailReturnScreen));
-    }
-  }
-
-  renderEdit();
+  const body = $("detail-screen-body");
+  body.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:12px;padding-bottom:24px">
+      <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Название</label>
+      <input class="ex-form-input" id="de-name" value="${escHtml(draft.name || "")}" placeholder="Название">
+      <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Дистанция (км)</label>
+      <input class="ex-form-input" id="de-dist" type="number" step="0.01" value="${draft.distance || ""}">
+      <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Темп (мин/км)</label>
+      <input class="ex-form-input" id="de-pace" value="${escHtml(draft.pace || "")}">
+      <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Пульс ср.</label>
+      <input class="ex-form-input" id="de-hr" type="number" value="${draft.heartRate || ""}">
+      <label style="font-size:12px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Каденс</label>
+      <input class="ex-form-input" id="de-cad" type="number" value="${draft.cadence || ""}">
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn-chip" id="de-cancel" style="flex:1">Отмена</button>
+        <button class="btn-chip primary" id="de-save" style="flex:1">Сохранить</button>
+      </div>
+    </div>`;
+  $("de-save").addEventListener("click", () => {
+    draft.name      = $("de-name").value.trim() || draft.name;
+    draft.distance  = parseFloat($("de-dist").value) || null;
+    draft.pace      = $("de-pace").value.trim() || null;
+    draft.heartRate = parseInt($("de-hr").value) || null;
+    draft.cadence   = parseInt($("de-cad").value) || null;
+    saveEditedWorkout(draft, userId);
+  });
+  $("de-cancel").addEventListener("click", () => openDetailScreen(workout, _detailReturnScreen));
 }
 
 function saveEditedWorkout(workout, userId) {
