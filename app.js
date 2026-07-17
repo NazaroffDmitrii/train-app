@@ -3210,17 +3210,29 @@ function renderSetsInBlock(block, ex, lastWorkout) {
     });
 
     // Свайп влево по строке → удалить подход (п.7). Удаляем по ссылке на объект
-    // подхода: индексы после ре-рендера сдвигаются.
+    // подхода: индексы после ре-рендера сдвигаются. У дроп-сета свайп/удаление
+    // привязаны к его реальным полям (.set-drop-fields, см. wireDropTree), а
+    // не ко всей строке — иначе зона свайпа осталась бы там, где поля были
+    // раньше (во всю ширину), а не там, где они сейчас визуально стоят.
     wrap.appendChild(del);
     wrap.appendChild(row);
-    wireSetRowSwipe(wrap, row, () => {
+    const swipeTarget = set.dropSet ? row.querySelector(".set-drop-fields") : row;
+    wireSetRowSwipe(wrap, swipeTarget, () => {
       const i = ex.sets.indexOf(set);
       if (i === -1) return;
-      ex.sets.splice(i, 1);
+      // Удаление ОСНОВНОГО подхода утягивает за собой все его дроп-сеты
+      // каскадом — иначе они остались бы в массиве и "перепривязались" бы
+      // визуально к соседнему предыдущему подходу (это то же самое усилие,
+      // без основного подхода дроп-сеты сами по себе смысла не имеют).
+      let count = 1;
+      if (!set.dropSet) {
+        while (ex.sets[i + count] && ex.sets[i + count].dropSet) count++;
+      }
+      ex.sets.splice(i, count);
       saveWorkoutState();
       renderSetsInBlock(block, ex, lastWorkout);
       updateSummaryBar();
-      showToast(set.dropSet ? "Дроп-сет удалён" : "Подход удалён");
+      showToast(set.dropSet ? "Дроп-сет удалён" : (count > 1 ? "Подход и его дроп-сеты удалены" : "Подход удалён"));
     });
 
     if (!set.dropSet || !group) {
@@ -3259,7 +3271,10 @@ function wireDropTree(group) {
   const FIELD_GAP = 6;
   const startX = trunkX + BRANCH_GAP;
   const totalW = Math.max(0, endX - startX);
-  const weightW = Math.round(totalW * 0.42); // кг короче повт
+  // MIN_WEIGHT_W — чтобы кнопке "±" (см. CSS .set-field-weight-mini .set-sign-btn)
+  // всегда хватало места и поле не сжималось у́же неё на узких экранах.
+  const MIN_WEIGHT_W = 46;
+  const weightW = Math.max(MIN_WEIGHT_W, Math.round(totalW * 0.42)); // кг короче повт
   const repsW = Math.max(0, totalW - weightW - FIELD_GAP);
 
   dropWraps.forEach(w => {
@@ -3267,6 +3282,15 @@ function wireDropTree(group) {
     fields.style.marginLeft = startX + "px";
     fields.querySelector(".set-field-weight-mini").style.width = weightW + "px";
     fields.querySelector(".set-field-reps-mini").style.width = repsW + "px";
+    // Зона свайпа/удаления (красная подложка) — под реальными полями, а не
+    // во всю строку: иначе она осталась бы там, где поля были в старой
+    // раскладке, и не совпадала бы с тем, что реально видно.
+    const del = w.querySelector(".set-row-delete");
+    if (del) {
+      del.style.left = startX + "px";
+      del.style.right = "auto"; // иначе right:0 из inset (см. CSS) и left вместе растянут блок на всю ширину
+      del.style.width = (weightW + FIELD_GAP + repsW) + "px";
+    }
   });
 
   const mainBottom = mainWrap.getBoundingClientRect().bottom - groupRect.top;

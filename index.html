@@ -858,6 +858,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .set-field-weight.negative { border-color: var(--accent); }
 .set-field-weight.negative input { color: var(--accent-bright); }
 .set-field-weight.negative .set-sign-btn { background: var(--accent-soft); color: var(--accent-bright); }
+/* У мини-подхода (дроп-сет) поле веса заметно уже основного (см. wireDropTree,
+   MIN_WEIGHT_W) — кнопка "±" в полный (26px) размер туда не помещалась и
+   вылезала за края поля; уменьшаем под масштаб мини-поля. */
+.set-field-weight-mini .set-sign-btn { left: 3px; width: 20px; height: 26px; font-size: 13px; border-radius: 6px; }
+.set-field-weight-mini input { padding-left: 22px; }
 
 .rpe-btn {
   height: 42px; border-radius: 10px; width: 100%;
