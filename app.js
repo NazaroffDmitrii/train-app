@@ -3126,7 +3126,7 @@ function renderExerciseList() {
         e.stopPropagation();
         if (scroll.classList.contains("ex-editing")) return;
         const prWorkout = findPrWorkout(userId, ex.exerciseId, rec);
-        if (prWorkout) openDetailScreen(prWorkout, "workout");
+        if (prWorkout) openDetailScreen(prWorkout, "workout", ex.exerciseId);
         else showToast("Рекорд поставлен в текущей тренировке");
       });
     }
@@ -3331,6 +3331,13 @@ function wireDropTree(group) {
   dropWraps.forEach(w => {
     const fields = w.querySelector(".set-drop-fields");
     fields.style.marginLeft = startX + "px";
+    // Ширину блока полей фиксируем ровно по содержимому (кг + зазор + повт).
+    // Без этого flex-контейнер растягивается на всю ширину строки, и его
+    // непрозрачный фон (см. CSS .set-drop-fields) тянется ВПРАВО за "повт" до
+    // края карточки — при свайпе он перекрывал красную подложку, из-за чего
+    // между "повт" и красной плашкой "Удалить" зиял пустой зазор. Теперь правый
+    // край блока совпадает с концом "повт", и красное открывается сразу за ним.
+    fields.style.width = (weightW + FIELD_GAP + repsW) + "px";
     fields.querySelector(".set-field-weight-mini").style.width = weightW + "px";
     fields.querySelector(".set-field-reps-mini").style.width = repsW + "px";
     // Зона свайпа/удаления (красная подложка) — под реальными полями, а не
@@ -6512,7 +6519,7 @@ function openExerciseForm(exerciseId) {
    Screen: detail view (просмотр тренировки из истории)
    ========================================================================== */
 let _detailReturnScreen = "menu";
-function openDetailScreen(workout, returnScreen = "menu") {
+function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = null) {
   _detailReturnScreen = returnScreen;
   const isRun = workout.type === "run";
 
@@ -6593,7 +6600,7 @@ function openDetailScreen(workout, returnScreen = "menu") {
         // (см. .wd-set-drop), как и на экране тренировки.
         let mainNum = 0;
         const setLabels = doneSets.map(s => { if (s.dropSet) return ""; mainNum++; return `${mainNum}`; });
-        return `<div class="wd-ex">
+        return `<div class="wd-ex" data-ex-id="${ex.exerciseId}">
           <div class="wd-ex-head">
             <span class="wd-ex-name">${escHtml(exDef.name)}</span>
             ${doneSets.length ? `<span class="wd-ex-meta${volPr ? " pr" : ""}">${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
@@ -6630,6 +6637,21 @@ function openDetailScreen(workout, returnScreen = "menu") {
   }
 
   goToScreen("detail");
+
+  // Открыли деталь ради конкретного упражнения (тап по бейджу-рекорду на экране
+  // тренировки) — подматываем список прямо к нему и коротко подсвечиваем, чтобы
+  // не искать глазами. rAF — дождаться раскладки после смены экрана; scrollIntoView
+  // центрирует карточку в прокручиваемом теле детали.
+  if (scrollToExerciseId) {
+    requestAnimationFrame(() => {
+      const target = body.querySelector(`.wd-ex[data-ex-id="${scrollToExerciseId}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.classList.add("wd-ex-flash");
+        setTimeout(() => target.classList.remove("wd-ex-flash"), 1600);
+      }
+    });
+  }
 
   // Удаление доступно из списка истории (свайп/долгое нажатие) — на экране
   // деталей оставляем только редактирование, чтобы не удалить случайно.

@@ -1381,6 +1381,14 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
   border-radius: 16px; padding: 12px; margin-bottom: 9px;
 }
+/* Короткая подсветка карточки, к которой подмотали по тапу на бейдж-рекорд
+   (см. openDetailScreen scrollToExerciseId) — золотом под стать рекорду, гаснет
+   плавно, чтобы обозначить «вот это упражнение» и не отвлекать дальше. */
+.wd-ex-flash { animation: wd-ex-flash 1.6s ease; }
+@keyframes wd-ex-flash {
+  0%, 15% { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber-soft, rgba(245,190,80,0.28)); }
+  100%    { border-color: var(--border-subtle); box-shadow: 0 0 0 2px transparent; }
+}
 .wd-ex-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
 .wd-ex-name { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em; }
 .wd-ex-meta { font-size: 11.5px; color: var(--text-tertiary); flex: none; }
