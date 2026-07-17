@@ -1198,7 +1198,6 @@ const startBtn      = $("start-btn");
     if (!isActive) {
       stopStartBtnTimer();
       timer.innerHTML = `<div class="start-colon" id="start-colon-idle"><div class="start-colon-dot"></div><div class="start-colon-dot"></div></div>`;
-      startBtn.classList.remove("long-workout");
       return;
     }
 
@@ -1217,15 +1216,17 @@ const startBtn      = $("start-btn");
       const isLong = h > 0;
       const blink = Math.floor(Date.now() / 1000) % 2 === 0;
 
-      const key = `${isLong ? h + ":" : ""}${mm}:${ss}:${blink}`;
+      // После часа секунды не показываем — формат становится Ч:ММ (тот же вид
+      // «две цифры через двоеточие», что и ММ:СС до часа), поэтому и размер
+      // остаётся обычным, без разросшихся цифр.
+      const key = isLong ? `${h}:${mm}:${blink}` : `${mm}:${ss}:${blink}`;
       if (key === lastKey) return; // ничего видимого не изменилось
       lastKey = key;
 
-      startBtn.classList.toggle("long-workout", isLong);
       const op = blink ? "1" : "0.22";
       const colon = `<div class="start-colon"><div class="start-colon-dot" style="opacity:${op}"></div><div class="start-colon-dot" style="opacity:${op}"></div></div>`;
       timer.innerHTML = isLong
-        ? `<span class="start-timer-num">${h}</span>${colon}<span class="start-timer-num">${mm}</span>${colon}<span class="start-timer-num">${ss}</span>`
+        ? `<span class="start-timer-num">${h}</span>${colon}<span class="start-timer-num">${mm}</span>`
         : `<span class="start-timer-num">${mm}</span>${colon}<span class="start-timer-num">${ss}</span>`;
     }
 
@@ -5581,8 +5582,10 @@ function openReferenceSheet(initialTab, focusName) {
   // название + цвет + удаление. Пришло на смену инлайн-переименованию.
   function openCatForm(cat) {
     const curColor = DATA.getCategoryColor(userId, cat);
-    const SWATCHES = [210,228,246,264,282,300,318,336,354,18,150,110].map(h => `hsl(${h}, 78%, 72%)`);
-    const palette = [curColor, ...SWATCHES.filter(c => c !== curColor)];
+    // Только оттенки фиолетового (в тон акценту приложения ≈ hsl(248,71%,66%)):
+    // от светлой лаванды до насыщенного фиолетового. Текущий цвет не подмешиваем,
+    // чтобы в палитре не появлялись «старые» синие/розовые оттенки.
+    const palette = [86, 79, 72, 66, 60, 54, 48, 42].map(l => `hsl(249, 70%, ${l}%)`);
 
     const bd = document.createElement("div");
     bd.className = "modal-backdrop open";
@@ -5594,7 +5597,7 @@ function openReferenceSheet(initialTab, focusName) {
           <input class="ex-form-input" id="cf-name" type="text" placeholder="Название группы" value="${escHtml(cat)}"></div>
         <div class="ex-form-field"><label class="ex-form-label">Цвет</label>
           <div class="cat-color-row">
-            ${palette.map((c, i) => `<button type="button" class="cat-color-swatch${i === 0 ? " selected" : ""}" data-color="${escHtml(c)}" style="background:${escHtml(c)}"></button>`).join("")}
+            ${palette.map(c => `<button type="button" class="cat-color-swatch${c === curColor ? " selected" : ""}" data-color="${escHtml(c)}" style="background:${escHtml(c)}"></button>`).join("")}
           </div></div>
         <button class="modal-option modal-option-full danger" id="cf-del">Удалить группу</button>
         <div class="modal-form-actions">
