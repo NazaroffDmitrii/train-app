@@ -3033,6 +3033,15 @@ function renderExerciseList() {
       </div>
     `;
 
+    // Блок вставляем в DOM ДО рендера подходов. Дерево дроп-сетов (wireDropTree
+    // внутри renderSetsInBlock) меряет поля через getBoundingClientRect, а у
+    // detached-элемента все размеры = 0 → ширины схлопывались (кг → минимум,
+    // повт → 0), ствол вставал не на место. Это и был баг «при повторном
+    // открытии тренировки»: здесь блок строится с нуля (detached), тогда как
+    // при добавлении подхода/дроп-сета renderSetsInBlock звался уже на
+    // вставленном блоке — поэтому там всё считалось верно.
+    scroll.insertBefore(block, addBtn);
+
     // Render sets
     renderSetsInBlock(block, ex, lastWorkout);
 
@@ -3098,8 +3107,7 @@ function renderExerciseList() {
       noteBtn.classList.toggle("has-note", !!ex.note);
       saveWorkoutState();
     });
-
-    scroll.insertBefore(block, addBtn);
+    // (Блок уже вставлен в DOM выше — до renderSetsInBlock, см. комментарий там.)
   });
 }
 
@@ -3262,6 +3270,11 @@ function wireDropTree(group) {
   if (!mainWrap || !dropWraps.length) return;
 
   const groupRect = group.getBoundingClientRect();
+  // Detached/скрытый блок меряется в нули — тогда все ширины схлопнулись бы в
+  // мусор (кг→минимум, повт→0, ствол в левый край). Не трогаем разметку, пока
+  // блок реально не в потоке (страховка; штатно блок вставляется в DOM ещё до
+  // рендера — см. renderExerciseList).
+  if (!groupRect.width) return;
   const weightRect = mainWrap.querySelector(".set-field-weight").getBoundingClientRect();
   const rpeRect = mainWrap.querySelector(".rpe-btn").getBoundingClientRect();
   const trunkX = weightRect.left + weightRect.width / 2 - groupRect.left;
