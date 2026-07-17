@@ -1480,7 +1480,13 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
   display: flex; align-items: center; gap: 12px;
-  max-width: calc(100vw - 32px); white-space: normal; text-align: left;
+  /* width:max-content — ширина по одной строке текста, а НЕ shrink-to-fit.
+     Без этого left:50% ограничивает доступную ширину половиной экрана (от
+     середины до правого края), и текст переносился на 2 строки в узкий столбик
+     ~187px, хотя на странице есть место. Теперь короткий тост — по содержимому,
+     а длинный дорастает до max-width (почти вся ширина) и лишь ТОГДА переносится,
+     заполняя её. translateX(-50%) центрирует при любой ширине. */
+  width: max-content; max-width: calc(100vw - 32px); white-space: normal; text-align: left;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 /* Тост с кнопкой «Отменить» — во всю ширину, текст занимает всё место (иначе
