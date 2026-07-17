@@ -2266,6 +2266,16 @@ document.addEventListener("keydown", e => {
     requestAnimationFrame(() => sheet.classList.remove("no-anim"));
   }
   window.addEventListener("resize", reposition);
+  // Поворот экрана: одного resize мало — на момент его срабатывания раскладка
+  // (высота шторки, dvh) ещё не устаканилась, и шторка вставала на место только
+  // после ухода/возврата на экран. Добиваем несколькими отложенными пересчётами.
+  const repositionSoon = () => {
+    reposition();
+    requestAnimationFrame(reposition);
+    setTimeout(reposition, 150);
+    setTimeout(reposition, 400);
+  };
+  window.addEventListener("orientationchange", repositionSoon);
   // На старте PWA на iOS высота dvh «плавает» первые кадры — из-за этого
   // свёрнутая шторка вставала не на место и снизу вылезал зазор. Добиваем
   // пересчётом после полной загрузки, возврата из фона и осадки viewport.
@@ -2957,8 +2967,8 @@ function wireExBlockGestures(block, ex) {
   const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
   const canStart = (target) => {
     if (target.closest(".ex-del-badge")) return false;     // крестик — отдаём клику
-    // вне режима не мешаем вводу, кнопкам и свайпу подхода
-    if (!_exEdit && target.closest("input, textarea, button, .set-row")) return false;
+    // вне режима не мешаем вводу, кнопкам, свайпу подхода и тапу по названию
+    if (!_exEdit && target.closest("input, textarea, button, .set-row, .ex-block-name")) return false;
     return true;
   };
   const begin = (x, y, target) => {
@@ -3144,6 +3154,17 @@ function renderExerciseList() {
       saveWorkoutState();
       renderSetsInBlock(block, ex, lastWorkout);
       updateSummaryBar();
+    });
+
+    // Тап по названию упражнения → его детальная карточка (визуально это тот же
+    // текст, просто кликабельный). В режиме перестановки блоков не реагируем.
+    // Возврат — на экран тренировки. Недоступное упражнение (нет в справочнике)
+    // openExerciseDetail просто проигнорирует.
+    const nameEl = block.querySelector(".ex-block-name");
+    if (nameEl) nameEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (scroll.classList.contains("ex-editing")) return;
+      openExerciseDetail(ex.exerciseId, "workout");
     });
 
     // Тап по бейджу-рекорду (звёздочке) → открыть тренировку, где рекорд был

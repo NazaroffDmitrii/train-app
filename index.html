@@ -238,7 +238,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 /* ============ Screen 2: main menu ============ */
 .screen-menu { padding-top: calc(20px + var(--safe-top)); }
 
-.menu-top { position: relative; z-index: 1; padding: 0 20px; }
+/* z-index выше .menu-center (кнопка с кольцами пульсации) — чтобы волны
+   пульсации проходили ПОД панелью навигации, как они уже проходят под шторкой. */
+.menu-top { position: relative; z-index: 3; padding: 0 20px; }
 
 .menu-brand-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -694,6 +696,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .ex-block-name {
   flex: 1; min-width: 0; font-weight: 700; font-size: 16px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;   /* тап по названию → детальная карточка упражнения */
 }
 .ex-block-pr {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
