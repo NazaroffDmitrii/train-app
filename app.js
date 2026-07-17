@@ -2175,6 +2175,10 @@ document.addEventListener("keydown", e => {
 
   function getCollapsedTranslate() {
     const sheetH = sheet.getBoundingClientRect().height;
+    // На низких экранах (телефон в ландшафте) историю прячем почти целиком —
+    // торчит только ручка (за неё можно потянуть и раскрыть), чтобы центральная
+    // кнопка помещалась полным размером по центру над шторкой.
+    if (window.matchMedia("(max-height: 560px)").matches) return sheetH - 30;
     const dragH  = sheetDragArea.getBoundingClientRect().height;
     const firstItem = historyBody.querySelector(".history-item");
     if (!firstItem) return sheetH - dragH;
