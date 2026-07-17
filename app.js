@@ -2175,11 +2175,12 @@ document.addEventListener("keydown", e => {
 
   function getCollapsedTranslate() {
     const sheetH = sheet.getBoundingClientRect().height;
-    // На низких экранах (телефон в ландшафте) историю прячем почти целиком —
-    // торчит только ручка (за неё можно потянуть и раскрыть), чтобы центральная
-    // кнопка помещалась полным размером по центру над шторкой.
-    if (window.matchMedia("(max-height: 560px)").matches) return sheetH - 30;
     const dragH  = sheetDragArea.getBoundingClientRect().height;
+    // На низких экранах (телефон в ландшафте) карточки истории прячем — торчит
+    // только шапка-ручка («ИСТОРИЯ» + полоска). Её видно и удобно потянуть, и
+    // она заведомо выше зоны жеста home-indicator (30px у самого низа на реальном
+    // телефоне не поймать). Центральная кнопка центрируется над шторкой.
+    if (window.matchMedia("(max-height: 560px)").matches) return sheetH - dragH;
     const firstItem = historyBody.querySelector(".history-item");
     if (!firstItem) return sheetH - dragH;
     // Показываем ровно: шапка + первая карточка + её 10px margin-bottom.
