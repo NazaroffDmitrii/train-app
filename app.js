@@ -3256,14 +3256,15 @@ function renderSetsInBlock(block, ex, lastWorkout) {
     });
 
     // Свайп влево по строке → удалить подход (п.7). Удаляем по ссылке на объект
-    // подхода: индексы после ре-рендера сдвигаются. У дроп-сета свайп/удаление
-    // привязаны к его реальным полям (.set-drop-fields, см. wireDropTree), а
-    // не ко всей строке — иначе зона свайпа осталась бы там, где поля были
-    // раньше (во всю ширину), а не там, где они сейчас визуально стоят.
+    // подхода: индексы после ре-рендера сдвигаются. У дроп-сета жест ловим по
+    // ВСЕЙ ширине строки (включая пустую область слева от полей — так его легко
+    // нащупать, не попадая в узкие поля-инпуты), а ехать под пальцем должен
+    // только блок полей .set-drop-fields (см. wireDropTree — он же и совпадает
+    // с красной подложкой). У обычного подхода ловим и двигаем всю строку.
     wrap.appendChild(del);
     wrap.appendChild(row);
-    const swipeTarget = set.dropSet ? row.querySelector(".set-drop-fields") : row;
-    wireSetRowSwipe(wrap, swipeTarget, () => {
+    const moveEl = set.dropSet ? row.querySelector(".set-drop-fields") : row;
+    wireSetRowSwipe(wrap, row, () => {
       const i = ex.sets.indexOf(set);
       if (i === -1) return;
       // Удаление ОСНОВНОГО подхода утягивает за собой все его дроп-сеты
@@ -3279,7 +3280,7 @@ function renderSetsInBlock(block, ex, lastWorkout) {
       renderSetsInBlock(block, ex, lastWorkout);
       updateSummaryBar();
       showToast(set.dropSet ? "Дроп-сет удалён" : (count > 1 ? "Подход и его дроп-сеты удалены" : "Подход удалён"));
-    });
+    }, moveEl);
 
     if (!set.dropSet || !group) {
       group = document.createElement("div");
@@ -3382,7 +3383,12 @@ window.addEventListener("resize", () => {
 // Горизонтальный свайп влево по строке подхода → раскрыть зону «Удалить»;
 // за порогом отпускания подход удаляется, иначе строка возвращается. Вертикаль
 // отдаём скроллу; в режиме перестановки свайп выключен. (п.7)
-function wireSetRowSwipe(wrap, row, onDelete) {
+// row — элемент, НА КОТОРОМ ловим жест (зона касания); tEl — элемент, который
+// реально едет под пальцем (по умолчанию тот же). У дроп-сета это разные вещи:
+// ловить надо по всей ширине строки (включая пустую область слева от полей —
+// иначе касание попадает только в узкие поля-инпуты, а по инпуту свайп мы не
+// начинаем, и жест почти невозможно нащупать), а ехать должен только блок полей.
+function wireSetRowSwipe(wrap, row, onDelete, tEl = row) {
   let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
   const MAX = 132, DEL = 92;
   row.addEventListener("pointerdown", (e) => {
@@ -3390,7 +3396,7 @@ function wireSetRowSwipe(wrap, row, onDelete) {
     if (e.target.closest("input")) return;          // правка веса/повторов — не свайп
     sx = e.clientX; sy = e.clientY; dx = 0;
     active = true; decided = false; horiz = false; swiped = false;
-    row.style.transition = "";
+    tEl.style.transition = "";
   });
   row.addEventListener("pointermove", (e) => {
     if (!active) return;
@@ -3403,12 +3409,12 @@ function wireSetRowSwipe(wrap, row, onDelete) {
       horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
       if (!horiz) { active = false; return; }
       wrap.classList.add("swiping");                 // показать подложку только сейчас
-      row.style.willChange = "transform";
+      tEl.style.willChange = "transform";
       try { row.setPointerCapture(e.pointerId); } catch {}
     }
     dx = Math.max(-MAX, Math.min(0, mx));            // тянем только влево
     if (dx < -4) swiped = true;
-    row.style.transform = `translateX(${dx}px)`;
+    tEl.style.transform = `translateX(${dx}px)`;
     wrap.classList.toggle("will-delete", dx <= -DEL);
   });
   // Во время горизонтального свайпа гасим вертикальный скролл (п.2).
@@ -3425,8 +3431,8 @@ function wireSetRowSwipe(wrap, row, onDelete) {
     active = false;
     if (!horiz) return;
     if (dx <= -DEL) {
-      row.style.transition = "transform 0.16s ease";
-      row.style.transform = "translateX(-110%)";
+      tEl.style.transition = "transform 0.16s ease";
+      tEl.style.transform = "translateX(-110%)";
       wrap.style.height = wrap.offsetHeight + "px";
       requestAnimationFrame(() => {
         wrap.style.transition = "height 0.16s ease, opacity 0.16s ease";
@@ -3434,10 +3440,10 @@ function wireSetRowSwipe(wrap, row, onDelete) {
       });
       setTimeout(onDelete, 180);
     } else {
-      row.style.transition = "transform 0.18s ease";
-      row.style.transform = "";
+      tEl.style.transition = "transform 0.18s ease";
+      tEl.style.transform = "";
       wrap.classList.remove("will-delete");
-      setTimeout(() => { wrap.classList.remove("swiping"); row.style.willChange = ""; }, 200);
+      setTimeout(() => { wrap.classList.remove("swiping"); tEl.style.willChange = ""; }, 200);
     }
   };
   row.addEventListener("pointerup", settle);
@@ -6646,7 +6652,15 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
     requestAnimationFrame(() => {
       const target = body.querySelector(`.wd-ex[data-ex-id="${scrollToExerciseId}"]`);
       if (target) {
-        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        // НЕ scrollIntoView: на iOS-standalone он прокручивает и внешний
+        // контейнер (документ), утягивая шапку под часы статус-бара. Двигаем
+        // scrollTop ТОЛЬКО у прокручиваемого тела детали — шапка остаётся на
+        // месте. Центрируем карточку через разницу getBoundingClientRect,
+        // независимо от offsetParent.
+        const bodyRect = body.getBoundingClientRect();
+        const tRect = target.getBoundingClientRect();
+        const delta = (tRect.top - bodyRect.top) - (body.clientHeight - tRect.height) / 2;
+        body.scrollTo({ top: body.scrollTop + delta, behavior: "smooth" });
         target.classList.add("wd-ex-flash");
         setTimeout(() => target.classList.remove("wd-ex-flash"), 1600);
       }
