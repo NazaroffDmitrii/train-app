@@ -3278,7 +3278,7 @@ function renderSetsInBlock(block, ex, lastWorkout) {
         <input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : "кг"}" value="${set.weight || ""}" step="0.5" ${prev ? 'class="has-prev"' : ""}>
       </div>
       <div class="set-field"><input type="number" inputmode="numeric" placeholder="${prev ? prev.reps : "повт"}" value="${set.reps || ""}" ${prev ? 'class="has-prev"' : ""}></div>
-      <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe || "—"}</button>
+      <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe ? set.rpe : (prev && prev.rpe ? `<span class="rpe-ghost">${prev.rpe}</span>` : "—")}</button>
       <button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
       </button>
@@ -6847,7 +6847,6 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
               ${prevW
                 ? `<button class="wd-ex-nav-btn" data-ex-id="${ex.exerciseId}" data-nav="prev" title="Прошлое выполнение — ${escHtml(fmtDate(prevW.startedAt))}">${chevron("prev")}<span>${escHtml(shortDate(prevW.startedAt))}</span></button>`
                 : `<span class="wd-ex-nav-btn disabled">${chevron("prev")}<span>—</span></span>`}
-              <span class="wd-ex-nav-mid">выполнение</span>
               ${nextW
                 ? `<button class="wd-ex-nav-btn" data-ex-id="${ex.exerciseId}" data-nav="next" title="Следующее выполнение — ${escHtml(fmtDate(nextW.startedAt))}"><span>${escHtml(shortDate(nextW.startedAt))}</span>${chevron("next")}</button>`
                 : `<span class="wd-ex-nav-btn disabled"><span>—</span>${chevron("next")}</span>`}

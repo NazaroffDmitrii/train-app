@@ -907,6 +907,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   transition: all 0.15s ease;
 }
 .rpe-btn.has-rpe { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
+/* Тень прошлого RPE в пустой кнопке усилия — как placeholder у веса/повторов. */
+.rpe-ghost { color: var(--text-tertiary); opacity: 0.75; font-weight: 700; }
 
 .set-done-btn {
   width: 40px; height: 40px; border-radius: 10px;
@@ -1421,12 +1423,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   background: var(--panel-raised); border: 1px solid var(--border-subtle);
   border-radius: 16px; padding: 12px; margin-bottom: 9px;
 }
-/* Короткая подсветка карточки, к которой подмотали по тапу на бейдж-рекорд
-   (см. openDetailScreen scrollToExerciseId) — золотом под стать рекорду, гаснет
-   плавно, чтобы обозначить «вот это упражнение» и не отвлекать дальше. */
+/* Короткая подсветка карточки, к которой подмотали (тап по бейджу-рекорду или
+   переход по истории упражнения, см. openDetailScreen scrollToExerciseId) —
+   фиолетовым, в тон акценту и кнопкам навигации; гаснет плавно, чтобы обозначить
+   «вот это упражнение» и не отвлекать дальше. */
 .wd-ex-flash { animation: wd-ex-flash 1.6s ease; }
 @keyframes wd-ex-flash {
-  0%, 15% { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber-soft, rgba(245,190,80,0.28)); }
+  0%, 15% { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
   100%    { border-color: var(--border-subtle); box-shadow: 0 0 0 2px transparent; }
 }
 .wd-ex-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
@@ -1465,11 +1468,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .wd-ex-nav {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-subtle);
-}
-.wd-ex-nav-mid {
-  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-tertiary);
-  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .wd-ex-nav-btn {
   display: inline-flex; align-items: center; gap: 4px;
