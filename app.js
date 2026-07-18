@@ -5054,9 +5054,11 @@ function performMerge(userId, draggedWrap, targetWrap) {
   pinGroupOrderAtTarget(userId, group.id, targetId);
   _exGroupExpanded.add(group.id);
   renderExercisesList(exercisesSearch.value);
-  // Сразу предложить назвать новую группу — открываем её форму с фокусом на имени
-  // (единый способ правки группы: и создание, и последующее редактирование).
-  requestAnimationFrame(() => openGroupForm(group.id, true));
+  // Сразу предложить назвать новую группу — форму с фокусом на имени. Открываем
+  // СИНХРОННО (в стеке обработчика отпускания пальца): iOS поднимает клавиатуру
+  // только если focus() вызван в рамках пользовательского жеста — через rAF он
+  // оказывался вне жеста, и клавиатура не появлялась (текст выделялся впустую).
+  openGroupForm(group.id, true);
 }
 
 function endExDrag() {
@@ -5281,6 +5283,9 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
     + mistakesSection + differencesSection + extraSection + contraSection + refSection + tipSection;
   $("exd-body").innerHTML = mediaHtml +
     (body || `<p class="exd-empty">Техника и мышцы пока не заполнены.</p>`);
+  // К началу: тело карточки переиспользуется между упражнениями и сохранял бы
+  // прокрутку от предыдущего (открыл следующее — а ты уже в середине страницы).
+  $("exd-body").scrollTop = 0;
 
   goToScreen("exerciseDetail");
 }
@@ -6885,11 +6890,6 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
   // не искать глазами. rAF — дождаться раскладки после смены экрана; scrollIntoView
   // центрирует карточку в прокручиваемом теле детали.
   if (scrollToExerciseId) {
-    // Единая стартовая точка для плавного центрирования: тело деталей переиспользуется
-    // между открытиями и сохраняет прежний scrollTop. При переходе «вперёд» по истории
-    // упражнения он оказывался НИЖЕ цели — и карточка «падала» вверх рывком. Сбрасываем
-    // к началу, тогда smooth-скролл всегда идёт вниз (или остаётся), как при «назад».
-    body.scrollTop = 0;
     requestAnimationFrame(() => {
       const target = body.querySelector(`.wd-ex[data-ex-id="${scrollToExerciseId}"]`);
       if (target) {
@@ -6901,7 +6901,11 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
         const bodyRect = body.getBoundingClientRect();
         const tRect = target.getBoundingClientRect();
         const delta = (tRect.top - bodyRect.top) - (body.clientHeight - tRect.height) / 2;
-        body.scrollTo({ top: body.scrollTop + delta, behavior: "smooth" });
+        // МГНОВЕННО, без smooth: при переходе «вперёд» по истории цель далеко от
+        // текущей позиции, и длинный плавный скролл выглядел рваным («упражнение
+        // сверху, потом падает вниз»). Позиционируем сразу — а «вот оно» показывает
+        // короткая вспышка карточки.
+        body.scrollTop = body.scrollTop + delta;
         target.classList.add("wd-ex-flash");
         setTimeout(() => target.classList.remove("wd-ex-flash"), 1600);
       }

@@ -1878,9 +1878,10 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   scrollbar-width: none;   /* #5: без ползунка */
 }
 .exercises-scroll::-webkit-scrollbar { display: none; }
-/* Когда видна плавающая «Готово» — увеличиваем нижний отступ, чтобы кнопка не
-   перекрывала последние упражнения (высота пилюли + зазор). */
-body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc(96px + var(--safe-bottom)); }
+/* Когда видна плавающая «Готово» — увеличиваем нижний отступ ровно настолько,
+   чтобы кнопка не перекрывала последние упражнения (высота пилюли + небольшой
+   зазор), без лишней пустоты. */
+body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc(74px + var(--safe-bottom)); }
 
 .exercises-section-label {
   padding: 14px 6px 8px;
@@ -2042,7 +2043,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 
 /* Плавающая кнопка "Готово" для режима редактирования упражнений */
 .exercises-float-done {
-  position: fixed; bottom: calc(var(--safe-bottom) + 22px); left: 50%;
+  position: fixed; bottom: calc(var(--safe-bottom) + 14px); left: 50%;
   transform: translateX(-50%) translateY(80px);
   z-index: 60;
   padding: 13px 36px; border-radius: 24px;
