@@ -908,19 +908,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .rpe-btn.has-rpe { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
 
-/* Подсветка во время тренировки — тонким контуром (без заливки и без звезды,
-   чтобы не перегружать): зелёный = «больше прошлого раза», золотой = рекорд.
-   Ring через box-shadow, чтобы не конфликтовать с рамкой фокуса/отрицательного веса.
-   Всё под .progress-hl (класс на <body>) — единый рубильник PROGRESS_HL в app.js:
-   выключил флаг → класс снимается → цветовая подсветка гаснет одним движением. */
-.progress-hl .set-field.is-better, .progress-hl .rpe-btn.is-better { box-shadow: 0 0 0 1.5px rgba(52,211,153,0.75); }
-.progress-hl .rpe-btn.is-better { color: var(--green); }
-.progress-hl .set-field.is-record { box-shadow: 0 0 0 1.5px rgba(251,191,36,0.85); }
-/* Тень прошлого RPE в пустой кнопке усилия (как placeholder у веса/повторов).
-   Не под .progress-hl: это просто информация «сколько было в прошлый раз», её
-   оставляем даже при откате цветовой индикации. */
-.rpe-ghost { color: var(--text-tertiary); opacity: 0.75; font-weight: 700; }
-
 .set-done-btn {
   width: 40px; height: 40px; border-radius: 10px;
   background: var(--panel-raised); border: 1.5px solid var(--border-subtle);
@@ -1467,15 +1454,35 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   font-variant-numeric: tabular-nums;
 }
 .wd-cell.pr { background: rgba(251,191,36,0.10); border-color: rgba(251,191,36,0.32); color: var(--amber); }
-/* Зелёный (лёгкий оттенок) — «больше, чем в прошлый раз» (вес/повторы).
-   Под .progress-hl — тот же рубильник, что и для контурной подсветки. */
-.progress-hl .wd-cell.better { background: rgba(52,211,153,0.09); border-color: rgba(52,211,153,0.26); color: var(--green); }
 .wd-rpe { flex: 0.7; font-size: 14px; }
 .wd-rpe.lo  { background: var(--green-soft); border-color: rgba(52,211,153,0.20); color: var(--green); }
 .wd-rpe.mid { background: rgba(251,146,60,0.14); border-color: rgba(251,146,60,0.26); color: #fb923c; }
 .wd-rpe.hi  { background: var(--red-soft); border-color: rgba(248,113,113,0.22); color: var(--red); }
 .wd-rpe.none { color: var(--text-tertiary); }
 .wd-empty { padding: 6px 2px; color: var(--text-tertiary); font-size: 13px; }
+
+/* Навигация по истории упражнения — переход к прошлому/следующему выполнению. */
+.wd-ex-nav {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-subtle);
+}
+.wd-ex-nav-mid {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-tertiary);
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wd-ex-nav-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px; border-radius: 9px;
+  background: var(--panel-hi); border: 1px solid var(--border-subtle);
+  color: var(--accent-bright); font-size: 12.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer;
+  flex: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.wd-ex-nav-btn svg { width: 14px; height: 14px; flex: none; }
+.wd-ex-nav-btn:active { background: var(--accent-soft); border-color: var(--accent); }
+.wd-ex-nav-btn.disabled { color: var(--text-tertiary); opacity: 0.5; cursor: default; }
 
 /* Форма редактирования: те же крупные ячейки, но как поля ввода. */
 .wd-col-del { width: 30px; flex: none; }

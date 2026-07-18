@@ -32,47 +32,6 @@ function applySetToRecord(recs, exerciseId, s) {
   }
 }
 
-// ── Прогресс-подсветка ────────────────────────────────────────────────────
-// Зелёный = сделано больше, чем в прошлый раз (это упражнение), золото = рекорд.
-// Единый рубильник: false — вся фича гаснет (и JS-классы не вешаются, и CSS
-// становится инертным, т.к. снимается класс .progress-hl с <body>). Так фичу
-// можно откатить одной строкой, если решим, что визуально не зашло.
-const PROGRESS_HL = true;
-(function applyProgressHLFlag() {
-  if (document.body) document.body.classList.toggle("progress-hl", PROGRESS_HL);
-  else document.addEventListener("DOMContentLoaded", applyProgressHLFlag);
-})();
-
-// Сравнение подхода с соответствующим подходом прошлой тренировки. Вес может
-// быть отрицательным (упражнения с помощью — гравитрон и т.п.): ближе к нулю =
-// больше = лучше, поэтому обычный `>` работает и для них (-30 > -40), как и в
-// рекордах (см. applySetToRecord).
-function hlWeightBetter(cur, prev) {
-  return !!prev && (cur.weight || 0) !== 0 && prev.weight != null &&
-         cur.weight > prev.weight;
-}
-// Больше повторов — но только при НЕ меньшем весе: рост повторов на упавшем
-// весе не прогресс, а разгрузка.
-function hlRepsBetter(cur, prev) {
-  return !!prev && cur.reps > 0 && prev.reps > 0 &&
-         cur.reps > prev.reps && (cur.weight || 0) >= (prev.weight || 0);
-}
-// Легче далось: тот же вес, но усилие (RPE) ниже.
-function hlEffortBetter(cur, prev) {
-  return !!prev && cur.rpe > 0 && prev.rpe > 0 &&
-         (cur.weight || 0) === (prev.weight || 0) && cur.rpe < prev.rpe;
-}
-// Подход бьёт сохранённый рекорд по весу (для золотого контура во время
-// тренировки — рекорды обновляются только при завершении, так что сравниваем с
-// тем, что было ДО текущей тренировки). Первое в жизни выполнение упражнения
-// (рекорда ещё нет) золотом не помечаем — бить пока нечего, было бы шумно.
-function hlBeatsRecord(rec, s) {
-  if (!s || s.dropSet || !(s.reps > 0)) return false;
-  if (!rec || rec.maxWeight == null) return false;
-  return s.weight > rec.maxWeight ||
-         (s.weight === rec.maxWeight && s.reps > rec.repsAtMaxWeight);
-}
-
 Storage.configure({
   enabled: CONFIG.ENABLED,
   baseUrl: CONFIG.SUPABASE_URL,
@@ -948,14 +907,19 @@ const DATA = (() => {
       const history = this.getWorkoutHistory(userId);
       return history.find(w => w.type === "strength" && (w.exercises || []).some(e => e.exerciseId === exerciseId)) || null;
     },
-    // Ближайшая силовая тренировка с этим упражнением, начатая СТРОГО раньше
-    // beforeTs — «прошлый раз» для конкретной тренировки в истории (для зелёной
-    // подсветки прогресса). История отсортирована по убыванию startedAt, поэтому
-    // первое совпадение и есть ближайшее предыдущее.
-    getPrevWorkoutForExercise(userId, exerciseId, beforeTs) {
-      const history = this.getWorkoutHistory(userId);
-      return history.find(w => w.type === "strength" && w.startedAt < beforeTs &&
-        (w.exercises || []).some(e => e.exerciseId === exerciseId)) || null;
+    // Соседняя силовая тренировка с этим упражнением относительно момента refTs:
+    // dir="prev" — ближайшая раньше, dir="next" — ближайшая позже. Для перехода
+    // по истории конкретного упражнения из экрана деталей. История отсортирована
+    // по убыванию startedAt.
+    adjacentWorkoutForExercise(userId, exerciseId, refTs, dir) {
+      const hist = this.getWorkoutHistory(userId)
+        .filter(w => w.type === "strength" && (w.exercises || []).some(e => e.exerciseId === exerciseId));
+      if (dir === "prev") return hist.find(w => w.startedAt < refTs) || null;
+      // next: ближайшая ПОЗЖЕ — среди отсортированных по убыванию это последняя
+      // из тех, чей startedAt всё ещё больше refTs.
+      let cand = null;
+      for (const w of hist) { if (w.startedAt > refTs) cand = w; else break; }
+      return cand;
     },
 
     // Прогресс рабочего веса по упражнению во времени (раздел 9.2: график по тапу на упражнение).
@@ -3265,23 +3229,15 @@ function renderExerciseList() {
 
 // lastWorkout передаёт renderExerciseList (уже посчитан один раз на рендер);
 // если не передан (одиночный вызов), считаем тут.
-function renderSetsInBlock(block, ex, lastWorkout, rec) {
+function renderSetsInBlock(block, ex, lastWorkout) {
   const tbody = block.querySelector(".sets-body");
   tbody.innerHTML = "";
 
   if (lastWorkout === undefined) {
     lastWorkout = DATA.getLastWorkoutForExercise(DATA.getCurrentUser(), ex.exerciseId);
   }
-  // Рекорд — для подсветки «золотом» (без звезды, только контур во время
-  // тренировки). Считаем один раз на блок, если не передали.
-  if (rec === undefined) rec = DATA.getExerciseRecord(DATA.getCurrentUser(), ex.exerciseId);
   const lastExData  = lastWorkout ? lastWorkout.exercises.find(e => e.exerciseId === ex.exerciseId) : null;
   const lastSets    = lastExData  ? lastExData.sets.filter(s => s.done) : [];
-
-  // Зелёный контур = «сделал больше, чем в прошлый раз» (по этому подходу),
-  // золотой = новый рекорд (строго побит). Логика вынесена в hl*-хелперы —
-  // единый источник правды с историей; рекорд приоритетнее зелёного.
-  const isRecordSet = (s) => hlBeatsRecord(rec, s);
 
   // Нумерация — только у обычных подходов (дроп-сет и так понятен по отступу,
   // отдельный номер ему не нужен, см. .set-dropset-btn).
@@ -3295,11 +3251,6 @@ function renderSetsInBlock(block, ex, lastWorkout, rec) {
 
   ex.sets.forEach((set, sIdx) => {
     const prev = lastSets[sIdx];
-    // Подсветка по контуру: золото — рекорд, иначе зелёный — «больше прошлого».
-    const isRec        = !set.dropSet && isRecordSet(set);
-    const weightBetter = !set.dropSet && !isRec && hlWeightBetter(set, prev);
-    const repsBetter   = !set.dropSet && hlRepsBetter(set, prev);
-    const effortBetter = !set.dropSet && hlEffortBetter(set, prev);
     const wrap = document.createElement("div");
     wrap.className = "set-row-wrap" + (set.dropSet ? " set-row-wrap-drop" : "");
     const del = document.createElement("div");
@@ -3322,12 +3273,12 @@ function renderSetsInBlock(block, ex, lastWorkout, rec) {
       </div>
     ` : `
       <span class="set-num">${labels[sIdx]}</span>
-      <div class="set-field set-field-weight${(set.weight || 0) < 0 ? " negative" : ""}${isRec ? " is-record" : (weightBetter ? " is-better" : "")}">
+      <div class="set-field set-field-weight${(set.weight || 0) < 0 ? " negative" : ""}">
         <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.): чем ближе к нулю, тем лучше результат">±</button>
         <input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : "кг"}" value="${set.weight || ""}" step="0.5" ${prev ? 'class="has-prev"' : ""}>
       </div>
-      <div class="set-field${repsBetter ? " is-better" : ""}"><input type="number" inputmode="numeric" placeholder="${prev ? prev.reps : "повт"}" value="${set.reps || ""}" ${prev ? 'class="has-prev"' : ""}></div>
-      <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}${effortBetter ? " is-better" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe ? set.rpe : (prev && prev.rpe ? `<span class="rpe-ghost">${prev.rpe}</span>` : "—")}</button>
+      <div class="set-field"><input type="number" inputmode="numeric" placeholder="${prev ? prev.reps : "повт"}" value="${set.reps || ""}" ${prev ? 'class="has-prev"' : ""}></div>
+      <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe || "—"}</button>
       <button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
       </button>
@@ -3337,24 +3288,9 @@ function renderSetsInBlock(block, ex, lastWorkout, rec) {
     const weightInput = row.querySelectorAll("input")[0];
     const weightField = row.querySelector(".set-field-weight");
     const markNegative = () => weightField.classList.toggle("negative", (parseFloat(weightInput.value) || 0) < 0);
-    // Живое обновление контурной подсветки прямо во время ввода (без ре-рендера
-    // блока — иначе теряется фокус и «съедается» тап по соседнему полю). Рекорд
-    // и зелёный считаются по этому же подходу, кросс-строковых зависимостей нет.
-    const updateRowHL = () => {
-      if (set.dropSet) return;
-      const s  = ex.sets[sIdx];
-      const wf = row.querySelector(".set-field-weight");
-      const rf = row.querySelectorAll(".set-field")[1];
-      const rb = row.querySelector(".rpe-btn");
-      const rec2 = hlBeatsRecord(rec, s);
-      if (wf) { wf.classList.toggle("is-record", rec2); wf.classList.toggle("is-better", !rec2 && hlWeightBetter(s, prev)); }
-      if (rf) rf.classList.toggle("is-better", hlRepsBetter(s, prev));
-      if (rb) rb.classList.toggle("is-better", hlEffortBetter(s, prev));
-    };
     weightInput.addEventListener("change", () => {
       ex.sets[sIdx].weight = parseFloat(weightInput.value) || 0;
       markNegative();
-      updateRowHL();
       saveWorkoutState(); updateSummaryBar();
     });
     // ± — переключить знак веса. Нужно для упражнений с помощью (гравитрон
@@ -3366,7 +3302,6 @@ function renderSetsInBlock(block, ex, lastWorkout, rec) {
       weightInput.value = next || "";
       ex.sets[sIdx].weight = next;
       markNegative();
-      updateRowHL();
       saveWorkoutState(); updateSummaryBar();
     });
 
@@ -3374,7 +3309,6 @@ function renderSetsInBlock(block, ex, lastWorkout, rec) {
     const repsInput = row.querySelectorAll("input")[1];
     repsInput.addEventListener("change", () => {
       ex.sets[sIdx].reps = parseInt(repsInput.value) || 0;
-      updateRowHL();
       saveWorkoutState(); updateSummaryBar();
     });
 
@@ -6852,15 +6786,9 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
     // личным максимумом по весу для этого упражнения (вес может быть
     // отрицательным — упражнения с помощью, см. applySetToRecord).
     const isPrSet = (rec, s) => !!rec && rec.maxWeight != null && !s.dropSet && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight;
-    // Подходы ПРЕДЫДУЩЕЙ тренировки этого упражнения (для зелёной подсветки
-    // «больше, чем в прошлый раз»). История отсортирована по убыванию даты —
-    // берём первую тренировку старше просматриваемой с этим упражнением.
-    const histAll = DATA.getWorkoutHistory(userId);
-    const prevDoneSets = (exId) => {
-      const w = histAll.find(h => h.type === "strength" && h.startedAt < workout.startedAt && (h.exercises || []).some(e => e.exerciseId === exId));
-      const e = w && w.exercises.find(x => x.exerciseId === exId);
-      return e ? e.sets.filter(s => s.done) : [];
-    };
+    // Компактная дата для стрелок навигации по истории упражнения («12 июн»).
+    const shortDate = (ts) => new Date(ts).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+    const chevron = (dir) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${dir === "prev" ? '<polyline points="15 18 9 12 15 6"/>' : '<polyline points="9 18 15 12 9 6"/>'}</svg>`;
 
     body.innerHTML = `
       <div class="wd-statgrid">
@@ -6885,7 +6813,10 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
         // (см. .wd-set-drop), как и на экране тренировки.
         let mainNum = 0;
         const setLabels = doneSets.map(s => { if (s.dropSet) return ""; mainNum++; return `${mainNum}`; });
-        const prevSets = prevDoneSets(ex.exerciseId);
+        // Соседние тренировки с этим упражнением — для перехода по его истории
+        // (назад к прошлому выполнению / вперёд к следующему).
+        const prevW = DATA.adjacentWorkoutForExercise(userId, ex.exerciseId, workout.startedAt, "prev");
+        const nextW = DATA.adjacentWorkoutForExercise(userId, ex.exerciseId, workout.startedAt, "next");
         return `<div class="wd-ex" data-ex-id="${ex.exerciseId}">
           <div class="wd-ex-head">
             <span class="wd-ex-name">${escHtml(exDef.name)}</span>
@@ -6903,19 +6834,24 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
               ${doneSets.map((s, i) => {
                 const pr = !prShown && isPrSet(rec, s);
                 if (pr) prShown = true;
-                const p = prevSets[i];
-                // Зелёный (лёгкий) — «больше прошлого раза». У веса рекорд (золото)
-                // приоритетнее. Логика — те же hl*-хелперы, что и в тренировке.
-                const wBetter = !pr && !s.dropSet && hlWeightBetter(s, p);
-                const rBetter = !s.dropSet && hlRepsBetter(s, p);
                 return `<div class="wd-set${s.dropSet ? " wd-set-drop" : ""}">
                   <span class="wd-set-num">${setLabels[i]}</span>
-                  <div class="wd-cell${pr ? " pr" : (wBetter ? " better" : "")}">${pr ? "★ " : ""}${s.weight || "—"}</div>
-                  <div class="wd-cell${rBetter ? " better" : ""}">${s.reps}</div>
+                  <div class="wd-cell${pr ? " pr" : ""}">${pr ? "★ " : ""}${s.weight || "—"}</div>
+                  <div class="wd-cell">${s.reps}</div>
                   ${anyRpe ? `<div class="wd-cell wd-rpe ${s.rpe ? rpeClass(s.rpe) : "none"}">${s.rpe || "—"}</div>` : ""}
                 </div>`;
               }).join("")}
             </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
+          ${(prevW || nextW) ? `
+            <div class="wd-ex-nav">
+              ${prevW
+                ? `<button class="wd-ex-nav-btn" data-ex-id="${ex.exerciseId}" data-nav="prev" title="Прошлое выполнение — ${escHtml(fmtDate(prevW.startedAt))}">${chevron("prev")}<span>${escHtml(shortDate(prevW.startedAt))}</span></button>`
+                : `<span class="wd-ex-nav-btn disabled">${chevron("prev")}<span>—</span></span>`}
+              <span class="wd-ex-nav-mid">выполнение</span>
+              ${nextW
+                ? `<button class="wd-ex-nav-btn" data-ex-id="${ex.exerciseId}" data-nav="next" title="Следующее выполнение — ${escHtml(fmtDate(nextW.startedAt))}"><span>${escHtml(shortDate(nextW.startedAt))}</span>${chevron("next")}</button>`
+                : `<span class="wd-ex-nav-btn disabled"><span>—</span>${chevron("next")}</span>`}
+            </div>` : ""}
         </div>`;
       }).join("")}
       <button class="wd-add-btn" id="save-as-template-btn">
@@ -6925,6 +6861,17 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
     `;
 
     $("save-as-template-btn").addEventListener("click", () => openSaveAsTemplateModal(workout));
+
+    // Переход по истории конкретного упражнения: открываем деталь соседней
+    // тренировки, проматывая сразу к тому же упражнению (тот же экран возврата).
+    body.querySelectorAll(".wd-ex-nav-btn[data-nav]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const target = DATA.adjacentWorkoutForExercise(userId, btn.dataset.exId, workout.startedAt, btn.dataset.nav);
+        if (!target) return;
+        haptic();
+        openDetailScreen(target, returnScreen, btn.dataset.exId);
+      });
+    });
   }
 
   goToScreen("detail");
