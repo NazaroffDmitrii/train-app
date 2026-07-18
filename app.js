@@ -4365,6 +4365,11 @@ function renderCatTabs(userId, presentCats) {
     btn.addEventListener("click", () => {
       _exercisesCatFilter = btn.dataset.cat;
       renderExercisesList(exercisesSearch.value);
+      // Сброс прокрутки к началу новой вкладки (как в пикере, см. picker-tab).
+      // Иначе после прокрутки вниз по длинной вкладке короткая открывается
+      // «пустой» — вьюпорт остаётся под контентом (плюс баг пустого экрана
+      // при смене innerHTML на -webkit-overflow-scrolling во время инерции).
+      exercisesScroll.scrollTop = 0;
     });
   });
 }
@@ -6880,6 +6885,11 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
   // не искать глазами. rAF — дождаться раскладки после смены экрана; scrollIntoView
   // центрирует карточку в прокручиваемом теле детали.
   if (scrollToExerciseId) {
+    // Единая стартовая точка для плавного центрирования: тело деталей переиспользуется
+    // между открытиями и сохраняет прежний scrollTop. При переходе «вперёд» по истории
+    // упражнения он оказывался НИЖЕ цели — и карточка «падала» вверх рывком. Сбрасываем
+    // к началу, тогда smooth-скролл всегда идёт вниз (или остаётся), как при «назад».
+    body.scrollTop = 0;
     requestAnimationFrame(() => {
       const target = body.querySelector(`.wd-ex[data-ex-id="${scrollToExerciseId}"]`);
       if (target) {

@@ -1878,6 +1878,9 @@ body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-
   scrollbar-width: none;   /* #5: без ползунка */
 }
 .exercises-scroll::-webkit-scrollbar { display: none; }
+/* Когда видна плавающая «Готово» — увеличиваем нижний отступ, чтобы кнопка не
+   перекрывала последние упражнения (высота пилюли + зазор). */
+body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc(96px + var(--safe-bottom)); }
 
 .exercises-section-label {
   padding: 14px 6px 8px;
