@@ -908,6 +908,19 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .rpe-btn.has-rpe { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-bright); }
 
+/* Подсветка во время тренировки — тонким контуром (без заливки и без звезды,
+   чтобы не перегружать): зелёный = «больше прошлого раза», золотой = рекорд.
+   Ring через box-shadow, чтобы не конфликтовать с рамкой фокуса/отрицательного веса.
+   Всё под .progress-hl (класс на <body>) — единый рубильник PROGRESS_HL в app.js:
+   выключил флаг → класс снимается → цветовая подсветка гаснет одним движением. */
+.progress-hl .set-field.is-better, .progress-hl .rpe-btn.is-better { box-shadow: 0 0 0 1.5px rgba(52,211,153,0.75); }
+.progress-hl .rpe-btn.is-better { color: var(--green); }
+.progress-hl .set-field.is-record { box-shadow: 0 0 0 1.5px rgba(251,191,36,0.85); }
+/* Тень прошлого RPE в пустой кнопке усилия (как placeholder у веса/повторов).
+   Не под .progress-hl: это просто информация «сколько было в прошлый раз», её
+   оставляем даже при откате цветовой индикации. */
+.rpe-ghost { color: var(--text-tertiary); opacity: 0.75; font-weight: 700; }
+
 .set-done-btn {
   width: 40px; height: 40px; border-radius: 10px;
   background: var(--panel-raised); border: 1.5px solid var(--border-subtle);
@@ -1454,6 +1467,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   font-variant-numeric: tabular-nums;
 }
 .wd-cell.pr { background: rgba(251,191,36,0.10); border-color: rgba(251,191,36,0.32); color: var(--amber); }
+/* Зелёный (лёгкий оттенок) — «больше, чем в прошлый раз» (вес/повторы).
+   Под .progress-hl — тот же рубильник, что и для контурной подсветки. */
+.progress-hl .wd-cell.better { background: rgba(52,211,153,0.09); border-color: rgba(52,211,153,0.26); color: var(--green); }
 .wd-rpe { flex: 0.7; font-size: 14px; }
 .wd-rpe.lo  { background: var(--green-soft); border-color: rgba(52,211,153,0.20); color: var(--green); }
 .wd-rpe.mid { background: rgba(251,146,60,0.14); border-color: rgba(251,146,60,0.26); color: #fb923c; }
