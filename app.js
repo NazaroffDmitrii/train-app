@@ -5361,6 +5361,8 @@ function openMuscleDetailScreen(muscleId, returnScreen = "exercises", instant = 
   const m = DATA.refMuscles(userId).find(x => x.id === muscleId);
   if (!m) return;
   _msdReturnScreen = returnScreen;
+  _msdMuscleId = muscleId;
+  exitMuscleEdit();  // всегда открываем деталь в режиме просмотра
 
   $("msd-title").textContent = m.name;
   const color = DATA.getCategoryColor(userId, m.group);
@@ -5398,10 +5400,100 @@ function openMuscleDetailScreen(muscleId, returnScreen = "exercises", instant = 
   const editBtn = $("msd-edit-btn");
   const canEdit = refCanEdit(m);
   editBtn.style.display = canEdit ? "" : "none";
-  editBtn.onclick = () => openMuscleForm(m, () => openMuscleDetailScreen(muscleId, _msdReturnScreen));
+  editBtn.onclick = enterMuscleEdit;
 
   goToScreen("muscleDetail", { instant });
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Inline-редактирование мышцы прямо на её странице-детали — тот же приём, что и
+   у упражнения (см. enterExerciseEdit): карандаш в шапке симметрично «назад»,
+   заголовок → поле, тело → поля формы мышцы, футер Отмена/Сохранить только в
+   этом режиме. Сохранение — тот же refSaveMuscle (own-оверлей / общий у админа),
+   что и старая модалка openMuscleForm.
+   ══════════════════════════════════════════════════════════════════════════ */
+let _msdEditing = false;
+let _msdEditCtx = null;
+let _msdMuscleId = null;
+
+function exitMuscleEdit() {
+  _msdEditing = false;
+  _msdEditCtx = null;
+  const ef = $("msd-edit-footer"); if (ef) ef.style.display = "none";
+  const vf = $("msd-view-footer"); if (vf) vf.style.display = "";
+  const eb = $("msd-edit-btn");    if (eb) eb.style.display = "";
+}
+
+function enterMuscleEdit() {
+  if (_msdEditing) return;
+  const userId = DATA.getCurrentUser();
+  const m = DATA.refMuscles(userId).find(x => x.id === _msdMuscleId);
+  if (!m) return;
+  _msdEditing = true;
+  const groups = DATA.atlasGroupRows().map(g => g.name);
+  const allMoves = DATA.refMovements(userId).map(mv => mv.name);
+  const curMoves = [...(DATA.refMovesByMuscle(userId)[m.name] || [])];
+  let bundles = [...(m.bundles || [])];
+
+  $("msd-title").innerHTML = `<input class="exd-title-input" id="msd-e-name" type="text" value="${escHtml(m.name)}" placeholder="Название">`;
+
+  $("msd-body").innerHTML = `
+    <div class="ex-form-field"><label class="ex-form-label">Группа</label><div class="ex-form-dd" id="mse-group"></div></div>
+    <div class="ex-form-field"><button type="button" class="ref-toggle" id="mse-visible" aria-pressed="${m.visible ? "true" : "false"}"><span class="ref-toggle-dot"></span>Поверхностная — рост виден внешне</button></div>
+    <div class="ex-form-field"><label class="ex-form-label">Пучки</label>
+      <div class="ref-chips-edit" id="mse-bundles"></div>
+      <input class="ex-form-input" id="mse-bundle-add" type="text" placeholder="+ добавить пучок, Enter"></div>
+    <div class="ex-form-field"><label class="ex-form-label">Участвует в движениях</label><div class="ex-form-dd" id="mse-moves"></div></div>`;
+  $("msd-body").scrollTop = 0;
+
+  const groupSel = refDropdownSelect($("mse-group"), groups, [m.group], false);
+  const moveSel = refDropdownSelect($("mse-moves"), allMoves, curMoves, true);
+  const visBtn = $("mse-visible");
+  visBtn.addEventListener("click", () => visBtn.setAttribute("aria-pressed", visBtn.getAttribute("aria-pressed") === "true" ? "false" : "true"));
+
+  const bundlesEl = $("mse-bundles");
+  const renderBundles = () => {
+    bundlesEl.innerHTML = bundles.length ? bundles.map((b, i) =>
+      `<span class="ref-chip-edit">${escHtml(b)}<button type="button" data-i="${i}">×</button></span>`).join("") : `<span class="ref-detail-empty">Пучков нет</span>`;
+    bundlesEl.querySelectorAll("button[data-i]").forEach(btn => btn.addEventListener("click", () => { bundles.splice(+btn.dataset.i, 1); renderBundles(); }));
+  };
+  renderBundles();
+  const bundleAdd = $("mse-bundle-add");
+  bundleAdd.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); const v = bundleAdd.value.trim(); if (v) { bundles.push(v); bundleAdd.value = ""; renderBundles(); } }
+  });
+
+  _msdEditCtx = { groupSel, moveSel, visBtn, getBundles: () => bundles };
+  $("msd-edit-save").disabled = false;
+  $("msd-edit-btn").style.display = "none";
+  $("msd-view-footer").style.display = "none";
+  $("msd-edit-footer").style.display = "";
+}
+
+async function saveMuscleEdit() {
+  if (!_msdEditing || !_msdEditCtx) return;
+  const userId = DATA.getCurrentUser();
+  const m = DATA.refMuscles(userId).find(x => x.id === _msdMuscleId);
+  if (!m) return;
+  const { groupSel, moveSel, visBtn, getBundles } = _msdEditCtx;
+  const name = $("msd-e-name").value.trim();
+  if (!name) { $("msd-e-name").focus(); showToast("Введи название мышцы"); return; }
+  const groups = DATA.atlasGroupRows().map(g => g.name);
+  const data = { name, group: groupSel.getOne() || groups[0], visible: visBtn.getAttribute("aria-pressed") === "true", bundles: getBundles(), movements: moveSel.get() };
+  const saveBtn = $("msd-edit-save");
+  saveBtn.disabled = true;
+  try {
+    await refSaveMuscle(m, data);
+    showToast("Мышца обновлена");
+    openMuscleDetailScreen(_msdMuscleId, _msdReturnScreen, true);  // сам вызовет exitMuscleEdit()
+  } catch (err) {
+    saveBtn.disabled = false;
+    showToast("Ошибка сохранения: " + (err && err.message || err));
+  }
+}
+
+$("msd-edit-save").addEventListener("click", saveMuscleEdit);
+$("msd-edit-cancel").addEventListener("click", () => openMuscleDetailScreen(_msdMuscleId, _msdReturnScreen, true));
 
 // Возврат из карточки мышцы. Обычно это имя экрана; но если мышца открыта ИЗ
 // шторки-справочника, _msdReturnScreen — функция, которая ПОКАЗЫВАЕТ обратно ту

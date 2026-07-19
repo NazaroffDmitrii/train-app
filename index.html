@@ -3397,14 +3397,17 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
         <div class="detail-screen-title" id="msd-title">Мышца</div>
         <div class="detail-screen-meta" id="msd-meta"></div>
       </div>
+      <button class="btn-chip" id="msd-edit-btn" title="Редактировать">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
     </div>
     <div class="detail-screen-body" id="msd-body"></div>
-    <div class="exd-footer">
-      <button class="btn-chip exd-footer-edit" id="msd-edit-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-        Изменить
-      </button>
+    <div class="exd-footer" id="msd-view-footer">
       <button class="btn-chip primary exd-footer-edit" id="msd-exercises-btn">Упражнения с этой мышцей</button>
+    </div>
+    <div class="exd-footer" id="msd-edit-footer" style="display:none">
+      <button class="btn-chip exd-footer-edit" id="msd-edit-cancel">Отмена</button>
+      <button class="btn-chip primary exd-footer-edit" id="msd-edit-save">Сохранить</button>
     </div>
   </section>
 
