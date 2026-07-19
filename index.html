@@ -1443,6 +1443,15 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .wd-ex-meta { font-size: 11.5px; color: var(--text-tertiary); flex: none; }
 .wd-ex-meta.pr { color: var(--amber); font-weight: 700; }
 .wd-ex-star { font-size: 11px; font-weight: 700; color: var(--amber); flex: none; }
+.wd-ex-name.orphan { color: var(--text-tertiary); font-style: italic; font-weight: 600; }
+.wd-ex-remap {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; margin-top: 8px; padding: 10px;
+  background: var(--accent-soft); border: 1px solid transparent;
+  border-radius: 10px; color: var(--accent-bright); font-size: 13px; font-weight: 600;
+}
+.wd-ex-remap svg { width: 15px; height: 15px; flex: none; }
+.wd-ex-remap:active { transform: scale(0.99); }
 
 .wd-cols { display: flex; align-items: center; gap: 7px; padding-bottom: 6px; }
 .wd-col-idx { width: 16px; flex: none; text-align: center; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--text-tertiary); }

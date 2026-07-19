@@ -5249,10 +5249,10 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
         <div class="exd-mistake"><span class="exd-mistake-dot"></span><span>${escHtml(m)}</span></div>`).join("")}`
     : "";
 
-  // Чем отличается / когда выбирать.
+  // Отличия от похожих / когда выбирать.
   const differences = ((a && a.differences) || "").trim();
   const differencesSection = differences
-    ? `<div class="exd-section-label">Чем отличается</div><p class="exd-note">${escHtml(differences)}</p>`
+    ? `<div class="exd-section-label">Отличия от похожих</div><p class="exd-note">${escHtml(differences)}</p>`
     : "";
 
   // Биомех-нюанс.
@@ -6755,6 +6755,10 @@ function openExerciseForm(exerciseId) {
         <textarea class="ex-form-input ex-form-textarea" id="ef-tech" rows="4" placeholder="Один шаг — одна строка">${escHtml(technique)}</textarea></div>
       <div class="ex-form-field"><label class="ex-form-label">Частые ошибки (по одной на строку)</label>
         <textarea class="ex-form-input ex-form-textarea" id="ef-mistakes" rows="3">${escHtml(mistakes)}</textarea></div>
+      <div class="ex-form-field"><label class="ex-form-label">Отличия от похожих</label>
+        <textarea class="ex-form-input ex-form-textarea" id="ef-diff" rows="3">${escHtml(a.differences || "")}</textarea></div>
+      <div class="ex-form-field"><label class="ex-form-label">Нюанс</label>
+        <textarea class="ex-form-input ex-form-textarea" id="ef-extra" rows="3">${escHtml(a.extra || "")}</textarea></div>
       <div class="ex-form-field"><label class="ex-form-label">Противопоказания</label>
         <textarea class="ex-form-input ex-form-textarea" id="ef-contra" rows="2">${escHtml(a.contraindications || "")}</textarea></div>
       <div class="ex-form-field"><label class="ex-form-label">Совет</label>
@@ -6801,6 +6805,8 @@ function openExerciseForm(exerciseId) {
       categories: moveSel.get(),
       technique: bd.querySelector("#ef-tech").value.trim(),
       mistakes: bd.querySelector("#ef-mistakes").value.split("\n").map(s => s.trim()).filter(Boolean),
+      differences: bd.querySelector("#ef-diff").value.trim(),
+      extra: bd.querySelector("#ef-extra").value.trim(),
       contraindications: bd.querySelector("#ef-contra").value.trim(),
       referenceUrl: bd.querySelector("#ef-ref").value.trim(),
     });
@@ -6894,6 +6900,10 @@ function enterExerciseEdit() {
       <textarea class="ex-form-input ex-form-textarea" id="exe-tech" rows="5" placeholder="Один шаг — одна строка">${escHtml(technique)}</textarea></div>
     <div class="ex-form-field"><label class="ex-form-label">Частые ошибки (по одной на строку)</label>
       <textarea class="ex-form-input ex-form-textarea" id="exe-mistakes" rows="3">${escHtml(mistakes)}</textarea></div>
+    <div class="ex-form-field"><label class="ex-form-label">Отличия от похожих</label>
+      <textarea class="ex-form-input ex-form-textarea" id="exe-diff" rows="3">${escHtml(a.differences || "")}</textarea></div>
+    <div class="ex-form-field"><label class="ex-form-label">Нюанс</label>
+      <textarea class="ex-form-input ex-form-textarea" id="exe-extra" rows="3">${escHtml(a.extra || "")}</textarea></div>
     <div class="ex-form-field"><label class="ex-form-label">Противопоказания</label>
       <textarea class="ex-form-input ex-form-textarea" id="exe-contra" rows="2">${escHtml(a.contraindications || "")}</textarea></div>
     <div class="ex-form-field"><label class="ex-form-label">Совет</label>
@@ -6940,6 +6950,8 @@ function saveExerciseEdit() {
     categories: moveSel.get(),
     technique: $("exe-tech").value.trim(),
     mistakes: $("exe-mistakes").value.split("\n").map(s => s.trim()).filter(Boolean),
+    differences: $("exe-diff").value.trim(),
+    extra: $("exe-extra").value.trim(),
     contraindications: $("exe-contra").value.trim(),
     referenceUrl: $("exe-ref").value.trim(),
   });
@@ -7035,7 +7047,9 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
         <div class="wd-stat"><div class="wd-stat-val">${workout.durationSec ? statTimeHTML(workout.durationSec) : dash}</div><div class="wd-stat-label">Время</div></div>
       </div>
       ${allEx.map(ex => {
-        const exDef    = exercises.find(e => e.id === ex.exerciseId) || { name: ex.name || "Упражнение недоступно" };
+        const known    = exercises.find(e => e.id === ex.exerciseId);
+        const exDef    = known || { name: ex.name || "Упражнение недоступно" };
+        const isOrphan = !known;   // упражнение удалено из базы — есть только в истории
         const doneSets = ex.sets.filter(s => s.done);
         const rec      = records[ex.exerciseId];
         const exVol    = doneSets.reduce((v, s) => v + setVolume(s), 0);
@@ -7056,7 +7070,7 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
         const nextW = DATA.adjacentWorkoutForExercise(userId, ex.exerciseId, workout.startedAt, "next");
         return `<div class="wd-ex" data-ex-id="${ex.exerciseId}">
           <div class="wd-ex-head">
-            <span class="wd-ex-name">${escHtml(exDef.name)}</span>
+            <span class="wd-ex-name${isOrphan ? " orphan" : ""}">${escHtml(exDef.name)}</span>
             ${doneSets.length ? `<span class="wd-ex-meta${volPr ? " pr" : ""}">${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
             ${hasPr ? `<span class="wd-ex-star" title="Личный рекорд">★</span>` : ""}
           </div>
@@ -7079,6 +7093,9 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
                 </div>`;
               }).join("")}
             </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
+          ${isOrphan ? `<button class="wd-ex-remap" data-remap-id="${escHtml(ex.exerciseId)}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Заменить упражнение</button>` : ""}
           ${(prevW || nextW) ? `
             <div class="wd-ex-nav">
               ${prevW
@@ -7097,6 +7114,27 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
     `;
 
     $("save-as-template-btn").addEventListener("click", () => openSaveAsTemplateModal(workout));
+
+    // Замена «осиротевшего» упражнения (удалено из базы — в истории висит как
+    // «Упражнение недоступно», не попадает в статистику). Пикер базы → глобальный
+    // remapExercise: перепривязывает ВСЕ вхождения этого id в истории/шаблонах и
+    // пересчитывает рекорды, чтобы записи наконец учлись в статистике.
+    body.querySelectorAll(".wd-ex-remap[data-remap-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const oldId = btn.dataset.remapId;
+        openExercisePicker(newId => {
+          const n = DATA.remapExercise(userId, oldId, newId);
+          if (n) {
+            SyncQueue.push("exercise:remap", { from: oldId, to: newId });
+            SyncQueue.push("user:update", {});   // рекорды пересчитаны
+            showToast("Упражнение заменено — записи учтены в статистике");
+            renderHistory(userId);
+            const updated = DATA.getWorkoutHistory(userId).find(w => w.id === workout.id) || workout;
+            openDetailScreen(updated, _detailReturnScreen);
+          }
+        }, null);
+      });
+    });
 
     // Переход по истории конкретного упражнения: открываем деталь соседней
     // тренировки, проматывая сразу к тому же упражнению (тот же экран возврата).
