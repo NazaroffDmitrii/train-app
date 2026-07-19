@@ -2052,6 +2052,14 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   width: 18px; height: 18px; border-radius: 50%; font-size: 15px; line-height: 1;
   background: rgba(255,255,255,0.08); color: var(--text-secondary);
 }
+/* Чип роли с выбором пучка (головки) — метка кликабельна, каретка-подсказка */
+.ex-form-dd .role-chip .role-chip-label { display: inline-flex; align-items: center; }
+.ex-form-dd .role-chip.has-bundles .role-chip-label { cursor: pointer; }
+.ex-form-dd .role-chip-caret { margin-left: 4px; font-size: 13px; line-height: 1; opacity: 0.75; }
+.ex-form-dd .role-bundle-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-tertiary); padding: 4px 6px 6px;
+}
 .modal.modal-form { align-items: stretch; text-align: left; gap: 14px; }
 .modal.modal-form { overflow-x: hidden; }
 .modal.modal-form.modal-scroll { max-width: min(380px, calc(100vw - 32px)); max-height: 84vh; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }

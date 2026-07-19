@@ -6535,6 +6535,88 @@ function refDropdownSelect(container, options, selected, multi) {
   return { get: () => [...sel], getOne: () => sel[0] || "" };
 }
 
+// Селектор рабочих мышц для роли (целевые/синергисты/стабилизаторы) с выбором
+// ПУЧКА (головки), когда у мышцы он есть. muscles: [{name, bundles:[…]}].
+// selected/get: [{muscle, bundle}] — bundle "" означает «вся мышца».
+// Как refDropdownSelect (multi), но каждый выбранный чип с пучками кликабелен:
+// открывает панель выбора пучка (Вся мышца / конкретный пучок) под списком.
+function roleMuscleSelect(container, muscles, selected) {
+  const byName = {}; muscles.forEach(m => { byName[m.name] = m.bundles || []; });
+  let sel = (selected || []).map(o => ({ muscle: o.muscle, bundle: o.bundle || "" }));
+  let addOpen = false;
+  let bundleFor = null;   // имя мышцы, для которой открыт выбор пучка
+
+  const onDocPointer = (e) => {
+    if (!document.body.contains(container)) { document.removeEventListener("pointerdown", onDocPointer, true); return; }
+    if ((addOpen || bundleFor) && !container.contains(e.target)) { addOpen = false; bundleFor = null; render(); }
+  };
+  document.addEventListener("pointerdown", onDocPointer, true);
+
+  const render = () => {
+    const chosen = new Set(sel.map(o => o.muscle));
+    const rest = muscles.map(m => m.name).filter(n => !chosen.has(n));
+    let html = "";
+    if (sel.length) {
+      html += `<div class="ef-dd-chips">` + sel.map(o => {
+        const has = (byName[o.muscle] || []).length > 0;
+        const label = o.bundle ? `${o.muscle} · ${o.bundle}` : o.muscle;
+        return `<span class="ef-dd-chip role-chip${has ? " has-bundles" : ""}" data-m="${escHtml(o.muscle)}">
+          <span class="role-chip-label">${escHtml(label)}${has ? `<span class="role-chip-caret">⌄</span>` : ""}</span>
+          <button type="button" class="ef-dd-x" aria-label="Убрать">×</button>
+        </span>`;
+      }).join("") + `</div>`;
+    }
+    if (bundleFor && (byName[bundleFor] || []).length) {
+      const cur = (sel.find(o => o.muscle === bundleFor) || {}).bundle || "";
+      html += `<div class="ef-dd-panel role-bundle-panel">
+        <div class="role-bundle-title">Пучок · ${escHtml(bundleFor)}</div>
+        <button type="button" class="ef-dd-opt${!cur ? " sel" : ""}" data-b="">Вся мышца</button>
+        ${(byName[bundleFor]).map(b => `<button type="button" class="ef-dd-opt${cur === b ? " sel" : ""}" data-b="${escHtml(b)}">${escHtml(b)}</button>`).join("")}
+      </div>`;
+    }
+    if (rest.length) {
+      html += `<div class="ef-dd-field${addOpen ? " open" : ""}">
+        <button type="button" class="ef-dd-trigger placeholder"><span class="ef-dd-trigger-label">＋ добавить…</span><span class="ef-dd-caret">⌄</span></button>
+        ${addOpen ? `<div class="ef-dd-panel">${rest.map(n => `<button type="button" class="ef-dd-opt" data-add="${escHtml(n)}">${escHtml(n)}</button>`).join("")}</div>` : ""}
+      </div>`;
+    }
+    container.innerHTML = html;
+
+    const trig = container.querySelector(".ef-dd-trigger");
+    if (trig) trig.addEventListener("click", e => { e.stopPropagation(); addOpen = !addOpen; bundleFor = null; render(); });
+    container.querySelectorAll(".ef-dd-opt[data-add]").forEach(opt => opt.addEventListener("click", e => {
+      e.stopPropagation();
+      const n = opt.dataset.add;
+      if (!sel.some(o => o.muscle === n)) sel.push({ muscle: n, bundle: "" });
+      addOpen = false;
+      bundleFor = (byName[n] || []).length ? n : null;   // есть пучки — сразу предложить выбор
+      render();
+    }));
+    container.querySelectorAll(".role-chip .ef-dd-x").forEach(x => x.addEventListener("click", e => {
+      e.stopPropagation();
+      const m = x.closest(".role-chip").dataset.m;
+      sel = sel.filter(o => o.muscle !== m);
+      if (bundleFor === m) bundleFor = null;
+      render();
+    }));
+    container.querySelectorAll(".role-chip.has-bundles .role-chip-label").forEach(lbl => lbl.addEventListener("click", e => {
+      e.stopPropagation();
+      const m = lbl.closest(".role-chip").dataset.m;
+      bundleFor = bundleFor === m ? null : m;
+      addOpen = false;
+      render();
+    }));
+    container.querySelectorAll(".role-bundle-panel .ef-dd-opt").forEach(opt => opt.addEventListener("click", e => {
+      e.stopPropagation();
+      const o = sel.find(x => x.muscle === bundleFor); if (o) o.bundle = opt.dataset.b;
+      bundleFor = null;
+      render();
+    }));
+  };
+  render();
+  return { get: () => sel.map(o => ({ muscle: o.muscle, bundle: o.bundle || "" })) };
+}
+
 // Автодополнение поверх обычного текстового поля (свободный ввод + подсказки
 // по уже существующим значениям) — используется полем «Группа» в форме
 // упражнения. Нативный <input list>/<datalist> не годится: WebKit (Safari,
@@ -6798,11 +6880,12 @@ function openExerciseForm(exerciseId) {
 
   // Тип — две равные кнопки (два столбца); остальное — выпадающие списки.
   const typeSel  = refChipSelect(bd.querySelector("#ef-type"), ["Силовое", "Бег"], [ex && ex.type === "run" ? "Бег" : "Силовое"], false);
+  const muscleObjs = DATA.refMuscles(userId);
   const catSel   = refDropdownSelect(bd.querySelector("#ef-cat"), cats, [ex ? ex.cat : (cats[0] || "Ноги")], false);
   const levelSel = refDropdownSelect(bd.querySelector("#ef-level"), LEVELS, curLevel ? [curLevel] : [], false);
-  const targetSel = refDropdownSelect(bd.querySelector("#ef-target"), muscleNames, roleNames(a.target), true);
-  const synSel    = refDropdownSelect(bd.querySelector("#ef-syn"), muscleNames, roleNames(a.synergist), true);
-  const stabSel   = refDropdownSelect(bd.querySelector("#ef-stab"), muscleNames, roleNames(a.stabilizer), true);
+  const targetSel = roleMuscleSelect(bd.querySelector("#ef-target"), muscleObjs, a.target || []);
+  const synSel    = roleMuscleSelect(bd.querySelector("#ef-syn"), muscleObjs, a.synergist || []);
+  const stabSel   = roleMuscleSelect(bd.querySelector("#ef-stab"), muscleObjs, a.stabilizer || []);
   const moveSel   = refDropdownSelect(bd.querySelector("#ef-moves"), moveNames, a.categories || [], true);
   wireComboSuggest(bd.querySelector("#ef-group"), bd.querySelector("#ef-group-panel"), exGroups.map(g => g.name));
 
@@ -6821,9 +6904,9 @@ function openExerciseForm(exerciseId) {
     const atlas = Object.assign((ex && ex.atlas) ? JSON.parse(JSON.stringify(ex.atlas)) : {}, {
       equipment: bd.querySelector("#ef-equip").value.trim(),
       level: levelSel.getOne() || "",
-      target:     toRoles(targetSel.get(), a.target),
-      synergist:  toRoles(synSel.get(), a.synergist),
-      stabilizer: toRoles(stabSel.get(), a.stabilizer),
+      target:     targetSel.get(),
+      synergist:  synSel.get(),
+      stabilizer: stabSel.get(),
       categories: moveSel.get(),
       technique: bd.querySelector("#ef-tech").value.trim(),
       mistakes: bd.querySelector("#ef-mistakes").value.split("\n").map(s => s.trim()).filter(Boolean),
@@ -6936,12 +7019,13 @@ function enterExerciseEdit() {
       <input class="ex-form-input" id="exe-ref" type="url" inputmode="url" placeholder="https://…" value="${escHtml(a.referenceUrl || "")}"></div>`;
   $("exd-body").scrollTop = 0;
 
+  const muscleObjs = DATA.refMuscles(userId);
   const typeSel   = refChipSelect($("exe-type"), ["Силовое", "Бег"], [ex.type === "run" ? "Бег" : "Силовое"], false);
   const catSel    = refDropdownSelect($("exe-cat"), cats, [ex.cat], false);
   const levelSel  = refDropdownSelect($("exe-level"), LEVELS, curLevel ? [curLevel] : [], false);
-  const targetSel = refDropdownSelect($("exe-target"), muscleNames, roleNames(a.target), true);
-  const synSel    = refDropdownSelect($("exe-syn"), muscleNames, roleNames(a.synergist), true);
-  const stabSel   = refDropdownSelect($("exe-stab"), muscleNames, roleNames(a.stabilizer), true);
+  const targetSel = roleMuscleSelect($("exe-target"), muscleObjs, a.target || []);
+  const synSel    = roleMuscleSelect($("exe-syn"), muscleObjs, a.synergist || []);
+  const stabSel   = roleMuscleSelect($("exe-stab"), muscleObjs, a.stabilizer || []);
   const moveSel   = refDropdownSelect($("exe-moves"), moveNames, a.categories || [], true);
   wireComboSuggest($("exe-group"), $("exe-group-panel"), exGroups.map(g => g.name));
 
@@ -6966,9 +7050,9 @@ function saveExerciseEdit() {
   const atlas = Object.assign(ex.atlas ? JSON.parse(JSON.stringify(ex.atlas)) : {}, {
     equipment: $("exe-equip").value.trim(),
     level: levelSel.getOne() || "",
-    target:     toRoles(targetSel.get(), a.target),
-    synergist:  toRoles(synSel.get(), a.synergist),
-    stabilizer: toRoles(stabSel.get(), a.stabilizer),
+    target:     targetSel.get(),
+    synergist:  synSel.get(),
+    stabilizer: stabSel.get(),
     categories: moveSel.get(),
     technique: $("exe-tech").value.trim(),
     mistakes: $("exe-mistakes").value.split("\n").map(s => s.trim()).filter(Boolean),
