@@ -768,6 +768,16 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   z-index: 6; box-shadow: 0 2px 8px rgba(0,0,0,0.5);
 }
 .ex-del-badge svg { width: 13px; height: 13px; }
+/* Замена упражнения — рядом с крестиком, виден только в режиме редактирования */
+.ex-swap-badge {
+  position: absolute; top: 8px; right: 40px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: none; align-items: center; justify-content: center;
+  z-index: 6; box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+.ex-swap-badge svg { width: 14px; height: 14px; }
+.workout-scroll.ex-editing .ex-swap-badge { display: flex; }
 
 /* В режиме перестановки оставляем нативный вертикальный скролл по блоку
    (touch-action не блокируем) — перетаскивание включается коротким hold,

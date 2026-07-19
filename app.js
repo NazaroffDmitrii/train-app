@@ -2993,6 +2993,7 @@ function wireExBlockGestures(block, ex) {
   const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
   const canStart = (target) => {
     if (target.closest(".ex-del-badge")) return false;     // крестик — отдаём клику
+    if (target.closest(".ex-swap-badge")) return false;    // замена — отдаём клику
     // вне режима не мешаем вводу, кнопкам, свайпу подхода и тапу по названию
     if (!_exEdit && target.closest("input, textarea, button, .set-row, .ex-block-name")) return false;
     return true;
@@ -3098,6 +3099,9 @@ function renderExerciseList() {
       <button class="ex-del-badge" title="Удалить упражнение" aria-label="Удалить упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
+      <button class="ex-swap-badge" title="Заменить упражнение" aria-label="Заменить упражнение">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      </button>
       <div class="ex-block-header">
         <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
         ${prChip}
@@ -3150,6 +3154,24 @@ function renderExerciseList() {
           if (!_workout.exercises.length) exitExEditMode();
         }
       });
+    });
+
+    // Замена упражнения (в режиме редактирования, рядом с крестиком) — ТОЛЬКО в
+    // этой тренировке: меняем exerciseId/имя, подходы (вес/повторы) сохраняются.
+    // В правке истории коммитится по «Сохранить» (там пересчитываются рекорды),
+    // в живой тренировке — уходит в активный черновик через saveWorkoutState.
+    block.querySelector(".ex-swap-badge").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openExercisePicker(newId => {
+        if (!newId || newId === ex.exerciseId) return;
+        const newEx = DATA.getVisibleExercises(userId).find(x => x.id === newId);
+        ex.exerciseId = newId;
+        if (newEx) ex.name = newEx.name;
+        saveWorkoutState();
+        renderExerciseList();     // сбрасывает режим правки и перерисовывает
+        updateSummaryBar();
+        showToast("Упражнение заменено");
+      }, ex.exerciseId);
     });
 
     // Зажатие (long-press) → режим перестановки; в нём блок тащится вверх/вниз.
