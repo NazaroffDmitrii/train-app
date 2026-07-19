@@ -1373,6 +1373,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .detail-screen-icon svg { width: 18px; height: 18px; }
 .detail-screen-title { font-size: 18px; font-weight: 700; }
 .detail-screen-meta { font-size: 13px; color: var(--text-tertiary); }
+.exd-title-input {
+  width: 100%; font-size: 18px; font-weight: 700; color: var(--text-primary);
+  background: var(--panel-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 6px 10px; font-family: inherit;
+}
+.exd-title-input:focus { border-color: var(--accent); outline: none; }
 .detail-screen-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 20px calc(24px + var(--safe-bottom)); }
 
 .detail-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
@@ -3370,8 +3376,15 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
         <div class="detail-screen-title" id="exd-title">Упражнение</div>
         <div class="detail-screen-meta" id="exd-meta"></div>
       </div>
+      <button class="btn-chip" id="exd-edit-btn" title="Редактировать">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
     </div>
     <div class="detail-screen-body" id="exd-body"></div>
+    <div class="exd-footer" id="exd-edit-footer" style="display:none">
+      <button class="btn-chip exd-footer-edit" id="exd-edit-cancel">Отмена</button>
+      <button class="btn-chip primary exd-footer-edit" id="exd-edit-save">Сохранить</button>
+    </div>
   </section>
 
   <!-- ===== ЭКРАН: деталь мышцы (анатомия) — открывается только тапом по мышце ===== -->

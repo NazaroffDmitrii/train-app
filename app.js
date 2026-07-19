@@ -5168,6 +5168,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   if (!ex) return;
   _detailExerciseId = exerciseId;
   _exdReturnScreen = returnScreen;
+  exitExerciseEdit();  // всегда открываем деталь в режиме просмотра, не редактирования
 
   const color = DATA.getCategoryColor(userId, ex.cat);
   $("exd-title").textContent = ex.name;
@@ -6734,6 +6735,140 @@ function openExerciseForm(exerciseId) {
     if (savedId && SCREENS.exerciseDetail.classList.contains("active")) openExerciseDetail(savedId, _exdReturnScreen);
   });
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Inline-редактирование упражнения ПРЯМО на его странице-детали (карандаш в
+   шапке, симметрично стрелке «назад»). В отличие от модалки openExerciseForm
+   (её открывает свайп вправо в списке), здесь редактируем ту же страницу в её
+   же формате: заголовок становится полем ввода, тело — набором полей с теми же
+   разделами, что и в просмотре. Save/Cancel — в футере, который виден только в
+   этом режиме. Сохранение — тот же own-оверлей (copy-on-write), что и в модалке.
+   ══════════════════════════════════════════════════════════════════════════ */
+let _exdEditing = false;
+let _exdEditCtx = null;
+
+// Вернуть страницу-деталь в режим просмотра (спрятать футер, показать карандаш).
+// Идемпотентно — безопасно звать из openExerciseDetail при каждом открытии.
+function exitExerciseEdit() {
+  _exdEditing = false;
+  _exdEditCtx = null;
+  const footer = $("exd-edit-footer");
+  if (footer) footer.style.display = "none";
+  const editBtn = $("exd-edit-btn");
+  if (editBtn) editBtn.style.display = "";
+}
+
+function enterExerciseEdit() {
+  if (_exdEditing) return;
+  const userId = DATA.getCurrentUser();
+  const ex = DATA.getVisibleExercises(userId).find(e => e.id === _detailExerciseId);
+  if (!ex) return;
+  _exdEditing = true;
+  const a = ex.atlas || {};
+  const roleNames = arr => (arr || []).map(o => o.muscle);
+  const muscleNames = DATA.refMuscles(userId).map(m => m.name);
+  const moveNames = DATA.refMovements(userId).map(m => m.name);
+  const cats = DATA.getAllCategories(userId);
+  const exGroups = DATA.getExerciseGroups(userId);
+  const curGroupName = (ex.groupId && (exGroups.find(g => g.id === ex.groupId) || {}).name) || "";
+  const LEVELS = ["Глобальное", "Региональное", "Локальное"];
+  const curLevel = LEVEL_LABELS[a.level] || a.level || "";
+  const technique = (Array.isArray(ex.steps) && ex.steps.length) ? ex.steps.join("\n") : (a.technique || "");
+  const mistakes = (a.mistakes || []).join("\n");
+
+  // Заголовок в шапке превращаем в поле ввода имени — сохраняем «тот же формат».
+  $("exd-title").innerHTML = `<input class="exd-title-input" id="exd-e-name" type="text" value="${escHtml(ex.name)}" placeholder="Название">`;
+
+  $("exd-body").innerHTML = `
+    <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips ex-form-2col" id="exe-type"></div></div>
+    <div class="ex-form-field"><label class="ex-form-label">Категория</label><div class="ex-form-dd" id="exe-cat"></div></div>
+    <div class="ex-form-field"><label class="ex-form-label">Группа</label>
+      <div class="ex-form-dd ef-combo">
+        <input class="ex-form-input" id="exe-group" type="text" autocomplete="off" placeholder="Например, Жим лёжа" value="${escHtml(curGroupName)}">
+        <div class="ef-dd-panel ef-combo-panel" id="exe-group-panel"></div>
+      </div>
+      <p class="ex-form-hint">Похожие варианты одного упражнения (штанга/гантели/тренажёр) схлопнутся в одну строку в списке.</p></div>
+    <div class="ex-form-field"><label class="ex-form-label">Оборудование</label>
+      <input class="ex-form-input" id="exe-equip" type="text" placeholder="Например, Штанга" value="${escHtml(a.equipment || "")}"></div>
+    <div class="ex-form-field"><label class="ex-form-label">Уровень</label><div class="ex-form-dd" id="exe-level"></div></div>
+    <div class="exd-section-label">Рабочие мышцы</div>
+    <div class="ex-form-field"><label class="ex-form-label">Целевые</label><div class="ex-form-dd" id="exe-target"></div></div>
+    <div class="ex-form-field"><label class="ex-form-label">Синергисты</label><div class="ex-form-dd" id="exe-syn"></div></div>
+    <div class="ex-form-field"><label class="ex-form-label">Стабилизаторы</label><div class="ex-form-dd" id="exe-stab"></div></div>
+    <div class="exd-section-label">Основные движения</div>
+    <div class="ex-form-field"><label class="ex-form-label">Движения</label><div class="ex-form-dd" id="exe-moves"></div></div>
+    <div class="exd-section-label">Техника</div>
+    <div class="ex-form-field"><label class="ex-form-label">По шагу на строку</label>
+      <textarea class="ex-form-input ex-form-textarea" id="exe-tech" rows="5" placeholder="Один шаг — одна строка">${escHtml(technique)}</textarea></div>
+    <div class="ex-form-field"><label class="ex-form-label">Частые ошибки (по одной на строку)</label>
+      <textarea class="ex-form-input ex-form-textarea" id="exe-mistakes" rows="3">${escHtml(mistakes)}</textarea></div>
+    <div class="ex-form-field"><label class="ex-form-label">Противопоказания</label>
+      <textarea class="ex-form-input ex-form-textarea" id="exe-contra" rows="2">${escHtml(a.contraindications || "")}</textarea></div>
+    <div class="ex-form-field"><label class="ex-form-label">Совет</label>
+      <textarea class="ex-form-input ex-form-textarea" id="exe-tip" rows="2">${escHtml(ex.tip || "")}</textarea></div>
+    <div class="ex-form-field"><label class="ex-form-label">Ссылка на медиа (фото/гиф/видео)</label>
+      <input class="ex-form-input" id="exe-media" type="url" inputmode="url" placeholder="https://…" value="${escHtml(ex.media || "")}"></div>
+    <div class="ex-form-field"><label class="ex-form-label">Ссылка-референс</label>
+      <input class="ex-form-input" id="exe-ref" type="url" inputmode="url" placeholder="https://…" value="${escHtml(a.referenceUrl || "")}"></div>`;
+  $("exd-body").scrollTop = 0;
+
+  const typeSel   = refChipSelect($("exe-type"), ["Силовое", "Бег"], [ex.type === "run" ? "Бег" : "Силовое"], false);
+  const catSel    = refDropdownSelect($("exe-cat"), cats, [ex.cat], false);
+  const levelSel  = refDropdownSelect($("exe-level"), LEVELS, curLevel ? [curLevel] : [], false);
+  const targetSel = refDropdownSelect($("exe-target"), muscleNames, roleNames(a.target), true);
+  const synSel    = refDropdownSelect($("exe-syn"), muscleNames, roleNames(a.synergist), true);
+  const stabSel   = refDropdownSelect($("exe-stab"), muscleNames, roleNames(a.stabilizer), true);
+  const moveSel   = refDropdownSelect($("exe-moves"), moveNames, a.categories || [], true);
+  wireComboSuggest($("exe-group"), $("exe-group-panel"), exGroups.map(g => g.name));
+
+  const toRoles = (names, prev) => names.map(n => {
+    const old = (prev || []).find(o => o.muscle === n);
+    return { muscle: n, bundle: old ? old.bundle : "" };
+  });
+
+  _exdEditCtx = { a, typeSel, catSel, levelSel, targetSel, synSel, stabSel, moveSel, toRoles };
+  $("exd-edit-btn").style.display = "none";
+  $("exd-edit-footer").style.display = "";
+}
+
+function saveExerciseEdit() {
+  if (!_exdEditing || !_exdEditCtx) return;
+  const userId = DATA.getCurrentUser();
+  const ex = DATA.getVisibleExercises(userId).find(e => e.id === _detailExerciseId);
+  if (!ex) return;
+  const { a, typeSel, catSel, levelSel, targetSel, synSel, stabSel, moveSel, toRoles } = _exdEditCtx;
+  const name = $("exd-e-name").value.trim();
+  if (!name) { $("exd-e-name").focus(); showToast("Введи название упражнения"); return; }
+  const atlas = Object.assign(ex.atlas ? JSON.parse(JSON.stringify(ex.atlas)) : {}, {
+    equipment: $("exe-equip").value.trim(),
+    level: levelSel.getOne() || "",
+    target:     toRoles(targetSel.get(), a.target),
+    synergist:  toRoles(synSel.get(), a.synergist),
+    stabilizer: toRoles(stabSel.get(), a.stabilizer),
+    categories: moveSel.get(),
+    technique: $("exe-tech").value.trim(),
+    mistakes: $("exe-mistakes").value.split("\n").map(s => s.trim()).filter(Boolean),
+    contraindications: $("exe-contra").value.trim(),
+    referenceUrl: $("exe-ref").value.trim(),
+  });
+  const payload = {
+    name, type: typeSel.getOne() === "Бег" ? "run" : "strength",
+    cat: catSel.getOne() || "Другое",
+    media: $("exe-media").value.trim(),
+    tip: $("exe-tip").value.trim(),
+    atlas,
+  };
+  DATA.updateOwnExercise(userId, _detailExerciseId, payload);
+  SyncQueue.push("exercise:update", { id: _detailExerciseId });
+  DATA.setExerciseGroupByName(userId, _detailExerciseId, $("exe-group").value);
+  showToast("Упражнение обновлено");
+  renderExercisesList(exercisesSearch.value);
+  openExerciseDetail(_detailExerciseId, _exdReturnScreen);  // сам вызовет exitExerciseEdit()
+}
+
+$("exd-edit-btn").addEventListener("click", enterExerciseEdit);
+$("exd-edit-save").addEventListener("click", saveExerciseEdit);
+$("exd-edit-cancel").addEventListener("click", () => openExerciseDetail(_detailExerciseId, _exdReturnScreen));
 
 /* ==========================================================================
    Screen: detail view (просмотр тренировки из истории)
