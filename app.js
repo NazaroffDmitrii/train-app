@@ -3137,6 +3137,9 @@ function applySupersetVisuals() {
     if (node) {
       node.classList.toggle("hidden", i >= arr.length - 1);   // последнему связывать не с чем
       node.classList.toggle("linked", linkedNext);
+      // Закрашенный кружок = связано; тап по нему разрывает (подсказка в title).
+      const t = linkedNext ? "Разорвать суперсет" : "Связать в суперсет — потяни вниз к следующему упражнению";
+      node.title = t; node.setAttribute("aria-label", t);
     }
   });
 }
@@ -3268,9 +3271,7 @@ function renderExerciseList() {
       <button class="ex-swap-badge" title="Заменить упражнение" aria-label="Заменить упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       </button>
-      <button class="ex-link-node" title="Связать в суперсет — протяни вниз к следующему упражнению" aria-label="Связать в суперсет">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-      </button>
+      <button class="ex-link-node" title="Связать в суперсет — потяни вниз к следующему упражнению" aria-label="Связать в суперсет"></button>
       <div class="ex-block-header">
         <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
         ${prChip}
