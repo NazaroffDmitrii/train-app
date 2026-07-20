@@ -3014,6 +3014,7 @@ function wireExBlockGestures(block, ex) {
   const canStart = (target) => {
     if (target.closest(".ex-del-badge")) return false;     // крестик — отдаём клику
     if (target.closest(".ex-swap-badge")) return false;    // замена — отдаём клику
+    if (target.closest(".ex-ungroup-badge")) return false; // вынести из суперсета — клику
     // вне режима не мешаем вводу, кнопкам, свайпу подхода и тапу по названию
     if (!_exEdit && target.closest("input, textarea, button, .set-row, .ex-block-name")) return false;
     return true;
@@ -3133,6 +3134,24 @@ function unlinkSupersetAt(i) {
   normalizeSupersets();
 }
 
+// Вынести одно упражнение из суперсета (кнопка-бейдж у участника). Снимаем его
+// supersetId; если оно в СЕРЕДИНЕ отрезка — физически выносим сразу за группу,
+// иначе normalize раздробил бы обе половины на одиночки (null в середине рвёт
+// непрерывность). Края (первый/последний) просто обнуляем — остаток остаётся
+// непрерывным. Пара 2→1 распадётся сама (одиночка не суперсет).
+function ejectFromSuperset(ex) {
+  const arr = _workout.exercises;
+  const i = arr.indexOf(ex);
+  if (i < 0 || !ex.supersetId) return;
+  const run = _ssRun(arr, i), lo = run[0], hi = run[run.length - 1];
+  ex.supersetId = null;
+  if (i > lo && i < hi) {          // середина — переставить сразу за конец группы
+    arr.splice(i, 1);
+    arr.splice(hi, 0, ex);         // после splice(i,1) индекс hi = слот за группой
+  }
+  normalizeSupersets();
+}
+
 // Проставить класс участника суперсета и перерисовать спайны-оверлеи по текущему
 // состоянию. Порядок .ex-block в DOM == _workout.exercises (драг двигает и массив,
 // и DOM синхронно), поэтому индекс блока = индекс упражнения.
@@ -3177,6 +3196,30 @@ function layoutSupersetSpines() {
     spine.innerHTML = `<span class="ss-spine-seg"></span><span class="ss-spine-label">Суперсет</span><span class="ss-spine-seg"></span>`;
     scroll.appendChild(spine);
     i = j + 1;
+  }
+}
+
+// То же для детали истории (только чтение): группы читаем по классам wd-ss/
+// wd-ss-first/wd-ss-last (данные там — статичный HTML), спайны .wd-spine кладём в
+// #detail-screen-body. Зовём после рендера детали (см. openDetailScreen).
+function layoutHistorySpines() {
+  const body = $("detail-screen-body");
+  if (!body) return;
+  body.querySelectorAll(".wd-spine").forEach(el => el.remove());
+  const exs = [...body.querySelectorAll(".wd-ex")];
+  for (let i = 0; i < exs.length; i++) {
+    if (!(exs[i].classList.contains("wd-ss") && exs[i].classList.contains("wd-ss-first"))) continue;
+    let j = i;
+    while (j < exs.length - 1 && !exs[j].classList.contains("wd-ss-last")) j++;
+    const first = exs[i], last = exs[j];
+    const top = first.offsetTop;
+    const spine = document.createElement("div");
+    spine.className = "wd-spine";
+    spine.style.top = top + "px";
+    spine.style.height = ((last.offsetTop + last.offsetHeight) - top) + "px";
+    spine.innerHTML = `<span class="ss-spine-seg"></span><span class="ss-spine-label">Суперсет</span><span class="ss-spine-seg"></span>`;
+    body.appendChild(spine);
+    i = j;
   }
 }
 
@@ -3278,6 +3321,9 @@ function renderExerciseList() {
       <button class="ex-swap-badge" title="Заменить упражнение" aria-label="Заменить упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       </button>
+      <button class="ex-ungroup-badge" title="Вынести из суперсета" aria-label="Вынести из суперсета">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.84 12.25l1.72-1.71a4 4 0 0 0-5.66-5.66l-1.71 1.72"/><path d="M5.17 11.75l-1.72 1.71a4 4 0 0 0 5.66 5.66l1.71-1.72"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>
+      </button>
       <div class="ex-block-header">
         <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
         ${prChip}
@@ -3350,6 +3396,19 @@ function renderExerciseList() {
         updateSummaryBar();
         showToast("Упражнение заменено");
       }, ex.exerciseId);
+    });
+
+    // Вынести упражнение из суперсета (бейдж-«разлинковка», виден только у
+    // участника в режиме правки). После — перерендер (порядок мог поменяться при
+    // выносе из середины) и возврат в режим правки, чтобы вынести ещё.
+    block.querySelector(".ex-ungroup-badge").addEventListener("click", (e) => {
+      e.stopPropagation();
+      ejectFromSuperset(ex);
+      haptic();
+      saveWorkoutState();
+      renderExerciseList();
+      updateSummaryBar();
+      enterExEditMode();
     });
 
     // Зажатие (long-press) → режим перестановки; в нём блок тащится вверх/вниз,
@@ -7445,6 +7504,10 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
   }
 
   goToScreen("detail");
+
+  // Спайны суперсетов в детали — после раскладки экрана; повтор в след. кадре на
+  // случай неточного первого замера до осадки шрифтов/лейаута (см. layoutSupersetSpines).
+  requestAnimationFrame(() => { layoutHistorySpines(); requestAnimationFrame(layoutHistorySpines); });
 
   // Открыли деталь ради конкретного упражнения (тап по бейджу-рекорду на экране
   // тренировки) — подматываем список прямо к нему и коротко подсвечиваем, чтобы

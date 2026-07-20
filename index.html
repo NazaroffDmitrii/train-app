@@ -779,6 +779,19 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .ex-swap-badge svg { width: 14px; height: 14px; }
 .workout-scroll.ex-editing .ex-swap-badge { display: flex; }
 
+/* «Вынести из суперсета» — третий бейдж в ряду справа, ТОЛЬКО у участника связки в
+   режиме правки. Разрывает связь именно этого упражнения (см. ejectFromSuperset). */
+.ex-ungroup-badge {
+  position: absolute; top: 8px; right: 72px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent-bright);
+  border: 1px solid var(--accent);
+  display: none; align-items: center; justify-content: center;
+  z-index: 6; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.ex-ungroup-badge svg { width: 14px; height: 14px; }
+.workout-scroll.ex-editing .ex-block.ss-member .ex-ungroup-badge { display: flex; }
+
 /* В режиме перестановки оставляем нативный вертикальный скролл по блоку
    (touch-action не блокируем) — перетаскивание включается коротким hold,
    и только тогда обработчик гасит скролл через preventDefault (п.6). */
@@ -836,11 +849,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .workout-scroll { position: relative; }   /* якорь для absolute .ss-spine */
 .ex-block.ss-member { margin-left: 26px; }
 
-.ss-spine {
-  position: absolute; left: 18px; width: 20px;
+.ss-spine, .wd-spine {
+  position: absolute; width: 20px;
   display: flex; flex-direction: column; align-items: center;
   pointer-events: none; z-index: 3;
 }
+.ss-spine { left: 18px; }   /* workout-scroll: padding 16 + отступ участника 26 */
+.wd-spine { left: 23px; }   /* detail-body: padding 20 + отступ участника 26 */
 .ss-spine-seg { flex: 1 1 6px; width: 2px; background: var(--accent); border-radius: 2px; }
 .ss-spine-label {
   writing-mode: vertical-rl; transform: rotate(180deg);
@@ -1480,14 +1495,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
    переход по истории упражнения, см. openDetailScreen scrollToExerciseId) —
    фиолетовым, в тон акценту и кнопкам навигации; гаснет плавно, чтобы обозначить
    «вот это упражнение» и не отвлекать дальше. */
-/* Суперсет в детали истории — тот же отступ + тонкая связующая линия слева,
-   что и на экране тренировки, только для чтения (без узла связи). */
-.wd-ex.wd-ss { margin-left: 18px; overflow: visible; position: relative; }
-.wd-ex.wd-ss::before {
-  content: ""; position: absolute; left: -13px; top: 0; bottom: 0;
-  width: 2px; background: var(--accent); border-radius: 2px;
-}
-.wd-ex.wd-ss:not(.wd-ss-last)::before { bottom: -9px; }   /* зазор между .wd-ex = 9px */
+/* Суперсет в детали истории — тот же спайн + вертикальная надпись СУПЕРСЕТ, что и
+   на экране тренировки: layoutHistorySpines() кладёт .wd-spine в #detail-screen-body
+   (он position:relative — якорь). Только для чтения, жеста нет. */
+#detail-screen-body { position: relative; }
+.wd-ex.wd-ss { margin-left: 26px; }
 .wd-ex-flash { animation: wd-ex-flash 1.6s ease; }
 @keyframes wd-ex-flash {
   0%, 15% { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
