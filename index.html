@@ -823,46 +823,40 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .ex-edit-done:active { transform: translateX(-50%) scale(0.96); }
 
 /* ============ Суперсеты ============
-   Связка «без отдыха»: подряд идущие блоки с общим supersetId. Карточки НЕ
-   сшиваем в одну — каждая остаётся отдельной (со своим зазором и скруглениями),
-   но участники суперсета сдвинуты вправо (отступ), а слева в жёлобе идёт тонкая
-   прямая линия, перекидываясь через зазор к следующей карточке. overflow:visible
-   на участнике — чтобы линия-перемычка не обрезалась краем карточки.
-   Оборачивать блоки в контейнер нельзя (сломает драг-перестановку по
-   previousElementSibling/insertBefore прямых .ex-block-соседей) — поэтому линию
-   рисуем псевдоэлементом на самих блоках. */
-.ex-block.ss-member { margin-left: 18px; overflow: visible; position: relative; }
-.ex-block.ss-member::before {
-  content: ""; position: absolute; left: -13px; top: 0; bottom: 0;
-  width: 2px; background: var(--accent); border-radius: 2px;
+   Связка «без отдыха»: подряд идущие блоки с общим supersetId. Группа читается
+   сплошным сиреневым спайном слева, по центру которого вертикальная надпись
+   СУПЕРСЕТ (сегмент линии — слово — сегмент линии). Спайн — это НЕ псевдоэлемент
+   на блоках (одну надпись на всю группу так не отцентрировать), а отдельный
+   absolute-оверлей .ss-spine, который layoutSupersetSpines() меряет по первому/
+   последнему блоку группы и кладёт в .workout-scroll (он position:relative →
+   оверлей скроллится с содержимым). Участники сдвинуты вправо (margin-left), чтобы
+   освободить жёлоб под спайн. Оборачивать блоки в контейнер нельзя (сломает драг-
+   перестановку по прямым .ex-block-соседям). Собирается группа драг-«папкой»
+   (evalGroupIntent), поэтому отдельного узла-кнопки больше нет. */
+.workout-scroll { position: relative; }   /* якорь для absolute .ss-spine */
+.ex-block.ss-member { margin-left: 26px; }
+
+.ss-spine {
+  position: absolute; left: 18px; width: 20px;
+  display: flex; flex-direction: column; align-items: center;
+  pointer-events: none; z-index: 3;
 }
-.ex-block.ss-member:not(.ss-last)::before { bottom: -12px; }  /* перемычка через зазор к следующей */
-
-/* Узел связи — полый кружок в тон акценту; ЗАКРАШИВАЕТСЯ при связывании. Виден
-   только в режиме перестановки (как крестик и замена). По центру нижней кромки,
-   свисает в зазор к следующему блоку (в этом режиме .ex-block — overflow:visible).
-   Тап по закрашенному = разорвать, по полому = связать; либо протянуть вниз. */
-.ex-link-node {
-  position: absolute; left: 50%; bottom: -12px; transform: translateX(-50%);
-  width: 22px; height: 22px; border-radius: 50%;
-  background: var(--bg-base); border: 2.5px solid var(--accent);
-  display: none; align-items: center; justify-content: center;
-  z-index: 8; box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-  touch-action: none;
+.ss-spine-seg { flex: 1 1 6px; width: 2px; background: var(--accent); border-radius: 2px; }
+.ss-spine-label {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  margin: 8px 0; white-space: nowrap;
+  font-size: 9px; font-weight: 800; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--accent);
 }
-.ex-link-node.hidden { display: none !important; }         /* последний блок — связывать не с чем */
-.ex-link-node.active { transform: translateX(-50%) scale(1.2); }
-.ex-link-node.linked { background: var(--accent); }        /* закрашен = связано */
-.workout-scroll.ex-editing .ex-block { overflow: visible; }  /* дать узлу свисать в зазор */
-.workout-scroll.ex-editing .ex-link-node:not(.hidden) { display: flex; }
+/* Во время перетаскивания геометрия группы «плывёт» — прячем спайны; пересчёт и
+   показ снова на endDrag (applySupersetVisuals → layoutSupersetSpines). */
+.workout-scroll.ss-dragging .ss-spine { display: none; }
 
-/* Кандидат-приёмник во время протягивания связи */
-.ex-block.ss-link-cand { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
-
-/* Живая линия, тянущаяся от узла к пальцу (fixed — не обрезается overflow) */
-.ex-link-line {
-  position: fixed; width: 3px; border-radius: 2px;
-  background: var(--accent); z-index: 60; pointer-events: none; display: none;
+/* Блок-приёмник при драг-группировке («папка»): тащимый блок глубоко наложен —
+   цель подсвечивается, отпускание собирает суперсет. */
+.ex-block.ss-group-cand {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset, 0 0 0 4px var(--accent-soft);
 }
 
 /* ============ Sets table ============ */

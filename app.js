@@ -2939,7 +2939,7 @@ function reorderDuringDrag(pointerY) {
 function dragMoveTo(pointerY) {
   const d = _drag; if (!d) return;
   d.pointerY = pointerY;
-  reorderDuringDrag(pointerY);
+  if (!evalGroupIntent()) reorderDuringDrag(pointerY);   // в зоне «папки» перестановку не делаем
   const rect = d.block.getBoundingClientRect();
   const naturalTop = rect.top - d.ty;               // положение в потоке без transform
   d.ty = (pointerY - d.grabDy) - naturalTop;
@@ -2960,31 +2960,47 @@ function autoScrollTick() {
     scroll.scrollTop = before + Math.max(-16, Math.min(16, dy));
     if (scroll.scrollTop !== before) dragMoveTo(d.pointerY);   // держим блок под пальцем
   }
+  evalGroupIntent();   // прогреваем dwell «папки», даже когда палец стоит
   d.raf = requestAnimationFrame(autoScrollTick);
 }
 
 function startDrag(block, ex, pointerY) {
   if (!_exEdit) enterExEditMode();
   const top = block.getBoundingClientRect().top;
-  _drag = { block, ex, grabDy: pointerY - top, ty: 0, pointerY, raf: 0 };
+  _drag = { block, ex, grabDy: pointerY - top, ty: 0, pointerY, raf: 0,
+            groupBlock: null, groupBoundary: null, groupDwellStart: 0, grouping: false };
   block.style.transition = "none";
   block.classList.add("dragging");
+  $("workout-scroll").classList.add("ss-dragging");   // прячем спайны — геометрия «плывёт»
   haptic(18);
   _drag.raf = requestAnimationFrame(autoScrollTick);
 }
 
 function endDrag(commit) {
   const d = _drag; if (!d) return;
+  // Отпустили «в папке» — собрать суперсет с соседом-кандидатом (он смежен в
+  // массиве: свап на dwell мы подавляли, так что индексы i и i±1 актуальны).
+  const doGroup = commit && d.grouping && d.groupBlock;
+  const boundary = d.groupBoundary;
+  _clearGroupIntent();
   _drag = null;
   if (d.raf) cancelAnimationFrame(d.raf);
   const block = d.block;
   block.style.transition = "transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)";
   block.style.transform = "";
   block.classList.remove("dragging");
+  $("workout-scroll").classList.remove("ss-dragging");
   setTimeout(() => { block.style.transition = ""; }, 200);
-  // После перестановки связка могла порваться (участник уехал из группы) или
-  // группа — распасться на одиночку: нормализуем и перерисовываем маркеры.
-  if (commit) { normalizeSupersets(); saveWorkoutState(); applySupersetVisuals(); }
+  if (commit) {
+    if (doGroup) {
+      const arr = _workout.exercises, i = arr.indexOf(d.ex);
+      linkSupersetAt(boundary === "next" ? i : i - 1);   // связать i с соседом
+    }
+    // После перестановки связка могла порваться (участник уехал из группы) или
+    // группа — распасться на одиночку: нормализуем и перерисовываем маркеры.
+    normalizeSupersets(); saveWorkoutState();
+  }
+  applySupersetVisuals();   // всегда: вернуть/пересчитать спайны после драга
 }
 
 // Долгое нажатие → режим перестановки + сразу подхват блока тем же касанием
@@ -3117,9 +3133,9 @@ function unlinkSupersetAt(i) {
   normalizeSupersets();
 }
 
-// Проставить классы «хребта» и состояние узлов связи по текущему состоянию.
-// Опирается на то, что порядок .ex-block в DOM совпадает с _workout.exercises
-// (драг двигает и массив, и DOM синхронно).
+// Проставить класс участника суперсета и перерисовать спайны-оверлеи по текущему
+// состоянию. Порядок .ex-block в DOM == _workout.exercises (драг двигает и массив,
+// и DOM синхронно), поэтому индекс блока = индекс упражнения.
 function applySupersetVisuals() {
   if (!_workout) return;
   const scroll = $("workout-scroll");
@@ -3127,100 +3143,91 @@ function applySupersetVisuals() {
   const arr = _workout.exercises || [];
   blocks.forEach((b, i) => {
     const ex = arr[i]; if (!ex) return;
-    const id = ex.supersetId || null;
-    const linkedPrev = !!id && arr[i - 1] && arr[i - 1].supersetId === id;
-    const linkedNext = !!id && arr[i + 1] && arr[i + 1].supersetId === id;
-    b.classList.toggle("ss-member", !!id);
-    b.classList.toggle("ss-first", !!id && !linkedPrev);
-    b.classList.toggle("ss-last",  !!id && !linkedNext);
-    const node = b.querySelector(".ex-link-node");
-    if (node) {
-      node.classList.toggle("hidden", i >= arr.length - 1);   // последнему связывать не с чем
-      node.classList.toggle("linked", linkedNext);
-      // Закрашенный кружок = связано; тап по нему разрывает (подсказка в title).
-      const t = linkedNext ? "Разорвать суперсет" : "Связать в суперсет — потяни вниз к следующему упражнению";
-      node.title = t; node.setAttribute("aria-label", t);
-    }
+    b.classList.toggle("ss-member", !!ex.supersetId);   // отступ вправо под спайн
   });
+  layoutSupersetSpines();     // немедленно — когда layout уже устоялся (обычный случай)
+  scheduleSpineLayout();      // и повтор в след. кадре: первый синхронный замер после
+                              // рендера/смены шрифта бывает неточным (см. offsetHeight)
 }
 
-// Живая линия от узла к пальцу + подсветка блока-приёмника.
-let _linkLine = null, _linkNodeRect = null, _linkTargetOk = false, _linkCandEl = null;
-function _linkLineShow(node) {
-  _linkNodeRect = node.getBoundingClientRect();
-  if (!_linkLine) { _linkLine = document.createElement("div"); _linkLine.className = "ex-link-line"; document.body.appendChild(_linkLine); }
-  _linkLine.style.left = (_linkNodeRect.left + _linkNodeRect.width / 2 - 2) + "px";
-  _linkLine.style.top = _linkNodeRect.bottom + "px";
-  _linkLine.style.height = "0px";
-  _linkLine.style.display = "block";
+// Спайн суперсета — не псевдоэлемент на блоках (одну надпись «СУПЕРСЕТ» на всю
+// группу так не отцентрировать), а отдельный absolute-оверлей на группу: меряем
+// первый/последний блок непрерывного отрезка и кладём .ss-spine в .workout-scroll
+// (он position:relative → оверлей скроллится с содержимым). Флекс-колонка внутри
+// центрирует надпись: сегмент линии → слово → сегмент линии.
+function layoutSupersetSpines() {
+  const scroll = $("workout-scroll");
+  if (!scroll) return;
+  scroll.querySelectorAll(".ss-spine").forEach(el => el.remove());
+  if (!_workout) return;
+  const blocks = [...scroll.querySelectorAll(".ex-block")];
+  const arr = _workout.exercises || [];
+  let i = 0;
+  while (i < blocks.length) {
+    const id = arr[i] && arr[i].supersetId;
+    if (!id) { i++; continue; }
+    let j = i;
+    while (j + 1 < blocks.length && arr[j + 1] && arr[j + 1].supersetId === id) j++;
+    const first = blocks[i], last = blocks[j];
+    const top = first.offsetTop;
+    const spine = document.createElement("div");
+    spine.className = "ss-spine";
+    spine.style.top = top + "px";
+    spine.style.height = ((last.offsetTop + last.offsetHeight) - top) + "px";
+    spine.innerHTML = `<span class="ss-spine-seg"></span><span class="ss-spine-label">Суперсет</span><span class="ss-spine-seg"></span>`;
+    scroll.appendChild(spine);
+    i = j + 1;
+  }
 }
-function _linkLineMove(y) { if (_linkLine && _linkNodeRect) _linkLine.style.height = Math.max(0, y - _linkNodeRect.bottom) + "px"; }
-function _linkLineHide() { if (_linkLine) _linkLine.style.display = "none"; _linkNodeRect = null; }
-function _linkTargetHighlight(i, y) {
-  _linkTargetClear();
-  const blocks = [...$("workout-scroll").querySelectorAll(".ex-block")];
-  const nb = blocks[i + 1];
-  if (nb && y > nb.getBoundingClientRect().top + 8) { nb.classList.add("ss-link-cand"); _linkCandEl = nb; _linkTargetOk = true; }
-  else _linkTargetOk = false;
-}
-function _linkTargetClear() { if (_linkCandEl) { _linkCandEl.classList.remove("ss-link-cand"); _linkCandEl = null; } }
 
-// Применить изменение связки: нормализация + сохранение + перерисовка маркеров.
-function afterSupersetChange() {
-  normalizeSupersets();
-  saveWorkoutState();
-  applySupersetVisuals();
+// Пересчёт спайнов в следующем кадре, дебаунс одним rAF. Нужен и как «повтор после
+// осадки» (см. applySupersetVisuals), и для ResizeObserver.
+let _ssRO = null, _ssROraf = 0;
+function scheduleSpineLayout() {
+  if (_ssROraf) cancelAnimationFrame(_ssROraf);
+  _ssROraf = requestAnimationFrame(layoutSupersetSpines);
 }
 
-// Жест узла: протянуть вниз к следующему блоку = связать; короткий тап =
-// связать/разорвать текущую границу. Работает в режиме перестановки (узел там и
-// виден). stopPropagation — чтобы не спутать с драгом/скроллом самого блока.
-function wireLinkNode(block, ex) {
-  const node = block.querySelector(".ex-link-node");
-  if (!node) return;
-  let active = false, moved = false, sy = 0;
-  const idxOf = () => _workout.exercises.indexOf(ex);
-  const isLast = () => idxOf() >= _workout.exercises.length - 1;
-  const start = (y) => {
-    if (isLast()) return;
-    if (!_exEdit) enterExEditMode();
-    active = true; moved = false; sy = y;
-    node.classList.add("active");
-    _linkLineShow(node);
-  };
-  const move = (y, e) => {
-    if (!active) return;
-    if (e && e.cancelable) e.preventDefault();
-    if (Math.abs(y - sy) > 6) moved = true;
-    _linkLineMove(y);
-    _linkTargetHighlight(idxOf(), y);
-  };
-  const end = () => {
-    if (!active) return;
-    active = false;
-    node.classList.remove("active");
-    _linkLineHide();
-    const wasOk = _linkTargetOk;
-    _linkTargetClear(); _linkTargetOk = false;
-    const i = idxOf();
-    if (i < 0 || i >= _workout.exercises.length - 1) return;
-    const linkedNext = ex.supersetId && _workout.exercises[i + 1] && _workout.exercises[i + 1].supersetId === ex.supersetId;
-    if (moved) { if (wasOk) { linkSupersetAt(i); haptic(); afterSupersetChange(); } }
-    else { linkedNext ? unlinkSupersetAt(i) : linkSupersetAt(i); haptic(); afterSupersetChange(); }
-  };
-  const cancel = () => { active = false; node.classList.remove("active"); _linkLineHide(); _linkTargetClear(); _linkTargetOk = false; };
+// Высота блоков меняется не только структурно (добавить подход, раскрыть заметку),
+// поэтому держим спайны в актуальной геометрии через ResizeObserver — иначе линия
+// группы отставала бы от реальной высоты.
+function observeSupersetLayout() {
+  const scroll = $("workout-scroll");
+  if (!scroll) return;
+  if (!_ssRO) _ssRO = new ResizeObserver(scheduleSpineLayout);
+  _ssRO.disconnect();
+  scroll.querySelectorAll(".ex-block").forEach(b => _ssRO.observe(b));
+}
 
-  node.addEventListener("touchstart", (e) => { e.stopPropagation(); const t = e.touches[0]; if (t) start(t.clientY); }, { passive: true });
-  node.addEventListener("touchmove",  (e) => { e.stopPropagation(); const t = e.touches[0]; if (t) move(t.clientY, e); }, { passive: false });
-  node.addEventListener("touchend",   (e) => { e.stopPropagation(); end(); });
-  node.addEventListener("touchcancel", cancel);
-  node.addEventListener("mousedown", (e) => {
-    e.stopPropagation(); e.preventDefault();
-    start(e.clientY);
-    const mm = (ev) => move(ev.clientY, ev);
-    const mu = () => { end(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); };
-    window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu);
-  });
+// Драг-группировка «папкой»: пока тащим блок и глубоко (в центральной зоне соседа)
+// зависаем на нём GROUP_DWELL мс — сосед подсвечивается, и отпускание собирает
+// суперсет. Мелкое пересечение середины — как раньше, просто перестановка. Возврат
+// true = мы в зоне группировки, свап на этом кадре подавляем (см. dragMoveTo).
+const GROUP_DWELL = 340;    // мс удержания в центре соседа для «папки»
+const GROUP_BAND  = 0.30;   // доля высоты соседа вокруг его центра
+function evalGroupIntent() {
+  const d = _drag; if (!d) return false;
+  const dc = (d.pointerY - d.grabDy) + d.block.getBoundingClientRect().height / 2;
+  let hit = null;
+  for (const [nb, dir] of [[d.block.previousElementSibling, "prev"], [d.block.nextElementSibling, "next"]]) {
+    if (!nb || !nb.classList.contains("ex-block")) continue;
+    const r = nb.getBoundingClientRect();
+    if (Math.abs(dc - (r.top + r.height / 2)) <= r.height * GROUP_BAND) { hit = [nb, dir]; break; }
+  }
+  if (!hit) { _clearGroupIntent(); return false; }
+  const [nb, dir] = hit;
+  if (d.groupBlock !== nb) {                       // зашли на нового кандидата — копим dwell
+    _clearGroupIntent();
+    d.groupBlock = nb; d.groupBoundary = dir; d.groupDwellStart = performance.now();
+  } else if (!d.grouping && performance.now() - d.groupDwellStart >= GROUP_DWELL) {
+    d.grouping = true; nb.classList.add("ss-group-cand"); haptic(18);
+  }
+  return true;
+}
+function _clearGroupIntent() {
+  const d = _drag; if (!d) return;
+  if (d.groupBlock) d.groupBlock.classList.remove("ss-group-cand");
+  d.groupBlock = null; d.groupBoundary = null; d.groupDwellStart = 0; d.grouping = false;
 }
 
 function renderExerciseList() {
@@ -3271,7 +3278,6 @@ function renderExerciseList() {
       <button class="ex-swap-badge" title="Заменить упражнение" aria-label="Заменить упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       </button>
-      <button class="ex-link-node" title="Связать в суперсет — потяни вниз к следующему упражнению" aria-label="Связать в суперсет"></button>
       <div class="ex-block-header">
         <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
         ${prChip}
@@ -3346,11 +3352,9 @@ function renderExerciseList() {
       }, ex.exerciseId);
     });
 
-    // Зажатие (long-press) → режим перестановки; в нём блок тащится вверх/вниз.
+    // Зажатие (long-press) → режим перестановки; в нём блок тащится вверх/вниз,
+    // а зависание «в папке» на соседе собирает суперсет (см. evalGroupIntent).
     wireExBlockGestures(block, ex);
-
-    // Узел связи «протяни вниз» → суперсет со следующим блоком.
-    wireLinkNode(block, ex);
 
     // Add set
     block.querySelector(".add-set-btn").addEventListener("click", () => {
@@ -3423,9 +3427,11 @@ function renderExerciseList() {
     // (Блок уже вставлен в DOM выше — до renderSetsInBlock, см. комментарий там.)
   });
 
-  // Маркеры суперсетов («хребет» + состояние узлов) по всем блокам разом —
-  // после того как все .ex-block уже в DOM в порядке _workout.exercises.
+  // Спайны суперсетов по всем блокам разом — после того как все .ex-block уже в
+  // DOM в порядке _workout.exercises; и переподписываем ResizeObserver на блоки,
+  // чтобы линия группы следила за их высотой (добавленный подход, заметка).
   applySupersetVisuals();
+  observeSupersetLayout();
 }
 
 // lastWorkout передаёт renderExerciseList (уже посчитан один раз на рендер);
