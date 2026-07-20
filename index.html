@@ -822,6 +822,51 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .ex-edit-done:active { transform: translateX(-50%) scale(0.96); }
 
+/* ============ Суперсеты ============
+   Связка «без отдыха»: подряд идущие блоки с общим supersetId. Визуальный
+   маркер — сплошной сиреневый «хребет» слева (border-left), а вертикальные
+   зазоры между участниками схлопнуты, чтобы группа читалась как одно целое.
+   Оборачивать блоки в контейнер нельзя (сломает драг-перестановку, которая
+   ходит по previousElementSibling/insertBefore прямых .ex-block-соседей),
+   поэтому линию рисуем на самих блоках классами. overflow:hidden на .ex-block
+   обрезает наружные псевдоэлементы — поэтому именно border-left. */
+.ex-block.ss-member { border-left: 4px solid var(--accent); }
+.ex-block.ss-member:not(.ss-first) {
+  border-top-left-radius: 0; border-top-right-radius: 0;
+  border-top: none;                 /* убираем двойной шов между участниками */
+}
+.ex-block.ss-member:not(.ss-last) {
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+  margin-bottom: 0;                 /* хребет непрерывен: соседи впритык */
+}
+
+/* Узел связи «протяни вниз» — виден только в режиме перестановки (как крестик
+   и замена). Сидит по центру нижней кромки, наполовину свисая в зазор к
+   следующему блоку (в этом режиме .ex-block получает overflow:visible ниже). */
+.ex-link-node {
+  position: absolute; left: 50%; bottom: -13px; transform: translateX(-50%);
+  width: 30px; height: 26px; border-radius: 999px;
+  background: var(--accent); color: #fff;
+  display: none; align-items: center; justify-content: center;
+  z-index: 8; box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+  touch-action: none;
+}
+.ex-link-node svg { width: 15px; height: 15px; }
+.ex-link-node.hidden { display: none !important; }         /* последний блок — связывать не с чем */
+.ex-link-node.active { transform: translateX(-50%) scale(1.15); }
+.ex-link-node.linked { background: var(--panel-raised); color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.workout-scroll.ex-editing .ex-block { overflow: visible; }  /* дать узлу свисать в зазор */
+.workout-scroll.ex-editing .ex-link-node:not(.hidden) { display: flex; }
+
+/* Кандидат-приёмник во время протягивания связи */
+.ex-block.ss-link-cand { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+
+/* Живая линия, тянущаяся от узла к пальцу (fixed — не обрезается overflow) */
+.ex-link-line {
+  position: fixed; width: 4px; border-radius: 2px;
+  background: var(--accent); z-index: 60; pointer-events: none; display: none;
+}
+
 /* ============ Sets table ============ */
 .sets-table { padding: 8px 14px 4px; }
 
@@ -1443,6 +1488,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
    переход по истории упражнения, см. openDetailScreen scrollToExerciseId) —
    фиолетовым, в тон акценту и кнопкам навигации; гаснет плавно, чтобы обозначить
    «вот это упражнение» и не отвлекать дальше. */
+/* Суперсет в детали истории — тот же левый «хребет», что и на экране
+   тренировки, только для чтения (без узла связи). */
+.wd-ex.wd-ss { border-left: 4px solid var(--accent); }
+.wd-ex.wd-ss:not(.wd-ss-first) { border-top-left-radius: 0; border-top-right-radius: 0; }
+.wd-ex.wd-ss:not(.wd-ss-last)  { border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0; }
 .wd-ex-flash { animation: wd-ex-flash 1.6s ease; }
 @keyframes wd-ex-flash {
   0%, 15% { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

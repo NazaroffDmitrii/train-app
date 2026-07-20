@@ -1002,6 +1002,7 @@ const DATA = (() => {
         updatedAt: Date.now(),
         exercises: (workout.exercises || []).map(ex => ({
           exerciseId: ex.exerciseId,
+          supersetId: ex.supersetId || null,   // связки суперсета переносим в шаблон
           sets: ex.sets.filter(s => s.done).map(s => ({ weight: s.weight, reps: s.reps })),
         })),
       };
@@ -1082,7 +1083,7 @@ const DATA = (() => {
         name: tpl.name,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        exercises: tpl.exercises.map(ex => ({ exerciseId: ex.exerciseId, sets: ex.sets.map(s => ({ ...s })) })),
+        exercises: tpl.exercises.map(ex => ({ exerciseId: ex.exerciseId, supersetId: ex.supersetId || null, sets: ex.sets.map(s => ({ ...s })) })),
       };
       const list = this.getTemplates(toUserId);
       list.unshift(copy);
@@ -1116,6 +1117,7 @@ const DATA = (() => {
             : [{ weight: 0, reps: 0, rpe: 0, done: false }];
           return {
             exerciseId: ex.exerciseId,
+            supersetId: ex.supersetId || null,   // связки суперсета из шаблона
             name: exNameById.get(ex.exerciseId), // снимок имени — устойчивость к потере справочника
             sets,
           };
@@ -2980,7 +2982,9 @@ function endDrag(commit) {
   block.style.transform = "";
   block.classList.remove("dragging");
   setTimeout(() => { block.style.transition = ""; }, 200);
-  if (commit) saveWorkoutState();
+  // После перестановки связка могла порваться (участник уехал из группы) или
+  // группа — распасться на одиночку: нормализуем и перерисовываем маркеры.
+  if (commit) { normalizeSupersets(); saveWorkoutState(); applySupersetVisuals(); }
 }
 
 // Долгое нажатие → режим перестановки + сразу подхват блока тем же касанием
@@ -3054,6 +3058,168 @@ function findPrWorkout(userId, exerciseId, rec) {
   return match;
 }
 
+/* ============================================================
+   Суперсеты — связка «без отдыха» из подряд идущих упражнений.
+   Модель: у блока тренировки поле ex.supersetId. Суперсет = максимальный
+   непрерывный отрезок блоков в _workout.exercises с одинаковым непустым
+   supersetId. Массив остаётся плоским (история/статистика/синк не трогаются),
+   порядок в нём = порядок внутри связки.
+   Инвариант: supersetId ⟺ непрерывная группа. Его держит normalizeSupersets,
+   которую зовём после любой структурной правки (связать/разорвать/переставить/
+   удалить). Одиночка суперсетом не считается — его id обнуляется.
+   ============================================================ */
+function _newSsId() { return "ss_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
+
+// Индексы непрерывного отрезка вокруг i с тем же непустым supersetId.
+function _ssRun(arr, i) {
+  const id = arr[i] && arr[i].supersetId;
+  if (!id) return [i];
+  let a = i, b = i;
+  while (a > 0 && arr[a - 1].supersetId === id) a--;
+  while (b < arr.length - 1 && arr[b + 1].supersetId === id) b++;
+  const r = []; for (let k = a; k <= b; k++) r.push(k);
+  return r;
+}
+
+// Привести supersetId к инварианту: каждой непрерывной группе — свежий общий id,
+// одиночкам — null. Опирается на текущий порядок массива.
+function normalizeSupersets() {
+  const arr = _workout && _workout.exercises || [];
+  let k = 0;
+  while (k < arr.length) {
+    const id = arr[k].supersetId;
+    if (!id) { k++; continue; }
+    let j = k;
+    while (j + 1 < arr.length && arr[j + 1].supersetId === id) j++;
+    if (j === k) arr[k].supersetId = null;                 // одиночка
+    else { const nid = _newSsId(); for (let t = k; t <= j; t++) arr[t].supersetId = nid; }
+    k = j + 1;
+  }
+}
+
+// Связать блок i со следующим (i+1) — объединяет и их уже существующие связки.
+function linkSupersetAt(i) {
+  const arr = _workout.exercises;
+  if (i < 0 || i + 1 >= arr.length) return;
+  const id = arr[i].supersetId || arr[i + 1].supersetId || _newSsId();
+  const runL = _ssRun(arr, i), runR = _ssRun(arr, i + 1);
+  const lo = Math.min(runL[0], i), hi = Math.max(runR[runR.length - 1], i + 1);
+  for (let k = lo; k <= hi; k++) arr[k].supersetId = id;
+  normalizeSupersets();
+}
+
+// Разорвать связь между i и i+1 (правой части — свежий id, дальше нормализация).
+function unlinkSupersetAt(i) {
+  const arr = _workout.exercises;
+  if (!(arr[i] && arr[i + 1] && arr[i].supersetId && arr[i].supersetId === arr[i + 1].supersetId)) return;
+  const id = arr[i].supersetId, nid = _newSsId();
+  for (let k = i + 1; k < arr.length && arr[k].supersetId === id; k++) arr[k].supersetId = nid;
+  normalizeSupersets();
+}
+
+// Проставить классы «хребта» и состояние узлов связи по текущему состоянию.
+// Опирается на то, что порядок .ex-block в DOM совпадает с _workout.exercises
+// (драг двигает и массив, и DOM синхронно).
+function applySupersetVisuals() {
+  if (!_workout) return;
+  const scroll = $("workout-scroll");
+  const blocks = [...scroll.querySelectorAll(".ex-block")];
+  const arr = _workout.exercises || [];
+  blocks.forEach((b, i) => {
+    const ex = arr[i]; if (!ex) return;
+    const id = ex.supersetId || null;
+    const linkedPrev = !!id && arr[i - 1] && arr[i - 1].supersetId === id;
+    const linkedNext = !!id && arr[i + 1] && arr[i + 1].supersetId === id;
+    b.classList.toggle("ss-member", !!id);
+    b.classList.toggle("ss-first", !!id && !linkedPrev);
+    b.classList.toggle("ss-last",  !!id && !linkedNext);
+    const node = b.querySelector(".ex-link-node");
+    if (node) {
+      node.classList.toggle("hidden", i >= arr.length - 1);   // последнему связывать не с чем
+      node.classList.toggle("linked", linkedNext);
+    }
+  });
+}
+
+// Живая линия от узла к пальцу + подсветка блока-приёмника.
+let _linkLine = null, _linkNodeRect = null, _linkTargetOk = false, _linkCandEl = null;
+function _linkLineShow(node) {
+  _linkNodeRect = node.getBoundingClientRect();
+  if (!_linkLine) { _linkLine = document.createElement("div"); _linkLine.className = "ex-link-line"; document.body.appendChild(_linkLine); }
+  _linkLine.style.left = (_linkNodeRect.left + _linkNodeRect.width / 2 - 2) + "px";
+  _linkLine.style.top = _linkNodeRect.bottom + "px";
+  _linkLine.style.height = "0px";
+  _linkLine.style.display = "block";
+}
+function _linkLineMove(y) { if (_linkLine && _linkNodeRect) _linkLine.style.height = Math.max(0, y - _linkNodeRect.bottom) + "px"; }
+function _linkLineHide() { if (_linkLine) _linkLine.style.display = "none"; _linkNodeRect = null; }
+function _linkTargetHighlight(i, y) {
+  _linkTargetClear();
+  const blocks = [...$("workout-scroll").querySelectorAll(".ex-block")];
+  const nb = blocks[i + 1];
+  if (nb && y > nb.getBoundingClientRect().top + 8) { nb.classList.add("ss-link-cand"); _linkCandEl = nb; _linkTargetOk = true; }
+  else _linkTargetOk = false;
+}
+function _linkTargetClear() { if (_linkCandEl) { _linkCandEl.classList.remove("ss-link-cand"); _linkCandEl = null; } }
+
+// Применить изменение связки: нормализация + сохранение + перерисовка маркеров.
+function afterSupersetChange() {
+  normalizeSupersets();
+  saveWorkoutState();
+  applySupersetVisuals();
+}
+
+// Жест узла: протянуть вниз к следующему блоку = связать; короткий тап =
+// связать/разорвать текущую границу. Работает в режиме перестановки (узел там и
+// виден). stopPropagation — чтобы не спутать с драгом/скроллом самого блока.
+function wireLinkNode(block, ex) {
+  const node = block.querySelector(".ex-link-node");
+  if (!node) return;
+  let active = false, moved = false, sy = 0;
+  const idxOf = () => _workout.exercises.indexOf(ex);
+  const isLast = () => idxOf() >= _workout.exercises.length - 1;
+  const start = (y) => {
+    if (isLast()) return;
+    if (!_exEdit) enterExEditMode();
+    active = true; moved = false; sy = y;
+    node.classList.add("active");
+    _linkLineShow(node);
+  };
+  const move = (y, e) => {
+    if (!active) return;
+    if (e && e.cancelable) e.preventDefault();
+    if (Math.abs(y - sy) > 6) moved = true;
+    _linkLineMove(y);
+    _linkTargetHighlight(idxOf(), y);
+  };
+  const end = () => {
+    if (!active) return;
+    active = false;
+    node.classList.remove("active");
+    _linkLineHide();
+    const wasOk = _linkTargetOk;
+    _linkTargetClear(); _linkTargetOk = false;
+    const i = idxOf();
+    if (i < 0 || i >= _workout.exercises.length - 1) return;
+    const linkedNext = ex.supersetId && _workout.exercises[i + 1] && _workout.exercises[i + 1].supersetId === ex.supersetId;
+    if (moved) { if (wasOk) { linkSupersetAt(i); haptic(); afterSupersetChange(); } }
+    else { linkedNext ? unlinkSupersetAt(i) : linkSupersetAt(i); haptic(); afterSupersetChange(); }
+  };
+  const cancel = () => { active = false; node.classList.remove("active"); _linkLineHide(); _linkTargetClear(); _linkTargetOk = false; };
+
+  node.addEventListener("touchstart", (e) => { e.stopPropagation(); const t = e.touches[0]; if (t) start(t.clientY); }, { passive: true });
+  node.addEventListener("touchmove",  (e) => { e.stopPropagation(); const t = e.touches[0]; if (t) move(t.clientY, e); }, { passive: false });
+  node.addEventListener("touchend",   (e) => { e.stopPropagation(); end(); });
+  node.addEventListener("touchcancel", cancel);
+  node.addEventListener("mousedown", (e) => {
+    e.stopPropagation(); e.preventDefault();
+    start(e.clientY);
+    const mm = (ev) => move(ev.clientY, ev);
+    const mu = () => { end(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); };
+    window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu);
+  });
+}
+
 function renderExerciseList() {
   const scroll = $("workout-scroll");
   exitExEditMode();          // любой перерендер сбрасывает режим редактирования
@@ -3102,6 +3268,9 @@ function renderExerciseList() {
       <button class="ex-swap-badge" title="Заменить упражнение" aria-label="Заменить упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       </button>
+      <button class="ex-link-node" title="Связать в суперсет — протяни вниз к следующему упражнению" aria-label="Связать в суперсет">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      </button>
       <div class="ex-block-header">
         <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
         ${prChip}
@@ -3149,7 +3318,9 @@ function renderExerciseList() {
           const i = _workout.exercises.indexOf(ex);
           if (i !== -1) _workout.exercises.splice(i, 1);
           block.remove();
+          normalizeSupersets();     // удаление могло оставить одиночку от связки
           saveWorkoutState();
+          applySupersetVisuals();
           updateSummaryBar();
           if (!_workout.exercises.length) exitExEditMode();
         }
@@ -3176,6 +3347,9 @@ function renderExerciseList() {
 
     // Зажатие (long-press) → режим перестановки; в нём блок тащится вверх/вниз.
     wireExBlockGestures(block, ex);
+
+    // Узел связи «протяни вниз» → суперсет со следующим блоком.
+    wireLinkNode(block, ex);
 
     // Add set
     block.querySelector(".add-set-btn").addEventListener("click", () => {
@@ -3247,6 +3421,10 @@ function renderExerciseList() {
     });
     // (Блок уже вставлен в DOM выше — до renderSetsInBlock, см. комментарий там.)
   });
+
+  // Маркеры суперсетов («хребет» + состояние узлов) по всем блокам разом —
+  // после того как все .ex-block уже в DOM в порядке _workout.exercises.
+  applySupersetVisuals();
 }
 
 // lastWorkout передаёт renderExerciseList (уже посчитан один раз на рендер);
@@ -7152,10 +7330,15 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
         <div class="wd-stat"><div class="wd-stat-val">${totalVol ? `<span class="wd-stat-num">${totalVol.toLocaleString("ru-RU")}</span> <span class="wd-stat-unit">кг</span>` : dash}</div><div class="wd-stat-label">Тоннаж</div></div>
         <div class="wd-stat"><div class="wd-stat-val">${workout.durationSec ? statTimeHTML(workout.durationSec) : dash}</div><div class="wd-stat-label">Время</div></div>
       </div>
-      ${allEx.map(ex => {
+      ${allEx.map((ex, exIdx) => {
         const known    = exercises.find(e => e.id === ex.exerciseId);
         const exDef    = known || { name: ex.name || "Упражнение недоступно" };
         const isOrphan = !known;   // упражнение удалено из базы — есть только в истории
+        // Суперсет (только для чтения): подряд идущие блоки с общим supersetId.
+        const ssId       = ex.supersetId || null;
+        const ssPrev     = !!ssId && allEx[exIdx - 1] && allEx[exIdx - 1].supersetId === ssId;
+        const ssNext     = !!ssId && allEx[exIdx + 1] && allEx[exIdx + 1].supersetId === ssId;
+        const ssClass    = ssId ? ` wd-ss${ssPrev ? "" : " wd-ss-first"}${ssNext ? "" : " wd-ss-last"}` : "";
         const doneSets = ex.sets.filter(s => s.done);
         const rec      = records[ex.exerciseId];
         const exVol    = doneSets.reduce((v, s) => v + setVolume(s), 0);
@@ -7174,7 +7357,7 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
         // (назад к прошлому выполнению / вперёд к следующему).
         const prevW = DATA.adjacentWorkoutForExercise(userId, ex.exerciseId, workout.startedAt, "prev");
         const nextW = DATA.adjacentWorkoutForExercise(userId, ex.exerciseId, workout.startedAt, "next");
-        return `<div class="wd-ex" data-ex-id="${ex.exerciseId}">
+        return `<div class="wd-ex${ssClass}" data-ex-id="${ex.exerciseId}">
           <div class="wd-ex-head">
             <span class="wd-ex-name${isOrphan ? " orphan" : ""}">${escHtml(exDef.name)}</span>
             ${doneSets.length ? `<span class="wd-ex-meta${volPr ? " pr" : ""}">${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
