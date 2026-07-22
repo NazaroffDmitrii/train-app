@@ -17,7 +17,7 @@
  * каркаса, чтобы activate-обработчик подчистил старые записи.
  */
 
-const CACHE_VERSION = "train-shell-v150";
+const CACHE_VERSION = "train-shell-v152";
 
 // Эти пути — относительно расположения sw.js (корень GitHub Pages).
 // manifest.json намеренно НЕ кэшируем: он не подключён в index.html (см.
@@ -37,6 +37,7 @@ const APP_SHELL = [
   "./app.js",
   "./constructor.js",
   "./outbox.js",
+  "./syncengine.js",
   "./bridge.js",
   "./auth-ui.js",
   "./icons/icon-192.png",

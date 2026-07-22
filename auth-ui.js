@@ -188,16 +188,35 @@ document.getElementById("switch-user-btn").addEventListener("click", async () =>
 // кнопка даёт явное подтверждение и ручной повтор, если что-то зависло).
 document.getElementById("sync-upload-btn").addEventListener("click", async () => {
   closeModal(settingsModalBackdrop);
+  const uid = DATA.getCurrentUser();
+  if (!uid) { showToast("Сначала выберите профиль"); return; }
+  if (!navigator.onLine) { showToast("Нет сети — попробуйте позже"); return; }
+  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showToast("Вы не авторизованы"); return; }
+  showToast("Синхронизируем…");
   try {
-    const res = await Outbox.flush();
-    if (res.skipped === "offline") showToast("Нет сети — попробуйте позже");
-    else if (res.skipped === "no-session") showToast("Вы не авторизованы");
-    else if (res.skipped === "in-flight") showToast("Уже отправляем…");
-    else if (res.failed > 0) showToast(`Отправлено ${res.sent}, ошибка на ${res.failed} — попробуйте ещё раз`);
-    else if (res.sent > 0) showToast(`Отправлено в облако: ${res.sent}`);
-    else showToast("Всё уже в облаке");
+    if (SyncEngine.isMigrated(uid)) {
+      // Обычный полный синк: протолкнуть локальные правки + подтянуть чужие.
+      const res = await SyncEngine.sync(uid);
+      const st = await SyncEngine.status(uid);
+      if (res.status === "error") showToast("Ошибка синхронизации: " + String(res.error || "").slice(0, 80));
+      else if (st.state === "blocked") showToast(`Часть изменений не отправилась (${st.blocked}) — попробуйте ещё раз`);
+      else showToast("Синхронизировано");
+    } else {
+      // Профиль ещё не мигрировал. Если в облаке уже есть данные — безопасно
+      // перенимаем их. Если облако пусто — НЕ публикуем вслепую (это сделало бы
+      // текущее устройство источником истины); публикация — отдельным явным
+      // шагом (см. восстановление данных).
+      const hasCloud = await SyncEngine.cloudHasData(uid);
+      if (hasCloud) {
+        await SyncEngine.hydrateSmallState(uid);
+        showToast("Данные загружены из облака");
+        if (screenMenu.classList.contains("active")) refreshMenu();
+      } else {
+        showToast("В облаке пока нет данных этого профиля — опубликуйте их с основного устройства");
+      }
+    }
   } catch (e) {
-    showToast("Ошибка отправки: " + (e.message || "неизвестная"));
+    showToast("Ошибка синхронизации: " + (e.message || "неизвестная"));
   } finally {
     updateOnlineStatus();
   }
@@ -483,7 +502,14 @@ async function renderProfiles() {
     // просматриваемого профиля), затем читать — чтобы hydrate не откатил
     // локальное устаревшим облаком (та же гонка, что и в bootAuthAware).
     try { await Outbox.flush(); } catch {}
-    await Bridge.hydrate(profileId);
+    try {
+      await Bridge.hydrate(profileId);
+    } catch (e) {
+      // Синк не прошёл — не молчим (пользователь должен знать), но и не рушим
+      // вход: локальные данные local-first остаются на экране.
+      console.warn("enterProfile: hydrate", e);
+      showToast("Не удалось синхронизироваться: " + (e.message || "ошибка сети"));
+    }
     _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
     refreshSettingsButtons();

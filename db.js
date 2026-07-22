@@ -189,6 +189,40 @@ const DB = (() => {
     return rows?.[0] || patch;
   }
 
+  // ---- пер-сущностное «мелкое» состояние (supabase-relational.sql) ---------
+  // Каждая сущность — своя строка со своим updated_at и надгробием (deleted).
+  // Ключ конфликта для upsert зависит от таблицы (составной PK). updated_at
+  // проставляет СЕРВЕР (триггер) — сюда его не шлём.
+  const ENTITY_CONFLICT = {
+    user_exercises:       "user_id,id",
+    user_templates:       "user_id,id",
+    user_exercise_groups: "user_id,id",
+    user_categories:      "user_id,name",
+    user_hidden:          "user_id,kind,ref_id",
+    user_muscles:         "user_id,id",
+    user_movements:       "user_id,id",
+    user_ordering:        "user_id",
+  };
+
+  // Затянуть строки таблицы, изменённые ПОСЛЕ sinceIso (водяной знак прошлой
+  // синхронизации). sinceIso пустой → вся таблица (первый пул). Порядок по
+  // updated_at по возрастанию — чтобы клиент двигал водяной знак по последней.
+  async function pullEntities(table, userId, sinceIso) {
+    let q = `user_id=eq.${enc(userId)}&select=*&order=updated_at.asc`;
+    if (sinceIso) q += `&updated_at=gt.${enc(sinceIso)}`;
+    return select(table, q);
+  }
+
+  // Пачечный upsert строк-сущностей. Идемпотентно по составному ключу —
+  // повторная отправка после реконнекта не плодит дубли. Возвращает строки с
+  // серверным updated_at (нужно клиенту, чтобы обновить локальный водяной знак).
+  async function pushEntities(table, rows) {
+    if (!Array.isArray(rows) || !rows.length) return [];
+    const onConflict = ENTITY_CONFLICT[table];
+    if (!onConflict) throw new Error("DB.pushEntities: неизвестная таблица " + table);
+    return upsert(table, rows, { onConflict });
+  }
+
   // ---- рекорды (серверная истина — представление exercise_records) --------
   async function exerciseRecords(userId) {
     return select("exercise_records", `user_id=eq.${enc(userId)}&select=*`);
@@ -278,6 +312,7 @@ const DB = (() => {
     myProfile, getProfile, updateProfile, myClients, hasAnyTrainer, createManagedClient, createInvite, claimInvite,
     listWorkouts, getWorkout, saveWorkout, saveWorkouts, deleteWorkout,
     getUserData, saveUserData,
+    pullEntities, pushEntities,
     exerciseRecords, deleteMyAccount, deleteManagedClient,
     getAtlas,
     saveAtlasGroups, saveAtlasMuscles, saveAtlasMovements, saveAtlasLinks, saveAtlasExercises,

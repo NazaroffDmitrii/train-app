@@ -78,40 +78,43 @@ const Bridge = (() => {
     saveCategoryColors: DATA.saveCategoryColors.bind(DATA),
     saveExerciseOrder:  DATA.saveExerciseOrder.bind(DATA),
     saveTemplates:      DATA.saveTemplates.bind(DATA),
+    saveExerciseGroups: DATA.saveExerciseGroups.bind(DATA),
     saveOwnMuscles:        DATA.saveOwnMuscles.bind(DATA),
     saveHiddenMuscleIds:   DATA.saveHiddenMuscleIds.bind(DATA),
     saveOwnMovements:      DATA.saveOwnMovements.bind(DATA),
     saveHiddenMovementIds: DATA.saveHiddenMovementIds.bind(DATA),
   };
 
-  /* ----- debounced push «мелкого» состояния (упражнения/шаблоны/категории) -----
-     Один блоб на профиль (user_data) — компаунд-операции (напр. renameCategory
-     трогает и категории, и упражнения разом) дают несколько вызовов подряд;
-     debounce схлопывает их в один запрос вместо нескольких. */
+  // Оригинальные (не обёрнутые) setter'ы «мелкого» состояния — движок синка
+  // (syncengine.js) пишет ими локальные списки при восстановлении из облака,
+  // ЧТОБЫ rebuild не запускал повторный push только что подтянутого. Также
+  // сюда должны идти внутренние seed'ы (см. фаза 5), чтобы дефолты не утекали
+  // в облако как «правки пользователя».
+  window.__origSetters = {
+    saveOwnExercises:   _orig.saveOwnExercises,
+    saveTemplates:      _orig.saveTemplates,
+    saveExerciseGroups: _orig.saveExerciseGroups,
+    saveAllCategories:  _orig.saveAllCategories,
+    saveCategoryColors: _orig.saveCategoryColors,
+    saveExerciseOrder:  _orig.saveExerciseOrder,
+    saveHiddenIds:      _orig.saveHiddenIds,
+    saveOwnMuscles:        _orig.saveOwnMuscles,
+    saveHiddenMuscleIds:   _orig.saveHiddenMuscleIds,
+    saveOwnMovements:      _orig.saveOwnMovements,
+    saveHiddenMovementIds: _orig.saveHiddenMovementIds,
+  };
+
+  /* ----- push «мелкого» состояния через пер-сущностный движок -----
+     Любая правка мелкого состояния фиксируется СРАЗУ в durable-очередь
+     (SyncEngine.diffAndEnqueue сравнивает с «тенью» и ставит только реально
+     изменившиеся строки + надгробия), а сетевой флаш схлопывается debounce'ом.
+     Пер-сущностность — ключевое: правки РАЗНОГО на разных устройствах больше не
+     затирают друг друга (в отличие от прежнего блоба user_data, где «последний
+     победил» целиком). */
   const _udTimers = new Map();
   function scheduleUserDataPush(userId) {
     if (!Auth.isSignedIn()) return;
-    // ВАЖНО: кладём правку в durable-очередь СРАЗУ (не через debounce). Раньше
-    // enqueue тоже стоял за setTimeout(400ms) — и если приложение
-    // перезагружалось/закрывалось в это окно (в т.ч. само, при обновлении SW),
-    // правка не попадала в Outbox вообще и жила только в localStorage, а
-    // следующий hydrate её стирал. Теперь состояние фиксируется мгновенно;
-    // debounce остаётся только на СЕТЕВОЙ флаш — схлопнуть пачку правок в один
-    // запрос. Дедуп по ключу ud:<userId> (outbox.js) — каждый вызов просто
-    // перезаписывает блоб последним полным снимком локального состояния.
-    Outbox.enqueueUserData(userId, {
-      own_exercises:   DATA.getOwnExercises(userId),
-      hidden_ids:      DATA.getHiddenIds(userId),
-      categories:      DATA.getAllCategories(userId),
-      category_colors: DATA.getCategoryColors(userId),
-      exercise_order:  DATA.getExerciseOrder(userId),
-      templates:       DATA.getTemplates(userId),
-      // Личный оверлей справочника (мышцы/движения): own + hidden.
-      own_muscles:         DATA.getOwnMuscles(userId),
-      hidden_muscle_ids:   DATA.getHiddenMuscleIds(userId),
-      own_movements:       DATA.getOwnMovements(userId),
-      hidden_movement_ids: DATA.getHiddenMovementIds(userId),
-    });
+    SyncEngine.diffAndEnqueue(userId);   // мгновенно и durable — потеря окна невозможна
     clearTimeout(_udTimers.get(userId));
     _udTimers.set(userId, setTimeout(() => {
       _udTimers.delete(userId);
@@ -120,7 +123,7 @@ const Bridge = (() => {
   }
 
   ["saveOwnExercises", "saveHiddenIds", "saveAllCategories", "saveCategoryColors", "saveExerciseOrder", "saveTemplates",
-   "saveOwnMuscles", "saveHiddenMuscleIds", "saveOwnMovements", "saveHiddenMovementIds"]
+   "saveExerciseGroups", "saveOwnMuscles", "saveHiddenMuscleIds", "saveOwnMovements", "saveHiddenMovementIds"]
     .forEach(name => {
       DATA[name] = function (userId, ...rest) {
         const r = _orig[name](userId, ...rest);
@@ -190,8 +193,10 @@ const Bridge = (() => {
   };
 
   /* ----- hydrate: подтянуть из облака в локальный DATA при входе/переключении
-     профиля. Заменяет локальный кэш содержимым облака (не сливает) — облако
-     полагается источником истины после входа. ----- */
+     профиля. История/рекорды/Атлас — как раньше; «мелкое» состояние
+     (упражнения/шаблоны/группы/категории/оверлей/порядок) теперь идёт через
+     пер-сущностный движок (SyncEngine.hydrateSmallState) со слиянием по строкам,
+     а не «облако затирает локальное». ----- */
   async function hydrate(userId) {
     if (!Auth.isSignedIn()) return;
     await ensureAuthProfileId();
@@ -226,34 +231,16 @@ const Bridge = (() => {
       }
     } catch (e) { console.warn("Bridge.hydrate: atlas", e); }
 
-    // ЗАЩИТА ОТ ОТКАТА: если в очереди ещё висит несинхронизированный блоб
-    // user_data этого профиля (ud:<userId>) — значит ЛОКАЛЬНОЕ состояние новее
-    // облака (правка не успела/не смогла уйти). В этом случае НЕ перезатираем
-    // локальные упражнения/шаблоны/группы/категории облачной (устаревшей)
-    // копией — иначе теряются именно те правки, что ждут отправки. Пусть их
-    // сначала дошлёт flush; на следующем hydrate облако уже будет актуальным.
-    // Именно отсутствие этой проверки приводило к «внезапному» откату шаблонов,
-    // группировки и правок и к «осиротевшим» упражнениям в истории.
-    const localUserDataAhead = await Outbox.has("ud:" + userId);
-    const ud = localUserDataAhead ? null : await DB.getUserData(userId);
-    if (ud) {
-      if (Array.isArray(ud.own_exercises)) _orig.saveOwnExercises(userId, ud.own_exercises);
-      if (Array.isArray(ud.hidden_ids))    _orig.saveHiddenIds(userId, ud.hidden_ids);
-      if (Array.isArray(ud.categories) && ud.categories.length) _orig.saveAllCategories(userId, ud.categories);
-      if (ud.category_colors)              _orig.saveCategoryColors(userId, ud.category_colors);
-      if (ud.exercise_order !== undefined) _orig.saveExerciseOrder(userId, ud.exercise_order);
-      if (Array.isArray(ud.templates))     _orig.saveTemplates(userId, ud.templates);
-      // Личный оверлей справочника (мышцы/движения).
-      if (Array.isArray(ud.own_muscles))         _orig.saveOwnMuscles(userId, ud.own_muscles);
-      if (Array.isArray(ud.hidden_muscle_ids))   _orig.saveHiddenMuscleIds(userId, ud.hidden_muscle_ids);
-      if (Array.isArray(ud.own_movements))       _orig.saveOwnMovements(userId, ud.own_movements);
-      if (Array.isArray(ud.hidden_movement_ids)) _orig.saveHiddenMovementIds(userId, ud.hidden_movement_ids);
-    }
-    if (ud || localUserDataAhead) {
-      // Личные упражнения полные (из облака ИЛИ уже локально) — не даём seed
-      // заново плодить дубликаты дефолтного набора (см. ensureExercisesSeeded).
-      DATA.markExercisesSeeded(userId);
-    }
+    // «Мелкое» состояние — через пер-сущностный движок: слияние по строкам с
+    // облаком (или первичное перенятие при миграции устройства). Ошибку не
+    // глотаем молча — пробрасываем наверх, чтобы bootAuthAware показал тост
+    // (честный статус: пользователь ДОЛЖЕН знать, если синк не прошёл).
+    const res = await SyncEngine.hydrateSmallState(userId);
+    // Локальные списки после слияния полные — не даём seed плодить дубликаты
+    // дефолтного набора (см. DATA.ensureExercisesSeeded). Кроме случая, когда
+    // облако ещё не опубликовано (awaiting-publish) — там ничего не меняли.
+    if (res.mode === "merge" || res.mode === "adopted") DATA.markExercisesSeeded(userId);
+    return res;
   }
 
   /* ----- ограничение локального следа -----
@@ -292,3 +279,18 @@ const Bridge = (() => {
     get authProfileId() { return authProfileId; },
   };
 })();
+
+/* ----- авто-синхронизация при появлении сети -----
+   Требование: синк сам срабатывает на «открытие + сеть + после правок».
+   «После правок» — scheduleUserDataPush (debounced flush). «Открытие» —
+   bootAuthAware → Bridge.hydrate. «Сеть» — здесь: при событии online делаем
+   ПОЛНЫЙ синк (push+pull) текущего профиля, чтобы подтянуть и чужие изменения.
+   Только для уже мигрировавшего профиля — иначе не пушим (гейт миграции). */
+window.addEventListener("online", () => {
+  try {
+    const uid = DATA.getCurrentUser && DATA.getCurrentUser();
+    if (uid && typeof Auth !== "undefined" && Auth.isSignedIn() && SyncEngine.isMigrated(uid)) {
+      SyncEngine.sync(uid);
+    }
+  } catch (e) { console.warn("online sync", e); }
+});
