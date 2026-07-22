@@ -479,6 +479,10 @@ async function renderProfiles() {
     onProfileEnter(profileId);
     _menuHydrating = true;
     updateOnlineStatus();
+    // Сперва дослать в облако всё, что ждёт в очереди (в т.ч. правки прежде
+    // просматриваемого профиля), затем читать — чтобы hydrate не откатил
+    // локальное устаревшим облаком (та же гонка, что и в bootAuthAware).
+    try { await Outbox.flush(); } catch {}
     await Bridge.hydrate(profileId);
     _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
@@ -616,7 +620,13 @@ async function openInviteModal() {
    no-op) и не знает про Auth/Bridge. Здесь, когда всё загружено, приводим
    стартовый экран к реальному состоянию сессии. */
 (async function bootAuthAware() {
-  if (Auth.isSignedIn()) Outbox.flush();   // на старте дослать очередь оффлайн-правок
+  // ВАЖНО: ДОЖИДАЕМСЯ флаша очереди ДО hydrate. Иначе флаш (отправка локальных
+  // правок в облако) и hydrate (чтение облака обратно) шли параллельно — hydrate
+  // мог прочитать облако раньше, чем туда доехали правки, и откатить локальное.
+  // Теперь: сперва проталкиваем локальное в облако, потом читаем — облако уже
+  // актуально. Оффлайн/ошибка флаша — не блокируем загрузку (hydrate ниже сам
+  // не тронет локальное, пока правка висит в очереди, см. Bridge.hydrate).
+  if (Auth.isSignedIn()) { try { await Outbox.flush(); } catch {} }
   const currentUser = DATA.getCurrentUser();
   if (Auth.isSignedIn() && currentUser) {
     // app.js init уже увёл на меню — дотягиваем данные из облака новым путём.

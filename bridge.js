@@ -91,22 +91,31 @@ const Bridge = (() => {
   const _udTimers = new Map();
   function scheduleUserDataPush(userId) {
     if (!Auth.isSignedIn()) return;
+    // ВАЖНО: кладём правку в durable-очередь СРАЗУ (не через debounce). Раньше
+    // enqueue тоже стоял за setTimeout(400ms) — и если приложение
+    // перезагружалось/закрывалось в это окно (в т.ч. само, при обновлении SW),
+    // правка не попадала в Outbox вообще и жила только в localStorage, а
+    // следующий hydrate её стирал. Теперь состояние фиксируется мгновенно;
+    // debounce остаётся только на СЕТЕВОЙ флаш — схлопнуть пачку правок в один
+    // запрос. Дедуп по ключу ud:<userId> (outbox.js) — каждый вызов просто
+    // перезаписывает блоб последним полным снимком локального состояния.
+    Outbox.enqueueUserData(userId, {
+      own_exercises:   DATA.getOwnExercises(userId),
+      hidden_ids:      DATA.getHiddenIds(userId),
+      categories:      DATA.getAllCategories(userId),
+      category_colors: DATA.getCategoryColors(userId),
+      exercise_order:  DATA.getExerciseOrder(userId),
+      templates:       DATA.getTemplates(userId),
+      // Личный оверлей справочника (мышцы/движения): own + hidden.
+      own_muscles:         DATA.getOwnMuscles(userId),
+      hidden_muscle_ids:   DATA.getHiddenMuscleIds(userId),
+      own_movements:       DATA.getOwnMovements(userId),
+      hidden_movement_ids: DATA.getHiddenMovementIds(userId),
+    });
     clearTimeout(_udTimers.get(userId));
     _udTimers.set(userId, setTimeout(() => {
       _udTimers.delete(userId);
-      Outbox.enqueueUserData(userId, {
-        own_exercises:   DATA.getOwnExercises(userId),
-        hidden_ids:      DATA.getHiddenIds(userId),
-        categories:      DATA.getAllCategories(userId),
-        category_colors: DATA.getCategoryColors(userId),
-        exercise_order:  DATA.getExerciseOrder(userId),
-        templates:       DATA.getTemplates(userId),
-        // Личный оверлей справочника (мышцы/движения): own + hidden.
-        own_muscles:         DATA.getOwnMuscles(userId),
-        hidden_muscle_ids:   DATA.getHiddenMuscleIds(userId),
-        own_movements:       DATA.getOwnMovements(userId),
-        hidden_movement_ids: DATA.getHiddenMovementIds(userId),
-      }).then(() => Outbox.flush());
+      Outbox.flush();
     }, PUSH_DEBOUNCE_MS));
   }
 
@@ -217,7 +226,16 @@ const Bridge = (() => {
       }
     } catch (e) { console.warn("Bridge.hydrate: atlas", e); }
 
-    const ud = await DB.getUserData(userId);
+    // ЗАЩИТА ОТ ОТКАТА: если в очереди ещё висит несинхронизированный блоб
+    // user_data этого профиля (ud:<userId>) — значит ЛОКАЛЬНОЕ состояние новее
+    // облака (правка не успела/не смогла уйти). В этом случае НЕ перезатираем
+    // локальные упражнения/шаблоны/группы/категории облачной (устаревшей)
+    // копией — иначе теряются именно те правки, что ждут отправки. Пусть их
+    // сначала дошлёт flush; на следующем hydrate облако уже будет актуальным.
+    // Именно отсутствие этой проверки приводило к «внезапному» откату шаблонов,
+    // группировки и правок и к «осиротевшим» упражнениям в истории.
+    const localUserDataAhead = await Outbox.has("ud:" + userId);
+    const ud = localUserDataAhead ? null : await DB.getUserData(userId);
     if (ud) {
       if (Array.isArray(ud.own_exercises)) _orig.saveOwnExercises(userId, ud.own_exercises);
       if (Array.isArray(ud.hidden_ids))    _orig.saveHiddenIds(userId, ud.hidden_ids);
@@ -230,8 +248,10 @@ const Bridge = (() => {
       if (Array.isArray(ud.hidden_muscle_ids))   _orig.saveHiddenMuscleIds(userId, ud.hidden_muscle_ids);
       if (Array.isArray(ud.own_movements))       _orig.saveOwnMovements(userId, ud.own_movements);
       if (Array.isArray(ud.hidden_movement_ids)) _orig.saveHiddenMovementIds(userId, ud.hidden_movement_ids);
-      // Личные упражнения из облака уже полные — не даём seed заново плодить
-      // дубликаты дефолтного набора (см. DATA.ensureExercisesSeeded).
+    }
+    if (ud || localUserDataAhead) {
+      // Личные упражнения полные (из облака ИЛИ уже локально) — не даём seed
+      // заново плодить дубликаты дефолтного набора (см. ensureExercisesSeeded).
       DATA.markExercisesSeeded(userId);
     }
   }

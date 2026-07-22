@@ -66,6 +66,13 @@ const Outbox = (() => {
     try { return await tx("readonly", store => reqToPromise(store.count())); }
     catch { return 0; }
   }
+  // Есть ли в очереди операция с таким ключом. Нужно hydrate (bridge.js), чтобы
+  // не затирать локальное состояние облаком, пока локальная правка ещё не ушла
+  // (напр. незасинканный ud:<userId> означает «локальный user_data новее облака»).
+  async function has(opId) {
+    try { return !!(await tx("readonly", store => reqToPromise(store.get(opId)))); }
+    catch { return false; }
+  }
 
   /* ----- публичные enqueue ----- */
   function enqueueWorkout(row)      { return put({ opId: "wk:" + row.id, type: "saveWorkout", args: row }); }
@@ -81,37 +88,55 @@ const Outbox = (() => {
     }
   }
 
+  // Сколько раз пытаемся протолкнуть одну операцию, прежде чем счесть её
+  // «ядовитой» (битые данные / RLS-отказ — то, что не исправится повтором) и
+  // отправить в карантин. Карантинная операция остаётся в очереди (её видно и
+  // можно разобрать вручную), но БОЛЬШЕ НЕ пробуется и — главное — НЕ блокирует
+  // остальные. Историческая причина: раньше цикл делал break на первой ошибке,
+  // и одна застрявшая тренировка навсегда стопорила блоб user_data
+  // (шаблоны/упражнения/группы) за собой — из-за этого при hydrate локальные
+  // правки откатывались устаревшим облаком.
+  const MAX_ATTEMPTS = 6;
+
   let _flushing = false;
   async function flush() {
     if (_flushing) return { skipped: "in-flight" };
     if (!navigator.onLine) return { skipped: "offline" };
     if (typeof Auth === "undefined" || !Auth.isSignedIn()) return { skipped: "no-session" };
     _flushing = true;
-    let sent = 0, failed = 0;
+    let sent = 0, failed = 0, blocked = 0;
     try {
       const ops = await all();
       for (const op of ops) {
+        if (op.blocked) { blocked++; continue; }   // карантин — не трогаем, но и не теряем
         try { await apply(op); await remove(op.opId); sent++; }
         catch (e) {
           failed++;
-          console.warn("Outbox: операция не прошла, оставляем в очереди", op.opId, e);
-          // Прерываемся на первой ошибке: скорее всего сеть/сессия отвалились —
-          // нет смысла долбить остальные, попробуем весь хвост в следующий флаш.
-          break;
+          // Оффлайн/сессия отвалилась ПОСРЕДИ флаша — это среда, а не вина
+          // операции: выходим без штрафа, весь хвост попробуем в следующий раз.
+          if (!navigator.onLine || (typeof Auth !== "undefined" && !Auth.isSignedIn())) break;
+          // Онлайн, но операция всё равно не прошла — вероятно «ядовитая».
+          // НЕ прерываем очередь (иначе она заблокирует user_data за собой):
+          // считаем попытки, по исчерпании — карантин. Операцию НЕ удаляем.
+          op.attempts = (op.attempts || 0) + 1;
+          if (op.attempts >= MAX_ATTEMPTS) op.blocked = true;
+          try { await put(op); } catch {}
+          console.warn("Outbox: операция не прошла", op.opId, "попытка", op.attempts, op.blocked ? "(карантин)" : "", e);
+          // сознательно продолжаем со следующей операцией
         }
       }
     } finally {
       _flushing = false;
     }
     if (typeof updateOnlineStatus === "function") { try { updateOnlineStatus(); } catch {} }
-    return { sent, failed };
+    return { sent, failed, blocked };
   }
 
   // Флаш при появлении сети (в дополнение к обработчику в app.js — тот дёргает
   // старую no-op SyncQueue.flush).
   window.addEventListener("online", () => { flush(); });
 
-  return { enqueueWorkout, enqueueDeleteWorkout, enqueueUserData, flush, count, all };
+  return { enqueueWorkout, enqueueDeleteWorkout, enqueueUserData, flush, count, all, has };
 })();
 
 /* ---- индикатор синхронизации ----
