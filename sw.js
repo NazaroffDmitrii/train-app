@@ -2,7 +2,7 @@
  * train. — Service Worker
  *
  * Кэширует каркас приложения (раздел 8 спецификации): index.html (HTML+CSS) +
- * вынесенные скрипты (config/storage/sync/app.js) + иконки. Цель — чтобы
+ * вынесенные скрипты (config/auth/db/app.js) + иконки. Цель — чтобы
  * приложение открывалось и работало вообще без сети, а не только данные
  * тренировок (данные уже офлайн-устойчивы сами по себе — см. модуль DATA
  * в app.js, пишет в localStorage синхронно при каждом действии).
@@ -17,7 +17,7 @@
  * каркаса, чтобы activate-обработчик подчистил старые записи.
  */
 
-const CACHE_VERSION = "train-shell-v152";
+const CACHE_VERSION = "train-shell-v153";
 
 // Эти пути — относительно расположения sw.js (корень GitHub Pages).
 // manifest.json намеренно НЕ кэшируем: он не подключён в index.html (см.
@@ -27,8 +27,6 @@ const APP_SHELL = [
   "./",
   "./index.html",
   "./config.js",
-  "./storage.js",
-  "./sync.js",
   "./lib.js",
   "./atlas-seed.js",
   "./muscle-anatomy.js",
@@ -67,11 +65,11 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const req = event.request;
 
-  // Запросы записи (а в будущем — к JSONBin) сервис-воркер не трогает,
+  // Запросы записи сервис-воркер не трогает,
   // ими занимается очередь синхронизации внутри самого приложения.
   if (req.method !== "GET") return;
 
-  // Чужие источники (например, будущий JSONBin API) тоже не кэшируем здесь.
+  // Чужие источники (включая API Supabase) тоже не кэшируем здесь.
   if (new URL(req.url).origin !== self.location.origin) return;
 
   // Навигация. Корень/index — отдаём каркас даже офлайн (index.html-фолбэк).

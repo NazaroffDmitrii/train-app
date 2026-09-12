@@ -21,17 +21,9 @@
 // мелкое изменение в коде — версия +0.01. Крупный скачок версии — только по
 // отдельному явному указанию пользователя (напр. большой релиз). Меняя код,
 // не забывай поднимать это число.
-const APP_VERSION = "1.75";
+const APP_VERSION = "1.76";
 
 const CONFIG = {
-  ENABLED: true,
-
   SUPABASE_URL: "https://xkaaimxkxureljjucapn.supabase.co",
   SUPABASE_KEY: "sb_publishable_hxLSUMUYKno0NaYw721ciA_w3zD4NeS",
-
-  // Мэппинг локальных userId на строки таблицы public.snapshots (user_id).
-  BINS: {
-    user_dima: "dima",
-    user_natela: "natela",
-  },
 };

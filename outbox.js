@@ -153,8 +153,7 @@ const Outbox = (() => {
     } catch { return { pending: 0, blocked: 0, lastError: _lastError }; }
   }
 
-  // Флаш при появлении сети (в дополнение к обработчику в app.js — тот дёргает
-  // старую no-op SyncQueue.flush).
+  // Флаш при появлении сети. Обработчик в app.js дополнительно обновляет UI.
   window.addEventListener("online", () => { flush(); });
 
   return { enqueueWorkout, enqueueDeleteWorkout, enqueueUserData, enqueueEntity, flush, count, all, has, stats };
@@ -164,12 +163,7 @@ const Outbox = (() => {
  * ПЕРЕОПРЕДЕЛЯЕТ updateOnlineStatus() из app.js (та function-декларация,
  * замена работает без правок app.js — тот же приём, что в auth-ui.js).
  *
- * Старая версия читала SyncQueue.size() → isDirty-флаг в localStorage,
- * который выставляли десятки разбросанных по app.js SyncQueue.push(...) и
- * сбрасывали только внутри удалённых кнопок «В облако»/«Из облака» (см.
- * cleanup п.1). После их удаления флаг залипал навсегда → жёлтый «Есть
- * несинхронизированные изменения» горел даже при пустой очереди. Настоящий
- * источник истины теперь — количество операций в Outbox.
+ * Источник истины — количество операций в Outbox, а не флаги в localStorage.
  */
 function _syncTimeAgo(ts) {
   if (!ts) return "";

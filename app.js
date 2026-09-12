@@ -32,16 +32,10 @@ function applySetToRecord(recs, exerciseId, s) {
   }
 }
 
-Storage.configure({
-  enabled: CONFIG.ENABLED,
-  baseUrl: CONFIG.SUPABASE_URL,
-  apiKey:  CONFIG.SUPABASE_KEY,
-});
-
 /* ==========================================================================
    DATA — адаптер (localStorage-заглушка).
-   Структура намеренно спроектирована под будущую замену на IndexedDB +
-   JSONBin-очередь (спецификация, раздел 8): имена методов не изменятся.
+   Методы DATA — единая синхронная граница для экранов приложения. Bridge
+   перехватывает нужные записи и отправляет их через Outbox в Supabase.
    ========================================================================== */
 
 const DATA = (() => {
@@ -780,9 +774,8 @@ const DATA = (() => {
       return lsSet(`train_history_${userId}`, history);
     },
 
-    // Точечно обновить уже существующую тренировку (активную или в истории) —
-    // используется sync.js, чтобы проставить id удалённого bin'а после его
-    // создания, не трогая остальную структуру (раздел 8 спецификации).
+    // Точечно обновить уже существующую тренировку (активную или в истории).
+    // Сохранён для локальных операций редактора и обратной совместимости.
     updateWorkoutInPlace(userId, workout) {
       const active = this.getActiveWorkout(userId);
       if (active && active.id === workout.id) { this.saveActiveWorkout(userId, workout); return; }
@@ -791,10 +784,8 @@ const DATA = (() => {
       if (idx !== -1) { history[idx] = workout; lsSet(`train_history_${userId}`, history); }
     },
 
-    // Лёгкий индекс тренировок — id + ссылка на удалённый bin + сводка для
-    // списка истории. Раздел 8: «отдельный бин на каждую тренировку» —
-    // индекс нужен, чтобы знать, какие бины вообще существуют, не вычитывая
-    // содержимое каждой тренировки целиком.
+    // Legacy-индекс истории. Новая модель получает историю из таблицы workouts;
+    // ключ сохранён лишь для корректного открытия старых локальных бэкапов.
     getWorkoutIndex(userId) { return ls(`train_workout_index_${userId}`, []); },
     saveWorkoutIndex(userId, list) { lsSet(`train_workout_index_${userId}`, list); },
     deleteWorkout(userId, workoutId) {
@@ -838,9 +829,8 @@ const DATA = (() => {
     },
     // Полный пересчёт рекордов из истории — после удаления/правки тренировки,
     // иначе рекорд от удалённой тренировки висел бы вечно (updateRecords только
-    // повышает максимумы). Вызывать ТОЛЬКО когда локальная история полная
-    // (Sync.missingWorkoutCount === 0): иначе можно занизить настоящий рекорд из
-    // ещё не подтянутой старой тренировки. Гейт — на стороне вызова.
+    // повышает максимумы). Вызывать только когда локальная история полная:
+    // Bridge.hydrate загружает её перед обычной работой с профилем.
     recomputeRecords(userId) {
       const recs = {};
       this.getWorkoutHistory(userId).forEach(w => {
@@ -1318,16 +1308,21 @@ function showUndoToast(msg, onUndo) { showActionToast(msg, "Отменить", o
 document.addEventListener("storage-full", () => showToast("Хранилище заполнено — удали старые тренировки"));
 
 /* ==========================================================================
-   Sync queue (раздел 8 спецификации)
+   Совместимость после перехода на Bridge/Outbox.
 
-   Реальная реализация — в sync.js (Sync), который умеет настоящую отправку
-   в JSONBin через storage.js. SyncQueue — алиас на него же: так все вызовы
-   SyncQueue.push(...), расставленные по экранам ниже, продолжают работать
-   без изменений, независимо от того, что стоит за ними — стаб или реальная
-   синхронизация. Если JSONBin не настроен (config.js: ENABLED=false),
-   Sync.push() просто ничего не делает — приложение работает локально, как раньше.
+   Все реальные записи теперь перехватывает Bridge: DATA сначала сохраняет их
+   локально, затем ставит в Outbox. Старые вызовы SyncQueue.push остались в
+   экранном коде и не должны снова запускать вторую модель синхронизации.
+   Их постепенно удаляем при работе с соответствующими экранами.
    ========================================================================== */
-const SyncQueue = Sync;
+const SyncQueue = {
+  push() {},
+  size() { return 0; },
+  lastError() { return null; },
+  flush() {
+    return typeof Outbox !== "undefined" ? Outbox.flush() : Promise.resolve({ skipped: "not-ready" });
+  },
+};
 
 /* ==========================================================================
    Online status
@@ -1451,15 +1446,11 @@ function renderProfiles() {
     `;
     card.addEventListener("click", () => {
       DATA.setCurrentUser(user.id);
-      _menuHydrating = Storage.isEnabled() && navigator.onLine;
+      _menuHydrating = navigator.onLine;
       goToScreen("menu");
       onProfileEnter(user.id);
-      // Гидратация в фоне — переход на главный экран не ждёт сеть (раздел 8:
-      // local-first). Если что-то подтянулось, тихо обновляем уже открытое меню.
-      Sync.hydrateUser(user.id).then(() => {
-        _menuHydrating = false;
-        if (screenMenu.classList.contains("active")) refreshMenu();
-      });
+      // Реальная загрузка облачных данных происходит в auth-ui.js через
+      // Bridge.hydrate после проверки сессии.
     });
     profileList.appendChild(card);
   });
@@ -1551,33 +1542,24 @@ function doDeleteWorkout(workout, rerender, label) {
   const histSnap = [...DATA.getWorkoutHistory(userId)];
   const idxSnap  = [...DATA.getWorkoutIndex(userId)];
   const recSnap  = JSON.parse(JSON.stringify(DATA.getRecords(userId)));
-  const binId = workout._remoteBinId; // удалим и сам бин на JSONBin (если не отменят)
   // В корзину — полная тренировка + её запись индекса (для восстановления на неделю).
   const idxEntry = DATA.getWorkoutIndex(userId).find(e => e.id === workout.id) || null;
   const trashId = Trash.push(userId, { type: "workout", label, sub: fmtDate(workout.startedAt), data: { workout: JSON.parse(JSON.stringify(workout)), index: idxEntry ? JSON.parse(JSON.stringify(idxEntry)) : null } });
   DATA.deleteWorkout(userId, workout.id);
 
-  // Пересчёт рекордов только при полной локальной истории (см. detail-delete-btn).
-  const recsRecomputed = Sync.missingWorkoutCount(userId) === 0;
-  if (recsRecomputed) DATA.recomputeRecords(userId);
+  // История при гидратации загружается целиком, поэтому после удаления
+  // безопасно пересчитываем рекорды из оставшихся тренировок.
+  DATA.recomputeRecords(userId);
 
   SyncQueue.push("workout:delete", {});
-  if (recsRecomputed) SyncQueue.push("user:update", {});
   rerender(userId);
-
-  let undone = false;
-  const purgeTimer = setTimeout(() => {
-    if (!undone && binId) Storage.deleteBin(binId).catch(e => console.warn("deleteBin failed", e));
-  }, 6000);
 
   // Быстрая отмена + недельная корзина. При отмене чистим и запись корзины.
   showUndoToast("Тренировка удалена", () => {
-    undone = true;
-    clearTimeout(purgeTimer);
     Trash.remove(userId, trashId);
     DATA.saveWorkoutHistory(userId, histSnap);
     DATA.saveWorkoutIndex(userId, idxSnap);
-    if (recsRecomputed) { DATA.saveRecords(userId, recSnap); SyncQueue.push("user:update", {}); }
+    DATA.saveRecords(userId, recSnap);
     SyncQueue.push("workout:delete", {}); // повторно зальёт восстановленный индекс
     rerender(userId);
     showToast("Восстановлено");
@@ -1813,16 +1795,9 @@ function renderHistoryScreen() {
 
   const list = all.filter(w => historyTypeMatch(w, _historyFilter) && historyPeriodMatch(w, _historyPeriod));
 
-  // Хвост истории, который есть в индексе на JSONBin, но ещё не подтянут локально
-  // (старше лимита гидратации). Кнопка догружает следующую пачку по запросу.
-  const missing = (Sync.missingWorkoutCount && navigator.onLine) ? Sync.missingWorkoutCount(userId) : 0;
-  const moreBtnHtml = missing > 0
-    ? `<button class="history-all-btn" id="history-load-more">Загрузить ещё<span class="history-all-count">${missing}</span></button>`
-    : "";
-
   const listEl = $("history-screen-list");
   if (!list.length) {
-    listEl.innerHTML = `<p class="empty-state" style="padding:24px 6px">Тренировок по выбранным фильтрам нет.</p>` + moreBtnHtml;
+    listEl.innerHTML = `<p class="empty-state" style="padding:24px 6px">Тренировок по выбранным фильтрам нет.</p>`;
   } else {
     // Группируем по месяцам — список уже отсортирован «новые сверху».
     let html = "", curMonthKey = null;
@@ -1835,7 +1810,7 @@ function renderHistoryScreen() {
       }
       html += historyItemHtml(w);
     });
-    listEl.innerHTML = html + moreBtnHtml;
+    listEl.innerHTML = html;
     listEl.querySelectorAll(".history-item").forEach(el => {
       el.addEventListener("click", () => {
         const w = all.find(x => x.id === el.dataset.id);
@@ -1846,14 +1821,6 @@ function renderHistoryScreen() {
       wireHistoryItemSwipe(wrap, () => renderHistoryScreen()));
   }
 
-  const moreBtn = $("history-load-more");
-  if (moreBtn) moreBtn.addEventListener("click", () => {
-    moreBtn.disabled = true;
-    moreBtn.textContent = "Загрузка…";
-    Sync.loadMoreWorkouts(userId)
-      .then(n => { showToast(n > 0 ? `Загружено ещё: ${n}` : "Больше нет данных"); renderHistoryScreen(); })
-      .catch(() => { showToast("Не удалось загрузить"); renderHistoryScreen(); });
-  });
 }
 
 // Шторка сохраняет своё (развёрнутое) состояние сама — клик по «назад» больше
@@ -2064,8 +2031,8 @@ $("switch-user-btn").addEventListener("click", () => {
 /* — Экспорт / импорт данных (для каждого профиля отдельно) —
    Бэкап ОДНОГО пользователя: все ключи train_*_<userId> (история, упражнения,
    шаблоны, рекорды, категории, активная тренировка). Общие/девайсные ключи
-   (train_exercises, train_current_user, train_sync_dirty) в персональный бэкап
-   не входят. Страховка на случай потери JSONBin или очистки localStorage. */
+   в персональный бэкап не входят. Это страховка на случай очистки localStorage
+   или проблем с устройством, независимая от облачной синхронизации. */
 const BACKUP_PREFIX = "train_";
 
 // Ключи данных конкретного пользователя — оканчиваются на "_<userId>".
@@ -2582,26 +2549,12 @@ $("rest-skip").addEventListener("click", () => endRest(true));
 window.addEventListener("resize", () => { if (!$("rest-timer").hidden) positionRestTimer(); });
 if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (!$("rest-timer").hidden) positionRestTimer(); });
 
-// Фоновая синхронизация (sync.js) пишет в ту же персистентную активную
-// тренировку отдельно от экрана (создаёт удалённый bin и проставляет его id).
-// Перед каждым сохранением подхватываем этот id в свою копию, если он уже
-// появился, — иначе следующая запись с экрана его сотрёт, и при следующей
-// попытке синхронизации создастся вторая, дублирующая запись в JSONBin.
-function carryRemoteBinId(target, userId) {
-  if (target._remoteBinId) return;
-  const persisted = DATA.getActiveWorkout(userId);
-  if (persisted && persisted.id === target.id && persisted._remoteBinId) {
-    target._remoteBinId = persisted._remoteBinId;
-  }
-}
-
 function saveWorkoutState() {
   if (!_workout) return;
   _workout.name = $("workout-name-input").value || "Силовая тренировка";
   // Правка истории: изменения копятся в черновике в памяти и коммитятся разом
   // по «Сохранить». В активную тренировку и в синк ничего не пишем.
   if (_editingHistory) return;
-  carryRemoteBinId(_workout, DATA.getCurrentUser());
   DATA.saveActiveWorkout(DATA.getCurrentUser(), _workout);
   SyncQueue.push("workout:update", { workoutId: _workout.id });
 }
@@ -2641,8 +2594,6 @@ function doFinishWorkout() {
   _workout.name = $("workout-name-input").value || "Силовая тренировка";
   _workout.durationSec = Math.floor((Date.now() - _workout.startedAt) / 1000);
   _workout.finishedAt = Date.now();
-  carryRemoteBinId(_workout, userId);
-
   // Сначала убеждаемся, что тренировка реально записана в историю, и только
   // потом очищаем активную. Иначе при переполнении localStorage история не
   // сохранится (lsSet вернёт false), а активная — сотрётся, и тренировка
@@ -2664,10 +2615,6 @@ function doFinishWorkout() {
 function discardActiveWorkout() {
   const userId = DATA.getCurrentUser();
   endRest(false);
-  // Если за сессию успел создаться удалённый бин (добавляли подходы дольше
-  // дебаунса) — убираем его, чтобы отменённые тренировки не копились на JSONBin.
-  const binId = _workout && _workout._remoteBinId;
-  if (binId) Storage.deleteBin(binId).catch(e => console.warn("deleteBin failed", e));
   DATA.clearActiveWorkout(userId);
   stopWorkoutTimer();
   _workout = null;
@@ -4348,15 +4295,12 @@ function saveRunState() {
   _run.heartRate = parseInt($("run-hr").value) || null;
   const _paceIsHint = $("run-field-pace")?.classList.contains("pace-hint");
   _run.pace      = (!_paceIsHint && $("run-pace").textContent !== "—") ? $("run-pace").textContent : null;
-  carryRemoteBinId(_run, DATA.getCurrentUser());
   DATA.saveActiveWorkout(DATA.getCurrentUser(), _run);
   SyncQueue.push("run:update", { workoutId: _run.id });
 }
 
 function discardActiveRun() {
   const userId = DATA.getCurrentUser();
-  const binId = _run?._remoteBinId;
-  if (binId) Storage.deleteBin(binId).catch(e => console.warn("deleteBin failed", e));
   DATA.clearActiveWorkout(userId);
   SyncQueue.push("user:update", {});
   _run = null;
@@ -7598,8 +7542,7 @@ function saveEditedWorkout(workout, userId) {
   DATA.updateWorkout(userId, workout); // сначала записываем правку в историю
   // Если история полная — пересчитываем рекорды (правка веса вниз тоже должна
   // опускать рекорд). Иначе только повышаем (updateRecords), чтобы не занизить.
-  if (Sync.missingWorkoutCount(userId) === 0) DATA.recomputeRecords(userId);
-  else DATA.updateRecords(userId, workout);
+  DATA.recomputeRecords(userId);
   SyncQueue.push("workout:edit", { workoutId: workout.id });
   SyncQueue.push("user:update", {}); // рекорды могли измениться
   renderHistory(userId);
@@ -8497,9 +8440,9 @@ function tplShareTemplate(id) {
   if (!others.length) { showToast("Делиться не с кем"); return; }
 
   shareModalList.innerHTML = others.map(u => `
-    <button class="modal-option" data-user="${u.id}">
-      <span class="avatar sm ${u.avatarClass}">${u.initial}</span>
-      <span>${u.name}</span>
+    <button class="modal-option" data-user="${escHtml(u.id)}">
+      <span class="avatar sm ${escHtml(u.avatarClass)}">${escHtml(u.initial)}</span>
+      <span>${escHtml(u.name)}</span>
     </button>
   `).join("");
 
@@ -8508,7 +8451,10 @@ function tplShareTemplate(id) {
       const toUserId = btn.dataset.user;
       const toUser = others.find(u => u.id === toUserId);
       closeModal(shareModalBackdrop);
-      await Sync.shareTemplate(id, userId, toUserId);
+      const copy = DATA.shareTemplate(id, userId, toUserId);
+      if (!copy) { showToast("Не удалось скопировать шаблон"); return; }
+      // saveTemplates уже перехвачен Bridge: копия надёжно попадёт в Outbox и
+      // будет доступна клиенту сразу после отправки или при следующей сети.
       showToast(`Шаблон скопирован для ${toUser ? toUser.name : "пользователя"}`);
     });
   });
@@ -8966,14 +8912,10 @@ function init() {
   updateOnlineStatus();
   const userId = DATA.getCurrentUser();
   if (userId) {
-    // Скелетон показываем только когда реально есть что тянуть (онлайн + sync).
-    _menuHydrating = Storage.isEnabled() && navigator.onLine;
+    // Реальный cloud-hydrate выполнит auth-ui.js после проверки сессии.
+    _menuHydrating = navigator.onLine;
     goToScreen("menu");
     onProfileEnter(userId);
-    Sync.hydrateUser(userId).then(() => {
-      _menuHydrating = false;
-      if (screenMenu.classList.contains("active")) refreshMenu();
-    });
   } else {
     goToScreen("profile");
   }

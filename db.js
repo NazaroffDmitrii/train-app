@@ -2,16 +2,11 @@
  * db.js — реляционный data-layer поверх PostgREST (Фаза 1/2 модернизации,
  * см. СПЕКА-модернизация.md и supabase-setup.sql).
  *
- * В отличие от storage.js (снапшот-блоб, авторизуется анонимным ключом — RLS
- * там ни при чём, т.к. таблица snapshots ей не покрыта), здесь каждый запрос
- * идёт с JWT ТЕКУЩЕГО пользователя (Auth.ensureFreshSession()) — именно он
+ * Каждый запрос идёт с JWT ТЕКУЩЕГО пользователя
+ * (Auth.ensureFreshSession()) — именно он
  * определяет auth.uid() на сервере и то, что RLS разрешит увидеть/изменить.
  * apikey остаётся анонимным (обязателен PostgREST-у), Authorization — уже
  * пользовательский Bearer-токен, не анонимный.
- *
- * Этот файл НЕ заменяет storage.js/sync.js прямо сейчас — они продолжают
- * обслуживать старую snapshot-модель, пока идёт постепенный переход
- * (см. план миграции, раздел 7 спеки). db.js встаёт рядом.
  */
 
 const DB = (() => {
@@ -112,10 +107,15 @@ const DB = (() => {
   }
 
   // Личные данные (Настройки → «Личные данные»). RLS та же, что и на весь
-  // профиль (profiles_update: свой или клиента) — трогать роль/auth_id отсюда
-  // не даём (fields — только name/last_name/age/weight/height, см. auth-ui.js).
+  // профиль. Белый список здесь — дополнительная защита от случайной отправки
+  // системных полей; серверные права на колонки остаются обязательной защитой.
+  const PROFILE_EDITABLE_FIELDS = new Set(["name", "last_name", "age", "weight", "height"]);
   async function updateProfile(profileId, fields) {
-    const rows = await patch("profiles", `id=eq.${enc(profileId)}`, fields);
+    const safeFields = Object.fromEntries(
+      Object.entries(fields || {}).filter(([key]) => PROFILE_EDITABLE_FIELDS.has(key))
+    );
+    if (!Object.keys(safeFields).length) throw new Error("DB.updateProfile: нет разрешённых полей для сохранения");
+    const rows = await patch("profiles", `id=eq.${enc(profileId)}`, safeFields);
     return rows?.[0] || null;
   }
 
