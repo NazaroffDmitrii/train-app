@@ -183,24 +183,69 @@ document.getElementById("switch-user-btn").addEventListener("click", async () =>
   goToScreen("profile");
 });
 
-// «В облако» — досылает очередь несинхронизированных правок ПРЯМО СЕЙЧАС
-// (обычно она и так пуста — Bridge пушит сразу после каждого изменения;
-// кнопка даёт явное подтверждение и ручной повтор, если что-то зависло).
-document.getElementById("sync-upload-btn").addEventListener("click", async () => {
+// Ручная полная синхронизация: сначала досылает локальные правки, затем через
+// Bridge перечитывает историю тренировок и остальное состояние из облака.
+// Итог всегда строится по ФАКТИЧЕСКОМУ состоянию durable-очереди, а не только
+// по тому, завершился ли сетевой запрос без исключения.
+function showManualSyncResult(st) {
+  const pending = Number(st?.pending) || 0;
+  const blocked = Number(st?.blocked) || 0;
+  const error = String(st?.lastError || "").slice(0, 90);
+  switch (st?.state) {
+    case "synced":
+      showToast("Все данные синхронизированы с облаком", 5000);
+      break;
+    case "offline":
+      showToast(
+        pending > 0
+          ? `Нет сети — ${pending} изм. сохранены на устройстве и ждут отправки`
+          : "Нет сети — синхронизацию выполнить не удалось",
+        7000
+      );
+      break;
+    case "blocked":
+      showToast(`Не удалось отправить ${blocked} изм. — данные сохранены на устройстве`, 8000);
+      break;
+    case "error":
+      showToast(
+        `Синхронизация не завершена${pending ? ` — ждут отправки: ${pending}` : ""}${error ? `. Ошибка: ${error}` : ""}`,
+        8000
+      );
+      break;
+    case "pending":
+      showToast(`Синхронизация ещё не завершена — ждут отправки: ${pending}`, 7000);
+      break;
+    default:
+      showToast("Синхронизация не завершена — проверьте состояние подключения", 7000);
+  }
+}
+
+const manualSyncBtn = document.getElementById("sync-upload-btn");
+manualSyncBtn.addEventListener("click", async () => {
   closeModal(settingsModalBackdrop);
   const uid = DATA.getCurrentUser();
-  if (!uid) { showToast("Сначала выберите профиль"); return; }
-  if (!navigator.onLine) { showToast("Нет сети — попробуйте позже"); return; }
-  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showToast("Вы не авторизованы"); return; }
-  showToast("Синхронизируем…");
+  if (!uid) { showToast("Сначала выберите профиль", 5000); return; }
+  if (!navigator.onLine) {
+    const st = await SyncEngine.status(uid);
+    showManualSyncResult(st);
+    return;
+  }
+  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showToast("Вы не авторизованы", 5000); return; }
+  manualSyncBtn.disabled = true;
+  window.__manualSyncInProgress = true;
+  showToast("Синхронизируем с облаком…", 0);
   try {
     if (SyncEngine.isMigrated(uid)) {
-      // Обычный полный синк: протолкнуть локальные правки + подтянуть чужие.
+      // Сначала мелкое состояние и очередь, затем вся история через Bridge.
       const res = await SyncEngine.sync(uid);
-      const st = await SyncEngine.status(uid);
-      if (res.status === "error") showToast("Ошибка синхронизации: " + String(res.error || "").slice(0, 80));
-      else if (st.state === "blocked") showToast(`Часть изменений не отправилась (${st.blocked}) — попробуйте ещё раз`);
-      else showToast("Синхронизировано");
+      if (res.status === "error") {
+        showToast("Синхронизация не завершена: " + String(res.error || "неизвестная ошибка").slice(0, 90), 8000);
+      } else {
+        await Bridge.hydrate(uid);
+        const st = await SyncEngine.status(uid);
+        showManualSyncResult(st);
+        if (screenMenu.classList.contains("active")) refreshMenu();
+      }
     } else {
       // Профиль ещё не мигрировал. Если в облаке уже есть данные — безопасно
       // перенимаем их. Если облако пусто — НЕ публикуем вслепую (это сделало бы
@@ -208,16 +253,19 @@ document.getElementById("sync-upload-btn").addEventListener("click", async () =>
       // шагом (см. восстановление данных).
       const hasCloud = await SyncEngine.cloudHasData(uid);
       if (hasCloud) {
-        await SyncEngine.hydrateSmallState(uid);
-        showToast("Данные загружены из облака");
+        await Bridge.hydrate(uid);
+        const st = await SyncEngine.status(uid);
+        showManualSyncResult(st);
         if (screenMenu.classList.contains("active")) refreshMenu();
       } else {
-        showToast("В облаке пока нет данных этого профиля — опубликуйте их с основного устройства");
+        showToast("В облаке пока нет данных этого профиля — опубликуйте их с основного устройства", 8000);
       }
     }
   } catch (e) {
-    showToast("Ошибка синхронизации: " + (e.message || "неизвестная"));
+    showToast("Синхронизация не завершена: " + String(e.message || "неизвестная ошибка").slice(0, 90), 8000);
   } finally {
+    window.__manualSyncInProgress = false;
+    manualSyncBtn.disabled = false;
     updateOnlineStatus();
   }
 });

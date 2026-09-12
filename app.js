@@ -1272,13 +1272,31 @@ const toastEl = $("toast");
    Toast
    ========================================================================== */
 let toastTimer = null;
-function showToast(msg) {
+// durationMs <= 0 оставляет уведомление на экране, пока его не заменит
+// следующий toast. Это нужно для долгих операций вроде ручной синхронизации:
+// надпись «Синхронизируем…» не должна исчезать раньше результата.
+function showToast(msg, durationMs = 2200) {
   clearTimeout(toastTimer);
   toastEl.classList.remove("actionable");
   toastEl.textContent = msg;
   toastEl.classList.add("show");
-  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2200);
+  toastTimer = null;
+  if (durationMs > 0) {
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), durationMs);
+  }
 }
+
+// Итог фоновой отправки тренировок. Для остальных мелких правок достаточно
+// постоянной строки статуса — иначе toast появлялся бы после каждого клика.
+window.addEventListener("train-workout-sync-result", event => {
+  if (window.__manualSyncInProgress) return;
+  const result = event.detail || {};
+  if ((result.workoutFailed || 0) > 0) {
+    showToast("Не удалось синхронизировать тренировку — данные сохранены на устройстве", 8000);
+  } else if ((result.workoutSent || 0) > 0) {
+    showToast("Изменения тренировок синхронизированы с облаком", 5000);
+  }
+});
 
 // Кликабельный тост с действием — для отмены удалений и для предложения
 // обновиться. onAction вызывается максимум один раз. duration<=0 — не прячем
@@ -2608,7 +2626,12 @@ function doFinishWorkout() {
   stopWorkoutTimer();
   _workout = null;
 
-  showToast("Тренировка сохранена");
+  showToast(
+    navigator.onLine
+      ? "Тренировка сохранена — отправляем в облако"
+      : "Тренировка сохранена на устройстве — отправим при появлении сети",
+    4000
+  );
   goToScreen("menu");
 }
 
@@ -4348,7 +4371,12 @@ $("run-save-btn").addEventListener("click", () => {
   DATA.clearActiveWorkout(userId);
   SyncQueue.push("run:finish", { workoutId: _run.id });
   _run = null;
-  showToast("Пробежка сохранена");
+  showToast(
+    navigator.onLine
+      ? "Пробежка сохранена — отправляем в облако"
+      : "Пробежка сохранена на устройстве — отправим при появлении сети",
+    4000
+  );
   goToScreen("menu");
 });
 

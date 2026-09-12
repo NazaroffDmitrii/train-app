@@ -76,7 +76,9 @@ const Outbox = (() => {
 
   /* ----- публичные enqueue ----- */
   function enqueueWorkout(row)      { return put({ opId: "wk:" + row.id, type: "saveWorkout", args: row }); }
-  function enqueueDeleteWorkout(id) { return put({ opId: "wk:" + id, type: "deleteWorkout", args: { id } }); }
+  function enqueueDeleteWorkout(userId, id) {
+    return put({ opId: "wk:" + id, type: "deleteWorkout", args: { userId, id } });
+  }
   function enqueueUserData(userId, patch) { return put({ opId: "ud:" + userId, type: "saveUserData", args: { userId, patch } }); }
   // Пер-сущностная операция (supabase-relational.sql): одна строка одной
   // таблицы. Ключ ent:<table>:<key> — дедуп по конкретной сущности (последняя
@@ -106,41 +108,80 @@ const Outbox = (() => {
   // правки откатывались устаревшим облаком.
   const MAX_ATTEMPTS = 6;
 
-  let _flushing = false;
+  let _flushPromise = null;
   let _lastError = null;   // текст последней ошибки операции — для честного статуса
-  async function flush() {
-    if (_flushing) return { skipped: "in-flight" };
-    if (!navigator.onLine) return { skipped: "offline" };
-    if (typeof Auth === "undefined" || !Auth.isSignedIn()) return { skipped: "no-session" };
-    _flushing = true;
+  async function skippedResult(reason) {
+    const current = await stats();
+    return {
+      skipped: reason,
+      sent: 0,
+      failed: 0,
+      blocked: current.blocked,
+      pending: current.pending,
+      lastError: current.lastError,
+      workoutSent: 0,
+      workoutFailed: 0,
+    };
+  }
+  async function runFlush() {
+    if (!navigator.onLine) return skippedResult("offline");
+    if (typeof Auth === "undefined" || !Auth.isSignedIn()) return skippedResult("no-session");
     let sent = 0, failed = 0, blocked = 0;
-    try {
-      const ops = await all();
-      for (const op of ops) {
-        if (op.blocked) { blocked++; continue; }   // карантин — не трогаем, но и не теряем
-        try { await apply(op); await remove(op.opId); sent++; }
-        catch (e) {
-          failed++;
-          _lastError = e?.message || String(e);
-          // Оффлайн/сессия отвалилась ПОСРЕДИ флаша — это среда, а не вина
-          // операции: выходим без штрафа, весь хвост попробуем в следующий раз.
-          if (!navigator.onLine || (typeof Auth !== "undefined" && !Auth.isSignedIn())) break;
-          // Онлайн, но операция всё равно не прошла — вероятно «ядовитая».
-          // НЕ прерываем очередь (иначе она заблокирует user_data за собой):
-          // считаем попытки, по исчерпании — карантин. Операцию НЕ удаляем.
-          op.attempts = (op.attempts || 0) + 1;
-          if (op.attempts >= MAX_ATTEMPTS) op.blocked = true;
-          try { await put(op); } catch {}
-          console.warn("Outbox: операция не прошла", op.opId, "попытка", op.attempts, op.blocked ? "(карантин)" : "", e);
-          // сознательно продолжаем со следующей операцией
-        }
+    let workoutSent = 0, workoutFailed = 0;
+    const ops = await all();
+    for (const op of ops) {
+      if (op.blocked) { blocked++; continue; }   // карантин — не трогаем, но и не теряем
+      try {
+        await apply(op);
+        await remove(op.opId);
+        sent++;
+        if (op.type === "saveWorkout" || op.type === "deleteWorkout") workoutSent++;
       }
-      if (failed === 0) _lastError = null;   // весь проход чистый — сбрасываем ошибку
-    } finally {
-      _flushing = false;
+      catch (e) {
+        failed++;
+        if (op.type === "saveWorkout" || op.type === "deleteWorkout") workoutFailed++;
+        _lastError = e?.message || String(e);
+        // Оффлайн/сессия отвалилась ПОСРЕДИ флаша — это среда, а не вина
+        // операции: выходим без штрафа, весь хвост попробуем в следующий раз.
+        if (!navigator.onLine || (typeof Auth !== "undefined" && !Auth.isSignedIn())) break;
+        // Онлайн, но операция всё равно не прошла — вероятно «ядовитая».
+        // НЕ прерываем очередь (иначе она заблокирует user_data за собой):
+        // считаем попытки, по исчерпании — карантин. Операцию НЕ удаляем.
+        op.attempts = (op.attempts || 0) + 1;
+        if (op.attempts >= MAX_ATTEMPTS) op.blocked = true;
+        try { await put(op); } catch {}
+        console.warn("Outbox: операция не прошла", op.opId, "попытка", op.attempts, op.blocked ? "(карантин)" : "", e);
+        // сознательно продолжаем со следующей операцией
+      }
     }
+    if (failed === 0) _lastError = null;   // весь проход чистый — сбрасываем ошибку
+    const finalStats = await stats();
     if (typeof updateOnlineStatus === "function") { try { updateOnlineStatus(); } catch {} }
-    return { sent, failed, blocked };
+    const result = {
+      sent,
+      failed,
+      blocked: finalStats.blocked,
+      pending: finalStats.pending,
+      lastError: finalStats.lastError,
+      workoutSent,
+      workoutFailed,
+    };
+    // Автоматическая синхронизация обычно проходит без участия пользователя.
+    // Для тренировок (самые ценные данные) сообщаем явный итог. Ручная кнопка
+    // подавляет это событие и показывает свой более полный результат.
+    if (workoutSent > 0 || workoutFailed > 0) {
+      window.dispatchEvent(new CustomEvent("train-workout-sync-result", { detail: result }));
+    }
+    return result;
+  }
+
+  // Если несколько автотриггеров (online, открытие, ручная кнопка) приходят
+  // одновременно, все ждут ОДИН реальный проход очереди. Раньше последующие
+  // вызовы получали `in-flight` и могли ошибочно решить, что всё уже отправлено.
+  function flush() {
+    if (_flushPromise) return _flushPromise;
+    _flushPromise = runFlush().finally(() => { _flushPromise = null; });
+    return _flushPromise;
   }
 
   // Честный статус очереди для индикатора: сколько всего ждёт отправки, сколько
@@ -206,8 +247,8 @@ function updateOnlineStatus() {
       case "awaiting":
         text = "Ожидается первичная синхронизация с облаком";
         break;
-      default: // synced
-        text = st.lastSyncedAt ? "Синхронизировано · " + _syncTimeAgo(st.lastSyncedAt) : "Синхронизировано";
+      default: // локальная очередь пуста; удалённые изменения узнаем при pull
+        text = st.lastSyncedAt ? "Последняя синхронизация · " + _syncTimeAgo(st.lastSyncedAt) : "Локальных изменений нет";
     }
     statusText.textContent = text;
   }).catch(() => {});

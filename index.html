@@ -3279,11 +3279,9 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
       <h2 class="modal-title">Настройки</h2>
       <p class="modal-sync-info" id="settings-sync-info">Изменения сохраняются в облако автоматически. Экспорт/импорт ниже — локальная резервная копия в файл.</p>
       <!-- Ручная синхронизация. Изменения и так уходят в облако сами (bridge.js
-           → outbox.js), это — явный контроль поверх авто-режима на случай
-           сомнений: «В облако» досылает очередь прямо сейчас (обычно там уже
-           пусто, кнопка просто это подтверждает), «Синхронизация» перечитывает
-           состояние с сервера через перезагрузку страницы (заодно обновляет
-           само приложение до последней версии). -->
+           → outbox.js), а эта кнопка принудительно досылает очередь и получает
+           актуальные данные, включая историю тренировок. Вторая кнопка также
+           проверяет обновление самого приложения и перезагружает его. -->
       <div class="settings-grid">
         <button class="modal-option settings-grid-btn" id="sync-upload-btn">
           <span class="modal-option-icon">
@@ -3291,7 +3289,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
             </svg>
           </span>
-          <span>В облако</span>
+          <span>Синхронизировать</span>
         </button>
         <button class="modal-option settings-grid-btn" id="sync-reload-btn">
           <span class="modal-option-icon">
@@ -3299,7 +3297,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
               <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
             </svg>
           </span>
-          <span>Синхронизация</span>
+          <span>Обновить приложение</span>
         </button>
       </div>
       <div class="settings-grid">
