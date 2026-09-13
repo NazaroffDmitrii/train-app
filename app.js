@@ -1289,12 +1289,20 @@ function showToast(msg, durationMs = 2200) {
 // Итог фоновой отправки тренировок. Для остальных мелких правок достаточно
 // постоянной строки статуса — иначе toast появлялся бы после каждого клика.
 window.addEventListener("train-workout-sync-result", event => {
-  if (window.__manualSyncInProgress) return;
+  let refreshPending = false;
+  try { refreshPending = sessionStorage.getItem("train_manual_refresh_pending") === "1"; } catch {}
+  if (window.__manualSyncInProgress || refreshPending) return;
   const result = event.detail || {};
   if ((result.workoutFailed || 0) > 0) {
-    showToast("Не удалось синхронизировать тренировку — данные сохранены на устройстве", 8000);
+    const pending = Number(result.pending) || 0;
+    showToast(
+      pending > 0
+        ? `Не удалось синхронизировать — на устройстве осталось изменений: ${pending}`
+        : "Не удалось синхронизировать тренировку — данные сохранены на устройстве",
+      pending > 0 ? 3000 : 2000
+    );
   } else if ((result.workoutSent || 0) > 0) {
-    showToast("Изменения тренировок синхронизированы с облаком", 5000);
+    showToast("Изменения тренировок синхронизированы с облаком", 2000);
   }
 });
 
@@ -2630,7 +2638,7 @@ function doFinishWorkout() {
     navigator.onLine
       ? "Тренировка сохранена — отправляем в облако"
       : "Тренировка сохранена на устройстве — отправим при появлении сети",
-    4000
+    2000
   );
   goToScreen("menu");
 }
@@ -4375,7 +4383,7 @@ $("run-save-btn").addEventListener("click", () => {
     navigator.onLine
       ? "Пробежка сохранена — отправляем в облако"
       : "Пробежка сохранена на устройстве — отправим при появлении сети",
-    4000
+    2000
   );
   goToScreen("menu");
 });

@@ -98,6 +98,11 @@ const Outbox = (() => {
     }
   }
 
+  function isTransientNetworkError(error) {
+    const message = String(error?.message || error || "");
+    return /сервер не ответил|failed to fetch|load failed|networkerror|network request failed/i.test(message);
+  }
+
   // Сколько раз пытаемся протолкнуть одну операцию, прежде чем счесть её
   // «ядовитой» (битые данные / RLS-отказ — то, что не исправится повтором) и
   // отправить в карантин. Карантинная операция остаётся в очереди (её видно и
@@ -143,7 +148,7 @@ const Outbox = (() => {
         _lastError = e?.message || String(e);
         // Оффлайн/сессия отвалилась ПОСРЕДИ флаша — это среда, а не вина
         // операции: выходим без штрафа, весь хвост попробуем в следующий раз.
-        if (!navigator.onLine || (typeof Auth !== "undefined" && !Auth.isSignedIn())) break;
+        if (!navigator.onLine || (typeof Auth !== "undefined" && !Auth.isSignedIn()) || isTransientNetworkError(e)) break;
         // Онлайн, но операция всё равно не прошла — вероятно «ядовитая».
         // НЕ прерываем очередь (иначе она заблокирует user_data за собой):
         // считаем попытки, по исчерпании — карантин. Операцию НЕ удаляем.

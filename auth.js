@@ -16,9 +16,23 @@ const Auth = (() => {
   // Проактивно обновляем токен за минуту до истечения, чтобы обычный запрос
   // никогда не словил 401 из-за протухшего JWT.
   const REFRESH_MARGIN_MS = 60_000;
+  const REQUEST_TIMEOUT_MS = 15_000;
 
   function base() { return `${CONFIG.SUPABASE_URL}/auth/v1`; }
   function apiKeyHeader() { return { apikey: CONFIG.SUPABASE_KEY }; }
+
+  async function request(url, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (e) {
+      if (controller.signal.aborted) throw new Error("Сервер не ответил за 15 секунд");
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   function loadSession() {
     try {
@@ -78,7 +92,7 @@ const Auth = (() => {
   // meta: { name, role } — попадает в user_metadata, триггер handle_new_user
   // (см. supabase-setup.sql) создаёт из этого строку profiles.
   async function signUp(email, password, meta = {}) {
-    const res = await fetch(`${base()}/signup`, {
+    const res = await request(`${base()}/signup`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...apiKeyHeader() },
       body: JSON.stringify({ email, password, data: meta }),
@@ -95,7 +109,7 @@ const Auth = (() => {
 
   // ---- вход --------------------------------------------------------------
   async function signIn(email, password) {
-    const res = await fetch(`${base()}/token?grant_type=password`, {
+    const res = await request(`${base()}/token?grant_type=password`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...apiKeyHeader() },
       body: JSON.stringify({ email, password }),
@@ -114,7 +128,7 @@ const Auth = (() => {
     clearSession();
     if (s?.access_token) {
       try {
-        await fetch(`${base()}/logout`, {
+        await request(`${base()}/logout`, {
           method: "POST",
           headers: { Authorization: `Bearer ${s.access_token}`, ...apiKeyHeader() },
         });
@@ -127,7 +141,7 @@ const Auth = (() => {
     if (!session?.refresh_token) throw new Error("Нет сессии для обновления");
     if (refreshInFlight) return refreshInFlight;
     refreshInFlight = (async () => {
-      const res = await fetch(`${base()}/token?grant_type=refresh_token`, {
+      const res = await request(`${base()}/token?grant_type=refresh_token`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader() },
         body: JSON.stringify({ refresh_token: session.refresh_token }),
@@ -150,7 +164,15 @@ const Auth = (() => {
   async function ensureFreshSession() {
     if (!session) return null;
     if (session.expires_at - Date.now() > REFRESH_MARGIN_MS) return session;
-    try { return await refresh(); } catch { return null; }
+    try { return await refresh(); }
+    catch (e) {
+      // При сетевой ошибке refresh() сохраняет прежнюю локальную сессию.
+      // Передаём ошибку выше, чтобы синхронизация показала «сервер недоступен»
+      // и не приняла её за отсутствие авторизации. HTTP-отказ, напротив,
+      // очищает session внутри refresh() — тогда действительно возвращаем null.
+      if (session) throw e;
+      return null;
+    }
   }
 
   function currentSession() { return session; }

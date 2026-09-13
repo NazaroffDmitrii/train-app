@@ -183,89 +183,51 @@ document.getElementById("switch-user-btn").addEventListener("click", async () =>
   goToScreen("profile");
 });
 
-// Ручная полная синхронизация: сначала досылает локальные правки, затем через
-// Bridge перечитывает историю тренировок и остальное состояние из облака.
-// Итог всегда строится по ФАКТИЧЕСКОМУ состоянию durable-очереди, а не только
-// по тому, завершился ли сетевой запрос без исключения.
-function showManualSyncResult(st) {
-  const pending = Number(st?.pending) || 0;
-  const blocked = Number(st?.blocked) || 0;
-  const error = String(st?.lastError || "").slice(0, 90);
-  switch (st?.state) {
-    case "synced":
-      showToast("Все данные синхронизированы с облаком", 5000);
-      break;
-    case "offline":
-      showToast(
-        pending > 0
-          ? `Нет сети — ${pending} изм. сохранены на устройстве и ждут отправки`
-          : "Нет сети — синхронизацию выполнить не удалось",
-        7000
-      );
-      break;
-    case "blocked":
-      showToast(`Не удалось отправить ${blocked} изм. — данные сохранены на устройстве`, 8000);
-      break;
-    case "error":
-      showToast(
-        `Синхронизация не завершена${pending ? ` — ждут отправки: ${pending}` : ""}${error ? `. Ошибка: ${error}` : ""}`,
-        8000
-      );
-      break;
-    case "pending":
-      showToast(`Синхронизация ещё не завершена — ждут отправки: ${pending}`, 7000);
-      break;
-    default:
-      showToast("Синхронизация не завершена — проверьте состояние подключения", 7000);
+// «В облако» — только принудительный PUSH. Обратную загрузку эта кнопка не
+// запускает: её задача ровно та, которую ожидает пользователь по названию.
+function showCloudUploadResult(result) {
+  const pending = Number(result?.pending) || 0;
+  const blocked = Number(result?.blocked) || 0;
+  const failed = Number(result?.failed) || 0;
+  if (!result || result.skipped) {
+    showToast(
+      pending > 0 ? `Не выгружено — на устройстве осталось изменений: ${pending}` : "Не удалось подключиться к облаку",
+      pending > 0 ? 3000 : 2000
+    );
+  } else if (blocked > 0 || failed > 0 || pending > 0) {
+    showToast(`Не всё выгружено — на устройстве осталось изменений: ${pending}`, 3000);
+  } else {
+    showToast("Все изменения выгружены в облако", 2000);
   }
 }
 
-const manualSyncBtn = document.getElementById("sync-upload-btn");
-manualSyncBtn.addEventListener("click", async () => {
+const manualUploadBtn = document.getElementById("sync-upload-btn");
+manualUploadBtn.addEventListener("click", async () => {
   closeModal(settingsModalBackdrop);
   const uid = DATA.getCurrentUser();
-  if (!uid) { showToast("Сначала выберите профиль", 5000); return; }
+  if (!uid) { showToast("Сначала выберите профиль", 2000); return; }
   if (!navigator.onLine) {
-    const st = await SyncEngine.status(uid);
-    showManualSyncResult(st);
+    const st = await Outbox.stats();
+    showCloudUploadResult({ ...st, skipped: "offline" });
     return;
   }
-  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showToast("Вы не авторизованы", 5000); return; }
-  manualSyncBtn.disabled = true;
+  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showToast("Вы не авторизованы", 2000); return; }
+  manualUploadBtn.disabled = true;
   window.__manualSyncInProgress = true;
-  showToast("Синхронизируем с облаком…", 0);
+  showToast("Выгружаем изменения в облако…", 0);
   try {
-    if (SyncEngine.isMigrated(uid)) {
-      // Сначала мелкое состояние и очередь, затем вся история через Bridge.
-      const res = await SyncEngine.sync(uid);
-      if (res.status === "error") {
-        showToast("Синхронизация не завершена: " + String(res.error || "неизвестная ошибка").slice(0, 90), 8000);
-      } else {
-        await Bridge.hydrate(uid);
-        const st = await SyncEngine.status(uid);
-        showManualSyncResult(st);
-        if (screenMenu.classList.contains("active")) refreshMenu();
-      }
-    } else {
-      // Профиль ещё не мигрировал. Если в облаке уже есть данные — безопасно
-      // перенимаем их. Если облако пусто — НЕ публикуем вслепую (это сделало бы
-      // текущее устройство источником истины); публикация — отдельным явным
-      // шагом (см. восстановление данных).
-      const hasCloud = await SyncEngine.cloudHasData(uid);
-      if (hasCloud) {
-        await Bridge.hydrate(uid);
-        const st = await SyncEngine.status(uid);
-        showManualSyncResult(st);
-        if (screenMenu.classList.contains("active")) refreshMenu();
-      } else {
-        showToast("В облаке пока нет данных этого профиля — опубликуйте их с основного устройства", 8000);
-      }
-    }
+    const result = await SyncEngine.pushOnly(uid);
+    showCloudUploadResult(result);
   } catch (e) {
-    showToast("Синхронизация не завершена: " + String(e.message || "неизвестная ошибка").slice(0, 90), 8000);
+    const st = await Outbox.stats();
+    if (st.pending > 0) {
+      showToast(`Не выгружено — на устройстве осталось изменений: ${st.pending}`, 3000);
+    } else {
+      showToast("Не удалось выгрузить: " + String(e.message || "неизвестная ошибка").slice(0, 90), 2000);
+    }
   } finally {
     window.__manualSyncInProgress = false;
-    manualSyncBtn.disabled = false;
+    manualUploadBtn.disabled = false;
     updateOnlineStatus();
   }
 });
@@ -360,26 +322,53 @@ document.getElementById("personal-data-btn").addEventListener("click", () => {
   openPersonalDataModal();
 });
 
-// «Синхронизация» — двойное действие: (1) форсирует проверку обновления
-// приложения (reg.update() тянет свежий sw.js; если версия новее — новый SW
-// установится, активируется и controllerchange в app.js сам перезагрузит
-// страницу на свежий каркас); (2) перечитывает данные из облака (перезагрузка
-// → bootAuthAware → Bridge.hydrate). Раньше тут был голый location.reload(),
-// который НЕ обновлял приложение (старый SW отдавал старый кэш) — из-за этого
-// и приходилось сносить иконку с рабочего стола.
-document.getElementById("sync-reload-btn").addEventListener("click", async () => {
+// «Синхронизировать» — PULL + обновление приложения: проверяем service worker,
+// затем загружаем данные из облака. Если новый SW активируется, controllerchange
+// в app.js сам перезагрузит страницу; если обновления нет, лишний reload не нужен.
+const MANUAL_REFRESH_KEY = "train_manual_refresh_pending";
+function withOperationTimeout(promise, timeoutMs, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+const manualRefreshBtn = document.getElementById("sync-reload-btn");
+manualRefreshBtn.addEventListener("click", async () => {
   closeModal(settingsModalBackdrop);
-  showToast("Обновляем…");
+  const uid = DATA.getCurrentUser();
+  if (!uid) { showToast("Сначала выберите профиль", 2000); return; }
+  if (!navigator.onLine) { showToast("Нет сети — синхронизация невозможна", 2000); return; }
+  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showToast("Вы не авторизованы", 2000); return; }
+  const queued = await Outbox.stats();
+  if (queued.pending > 0) {
+    showToast(`Сначала нажмите «В облако» — ожидают выгрузки: ${queued.pending}`, 3000);
+    return;
+  }
+  manualRefreshBtn.disabled = true;
+  window.__manualSyncInProgress = true;
+  try { sessionStorage.setItem(MANUAL_REFRESH_KEY, "1"); } catch {}
+  showToast("Обновляем приложение и загружаем данные…", 0);
   try {
     if ("serviceWorker" in navigator) {
       const reg = await navigator.serviceWorker.getRegistration();
-      if (reg) await reg.update();
+      if (reg) {
+        await withOperationTimeout(reg.update(), 15_000, "Не удалось проверить обновление за 15 секунд");
+      }
     }
-  } catch { /* не смогли проверить SW — всё равно перезагрузимся ниже */ }
-  // Если новая версия нашлась — controllerchange (app.js) перезагрузит раньше
-  // этой строки (там стоит guard от двойной перезагрузки). Если новой версии
-  // нет — этот reload просто перечитает данные из облака.
-  location.reload();
+    await Bridge.hydrate(uid);
+    try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
+    showToast("Приложение и данные синхронизированы", 2000);
+    if (screenMenu.classList.contains("active")) refreshMenu();
+  } catch (e) {
+    try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
+    showToast("Синхронизация не выполнена: " + String(e.message || "неизвестная ошибка").slice(0, 90), 2000);
+  } finally {
+    window.__manualSyncInProgress = false;
+    manualRefreshBtn.disabled = false;
+    updateOnlineStatus();
+  }
 });
 
 // Удаление — необратимо, поэтому через подтверждение (openConfirmModal из
@@ -693,6 +682,9 @@ async function openInviteModal() {
    Auth/Bridge. Здесь, когда всё загружено, приводим стартовый экран к
    реальному состоянию сессии и выполняем cloud-hydrate. */
 (async function bootAuthAware() {
+  let resumedManualRefresh = false;
+  try { resumedManualRefresh = sessionStorage.getItem(MANUAL_REFRESH_KEY) === "1"; } catch {}
+  if (resumedManualRefresh) showToast("Обновляем приложение и загружаем данные…", 0);
   // ВАЖНО: ДОЖИДАЕМСЯ флаша очереди ДО hydrate. Иначе флаш (отправка локальных
   // правок в облако) и hydrate (чтение облака обратно) шли параллельно — hydrate
   // мог прочитать облако раньше, чем туда доехали правки, и откатить локальное.
@@ -710,16 +702,24 @@ async function openInviteModal() {
     updateOnlineStatus();
     try {
       const profile = await DB.getProfile(currentUser);
-      if (!profile) { DATA.clearCurrentUser(); goToScreen("profile"); await renderProfiles(); return; }
+      if (!profile) {
+        if (resumedManualRefresh) showToast("Синхронизация не выполнена: профиль недоступен", 2000);
+        DATA.clearCurrentUser(); goToScreen("profile"); await renderProfiles(); return;
+      }
       registerUser(profile);
       await Bridge.hydrate(currentUser);
+      if (resumedManualRefresh) showToast("Приложение и данные синхронизированы", 2000);
     } catch (e) {
       // Раньше ошибка тут терялась в console.warn — пользователь ничего не
       // видел (та самая ситуация с Нателой: молчаливый сбой). Теперь видно
       // тостом — актуально и для обычной загрузки, и для кнопки «Синхронизация»
       // (перезагрузка страницы проходит через этот же путь).
       console.warn("bootAuthAware: hydrate", e);
-      showToast("Не удалось синхронизироваться: " + (e.message || "ошибка сети"));
+      showToast("Не удалось синхронизироваться: " + (e.message || "ошибка сети"), resumedManualRefresh ? 2000 : 2200);
+    } finally {
+      if (resumedManualRefresh) {
+        try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
+      }
     }
     _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
@@ -729,6 +729,10 @@ async function openInviteModal() {
     // clearCurrentUser защищает от «залипшего» локального профиля без сессии
     // (иначе app.js init мог показать чужие локальные данные без входа).
     if (!Auth.isSignedIn()) DATA.clearCurrentUser();
+    if (resumedManualRefresh) {
+      try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
+      showToast("Синхронизация не выполнена: требуется вход", 2000);
+    }
     goToScreen("profile");
     await renderProfiles();
   }

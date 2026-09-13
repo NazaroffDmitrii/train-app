@@ -3277,11 +3277,9 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   <div class="modal-backdrop" id="settings-modal-backdrop">
     <div class="modal">
       <h2 class="modal-title">Настройки</h2>
-      <p class="modal-sync-info" id="settings-sync-info">Изменения сохраняются в облако автоматически. Экспорт/импорт ниже — локальная резервная копия в файл.</p>
-      <!-- Ручная синхронизация. Изменения и так уходят в облако сами (bridge.js
-           → outbox.js), а эта кнопка принудительно досылает очередь и получает
-           актуальные данные, включая историю тренировок. Вторая кнопка также
-           проверяет обновление самого приложения и перезагружает его. -->
+      <p class="modal-sync-info" id="settings-sync-info">Изменения отправляются автоматически. «В облако» принудительно выгружает очередь, «Синхронизировать» обновляет приложение и загружает данные из облака.</p>
+      <!-- «В облако» — только принудительный push локальной очереди.
+           «Синхронизировать» — проверка версии PWA + перезагрузка и pull. -->
       <div class="settings-grid">
         <button class="modal-option settings-grid-btn" id="sync-upload-btn">
           <span class="modal-option-icon">
@@ -3289,7 +3287,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
             </svg>
           </span>
-          <span>Синхронизировать</span>
+          <span>В облако</span>
         </button>
         <button class="modal-option settings-grid-btn" id="sync-reload-btn">
           <span class="modal-option-icon">
@@ -3297,7 +3295,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
               <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
             </svg>
           </span>
-          <span>Обновить приложение</span>
+          <span>Синхронизировать</span>
         </button>
       </div>
       <div class="settings-grid">

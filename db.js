@@ -10,7 +10,26 @@
  */
 
 const DB = (() => {
+  const REQUEST_TIMEOUT_MS = 15_000;
   function restUrl(path) { return `${CONFIG.SUPABASE_URL}/rest/v1/${path}`; }
+
+  // navigator.onLine показывает лишь наличие сети, но не доступность Supabase
+  // (особенно заметно без VPN). Ограничиваем каждый запрос реальным таймаутом,
+  // чтобы синхронизация не могла навсегда остаться в состоянии «выполняется».
+  async function request(url, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (e) {
+      if (controller.signal.aborted) {
+        throw new Error("Сервер не ответил за 15 секунд");
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   async function authHeaders(extra) {
     const session = await Auth.ensureFreshSession();
@@ -31,7 +50,7 @@ const DB = (() => {
 
   // ---- низкоуровневые примитивы ------------------------------------------
   async function select(table, query = "") {
-    const res = await fetch(restUrl(`${table}${query ? `?${query}` : ""}`), {
+    const res = await request(restUrl(`${table}${query ? `?${query}` : ""}`), {
       method: "GET",
       headers: await authHeaders(),
       cache: "no-store",
@@ -42,7 +61,7 @@ const DB = (() => {
 
   // Prefer: merge-duplicates => upsert по primary key/unique constraint.
   async function upsert(table, rows, { onConflict } = {}) {
-    const res = await fetch(
+    const res = await request(
       restUrl(`${table}${onConflict ? `?on_conflict=${onConflict}` : ""}`),
       {
         method: "POST",
@@ -58,7 +77,7 @@ const DB = (() => {
   }
 
   async function patch(table, query, fields) {
-    const res = await fetch(restUrl(`${table}?${query}`), {
+    const res = await request(restUrl(`${table}?${query}`), {
       method: "PATCH",
       headers: await authHeaders({
         "Content-Type": "application/json",
@@ -71,7 +90,7 @@ const DB = (() => {
   }
 
   async function remove(table, query) {
-    const res = await fetch(restUrl(`${table}?${query}`), {
+    const res = await request(restUrl(`${table}?${query}`), {
       method: "DELETE",
       headers: await authHeaders(),
     });
@@ -79,7 +98,7 @@ const DB = (() => {
   }
 
   async function rpc(fn, args = {}) {
-    const res = await fetch(restUrl(`rpc/${fn}`), {
+    const res = await request(restUrl(`rpc/${fn}`), {
       method: "POST",
       headers: await authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(args),
@@ -274,7 +293,7 @@ const DB = (() => {
     // return=representation + проверка непустого ответа — чтобы не показать
     // ложное «аккаунт удалён», если RLS/FK по какой-то причине не дали удалить
     // (RLS-блок в PostgREST не бросает ошибку сам по себе, см. deleteManagedClient).
-    const res = await fetch(restUrl(`profiles?id=eq.${enc(me.id)}`), {
+    const res = await request(restUrl(`profiles?id=eq.${enc(me.id)}`), {
       method: "DELETE",
       headers: await authHeaders({ Prefer: "return=representation" }),
     });
@@ -296,7 +315,7 @@ const DB = (() => {
   // проверяем, что строка реально вернулась — иначе явно сообщаем о неудаче
   // (частый случай: не прогнан SQL-патч policy profiles_delete).
   async function deleteManagedClient(profileId) {
-    const res = await fetch(restUrl(`profiles?id=eq.${enc(profileId)}`), {
+    const res = await request(restUrl(`profiles?id=eq.${enc(profileId)}`), {
       method: "DELETE",
       headers: await authHeaders({ Prefer: "return=representation" }),
     });

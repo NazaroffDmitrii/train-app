@@ -172,11 +172,14 @@ const SyncEngine = (() => {
   // НЕ пушим ничего. Иначе локально засеянные дефолты (категории-витрины и т.п.)
   // или устаревшее состояние уехали бы в облако как «правки пользователя» и, в
   // частности, воскресили бы удалённое. force=true — только для publishAll.
-  function diffAndEnqueue(uid, { force = false } = {}) {
+  const _diffChains = new Map();
+
+  async function runDiffAndEnqueue(uid, { force = false } = {}) {
     if (!uid) return 0;
     if (!force && !isMigrated(uid)) return 0;
     const shadow = loadShadow(uid);
     let queued = 0;
+    const writes = [];
     for (const d of DESCRIPTORS) {
       const rows = d.collect(uid);
       const cur = new Map(rows.map(r => [String(d.key(r)), r]));
@@ -186,18 +189,35 @@ const SyncEngine = (() => {
       for (const [k, r] of cur) {
         const h = stableHash(r);
         next[k] = h;
-        if (prev[k] !== h) { Outbox.enqueueEntity(d.table, uid + "|" + k, r); queued++; }
+        if (prev[k] !== h) { writes.push(Outbox.enqueueEntity(d.table, uid + "|" + k, r)); queued++; }
       }
       // надгробия для исчезнувших
       if (d.tombstone) {
         for (const k of Object.keys(prev)) {
-          if (!cur.has(k)) { Outbox.enqueueEntity(d.table, uid + "|" + k, d.tombstone(uid, k)); queued++; }
+          if (!cur.has(k)) { writes.push(Outbox.enqueueEntity(d.table, uid + "|" + k, d.tombstone(uid, k))); queued++; }
         }
       }
       shadow[d.table] = next; // тень = текущее локальное (исчезнувшие ключи выпали)
     }
+    // Сначала подтверждаем запись в durable-очередь и только потом обновляем
+    // тень. Иначе ручной sync мог начать flush раньше IndexedDB и честно
+    // сообщить об успехе, хотя свежая операция ещё не попала в его выборку.
+    await Promise.all(writes);
     saveShadow(uid, shadow);
     return queued;
+  }
+
+  // Изменения одного профиля обрабатываются последовательно, чтобы два быстрых
+  // сохранения не прочитали одну старую тень и не перезаписали результат друг
+  // друга. Возвращаем Promise — вызывающий может дождаться durable-записи.
+  function diffAndEnqueue(uid, options) {
+    const previous = _diffChains.get(uid) || Promise.resolve();
+    const current = previous.catch(() => {}).then(() => runDiffAndEnqueue(uid, options));
+    _diffChains.set(uid, current);
+    current.finally(() => {
+      if (_diffChains.get(uid) === current) _diffChains.delete(uid);
+    }).catch(() => {});
+    return current;
   }
 
   /* ----- PULL: облако → локальные списки (слияние по строкам) -----
@@ -246,34 +266,51 @@ const SyncEngine = (() => {
   }
 
   /* ----- оркестрация ----- */
-  let _syncing = false;
+  let _syncPromise = null;
 
   // Полная синхронизация: сначала протолкнуть локальные правки (чтобы облако
   // стало актуальным), затем слить чужие изменения. Возвращает статус.
-  async function sync(uid, { silent = false } = {}) {
-    if (!uid) return { status: "no-user" };
-    if (typeof Auth === "undefined" || !Auth.isSignedIn()) return { status: "no-session" };
-    if (!navigator.onLine) return { status: "offline" };
-    if (_syncing) return { status: "in-flight" };
-    _syncing = true;
-    try {
-      diffAndEnqueue(uid);
-      const res = await Outbox.flush();
-      await applyPull(uid);
-      markSyncedNow(uid);
-      if (!silent && typeof updateOnlineStatus === "function") { try { updateOnlineStatus(); } catch {} }
-      return { status: "ok", flushed: res };
-    } catch (e) {
-      return { status: "error", error: e?.message || String(e) };
-    } finally {
-      _syncing = false;
-    }
+  function sync(uid, { silent = false } = {}) {
+    if (!uid) return Promise.resolve({ status: "no-user" });
+    if (typeof Auth === "undefined" || !Auth.isSignedIn()) return Promise.resolve({ status: "no-session" });
+    if (!navigator.onLine) return Promise.resolve({ status: "offline" });
+    // Ручная кнопка, нажатая во время автоматического sync, теперь дожидается
+    // того же прохода вместо ложного `in-flight`.
+    if (_syncPromise) return _syncPromise;
+    _syncPromise = (async () => {
+      try {
+        await diffAndEnqueue(uid);
+        const res = await Outbox.flush();
+        const queue = await Outbox.stats();
+        const canPull = !res.skipped && queue.pending === 0 && res.failed === 0 && res.blocked === 0;
+        // Не смешиваем облачное состояние с локальным, пока хотя бы одна
+        // правка не выгружена. Это безопасный аналог предупреждения о конфликте:
+        // сначала push, только после чистой очереди — pull.
+        if (canPull) {
+          await applyPull(uid);
+          markSyncedNow(uid);
+        }
+        if (!silent && typeof updateOnlineStatus === "function") { try { updateOnlineStatus(); } catch {} }
+        return {
+          status: canPull ? "ok" : "partial",
+          flushed: res,
+          pending: queue.pending,
+          blocked: queue.blocked,
+          error: queue.lastError,
+        };
+      } catch (e) {
+        return { status: "error", error: e?.message || String(e) };
+      } finally {
+        _syncPromise = null;
+      }
+    })();
+    return _syncPromise;
   }
 
   // Только протолкнуть локальные правки (после правки — без полного пула).
   async function pushOnly(uid) {
     if (!uid) return;
-    diffAndEnqueue(uid);
+    await diffAndEnqueue(uid);
     return Outbox.flush();
   }
 
@@ -293,6 +330,17 @@ const SyncEngine = (() => {
   async function hydrateSmallState(uid) {
     if (!uid) return { mode: "no-user" };
     if (typeof Auth === "undefined" || !Auth.isSignedIn()) return { mode: "no-session" };
+    // Если push мелкого состояния не прошёл, не даём pull перезаписать его
+    // облачной копией. Тренировки сюда не входят: Bridge накладывает их
+    // ожидающие save/delete поверх облачной истории отдельно.
+    try {
+      const pending = await Outbox.all();
+      const hasLocalStatePending = pending.some(op =>
+        (op.type === "saveEntity" && op.args?.row?.user_id === uid) ||
+        (op.type === "saveUserData" && op.args?.userId === uid)
+      );
+      if (hasLocalStatePending) return { mode: "local-pending" };
+    } catch {}
     if (localStorage.getItem(MIGRATED(uid))) {
       await applyPull(uid);
       return { mode: "merge" };
@@ -327,8 +375,11 @@ const SyncEngine = (() => {
     if (!navigator.onLine) return { status: "offline" };
     try {
       resetShadow(uid);                        // считать всё локальное новым
-      const queued = diffAndEnqueue(uid, { force: true }); // публикуем намеренно, до флага миграции
+      const queued = await diffAndEnqueue(uid, { force: true }); // публикуем намеренно, до флага миграции
       const res = await Outbox.flush();
+      if (res.skipped || res.pending > 0 || res.failed > 0 || res.blocked > 0) {
+        return { status: "partial", queued, flushed: res };
+      }
       localStorage.setItem(MIGRATED(uid), "1");
       await applyPull(uid);                    // подтянуть свои же записи → выставить cursor
       markSyncedNow(uid);
