@@ -1,7 +1,7 @@
 // Hold a shared lifetime lease before ANY application scripts can write data.
 // Restore uses an exclusive lease on a separate page with no DATA/Bridge boot.
 (() => {
-  const scripts = ["config.js","lib.js","atlas-seed.js","muscle-anatomy.js","auth.js","db.js","backup-core.js","account-safety.js","ux.js","form-drafts.js","app.js","constructor.js","outbox.js","syncengine.js","bridge.js","auth-ui.js"];
+  const scripts = ["config.js","lib.js","atlas-seed.js","muscle-anatomy.js","auth.js","db.js","backup-core.js","account-safety.js","app.js","constructor.js","outbox.js","syncengine.js","bridge.js","auth-ui.js"];
   function notice(message, restore = false) {
     const panel = document.createElement("dialog");
     panel.style.cssText="padding:24px;max-width:420px;color:white;background:#11111c;border-radius:20px";

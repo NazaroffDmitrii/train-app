@@ -80,7 +80,7 @@
     return {
       readiness: "средняя", target: READINESS["средняя"].target, reps: "8–12",
       priority: [], priorityBonus: 2, restrictions: [], settingsOpen: true,
-      splitDays: 2, equipOff: [], pins: {},
+      splitDays: 1, equipOff: [], pins: {},
       days: [{ name: "Тренировка 1", items: [] }], active: 0,
     };
   }
@@ -230,12 +230,10 @@
   }
   function generate() {
     if (!exercises.length) { showToast("В базе нет упражнений для генерации"); return; }
-    let N = Math.max(1, Math.min(6, +workout.splitDays || 1));
+    const N = Math.max(1, Math.min(6, +workout.splitDays || 1));
     const restricted = new Set(workout.restrictions);
     const baseNames = baseCats().map(c => c.name).filter(n => !restricted.has(n));
     const all = generateInto(baseNames);
-    const needed=Math.min(6,Math.ceil(all.reduce((sum,item)=>sum+(+item.sets||0),0)/VOL_MAX));
-    if(needed>N){N=needed;workout.splitDays=N;showToast('План распределён на '+N+' дня: объём превышает лимит одного занятия. Проверьте предпросмотр.');}
     if (N === 1) { workout.days = [{ name: "Тренировка 1", items: all }]; }
     else {
       const days = DAY_LETTERS.slice(0, N).map(n => ({ name: n, items: [], vol: 0, fwd: false, up: false, erector: 0, joints: {} }));
@@ -250,7 +248,6 @@
           best = days[0]; let bestScore = Infinity;
           days.forEach(d => {
             let score = d.vol + Math.random() * 0.5;
-            if(d.vol+s>VOL_MAX)score+=10000;
             if (c.fwd && d.up) score += 100;
             if (c.up && d.fwd) score += 100;
             if (c.erector && d.erector >= 2) score += 100;

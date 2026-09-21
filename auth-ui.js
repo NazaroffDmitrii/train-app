@@ -27,7 +27,6 @@ function reviewLegacyDraft(user){
 
 // Регистрирует реальный профиль в DATA.USERS (см. enterProfile). Идемпотентно.
 function registerUser(profile) {
-  if(typeof UX!=='undefined'&&DATA.getCurrentUser()===profile.id)UX.context((profile.auth_id===Auth.userId()?'Мой профиль: ':'Клиент: ')+(profile.name||'Без имени'));
   const initial = (profile.name || "?").trim().charAt(0).toUpperCase() || "?";
   const existing = DATA.USERS.find(u => u.id === profile.id);
   if (existing) { existing.name = profile.name || existing.name; existing.initial = initial; return; }
@@ -593,7 +592,6 @@ async function renderProfiles() {
     // Не удаляем историю других профилей: наличие очереди не доказывает,
     // что все локальные изменения уже сохранены в облаке.
     DATA.setCurrentUser(profileId);
-    UX.context((profile.auth_id===Auth.userId()?'Мой профиль: ':'Клиент: ')+(profile.name||'Без имени'));
     reviewLegacyDraft(profileId);
     goToScreen("menu");
     onProfileEnter(profileId);
@@ -829,3 +827,6 @@ if (Auth.contextChanged()) showChangedAuthContext();
 // изменения). Простое присвоение, без зависимости от bootAuthAware.
 const _versionEl = document.getElementById("app-version");
 if (_versionEl) _versionEl.textContent = "v" + APP_VERSION;
+
+// Queue recovery remains reachable without adding layout elements.
+document.getElementById("settings-sync-info")?.addEventListener("click", openOutboxManager);
