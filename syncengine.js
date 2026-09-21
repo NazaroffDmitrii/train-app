@@ -4,18 +4,18 @@
  * Заменяет прежнюю модель «один блоб user_data, последний победил» на слияние
  * ПО СТРОКЕ (supabase-relational.sql). Каждый локальный список DATA
  * (упражнения/шаблоны/группы/категории/скрытые/оверлей/порядок) отображается на
- * свою таблицу-сущность. Правки разного больше не затирают друг друга: победа
- * определяется серверным updated_at по каждой строке; удаление едет надгробием
- * (deleted=true) и не воскресает.
+ * свою таблицу-сущность. Сервер хранит последнюю принятую запись каждого ключа;
+ * удаление передаётся надгробием (deleted=true). Разрешение конкурирующих правок
+ * одного ключа с разных устройств не является частью этого протокола.
  *
  * Двусторонний обмен:
  *   PUSH  — diffAndEnqueue(): сравнить текущее локальное состояние с «тенью»
  *           (shadow — что уже отражено в облаке), поставить в durable-очередь
  *           (outbox.js) ТОЛЬКО изменившиеся строки и надгробия для исчезнувших.
  *           Отправка — Outbox.flush() (устойчива к оффлайну/битым операциям).
- *   PULL  — applyPull(): затянуть строки, изменённые с прошлой синхронизации
- *           (водяной знак cursor), слить в локальные списки (пришедшая строка
- *           новее — она и побеждает; надгробие — удаляет), сдвинуть cursor.
+ *   PULL  — applyPull(): прочитать все страницы небольших справочников,
+ *           слить по ключу, применить надгробия. Временной курсор не используется:
+ *           updated_at не гарантирует порядок завершения транзакций.
  *
  * Источник истины во время работы — локальный DATA (local-first). В облако
  * уходит и по кнопке, и автоматически (открытие/сеть/после правок). Никаких
@@ -27,10 +27,11 @@
 "use strict";
 
 const SyncEngine = (() => {
-  const CURSOR_KEY = uid => `train_sync_cursor_${uid}`;   // ISO-водяной знак пула
+  const CURSOR_KEY = uid => `train_sync_cursor_${uid}`;   // legacy, только для удаления
   const SHADOW_KEY = uid => `train_sync_shadow_${uid}`;   // { table: { key: hash } }
   const SYNCED_AT  = uid => `train_last_synced_at_${uid}`;
   const MIGRATED   = uid => `train_relational_migrated_${uid}`; // устройство перешло на пер-сущностную модель
+  const PUBLISHING = uid => `train_initial_publish_${uid}`; // подтверждённая, но незавершённая публикация
 
   /* ----- утилиты ----- */
   // Канонический вид: ключи объектов отсортированы на ВСЕХ уровнях (иначе разный
@@ -55,8 +56,6 @@ const SyncEngine = (() => {
   }
   function loadShadow(uid) { try { return JSON.parse(localStorage.getItem(SHADOW_KEY(uid))) || {}; } catch { return {}; } }
   function saveShadow(uid, s) { try { localStorage.setItem(SHADOW_KEY(uid), JSON.stringify(s)); } catch {} }
-  function getCursor(uid) { return localStorage.getItem(CURSOR_KEY(uid)) || ""; }
-  function setCursor(uid, iso) { if (iso) { try { localStorage.setItem(CURSOR_KEY(uid), iso); } catch {} } }
   function markSyncedNow(uid) { try { localStorage.setItem(SYNCED_AT(uid), String(Date.now())); } catch {} }
   function lastSyncedAt(uid) { const v = Number(localStorage.getItem(SYNCED_AT(uid))); return v > 0 ? v : null; }
   // Сбросить локальный слепок синхронизации — следующий diff сочтёт всё новым
@@ -211,8 +210,12 @@ const SyncEngine = (() => {
   // сохранения не прочитали одну старую тень и не перезаписали результат друг
   // друга. Возвращаем Promise — вызывающий может дождаться durable-записи.
   function diffAndEnqueue(uid, options) {
+    const owner = typeof Auth !== "undefined" ? Auth.userId?.() : null;
     const previous = _diffChains.get(uid) || Promise.resolve();
-    const current = previous.catch(() => {}).then(() => runDiffAndEnqueue(uid, options));
+    const current = previous.catch(() => {}).then(() => {
+      if (typeof Auth !== "undefined" && Auth.userId?.() !== owner) throw new Error("Аккаунт изменился. Локальные правки сохранены; повторите синхронизацию в исходном аккаунте.");
+      return runDiffAndEnqueue(uid, options);
+    });
     _diffChains.set(uid, current);
     current.finally(() => {
       if (_diffChains.get(uid) === current) _diffChains.delete(uid);
@@ -224,18 +227,57 @@ const SyncEngine = (() => {
      authoritative=true — «жёсткое перенятие»: локальное состояние ПОЛНОСТЬЮ
      замещается облачным (используется только при первичной миграции устройства,
      чтобы не тащить наверх местный мусор). В обычном режиме (false) — слияние:
-     локальное сохраняется, пришедшие строки новее cursor побеждают по ключу. */
+     локальное сохраняется, пришедшие строки побеждают по ключу. При локальных
+     изменениях во время загрузки весь pull откладывается до следующего sync. */
   async function applyPull(uid, { authoritative = false } = {}) {
     if (!uid) return;
-    const cursor = authoritative ? "" : getCursor(uid);   // authoritative тянет всё
-    let maxTs = getCursor(uid);
+    const pullOwner = typeof Auth !== "undefined" ? Auth.userId?.() : null;
+    const assertNoPublication = () => {
+      if (!isMigrated(uid) && localStorage.getItem(PUBLISHING(uid))) {
+        throw new Error("Первая публикация не завершена. Нажмите «В облако», чтобы продолжить.");
+      }
+    };
+    assertNoPublication();
+    const snapshot = () => DESCRIPTORS.map(d => d.collect(uid));
+    const before = snapshot();
+    const fingerprint = stableHash(before);
+    const shadowBefore = localStorage.getItem(SHADOW_KEY(uid));
     const shadow = loadShadow(uid);
+    const assertCleanQueue = async () => {
+      // Ошибка чтения очереди — не разрешение перезаписать локальные данные.
+      const pending = await Outbox.all();
+      if (pending.some(op =>
+        (op.type === "saveEntity" && op.args?.row?.user_id === uid) ||
+        (op.type === "saveUserData" && op.args?.userId === uid)
+      )) throw new Error("Есть невыгруженные изменения. Повторите синхронизацию после отправки.");
+    };
+    await assertCleanQueue();
+    if (!authoritative && isMigrated(uid)) {
+      for (let i = 0; i < DESCRIPTORS.length; i++) {
+        const d = DESCRIPTORS[i], hashes = {};
+        before[i].forEach(r => { hashes[String(d.key(r))] = stableHash(r); });
+        if (stableHash(hashes) !== stableHash(shadow[d.table] || {})) {
+          throw new Error("Локальные изменения ещё не поставлены в очередь. Повторите синхронизацию.");
+        }
+      }
+    }
+    // Сначала получаем ВСЕ таблицы. Ошибка поздней страницы/таблицы не должна
+    // оставлять частично применённый pull и неверную тень предыдущих таблиц.
+    const batches = [];
     for (const d of DESCRIPTORS) {
-      let incoming;
-      try { incoming = await DB.pullEntities(d.table, uid, cursor); }
+      try { batches.push(await DB.pullEntities(d.table, uid)); }
       catch (e) { throw new Error(`pull ${d.table}: ${e.message || e}`); }
+    }
+    await assertCleanQueue();
+    assertNoPublication();
+    if (typeof Auth !== "undefined" && Auth.userId?.() !== pullOwner) throw new Error("Аккаунт изменился во время загрузки. Локальные данные не заменены.");
+    if (fingerprint !== stableHash(snapshot()) || shadowBefore !== localStorage.getItem(SHADOW_KEY(uid))) {
+      throw new Error("Во время загрузки появились локальные изменения. Они сохранены; повторите синхронизацию.");
+    }
+    // После последнего await проверка и применение выполняются синхронно.
+    for (let i = 0; i < DESCRIPTORS.length; i++) {
+      const d = DESCRIPTORS[i], incoming = batches[i];
       if (!authoritative && !incoming.length) continue;
-      for (const r of incoming) { if (r.updated_at && r.updated_at > maxTs) maxTs = r.updated_at; }
 
       // Слияние: старт от локального. Авторитетно: старт от пустого (облако-only).
       const cur = authoritative ? new Map() : new Map(d.collect(uid).map(r => [String(d.key(r)), r]));
@@ -253,7 +295,7 @@ const SyncEngine = (() => {
       shadow[d.table] = sh;
     }
     saveShadow(uid, shadow);
-    setCursor(uid, maxTs);
+    localStorage.removeItem(CURSOR_KEY(uid)); // старый небезопасный курсор больше не нужен
   }
 
   // Пришедшая из БД строка несёт служебные поля (updated_at и т.п.) — приводим
@@ -267,6 +309,25 @@ const SyncEngine = (() => {
 
   /* ----- оркестрация ----- */
   let _syncPromise = null;
+  let _syncKey = null;
+  const _publications = new Map();
+
+  async function scopedStats(uid) {
+    const state = await Outbox.stats(uid);
+    if (state.storageError) throw new Error(state.lastError || "Очередь устройства недоступна");
+    return state;
+  }
+  function activeAccount() { return typeof Auth !== "undefined" ? Auth.userId?.() : null; }
+  function assertAccount(owner) {
+    if (activeAccount() !== owner) throw new Error("Аккаунт изменился. Повторите действие в исходном аккаунте.");
+  }
+  async function profilePending(uid) {
+    return (await Outbox.all()).filter(op => {
+      const profile = op.type === "saveWorkout" ? op.args?.user_id :
+        op.type === "saveEntity" ? op.args?.row?.user_id : op.args?.userId;
+      return !profile || profile === uid;
+    }).length;
+  }
 
   // Полная синхронизация: сначала протолкнуть локальные правки (чтобы облако
   // стало актуальным), затем слить чужие изменения. Возвращает статус.
@@ -274,34 +335,44 @@ const SyncEngine = (() => {
     if (!uid) return Promise.resolve({ status: "no-user" });
     if (typeof Auth === "undefined" || !Auth.isSignedIn()) return Promise.resolve({ status: "no-session" });
     if (!navigator.onLine) return Promise.resolve({ status: "offline" });
+    const owner = activeAccount();
+    const key = JSON.stringify([owner, uid]);
+    if (_publications.has(key)) return _publications.get(key);
     // Ручная кнопка, нажатая во время автоматического sync, теперь дожидается
     // того же прохода вместо ложного `in-flight`.
-    if (_syncPromise) return _syncPromise;
+    if (_syncPromise) return _syncKey === key ? _syncPromise : Promise.resolve({ status: "busy", error: "Синхронизация другого профиля ещё выполняется. Повторите попытку." });
+    _syncKey = key;
     _syncPromise = (async () => {
       try {
+        const initialQueue = await scopedStats(uid);
+        assertAccount(owner);
+        if (initialQueue.held > 0) return { status: "partial", ...initialQueue };
         await diffAndEnqueue(uid);
         const res = await Outbox.flush();
-        const queue = await Outbox.stats();
-        const canPull = !res.skipped && queue.pending === 0 && res.failed === 0 && res.blocked === 0;
+        const queue = await scopedStats(uid);
+        assertAccount(owner);
+        const canPull = !res.skipped && queue.pending === 0;
         // Не смешиваем облачное состояние с локальным, пока хотя бы одна
         // правка не выгружена. Это безопасный аналог предупреждения о конфликте:
         // сначала push, только после чистой очереди — pull.
-        if (canPull) {
+        if (canPull && isMigrated(uid)) {
           await applyPull(uid);
           markSyncedNow(uid);
         }
         if (!silent && typeof updateOnlineStatus === "function") { try { updateOnlineStatus(); } catch {} }
         return {
-          status: canPull ? "ok" : "partial",
+          status: canPull ? (isMigrated(uid) ? "ok" : "awaiting-publish") : "partial",
           flushed: res,
           pending: queue.pending,
           blocked: queue.blocked,
+          otherPending: queue.otherPending,
           error: queue.lastError,
         };
       } catch (e) {
         return { status: "error", error: e?.message || String(e) };
       } finally {
         _syncPromise = null;
+        _syncKey = null;
       }
     })();
     return _syncPromise;
@@ -310,8 +381,16 @@ const SyncEngine = (() => {
   // Только протолкнуть локальные правки (после правки — без полного пула).
   async function pushOnly(uid) {
     if (!uid) return;
+    if (!isMigrated(uid)) return { skipped: "awaiting-publish" };
+    const owner = activeAccount();
+    const before = await scopedStats(uid);
+    assertAccount(owner);
+    if (before.held > 0) return { ...before, skipped: "held" };
     await diffAndEnqueue(uid);
-    return Outbox.flush();
+    const result = await Outbox.flush();
+    const state = await scopedStats(uid);
+    assertAccount(owner);
+    return { ...result, ...state, failed: state.pending ? result.failed : 0 };
   }
 
   /* ----- миграция на пер-сущностную модель + гидратация мелкого состояния -----
@@ -330,6 +409,9 @@ const SyncEngine = (() => {
   async function hydrateSmallState(uid) {
     if (!uid) return { mode: "no-user" };
     if (typeof Auth === "undefined" || !Auth.isSignedIn()) return { mode: "no-session" };
+    // Даже если очередь уже отправлена фоновым flush, не заменять оставшиеся
+    // локальные правки частичной облачной копией после перезагрузки страницы.
+    if (!isMigrated(uid) && localStorage.getItem(PUBLISHING(uid))) return { mode: "publish-pending" };
     // Если push мелкого состояния не прошёл, не даём pull перезаписать его
     // облачной копией. Тренировки сюда не входят: Bridge накладывает их
     // ожидающие save/delete поверх облачной истории отдельно.
@@ -340,7 +422,7 @@ const SyncEngine = (() => {
         (op.type === "saveUserData" && op.args?.userId === uid)
       );
       if (hasLocalStatePending) return { mode: "local-pending" };
-    } catch {}
+    } catch (e) { throw new Error(`Не удалось проверить очередь: ${e.message || e}`); }
     if (localStorage.getItem(MIGRATED(uid))) {
       await applyPull(uid);
       return { mode: "merge" };
@@ -369,22 +451,49 @@ const SyncEngine = (() => {
   // локальное мелкое состояние в облако (первичное наполнение реляционных
   // таблиц). Запускать ТОЛЬКО на заведомо «хорошем» устройстве. После неё
   // остальные устройства при открытии перенимут облако (adopted).
-  async function publishAll(uid) {
+  function publishAll(uid, { confirmed = false } = {}) {
+    if (!confirmed) return Promise.resolve({ status: "confirmation-required" });
+    const key = JSON.stringify([activeAccount(), uid]);
+    if (_publications.has(key)) return _publications.get(key);
+    const task = runPublication(uid).finally(() => _publications.delete(key));
+    _publications.set(key, task);
+    return task;
+  }
+
+  async function runPublication(uid) {
     if (!uid) return { status: "no-user" };
     if (typeof Auth === "undefined" || !Auth.isSignedIn()) return { status: "no-session" };
     if (!navigator.onLine) return { status: "offline" };
+    const owner = activeAccount();
     try {
-      resetShadow(uid);                        // считать всё локальное новым
+      const before = await scopedStats(uid);
+      assertAccount(owner);
+      if (before.held > 0) return { status: "partial", queued: 0, flushed: { ...before, skipped: "held" } };
+      // Не сбрасывать тень повторно: она нужна, чтобы удалить в облаке запись,
+      // которую успели отправить, а затем удалили локально между попытками.
+      if (!isMigrated(uid) && !localStorage.getItem(PUBLISHING(uid))) {
+        localStorage.removeItem(SHADOW_KEY(uid));
+        localStorage.removeItem(CURSOR_KEY(uid));
+        localStorage.setItem(PUBLISHING(uid), "1");
+      }
       const queued = await diffAndEnqueue(uid, { force: true }); // публикуем намеренно, до флага миграции
       const res = await Outbox.flush();
-      if (res.skipped || res.pending > 0 || res.failed > 0 || res.blocked > 0) {
-        return { status: "partial", queued, flushed: res };
+      const pending = await profilePending(uid);
+      const scope = await scopedStats(uid);
+      assertAccount(owner);
+      if (res.skipped || pending > 0) {
+        return { status: "partial", queued, flushed: { ...res, ...scope, pending } };
       }
       localStorage.setItem(MIGRATED(uid), "1");
-      await applyPull(uid);                    // подтянуть свои же записи → выставить cursor
-      markSyncedNow(uid);
+      localStorage.removeItem(PUBLISHING(uid));
+      // Кнопка «В облако» не делает pull. Правка, появившаяся во время отправки,
+      // остаётся локальной и попадёт в следующий обычный diff.
+      await diffAndEnqueue(uid);
+      const remaining = await profilePending(uid);
+      assertAccount(owner);
+      if (remaining) return { status: "partial", queued, flushed: { ...res, ...scope, pending: remaining } };
       if (typeof updateOnlineStatus === "function") { try { updateOnlineStatus(); } catch {} }
-      return { status: "ok", queued, flushed: res };
+      return { status: "ok", queued, flushed: { ...res, ...scope, failed: 0, pending: 0 } };
     } catch (e) {
       return { status: "error", error: e?.message || String(e) };
     }
@@ -392,15 +501,18 @@ const SyncEngine = (() => {
 
   // Честный статус для индикатора.
   async function status(uid) {
-    const s = await Outbox.stats();
+    const s = await Outbox.stats(uid);
     let state;
-    if (!navigator.onLine) state = "offline";
+    if (s.storageError) state = "error";
+    else if (s.held > 0) state = "held";
+    else if (!navigator.onLine) state = "offline";
     else if (s.blocked > 0) state = "blocked";                 // застряло — нужно внимание
     else if (s.lastError && s.pending > 0) state = "error";
     else if (s.pending > 0) state = "pending";
     else if (uid && !isMigrated(uid)) state = "awaiting";      // ждём первичной публикации/перенятия
     else state = "synced";
-    return { state, pending: s.pending, blocked: s.blocked, lastError: s.lastError, lastSyncedAt: lastSyncedAt(uid) };
+    return { state, pending: s.pending, blocked: s.blocked, otherPending: s.otherPending || 0,
+      lastError: s.lastError, storageError: !!s.storageError, lastSyncedAt: lastSyncedAt(uid) };
   }
 
   return {

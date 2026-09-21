@@ -31,9 +31,14 @@ const DB = (() => {
     }
   }
 
-  async function authHeaders(extra) {
+  async function authHeaders(extra, expectedAccount) {
     const session = await Auth.ensureFreshSession();
     if (!session) throw new Error("DB: нет активной сессии — нужен вход");
+    if (expectedAccount && (session.user?.id !== expectedAccount || Auth.userId() !== expectedAccount)) {
+      const error = new Error("DB: аккаунт изменился, отправка остановлена");
+      error.code = "ACCOUNT_CHANGED";
+      throw error;
+    }
     return {
       apikey: CONFIG.SUPABASE_KEY,
       Authorization: `Bearer ${session.access_token}`,
@@ -49,10 +54,10 @@ const DB = (() => {
   }
 
   // ---- низкоуровневые примитивы ------------------------------------------
-  async function select(table, query = "") {
+  async function select(table, query = "", expectedAccount) {
     const res = await request(restUrl(`${table}${query ? `?${query}` : ""}`), {
       method: "GET",
-      headers: await authHeaders(),
+      headers: await authHeaders(undefined, expectedAccount),
       cache: "no-store",
     });
     if (!res.ok) await throwHttpError(res, `DB.select(${table})`);
@@ -60,7 +65,7 @@ const DB = (() => {
   }
 
   // Prefer: merge-duplicates => upsert по primary key/unique constraint.
-  async function upsert(table, rows, { onConflict } = {}) {
+  async function upsert(table, rows, { onConflict, expectedAccount } = {}) {
     const res = await request(
       restUrl(`${table}${onConflict ? `?on_conflict=${onConflict}` : ""}`),
       {
@@ -68,7 +73,7 @@ const DB = (() => {
         headers: await authHeaders({
           "Content-Type": "application/json",
           Prefer: "resolution=merge-duplicates,return=representation",
-        }),
+        }, expectedAccount),
         body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
       }
     );
@@ -89,18 +94,18 @@ const DB = (() => {
     return res.json();
   }
 
-  async function remove(table, query) {
+  async function remove(table, query, { expectedAccount } = {}) {
     const res = await request(restUrl(`${table}?${query}`), {
       method: "DELETE",
-      headers: await authHeaders(),
+      headers: await authHeaders(undefined, expectedAccount),
     });
     if (!res.ok && res.status !== 404) await throwHttpError(res, `DB.remove(${table})`);
   }
 
-  async function rpc(fn, args = {}) {
+  async function rpc(fn, args = {}, expectedAccount) {
     const res = await request(restUrl(`rpc/${fn}`), {
       method: "POST",
-      headers: await authHeaders({ "Content-Type": "application/json" }),
+      headers: await authHeaders({ "Content-Type": "application/json" }, expectedAccount),
       body: JSON.stringify(args),
     });
     if (!res.ok) await throwHttpError(res, `DB.rpc(${fn})`);
@@ -160,7 +165,21 @@ const DB = (() => {
   async function createInvite(claimProfileId, ttlDays) {
     return rpc("create_invite", { claim: claimProfileId || null, ttl_days: ttlDays ?? 14 });
   }
-  async function claimInvite(code) { return rpc("claim_invite", { invite_code: code }); }
+  async function claimInvite(code, expectedAccount = Auth.userId()) {
+    const result=await rpc("claim_invite", { invite_code: code }, expectedAccount);
+    // The deployed SQL contract returns void. Confirm the resulting profile
+    // with the same account instead of rejecting a successfully applied invite.
+    if (result === null) {
+      const rows = await select("profiles", `auth_id=eq.${enc(expectedAccount)}&select=id,auth_id`, expectedAccount);
+      if (Auth.userId() !== expectedAccount) throw Error("Аккаунт изменился после применения приглашения");
+      if (rows.length !== 1 || rows[0].auth_id !== expectedAccount || !rows[0].id) {
+        throw Error("Сервер не подтвердил профиль приглашения");
+      }
+      return rows[0].id;
+    }
+    if(typeof result!=="string"||!result)throw Error("Сервер не подтвердил профиль приглашения");
+    return result;
+  }
 
   // ---- тренировки ----------------------------------------------------------
   // Форма workout — 1:1 с локальным объектом DATA (см. bridge.js):
@@ -179,8 +198,8 @@ const DB = (() => {
     const rows = await select("workouts", `id=eq.${enc(id)}&select=*`);
     return rows?.[0] || null;
   }
-  async function saveWorkout(row) {
-    const rows = await upsert("workouts", row, { onConflict: "id" });
+  async function saveWorkout(row, { expectedAccount } = {}) {
+    const rows = await upsert("workouts", row, { onConflict: "id", expectedAccount });
     return rows?.[0] || row;
   }
   // Массовый upsert — для редких операций над всей историей разом (undo,
@@ -189,7 +208,7 @@ const DB = (() => {
     if (!rows.length) return [];
     return upsert("workouts", rows, { onConflict: "id" });
   }
-  async function deleteWorkout(id) { return remove("workouts", `id=eq.${enc(id)}`); }
+  async function deleteWorkout(id, options) { return remove("workouts", `id=eq.${enc(id)}`, options); }
 
   // ---- «мелкое» состояние пользователя (упражнения/шаблоны/категории) ------
   // Один блоб на профиль — ровно как в localStorage: DATA всегда читает и
@@ -199,11 +218,11 @@ const DB = (() => {
     const rows = await select("user_data", `user_id=eq.${enc(userId)}&select=*`);
     return rows?.[0] || null;
   }
-  async function saveUserData(userId, patch) {
+  async function saveUserData(userId, patch, { expectedAccount } = {}) {
     const rows = await upsert(
       "user_data",
       { user_id: userId, ...patch, updated_at: new Date().toISOString() },
-      { onConflict: "user_id" }
+      { onConflict: "user_id", expectedAccount }
     );
     return rows?.[0] || patch;
   }
@@ -223,23 +242,54 @@ const DB = (() => {
     user_ordering:        "user_id",
   };
 
-  // Затянуть строки таблицы, изменённые ПОСЛЕ sinceIso (водяной знак прошлой
-  // синхронизации). sinceIso пустой → вся таблица (первый пул). Порядок по
-  // updated_at по возрастанию — чтобы клиент двигал водяной знак по последней.
-  async function pullEntities(table, userId, sinceIso) {
-    let q = `user_id=eq.${enc(userId)}&select=*&order=updated_at.asc`;
-    if (sinceIso) q += `&updated_at=gt.${enc(sinceIso)}`;
-    return select(table, q);
+  // Полное чтение небольших справочников, включая надгробия. updated_at не
+  // является commit-курсором: поздний COMMIT может иметь старое время.
+  // Страницы идут по неизменяемому PK, а не по позиции/времени. Старый третий
+  // аргумент намеренно игнорируется, чтобы восстановить пропущенные записи.
+  async function pullEntities(table, userId) {
+    if (table !== "workouts" && !Object.hasOwn(ENTITY_CONFLICT, table)) throw new Error("DB.pullEntities: неизвестная таблица " + table);
+    const keys = (table === "workouts" ? "user_id,id" : ENTITY_CONFLICT[table]).split(",").filter(k => k !== "user_id");
+    const order = (keys.length ? keys : ["user_id"]).map(k => `${k}.asc`).join(",");
+    const quote = value => '"' + String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+    const rows = [], seen = new Set();
+    let last = null;
+    // Ограничение защищает от бесконечного потока новых записей/ошибки API.
+    for (let page = 0; page < 1000; page++) {
+      let q = `user_id=eq.${enc(userId)}&select=*&order=${order}&limit=500`;
+      if (last) {
+        const terms = keys.map((key, i) => {
+          const predicates = keys.slice(0, i).map(k => `${k}.eq.${quote(last[k])}`);
+          predicates.push(`${key}.gt.${quote(last[key])}`);
+          return predicates.length === 1 ? predicates[0] : `and(${predicates.join(",")})`;
+        });
+        q += `&or=${enc(`(${terms.join(",")})`)}`;
+      }
+      const batch = await select(table, q);
+      if (!Array.isArray(batch)) throw new Error(`DB.pullEntities(${table}): неверный ответ`);
+      if (!batch.length) return rows;
+      for (const row of batch) {
+        if (row.user_id !== userId || keys.some(k => row[k] == null)) throw new Error(`DB.pullEntities(${table}): неверный ключ строки`);
+        const key = JSON.stringify(keys.map(k => row[k]));
+        if (seen.has(key)) throw new Error(`DB.pullEntities(${table}): повтор страницы`);
+        seen.add(key);
+        rows.push(row);
+      }
+      if (!keys.length) return rows;
+      last = batch[batch.length - 1];
+      // Даже короткая страница не означает конец: лимит сервера может быть
+      // меньше запрошенных 500. Завершаем только по пустому ответу.
+    }
+    throw new Error(`DB.pullEntities(${table}): слишком много страниц, повторите синхронизацию`);
   }
 
   // Пачечный upsert строк-сущностей. Идемпотентно по составному ключу —
   // повторная отправка после реконнекта не плодит дубли. Возвращает строки с
   // серверным updated_at (нужно клиенту, чтобы обновить локальный водяной знак).
-  async function pushEntities(table, rows) {
+  async function pushEntities(table, rows, { expectedAccount } = {}) {
     if (!Array.isArray(rows) || !rows.length) return [];
     const onConflict = ENTITY_CONFLICT[table];
     if (!onConflict) throw new Error("DB.pushEntities: неизвестная таблица " + table);
-    return upsert(table, rows, { onConflict });
+    return upsert(table, rows, { onConflict, expectedAccount });
   }
 
   // ---- рекорды (серверная истина — представление exercise_records) --------
@@ -280,29 +330,13 @@ const DB = (() => {
   function deleteAtlasLinksByMuscle(muscleId)     { return remove("atlas_muscle_movements", `muscle_id=eq.${enc(muscleId)}`); }
   function deleteAtlasLinksByMovement(movementId) { return remove("atlas_muscle_movements", `movement_id=eq.${enc(movementId)}`); }
 
-  // Удалить СВОЙ профиль (self-service). RLS profiles_delete разрешает удалить
-  // только строку с id = current_profile_id() — чужой/управляемый профиль
-  // отсюда не удалить. Каскадом (FK on delete cascade) уходят workouts,
-  // user_data, trainer_clients этого профиля. Если это профиль тренера,
-  // который вносил тренировки СВОИМ клиентам (workouts.created_by), Postgres
-  // откажет с ошибкой внешнего ключа — намеренно, это защита от случайного
-  // "осиротения" чужой истории, а не то, что стоит обходить здесь.
-  async function deleteMyAccount() {
-    const me = await myProfile();
-    if (!me) throw new Error("Нет профиля для удаления");
-    // return=representation + проверка непустого ответа — чтобы не показать
-    // ложное «аккаунт удалён», если RLS/FK по какой-то причине не дали удалить
-    // (RLS-блок в PostgREST не бросает ошибку сам по себе, см. deleteManagedClient).
-    const res = await request(restUrl(`profiles?id=eq.${enc(me.id)}`), {
-      method: "DELETE",
-      headers: await authHeaders({ Prefer: "return=representation" }),
-    });
-    if (!res.ok) await throwHttpError(res, "DB.deleteMyAccount");
-    const rows = await res.json().catch(() => []);
-    if (!Array.isArray(rows) || rows.length === 0) {
-      throw new Error("не удалось удалить профиль (нет прав или он связан с чужими данными)");
-    }
-    return rows[0];
+  // Transactional server RPC deletes Auth + profile, never profile-only fallback.
+  // Requires the separately reviewed delete-own-account.sql deployment patch.
+  async function deleteMyAccount(profileId, expectedAccount = Auth.userId()) {
+    if(!profileId||!expectedAccount)throw Error("Не подтверждена цель удаления");
+    const result=await rpc("delete_my_account",{expected_profile:profileId},expectedAccount);
+    if(result?.deleted!==true||result.auth_id!==expectedAccount||result.profile_id!==profileId)throw Error("Сервер не подтвердил полное удаление аккаунта");
+    return result;
   }
 
   // Удалить УПРАВЛЯЕМОГО клиента (без логина) — RLS profiles_delete пропустит
@@ -314,10 +348,11 @@ const DB = (() => {
   // что всё ок, хотя ничего не удалилось. Просим return=representation и
   // проверяем, что строка реально вернулась — иначе явно сообщаем о неудаче
   // (частый случай: не прогнан SQL-патч policy profiles_delete).
-  async function deleteManagedClient(profileId) {
+  async function deleteManagedClient(profileId, expectedAccount = Auth.userId()) {
+    if(!profileId||!expectedAccount)throw Error("Не подтверждена цель удаления");
     const res = await request(restUrl(`profiles?id=eq.${enc(profileId)}`), {
       method: "DELETE",
-      headers: await authHeaders({ Prefer: "return=representation" }),
+      headers: await authHeaders({ Prefer: "return=representation" }, expectedAccount),
     });
     if (!res.ok) await throwHttpError(res, "DB.deleteManagedClient");
     const rows = await res.json().catch(() => []);

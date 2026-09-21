@@ -270,7 +270,12 @@ const DATA = (() => {
   }
 
   const _cache = new Map();
+  const _dataAccount = typeof Auth !== 'undefined' ? Auth.userId() : null;
+  function assertDataAccount(){
+    if(typeof Auth !== 'undefined' && (Auth.contextChanged() || Auth.userId()!==_dataAccount))throw Error('Аккаунт изменился. Перезагрузите вкладку; локальные записи сохранены.');
+  }
   function ls(key, fallback = null) {
+    assertDataAccount();
     if (_cache.has(key)) return _cache.get(key);
     try {
       const r = localStorage.getItem(key);
@@ -284,6 +289,7 @@ const DATA = (() => {
   // Вызывающий код, для которого потеря данных критична (завершение тренировки),
   // обязан проверять результат и не делать необратимых шагов при false.
   function lsSet(key, val) {
+    assertDataAccount();
     try {
       localStorage.setItem(key, JSON.stringify(val));
       _cache.set(key, val);
@@ -294,6 +300,7 @@ const DATA = (() => {
     }
   }
   function lsRemove(key) {
+    assertDataAccount();
     try { localStorage.removeItem(key); } catch {}
     _cache.delete(key);
   }
@@ -740,13 +747,27 @@ const DATA = (() => {
     },
 
     getCurrentUser() { return ls("train_current_user"); },
-    setCurrentUser(id) { lsSet("train_current_user", id); },
+    setCurrentUser(id) { assertDataAccount();if(_dataAccount)localStorage.setItem('train_current_owner',_dataAccount);lsSet("train_current_user", id); },
     clearCurrentUser() { lsRemove("train_current_user"); },
 
     // Активная тренировка — хранится целиком, переживает навигацию
-    getActiveWorkout(userId) { return ls(`train_active_${userId}`); },
-    saveActiveWorkout(userId, workout) { lsSet(`train_active_${userId}`, workout); },
-    clearActiveWorkout(userId) { lsRemove(`train_active_${userId}`); },
+    getActiveWorkout(userId) { const value=ls(`train_active_${userId}`);return !value||!_dataAccount||value._accountOwner===_dataAccount?value:null; },
+    saveActiveWorkout(userId, workout) {
+      assertDataAccount();
+      const current=JSON.parse(localStorage.getItem(`train_active_${userId}`)||'null');
+      if(_dataAccount&&current&&current._accountOwner!==_dataAccount)throw Error('Есть черновик другого или неизвестного аккаунта. Он сохранён и не будет перезаписан.');
+      if(_dataAccount&&JSON.parse(localStorage.getItem('train_current_user')||'null')!==userId)throw Error('Профиль изменился в другой вкладке.');
+      if(workout&&_dataAccount)workout._accountOwner=_dataAccount;
+      return lsSet(`train_active_${userId}`,workout);
+    },
+    clearActiveWorkout(userId) { this.saveActiveWorkout(userId,null); },
+    adoptLegacyActiveWorkout(userId, expectedRaw, confirmed) {
+      assertDataAccount();if(!confirmed||!_dataAccount)throw Error('Нужно подтверждение владельца черновика.');
+      const raw=localStorage.getItem(`train_active_${userId}`),value=JSON.parse(raw||'null');
+      if(raw!==expectedRaw||!value||value._accountOwner)throw Error('Черновик изменился или уже принадлежит аккаунту.');
+      value._accountOwner=_dataAccount;
+      if(!lsSet(`train_active_${userId}`,value))throw Error('Не удалось сохранить владельца черновика.');
+    },
 
     startWorkout(userId, type) {
       const workout = {
@@ -756,7 +777,7 @@ const DATA = (() => {
         startedAt: Date.now(),
         exercises: [],
       };
-      lsSet(`train_active_${userId}`, workout);
+      if(!this.saveActiveWorkout(userId,workout))throw Error('Не удалось сохранить черновик.');
       return workout;
     },
 
@@ -1377,14 +1398,8 @@ function updateOnlineStatus() {
 window.addEventListener("online",  () => { updateOnlineStatus(); SyncQueue.flush(); });
 window.addEventListener("offline", updateOnlineStatus);
 
-// Закрыть любую зависшую форму редактирования (упражнение/мышца/движение —
-// см. .ref-form-backdrop) сразу, не дожидаясь следующего goToScreen. На iOS
-// PWA страница не перезагружается при сворачивании — она замирает как есть
-// и потом просто "просыпается" с тем же DOM; если форма осталась открытой,
-// без этой чистки она осталась бы видна(!) при возврате в приложение (мигание
-// перед тем, как её на следующем переходе экрана всё равно уберёт goToScreen —
-// сама чистка в goToScreen синхронна и мигать не может, а вот "оживший" при
-// возврате в приложение кадр с формой — может).
+// Убираем формы только при явной навигации. Сворачивание и pagehide (включая
+// bfcache) не означают отмену ввода: сохраняем DOM для возвращения пользователя.
 function closeStaleExerciseForms() {
   document.querySelectorAll(".ref-form-backdrop").forEach(bd => bd.remove());
 }
@@ -1393,9 +1408,9 @@ function closeStaleExerciseForms() {
 // несинхронизированное прямо сейчас, не дожидаясь обычной задержки
 // (раздел 6.1: активная тренировка должна переживать переключение приложений).
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") { SyncQueue.flush(); closeStaleExerciseForms(); }
+  if (document.visibilityState === "hidden") SyncQueue.flush();
 });
-window.addEventListener("pagehide", () => { SyncQueue.flush(); closeStaleExerciseForms(); });
+window.addEventListener("pagehide", () => { SyncQueue.flush(); });
 
 /* ==========================================================================
    Screen switching
@@ -1405,7 +1420,7 @@ const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorko
 function goToScreen(name, opts = {}) {
   // Формы редактирования никогда не должны быть местом, куда можно "вернуться
   // назад" — если экран меняется, пока форма открыта, закрываем её сразу
-  // (см. closeStaleExerciseForms — тот же приём и на сворачивание приложения).
+  // Сворачивание приложения само по себе форму не закрывает.
   closeStaleExerciseForms();
 
   // opts.instant — переключить БЕЗ кроссфейд-анимации (0.32s). Нужно, когда
@@ -1599,6 +1614,11 @@ function wireHistoryItemSwipe(wrap, rerender) {
   const row = wrap.querySelector(".history-item");
   if (!row) return;
   const wId = wrap.dataset.id;
+  keyboardClickable(row);
+  appendRowActions(wrap,[{label:'Удалить тренировку',run:()=>{
+    const w=DATA.getWorkoutHistory(DATA.getCurrentUser()).find(x=>x.id===wId);
+    if(w)deleteWorkoutWithUndo(w,rerender);
+  }}]);
   let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, didSwipe = false;
   const MAX = 116, DEL = 84;
 
@@ -1654,7 +1674,7 @@ function wireHistoryItemSwipe(wrap, rerender) {
     }
   };
   row.addEventListener("pointerup", settle);
-  row.addEventListener("pointercancel", settle);
+  row.addEventListener("pointercancel", () => {active=false;cancelSwipeVisual(wrap,row);});
   row.addEventListener("click", e => {
     if (didSwipe) { e.stopPropagation(); e.preventDefault(); didSwipe = false; }
   }, true);
@@ -2026,7 +2046,7 @@ function wireTrashSwipe(wrap, userId, rerender) {
     }
   };
   row.addEventListener("pointerup", settle);
-  row.addEventListener("pointercancel", settle);
+  row.addEventListener("pointercancel", () => {active=false;cancelSwipeVisual(wrap,row);});
 }
 
 // Обновить видимый экран после восстановления из корзины (best-effort).
@@ -2061,6 +2081,44 @@ $("switch-user-btn").addEventListener("click", () => {
    или проблем с устройством, независимая от облачной синхронизации. */
 const BACKUP_PREFIX = "train_";
 
+function showStagedImport() {
+  try {
+    const userId = DATA.getCurrentUser();
+    const staged = readStagedImport(userId);
+    if (!staged) { showToast("Подготовленной копии пока нет"); return; }
+    const plan = planStagedImport(staged.candidate, userId, DATA.DEFAULT_EXERCISES.map(ex=>ex.id));
+    const dialog = document.createElement("dialog");
+    dialog.className = "modal";
+    dialog.style.cssText = "max-width:460px;width:calc(100% - 32px);max-height:85vh;overflow:auto;padding:24px;color:var(--text-primary);background:var(--bg-base)";
+    dialog.setAttribute("aria-label", "Подготовленная копия");
+    const title = document.createElement("h2");title.textContent = "Подготовленная копия";
+    const explanation = document.createElement("p");explanation.textContent = "Профиль: " + userId + ". Копия ещё не применена. Сохраните исходный файл. Для применения откроется отдельный режим: остальные вкладки приложения нужно закрыть.";
+    const list = document.createElement("ul");
+    for (const section of plan.sections) {
+      const item = document.createElement("li");
+      item.textContent = section.field + ": " + section.count + " записей/полей; " + (!section.changed ? "совпадает" : section.beforeExists ? "отличается от текущего" : "новый раздел");list.appendChild(item);
+    }
+    const note = document.createElement("p");note.textContent = "Сравнение по сохранённым значениям. Разделы, отсутствующие в копии, не предлагается удалять. План может устареть при изменениях в другой вкладке.";
+    const warnings = document.createElement("ul");
+    for (const warning of plan.warnings.slice(0,50)) { const item=document.createElement("li");item.textContent=warning;warnings.appendChild(item); }
+    if (plan.warnings.length > 50) { const item=document.createElement("li");item.textContent="Ещё предупреждений: "+(plan.warnings.length-50);warnings.appendChild(item); }
+    const warningTitle = document.createElement("p");warningTitle.textContent = "Предупреждения о связях: " + plan.warnings.length + ". Отсутствующее упражнение могло быть удалено ранее; записи автоматически не исправляются.";
+    const close = document.createElement("button");close.type="button";close.className="btn-chip";close.textContent="Закрыть";close.onclick=()=>dialog.close();
+    const cancel = document.createElement("button");cancel.type="button";cancel.className="btn-chip danger";cancel.textContent="Отменить подготовку";
+    cancel.onclick=()=>{
+      if (!window.confirm("Убрать только подготовленную копию? Данные профиля не изменятся. Убедитесь, что исходный файл сохранён.")) return;
+      try {
+        if (DATA.getCurrentUser() !== userId) throw new Error("Профиль изменился");
+        cancelStagedImport(staged.raw, userId);dialog.close();showToast("Подготовка отменена. Данные профиля не изменены.");
+      } catch (error) { showToast(error.message); }
+    };
+    const proceed = document.createElement("a");proceed.href="restore.html";proceed.className="btn-chip primary";proceed.textContent="Перейти к восстановлению";
+    dialog.append(title, explanation, list, note, warningTitle, warnings, proceed, close, cancel);
+    dialog.addEventListener("close",()=>{dialog.remove();$("review-import-btn")?.focus();});
+    document.body.appendChild(dialog);dialog.showModal();
+  } catch (error) { showToast("Не удалось открыть копию: " + error.message); }
+}
+
 // Ключи данных конкретного пользователя — оканчиваются на "_<userId>".
 // ID профилей ("dima"/"natela") не являются суффиксами друг друга, поэтому
 // endsWith однозначно разделяет их.
@@ -2068,7 +2126,7 @@ function userDataKeys(userId) {
   const keys = [];
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    if (k && k.startsWith(BACKUP_PREFIX) && k.endsWith("_" + userId)) keys.push(k);
+    if (k && BACKUP_FIELDS.some(field => k === `train_${field}_${userId}`)) keys.push(k);
   }
   return keys;
 }
@@ -2103,40 +2161,35 @@ $("export-data-btn").addEventListener("click", () => {
 });
 
 $("import-data-btn").addEventListener("click", () => $("import-data-input").click());
+const reviewImportButton = document.createElement("button");
+reviewImportButton.id = "review-import-btn";
+reviewImportButton.type = "button";
+reviewImportButton.className = $("import-data-btn").className;
+reviewImportButton.textContent = "Подготовленная копия";
+reviewImportButton.addEventListener("click", showStagedImport);
+$("import-data-btn").insertAdjacentElement("afterend", reviewImportButton);
 
 $("import-data-input").addEventListener("change", e => {
   const file = e.target.files && e.target.files[0];
   e.target.value = ""; // позволяем повторно выбрать тот же файл
   if (!file) return;
+  const importUser = DATA.getCurrentUser();
+  if (!importUser) { showToast("Сначала выберите профиль"); return; }
+  if (file.size > IMPORT_MAX_BYTES) { showToast("Файл слишком большой (максимум 10 МБ)"); return; }
   const reader = new FileReader();
   reader.onload = () => {
-    let parsed;
-    try { parsed = JSON.parse(reader.result); }
-    catch { showToast("Не удалось прочитать файл"); return; }
-    const data = parsed && parsed.data;
-    const keys = data && typeof data === "object" ? Object.keys(data).filter(k => k.startsWith(BACKUP_PREFIX)) : [];
-    if (!keys.length) { showToast("В файле нет данных train."); return; }
-    // Какие профили затрагивает файл (по суффиксу ключей) — заменяем только их,
-    // данные других профилей на устройстве не трогаем.
-    const affected = DATA.USERS.filter(u => keys.some(k => k.endsWith("_" + u.id)));
-    const who = affected.length ? affected.map(u => u.name).join(", ") : "профиля";
+    let candidate;
+    try { candidate = prepareUserImport(reader.result, importUser); }
+    catch (error) { showToast("Копия не принята: " + error.message); return; }
     openConfirmModal({
-      title: "Импортировать данные?",
-      message: `Заменит данные ${who} на этом устройстве (${keys.length} ключей). Другие профили не тронутся.`,
-      confirmLabel: "Импортировать",
+      title: "Подготовить восстановление?",
+      message: `Проверено разделов: ${Object.keys(candidate.data).length}. Копия будет сохранена отдельно. Данные профиля и очередь пока не изменятся. Затем откройте «Подготовленная копия», чтобы проверить план и перейти к восстановлению. Сохраните исходный файл.`,
+      confirmLabel: "Сохранить отдельно",
       onConfirm: () => {
         try {
-          const ids = affected.map(u => u.id);
-          const toRemove = [];
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && k.startsWith(BACKUP_PREFIX) && ids.some(id => k.endsWith("_" + id))) toRemove.push(k);
-          }
-          toRemove.forEach(k => localStorage.removeItem(k));
-          keys.forEach(k => localStorage.setItem(k, data[k]));
-        } catch { showToast("Импорт не удался — возможно, переполнено хранилище"); return; }
-        // Перезагружаем, чтобы DATA-кэш и экраны переинициализировались с чистого листа.
-        location.reload();
+          stageUserImport(candidate, DATA.getCurrentUser());
+          showToast("Копия подготовлена, но ещё не применена. Данные профиля не изменены.");
+        } catch (error) { showToast("Копия не сохранена: " + error.message); }
       },
     });
   };
@@ -2148,7 +2201,52 @@ $("import-data-input").addEventListener("change", e => {
    Modal helpers
    ========================================================================== */
 function openModal(backdrop)  { backdrop.classList.add("open"); }
-function closeModal(backdrop) { backdrop.classList.remove("open"); }
+function closeModal(backdrop) { backdrop._formDraft?.dispose();backdrop._formDraft=null;backdrop.classList.remove("open"); }
+
+// Gestures remain primary. A compact overflow opens the same shared sheet.
+function appendRowActions(root, actions) {
+  const bar=document.createElement('div');bar.className='row-actions';
+  const trigger=document.createElement('button');trigger.type='button';trigger.className='row-actions-trigger';
+  trigger.textContent='⋯';trigger.setAttribute('aria-label','Действия');trigger.setAttribute('aria-haspopup','dialog');
+  trigger.addEventListener('click',event=>{event.stopPropagation();openRowActionSheet(actions,root,trigger);});
+  bar.appendChild(trigger);
+  for(const event of ['pointerdown','mousedown','touchstart'])bar.addEventListener(event,e=>e.stopPropagation());
+  root.classList.add('has-row-actions');root.appendChild(bar);return bar;
+}
+
+function openRowActionSheet(actions,root,trigger) {
+  const backdrop=document.createElement('div');backdrop.className='bottom-sheet-backdrop open action-sheet-backdrop';
+  const sheet=document.createElement('div');sheet.className='bottom-sheet action-sheet';
+  const header=document.createElement('div');header.className='ref-sheet-drag';
+  header.innerHTML='<div class="bottom-sheet-handle"></div><h2 class="modal-title">Действия</h2>';
+  const context=root.querySelector('.ex-row-name,.tpl-card-title,.tpl-ex-name,.history-item-name');
+  const title=header.querySelector('h2');if(context)title.textContent=context.textContent.trim();
+  const close=()=>{backdrop.remove();if(trigger.isConnected)trigger.focus({preventScroll:true});};
+  sheet.appendChild(header);
+  for(const action of actions){
+    const button=document.createElement('button');button.type='button';button.className='modal-option modal-option-full';
+    button.textContent=action.label;button.disabled=typeof action.disabled==='function'?action.disabled():!!action.disabled;
+    button.addEventListener('click',()=>{close();action.run();});sheet.appendChild(button);
+  }
+  const cancel=document.createElement('button');cancel.type='button';cancel.className='modal-option modal-option-full';cancel.textContent='Отмена';
+  cancel.addEventListener('click',close);sheet.appendChild(cancel);
+  backdrop.addEventListener('click',e=>{if(e.target===backdrop)close();});
+  backdrop.appendChild(sheet);document.body.appendChild(backdrop);
+  wireSheetDragClose(sheet,header,close);
+}
+
+function keyboardClickable(element) {
+  element.tabIndex=0;element.setAttribute('role','button');
+  element.addEventListener('keydown',event=>{
+    if(event.target!==element||!['Enter',' '].includes(event.key))return;
+    event.preventDefault();element.click();
+  });
+}
+// A browser-cancelled pointer is not a completed swipe.
+function cancelSwipeVisual(wrap,row) {
+  row.style.transition='';row.style.transform='';row.style.willChange='';
+  wrap.classList.remove('swiping','swiping-left','swiping-right','will-delete','will-edit');
+}
 document.querySelectorAll(".modal-backdrop").forEach(b => {
   b.addEventListener("click", e => { if (e.target === b) closeModal(b); });
 });
@@ -2158,10 +2256,11 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
    Единый обработчик на все оверлеи — статические и создаваемые на лету.
    ========================================================================== */
 function topmostOverlay() {
+  if(document.querySelector('dialog[open]'))return null; // Native dialog owns its focus trap.
   const list = document.querySelectorAll(
     ".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open"
   );
-  return list.length ? list[list.length - 1] : null;
+  return [...list].sort((a,b)=>(parseInt(getComputedStyle(a).zIndex)||0)-(parseInt(getComputedStyle(b).zIndex)||0)).at(-1)||null;
 }
 document.addEventListener("keydown", e => {
   const overlay = topmostOverlay();
@@ -3283,9 +3382,9 @@ function renderExerciseList() {
     // был поставлен хоть раз (см. applySetToRecord: null = рекорда ещё нет).
     let prChip = "";
     if (rec && rec.maxWeight != null) {
-      prChip = `<span class="ex-pr-chip" title="Рекорд: ${rec.maxWeight} кг × ${rec.repsAtMaxWeight}">
+      prChip = `<span class="ex-pr-chip" title="Рекорд: ${workoutNumber(rec.maxWeight) ?? "—"} кг × ${workoutNumber(rec.repsAtMaxWeight) ?? "—"}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 17l-6.3 4.4L8 14 2 9.4h7.6z"/></svg>
-        ${rec.maxWeight} кг
+        ${workoutNumber(rec.maxWeight) ?? "—"} кг
       </span>`;
     }
 
@@ -3495,6 +3594,12 @@ function renderSetsInBlock(block, ex, lastWorkout) {
 
   ex.sets.forEach((set, sIdx) => {
     const prev = lastSets[sIdx];
+    const weight = workoutNumber(set.weight);
+    const reps = workoutNumber(set.reps);
+    const rpe = workoutNumber(set.rpe);
+    const prevWeight = workoutNumber(prev?.weight);
+    const prevReps = workoutNumber(prev?.reps);
+    const prevRpe = workoutNumber(prev?.rpe);
     const wrap = document.createElement("div");
     wrap.className = "set-row-wrap" + (set.dropSet ? " set-row-wrap-drop" : "");
     const del = document.createElement("div");
@@ -3509,24 +3614,42 @@ function renderSetsInBlock(block, ex, lastWorkout) {
     // линии от веса основного подхода (см. wireDropTree).
     row.innerHTML = set.dropSet ? `
       <div class="set-drop-fields">
-        <div class="set-field set-field-weight set-field-weight-mini${(set.weight || 0) < 0 ? " negative" : ""}">
+        <div class="set-field set-field-weight set-field-weight-mini${weight < 0 ? " negative" : ""}">
           <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.)">±</button>
-          <input type="number" inputmode="decimal" placeholder="кг" value="${set.weight || ""}" step="0.5">
+          <input type="number" inputmode="decimal" placeholder="кг" step="0.5">
         </div>
-        <div class="set-field set-field-reps-mini"><input type="number" inputmode="numeric" placeholder="повт" value="${set.reps || ""}"></div>
+        <div class="set-field set-field-reps-mini"><input type="number" inputmode="numeric" placeholder="повт"></div>
       </div>
     ` : `
       <span class="set-num">${labels[sIdx]}</span>
-      <div class="set-field set-field-weight${(set.weight || 0) < 0 ? " negative" : ""}">
+      <div class="set-field set-field-weight${weight < 0 ? " negative" : ""}">
         <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.): чем ближе к нулю, тем лучше результат">±</button>
-        <input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : "кг"}" value="${set.weight || ""}" step="0.5" ${prev ? 'class="has-prev"' : ""}>
+        <input type="number" inputmode="decimal" placeholder="кг" step="0.5">
       </div>
-      <div class="set-field"><input type="number" inputmode="numeric" placeholder="${prev ? prev.reps : "повт"}" value="${set.reps || ""}" ${prev ? 'class="has-prev"' : ""}></div>
-      <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe ? set.rpe : (prev && prev.rpe ? `<span class="rpe-ghost">${prev.rpe}</span>` : "—")}</button>
+      <div class="set-field"><input type="number" inputmode="numeric" placeholder="повт"></div>
+      <button class="rpe-btn" aria-label="RPE — усилие подхода" title="RPE — усилие подхода"></button>
       <button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
       </button>
     `;
+
+    // Never interpolate stored/API values into HTML, including previous-set hints.
+    const fields = row.querySelectorAll("input");
+    fields[0].value = weight || "";
+    fields[1].value = reps || "";
+    if (!set.dropSet) {
+      if (prevWeight !== null) { fields[0].placeholder = String(prevWeight); fields[0].classList.add("has-prev"); }
+      if (prevReps !== null) { fields[1].placeholder = String(prevReps); fields[1].classList.add("has-prev"); }
+      const rpeLabel = row.querySelector(".rpe-btn");
+      rpeLabel.classList.toggle("has-rpe", !!rpe);
+      if (rpe) rpeLabel.textContent = String(rpe);
+      else if (prevRpe) {
+        const ghost = document.createElement("span");
+        ghost.className = "rpe-ghost";
+        ghost.textContent = String(prevRpe);
+        rpeLabel.appendChild(ghost);
+      } else rpeLabel.textContent = "—";
+    }
 
     // Weight input
     const weightInput = row.querySelectorAll("input")[0];
@@ -3713,6 +3836,10 @@ window.addEventListener("resize", () => {
 // иначе касание попадает только в узкие поля-инпуты, а по инпуту свайп мы не
 // начинаем, и жест почти невозможно нащупать), а ехать должен только блок полей.
 function wireSetRowSwipe(wrap, row, onDelete, tEl = row) {
+  appendRowActions(wrap,[{label:'Удалить подход',run:()=>openConfirmModal({
+    title:'Удалить подход?',message:'Основной подход удаляется вместе с относящимися к нему дроп-сетами.',
+    onConfirm:()=>{const block=wrap.closest('.ex-block');onDelete();const focus=block?.querySelector('button,input');focus?.focus();}
+  })}]);
   let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
   const MAX = 132, DEL = 92;
   row.addEventListener("pointerdown", (e) => {
@@ -3771,7 +3898,7 @@ function wireSetRowSwipe(wrap, row, onDelete, tEl = row) {
     }
   };
   row.addEventListener("pointerup", settle);
-  row.addEventListener("pointercancel", settle);
+  row.addEventListener("pointercancel", () => {active=false;cancelSwipeVisual(wrap,tEl);});
   // Если это был свайп — подавляем последующий клик, чтобы случайно не
   // переключить «выполнено»/RPE.
   row.addEventListener("click", (e) => {
@@ -3807,6 +3934,12 @@ function openExercisePicker(onSelect, selectedId) {
   _pickerSelectedId = selectedId || null;
   _pickerCat = "Все";
   _pickerGroupExpanded = new Set();
+  if(!pickerBackdrop.querySelector('.picker-close-button')){
+    const close=document.createElement('button');close.type='button';close.className='btn-chip picker-close-button';
+    close.textContent='Закрыть выбор';close.addEventListener('click',closeExercisePicker);
+    pickerBackdrop.querySelector('.picker-sheet').prepend(close);
+  }
+  pickerBackdrop.setAttribute('aria-label','Выбор упражнения');
   pickerSearch.value = "";
   renderPickerTabs();
   renderPickerList("");
@@ -3906,6 +4039,7 @@ function renderPickerList(query) {
   }
 
   pickerList.querySelectorAll(".picker-item:not(.picker-item-group)").forEach(item => {
+    keyboardClickable(item);
     item.addEventListener("click", () => {
       _pickerOnSelect(item.dataset.id);
       closeExercisePicker();
@@ -3913,11 +4047,14 @@ function renderPickerList(query) {
   });
 
   pickerList.querySelectorAll(".picker-item-group").forEach(item => {
+    keyboardClickable(item);
+    item.setAttribute('aria-expanded',String(_pickerGroupExpanded.has(item.dataset.groupId)));
     item.addEventListener("click", () => {
       const groupId = item.dataset.groupId;
       if (_pickerGroupExpanded.has(groupId)) _pickerGroupExpanded.delete(groupId);
       else _pickerGroupExpanded.add(groupId);
       renderPickerList(pickerSearch.value);
+      [...pickerList.querySelectorAll('.picker-item-group')].find(el=>el.dataset.groupId===groupId)?.focus();
     });
   });
 }
@@ -3959,7 +4096,7 @@ function renderPickerList(query) {
   sheet.addEventListener("touchstart", e => down(e.touches[0].clientY, e.touches[0].clientX, e.target), { passive: true });
   sheet.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) moveTo(t.clientY, t.clientX, e); }, { passive: false });
   sheet.addEventListener("touchend", up);
-  sheet.addEventListener("touchcancel", up);
+  sheet.addEventListener("touchcancel", () => {active=false;dy=0;sheet.style.transition='';sheet.style.transform='';});
   sheet.addEventListener("mousedown", e => {
     down(e.clientY, e.clientX, e.target);
     const mm = ev => moveTo(ev.clientY, ev.clientX, ev);
@@ -4029,6 +4166,7 @@ rpeBackdrop.addEventListener("click", e => { if (e.target === rpeBackdrop) rpeBa
    Screen 4: Run
    ========================================================================== */
 let _run = null;
+let _runProfileId = null;
 let _runBests = {};
 let _runPrev  = null;
 // Per-tab field drafts — cleared on fresh start, persisted across tab switches
@@ -4244,6 +4382,7 @@ document.querySelectorAll(".run-type-tab").forEach(btn => {
     if (_run) { _run.runType = newType; _run.name = RUN_TYPE_NAMES[newType] || "Пробежка"; }
     restoreTabData(newType);               // restore new tab's fields (empty if not visited)
     refreshRunContext();
+    saveRunState();
   });
 });
 
@@ -4276,14 +4415,18 @@ $("run-distance").addEventListener("input", updatePace);
 $("run-cadence").addEventListener("input", updateRunHighlights);
 $("run-hr").addEventListener("input", updateRunHighlights);
 
+// Persist on every input: a mobile browser may be killed without pagehide.
+["run-dur-h", "run-dur-m", "run-dur-s", "run-distance", "run-cadence", "run-hr"].forEach(id => {
+  $(id)?.addEventListener("input", saveRunState);
+});
+
 function initRunScreen({ resume = false } = {}) {
   const userId = DATA.getCurrentUser();
   _run = DATA.getActiveWorkout(userId);
+  _runProfileId = userId;
 
-  if (!resume) {
-    // Fresh start — clear all per-tab drafts
-    _runTabData.easy = null; _runTabData.long = null; _runTabData.hard = null;
-  }
+  // Never carry in-memory fields from another profile or another run.
+  for (const type of Object.keys(_runTabData)) _runTabData[type] = resume ? (_run?.fieldDrafts?.[type] || null) : null;
 
   // Clear visible fields
   const clr = id => { const el = $(id); if (el) el.value = ""; };
@@ -4306,6 +4449,10 @@ function initRunScreen({ resume = false } = {}) {
       h: $("run-dur-h")?.value || "", m: $("run-dur-m")?.value || "", s: $("run-dur-s")?.value || "",
       distance: $("run-distance")?.value || "", cadence: $("run-cadence")?.value || "", hr: $("run-hr")?.value || "",
     };
+    if (_run.fieldDrafts?.[savedType]) {
+      _runTabData[savedType] = _run.fieldDrafts[savedType];
+      restoreTabData(savedType);
+    }
   }
 
   refreshRunContext();
@@ -4317,7 +4464,10 @@ $("run-back-btn").addEventListener("click", () => {
 });
 
 function saveRunState() {
-  if (!_run) return;
+  if (!_run || DATA.getCurrentUser() !== _runProfileId ||
+      DATA.getActiveWorkout(_runProfileId)?.id !== _run.id) return;
+  saveCurrentTabData();
+  _run.fieldDrafts = JSON.parse(JSON.stringify(_runTabData));
   _run.runType   = activeRunType();
   _run.name      = RUN_TYPE_NAMES[_run.runType] || "Пробежка";
   _run.distance  = parseFloat($("run-distance").value) || null;
@@ -4326,7 +4476,10 @@ function saveRunState() {
   _run.heartRate = parseInt($("run-hr").value) || null;
   const _paceIsHint = $("run-field-pace")?.classList.contains("pace-hint");
   _run.pace      = (!_paceIsHint && $("run-pace").textContent !== "—") ? $("run-pace").textContent : null;
-  DATA.saveActiveWorkout(DATA.getCurrentUser(), _run);
+  if (!DATA.saveActiveWorkout(_runProfileId, _run)) {
+    showToast("Черновик пробежки не сохранён: проверьте свободное место. Не закрывайте вкладку.");
+    return;
+  }
   SyncQueue.push("run:update", { workoutId: _run.id });
 }
 
@@ -4728,6 +4881,7 @@ function renderExercisesList(query) {
   }
 
   exercisesScroll.querySelectorAll(".ex-row:not(.ex-row-group)").forEach(row => {
+    keyboardClickable(row);
     row.addEventListener("click", () => {
       // В режиме правки строка только переставляется; имя меняется свайпом
       // вправо → форма (как у мышц/движений). Инлайн-переименование убрано.
@@ -4737,6 +4891,8 @@ function renderExercisesList(query) {
   });
 
   exercisesScroll.querySelectorAll(".ex-row-group").forEach(row => {
+    keyboardClickable(row);
+    row.setAttribute('aria-expanded',String(_exGroupExpanded.has(row.dataset.groupId)));
     row.addEventListener("click", () => {
       const groupId = row.dataset.groupId;
       // Тап (в ЛЮБОМ режиме, включая правку) — свернуть/развернуть группу. В
@@ -4745,6 +4901,7 @@ function renderExercisesList(query) {
       if (_exGroupExpanded.has(groupId)) _exGroupExpanded.delete(groupId);
       else _exGroupExpanded.add(groupId);
       renderExercisesList(exercisesSearch.value);
+      [...exercisesScroll.querySelectorAll('.ex-row-group')].find(el=>el.dataset.groupId===groupId)?.focus();
     });
   });
 
@@ -4774,6 +4931,9 @@ function wireGroupRowSwipe(wrap, userId) {
   const row = wrap.querySelector(".ex-row-group");
   if (!row) return;
   const groupId = row.dataset.groupId;
+  appendRowActions(wrap,[{label:'Изменить группу',run:()=>openGroupForm(groupId)},
+    {label:'Выше',run:()=>moveExerciseRow(wrap,-1)},
+    {label:'Ниже',run:()=>moveExerciseRow(wrap,1)}]);
   let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, didSwipe = false;
   const MAX = 120, EDIT = 80;
 
@@ -4818,7 +4978,7 @@ function wireGroupRowSwipe(wrap, userId) {
     if (dx >= EDIT) openGroupForm(groupId);
   };
   row.addEventListener("pointerup", settle);
-  row.addEventListener("pointercancel", settle);
+  row.addEventListener("pointercancel", () => {active=false;cancelSwipeVisual(wrap,row);});
   row.addEventListener("click", e => {
     if (didSwipe) { e.stopPropagation(); e.preventDefault(); didSwipe = false; }
   }, true);
@@ -4850,6 +5010,7 @@ function openGroupForm(groupId, focusName = false) {
   document.body.appendChild(bd);
 
   const nameInp = bd.querySelector("#gf-name");
+  const groupDraft=FormDrafts.bind(bd,'group:'+groupId);
   if (focusName) { nameInp.focus(); nameInp.select(); }
 
   const close = () => bd.remove();
@@ -4862,6 +5023,7 @@ function openGroupForm(groupId, focusName = false) {
       DATA.renameExerciseGroup(userId, groupId, name);
       SyncQueue.push("exercise:update", { groupId });
     }
+    groupDraft.clear();
     close();
     renderExercisesList(exercisesSearch.value);
   });
@@ -4885,6 +5047,9 @@ function wireExRowSwipe(wrap, userId) {
   const row = wrap.querySelector(".ex-row");
   if (!row) return;
   const exId = row.dataset.id;
+  appendRowActions(wrap,[{label:'Изменить',run:()=>openExerciseForm(exId)},
+    {label:'Выше',run:()=>moveExerciseRow(wrap,-1)},
+    {label:'Ниже',run:()=>moveExerciseRow(wrap,1)}]);
   let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, didSwipe = false;
   // MAX подобран так, чтобы при свайпе полностью показывалась надпись «Изменить».
   const MAX = 120, DEL = 80;
@@ -4972,10 +5137,22 @@ function wireExRowSwipe(wrap, userId) {
     }
   };
   row.addEventListener("pointerup", settle);
-  row.addEventListener("pointercancel", settle);
+  row.addEventListener("pointercancel", () => {active=false;cancelSwipeVisual(wrap,row);});
   row.addEventListener("click", e => {
     if (didSwipe) { e.stopPropagation(); e.preventDefault(); didSwipe = false; }
   }, true);
+}
+
+function moveExerciseRow(wrap,direction) {
+  if(![-1,1].includes(direction))return;
+  if(exercisesSearch.value.trim()){showToast('Очистите поиск перед изменением порядка');return;}
+  const neighbor=direction<0?wrap.previousElementSibling:wrap.nextElementSibling;
+  if(!neighbor?.classList.contains('ex-row-wrap')||neighbor.dataset.cat!==wrap.dataset.cat){showToast('Граница списка в этой группе');return;}
+  const focused=document.activeElement;
+  if(direction<0)wrap.parentNode.insertBefore(wrap,neighbor);
+  else wrap.parentNode.insertBefore(neighbor,wrap);
+  saveExOrder();focused?.focus({preventScroll:true});
+  showToast(direction<0?'Перемещено выше':'Перемещено ниже');
 }
 
 function enterExListEditMode() {
@@ -5097,6 +5274,7 @@ function wireExRowGesture(wrap, userId) {
   wrap.addEventListener("touchstart", e => { if (nested()) e.stopPropagation(); const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
   wrap.addEventListener("touchmove",  e => { if (nested()) e.stopPropagation(); const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
   wrap.addEventListener("touchend",   e => { if (nested()) e.stopPropagation(); finish(); });
+  wrap.addEventListener('touchcancel',e=>{if(nested())e.stopPropagation();clearHold();moved=true;if(_exListDrag?.wrap===wrap)endExDrag(false);});
   wrap.addEventListener("mousedown",  e => { if (nested()) e.stopPropagation(); begin(e.clientX, e.clientY, e.target); });
   wrap.addEventListener("mousemove",  e => { if (_exListDrag) move(e.clientX, e.clientY, null); });
   wrap.addEventListener("mouseup",    finish);
@@ -5307,7 +5485,7 @@ function performMerge(userId, draggedWrap, targetWrap) {
   openGroupForm(group.id, true);
 }
 
-function endExDrag() {
+function endExDrag(commit = true) {
   const d = _exListDrag; if (!d) return;
   _exListDrag = null;
   if (d.raf) cancelAnimationFrame(d.raf);
@@ -5328,6 +5506,7 @@ function endExDrag() {
   wrap.classList.remove("ex-dragging");
   setTimeout(() => { wrap.style.transition = ""; }, 200);
 
+  if(!commit){const scrollTop=exercisesScroll.scrollTop;renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=scrollTop;return;}
   const userId = DATA.getCurrentUser();
 
   // Слияние по dwell над обычным упражнением — создать новую группу.
@@ -5576,7 +5755,7 @@ function wireSheetDragClose(sheetEl, dragZone, onClose) {
   dragZone.addEventListener("touchstart", e => down(e.touches[0].clientY, e.touches[0].clientX), { passive: true });
   dragZone.addEventListener("touchmove", e => { const t = e.touches[0]; if (t) moveTo(t.clientY, t.clientX, e); }, { passive: false });
   dragZone.addEventListener("touchend", up);
-  dragZone.addEventListener("touchcancel", up);
+  dragZone.addEventListener("touchcancel", () => {active=false;dy=0;sheetEl.style.transition='';sheetEl.style.transform='';});
   dragZone.addEventListener("mousedown", e => { down(e.clientY, e.clientX); const mm = ev => moveTo(ev.clientY, ev.clientX, ev); const mu = () => { up(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); }; window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu); });
 }
 
@@ -5663,6 +5842,7 @@ let _msdEditCtx = null;
 let _msdMuscleId = null;
 
 function exitMuscleEdit() {
+  _msdEditCtx?.draft?.dispose();
   _msdEditing = false;
   _msdEditCtx = null;
   const ef = $("msd-edit-footer"); if (ef) ef.style.display = "none";
@@ -5709,7 +5889,14 @@ function enterMuscleEdit() {
     if (e.key === "Enter") { e.preventDefault(); const v = bundleAdd.value.trim(); if (v) { bundles.push(v); bundleAdd.value = ""; renderBundles(); } }
   });
 
-  _msdEditCtx = { groupSel, moveSel, visBtn, getBundles: () => bundles };
+  $('msd-e-name').setAttribute('aria-label','Название мышцы');
+  $('msd-body').setAttribute('data-draft-body','');
+  const draft=FormDrafts.bind($('screen-muscle-detail'),'inline-muscle:'+m.id,{
+    groups:groupSel,moves:moveSel,
+    bundles:{get:()=>bundles,set:v=>{if(Array.isArray(v)){bundles=v.filter(x=>typeof x==='string');renderBundles();}}},
+    visible:{get:()=>visBtn.getAttribute('aria-pressed'),set:v=>visBtn.setAttribute('aria-pressed',String(v==='true'))}
+  });
+  _msdEditCtx = { groupSel, moveSel, visBtn, getBundles: () => bundles, draft };
   $("msd-edit-save").disabled = false;
   $("msd-edit-btn").style.display = "none";
   $("msd-view-footer").style.display = "none";
@@ -5721,7 +5908,8 @@ async function saveMuscleEdit() {
   const userId = DATA.getCurrentUser();
   const m = DATA.refMuscles(userId).find(x => x.id === _msdMuscleId);
   if (!m) return;
-  const { groupSel, moveSel, visBtn, getBundles } = _msdEditCtx;
+  const editContext = _msdEditCtx;
+  const { groupSel, moveSel, visBtn, getBundles } = editContext;
   const name = $("msd-e-name").value.trim();
   if (!name) { $("msd-e-name").focus(); showToast("Введи название мышцы"); return; }
   const groups = DATA.atlasGroupRows().map(g => g.name);
@@ -5730,6 +5918,8 @@ async function saveMuscleEdit() {
   saveBtn.disabled = true;
   try {
     await refSaveMuscle(m, data);
+    editContext.draft.clear();
+    if (_msdEditCtx !== editContext) return;
     showToast("Мышца обновлена");
     openMuscleDetailScreen(_msdMuscleId, _msdReturnScreen, true);  // сам вызовет exitMuscleEdit()
   } catch (err) {
@@ -5925,11 +6115,14 @@ function openReferenceSheet(initialTab, focusName) {
     document.body.appendChild(addBd);
     addBd.style.zIndex = "30";
     const inp = addBd.querySelector("input");
-    const closeMod = () => addBd.remove();
+    inp.setAttribute('aria-label','Название категории');
+    const draft=FormDrafts.bind(addBd,'category:new');
+    const closeMod = () => { draft.dispose(); addBd.remove(); };
     const save = () => {
       const v = inp.value.trim();
       if (!v) return;
       DATA.addCategory(userId, v);
+      draft.clear();
       renderExercisesList(exercisesSearch.value);
       renderContent();
       closeMod();
@@ -5971,7 +6164,7 @@ function openReferenceSheet(initialTab, focusName) {
           <input class="ex-form-input" id="cf-name" type="text" placeholder="Название группы" value="${escHtml(cat)}"></div>
         <div class="ex-form-field"><label class="ex-form-label">Цвет</label>
           <div class="cat-color-row">
-            ${palette.map(c => `<button type="button" class="cat-color-swatch${c === curColor ? " selected" : ""}" data-color="${escHtml(c)}" style="background:${escHtml(c)}"></button>`).join("")}
+            ${palette.map((c,i) => `<button type="button" aria-label="Цвет: ${['синий','индиго','сине-фиолетовый','фиолетовый','пурпурный','пурпурно-розовый','маджента','розовый'][i]}" aria-pressed="${c===curColor}" class="cat-color-swatch${c === curColor ? " selected" : ""}" data-color="${escHtml(c)}" style="background:${escHtml(c)}"></button>`).join("")}
           </div></div>
         <button class="modal-option modal-option-full danger" id="cf-del">Удалить группу</button>
         <div class="modal-form-actions">
@@ -5983,14 +6176,19 @@ function openReferenceSheet(initialTab, focusName) {
 
     const nameInp = bd.querySelector("#cf-name");
     let chosenColor = curColor;
+    const setColor = color => {
+      if (!palette.includes(color) && color !== curColor) return;
+      chosenColor=color;
+      bd.querySelectorAll('.cat-color-swatch').forEach(s=>{s.classList.toggle('selected',s.dataset.color===color);s.setAttribute('aria-pressed',String(s.dataset.color===color));});
+    };
     bd.querySelectorAll(".cat-color-swatch").forEach(sw => {
       sw.addEventListener("click", () => {
-        chosenColor = sw.dataset.color;
-        bd.querySelectorAll(".cat-color-swatch").forEach(s => s.classList.toggle("selected", s === sw));
+        setColor(sw.dataset.color);
       });
     });
 
-    const close = () => bd.remove();
+    const draft=FormDrafts.bind(bd,'category:'+cat,{color:{get:()=>chosenColor,set:setColor}});
+    const close = () => { draft.dispose(); bd.remove(); };
     bd.addEventListener("click", e => { if (e.target === bd) close(); });
     bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
     bd.querySelector('[data-act="save"]').addEventListener("click", () => {
@@ -6001,6 +6199,7 @@ function openReferenceSheet(initialTab, focusName) {
       // Цвет в карте хранится по имени — задаём под финальным именем (renameCategory
       // цвет не переносит), поэтому ставим всегда под next.
       if (col) DATA.setCategoryColor(userId, next, col);
+      draft.clear();
       close();
       renderExercisesList(exercisesSearch.value);
       renderContent();
@@ -6087,7 +6286,7 @@ function openReferenceSheet(initialTab, focusName) {
       }
     };
     item.addEventListener("pointerup", settle);
-    item.addEventListener("pointercancel", settle);
+    item.addEventListener("pointercancel", () => {active=false;cancelSwipeVisual(wrap,item);});
     item.addEventListener("click", e => {
       if (swiped) { e.stopPropagation(); e.preventDefault(); swiped = false; }
     }, true);
@@ -6369,7 +6568,7 @@ function openReferenceSheet(initialTab, focusName) {
       }
     };
     card.addEventListener("pointerup", settle);
-    card.addEventListener("pointercancel", settle);
+    card.addEventListener("pointercancel", () => {active=false;cancelSwipeVisual(wrap,card);});
   }
 
   function openRefEditor(kind, id) {
@@ -6683,11 +6882,24 @@ async function refSaveMovement(existing, data) {
 }
 
 // Универсальный конструктор мультиселект-чипов (single или multi).
+// Rebuilding a selector must not drop keyboard focus onto the page body.
+function renderSelectorContent(container, html) {
+  const active=document.activeElement;
+  const hadFocus=container.contains(active);
+  const value=active?.dataset?.v;
+  container.innerHTML=html;
+  if(hadFocus){
+    const buttons=[...container.querySelectorAll('button')];
+    const target=(value!==undefined&&buttons.find(b=>b.dataset.v===value))||container.querySelector('.ef-dd-trigger')||buttons[0];
+    target?.focus({preventScroll:true});
+  }
+}
+
 function refChipSelect(container, options, selected, multi) {
   const sel = new Set(selected);
   const render = () => {
-    container.innerHTML = options.map(o =>
-      `<button type="button" class="ex-form-chip${sel.has(o) ? " selected" : ""}" data-v="${escHtml(o)}">${escHtml(o)}</button>`).join("");
+    renderSelectorContent(container, options.map(o =>
+      `<button type="button" aria-pressed="${sel.has(o)}" class="ex-form-chip${sel.has(o) ? " selected" : ""}" data-v="${escHtml(o)}">${escHtml(o)}</button>`).join(""));
     container.querySelectorAll(".ex-form-chip").forEach(ch => ch.addEventListener("click", () => {
       const v = ch.dataset.v;
       if (multi) { sel.has(v) ? sel.delete(v) : sel.add(v); }
@@ -6696,7 +6908,7 @@ function refChipSelect(container, options, selected, multi) {
     }));
   };
   render();
-  return { get: () => [...sel], getOne: () => [...sel][0] || "" };
+  return { get: () => [...sel], getOne: () => [...sel][0] || "", set(values){if(!Array.isArray(values))return;sel.clear();values.filter(v=>options.includes(v)).slice(0,multi?Infinity:1).forEach(v=>sel.add(v));render();} };
 }
 
 // Выпадающий выбор для форм (вместо длинного перечисления чипов). Кастомный
@@ -6729,7 +6941,7 @@ function refDropdownSelect(container, options, selected, multi) {
       const label = multi ? "＋ добавить…" : (sel[0] || "— не выбрано —");
       const isPlaceholder = multi || !sel[0];
       html += `<div class="ef-dd-field${open ? " open" : ""}">
-        <button type="button" class="ef-dd-trigger${isPlaceholder ? " placeholder" : ""}">
+        <button type="button" aria-expanded="${open}" class="ef-dd-trigger${isPlaceholder ? " placeholder" : ""}">
           <span class="ef-dd-trigger-label">${escHtml(label)}</span><span class="ef-dd-caret">⌄</span>
         </button>
         ${open ? `<div class="ef-dd-panel">${
@@ -6739,7 +6951,7 @@ function refDropdownSelect(container, options, selected, multi) {
         }</div>` : ""}
       </div>`;
     }
-    container.innerHTML = html;
+    renderSelectorContent(container, html);
 
     const trig = container.querySelector(".ef-dd-trigger");
     if (trig) trig.addEventListener("click", e => { e.stopPropagation(); open = !open; render(); });
@@ -6756,7 +6968,7 @@ function refDropdownSelect(container, options, selected, multi) {
     }));
   };
   render();
-  return { get: () => [...sel], getOne: () => sel[0] || "" };
+  return { get: () => [...sel], getOne: () => sel[0] || "", set(values){if(!Array.isArray(values))return;sel.splice(0,sel.length,...values.filter(v=>options.includes(v)).slice(0,multi?Infinity:1));render();} };
 }
 
 // Селектор рабочих мышц для роли (целевые/синергисты/стабилизаторы) с выбором
@@ -6785,7 +6997,7 @@ function roleMuscleSelect(container, muscles, selected) {
         const has = (byName[o.muscle] || []).length > 0;
         const label = o.bundle ? `${o.muscle} · ${o.bundle}` : o.muscle;
         return `<span class="ef-dd-chip role-chip${has ? " has-bundles" : ""}" data-m="${escHtml(o.muscle)}">
-          <span class="role-chip-label">${escHtml(label)}${has ? `<span class="role-chip-caret">⌄</span>` : ""}</span>
+          ${has ? `<button type="button" class="role-chip-label" aria-expanded="${bundleFor===o.muscle}">${escHtml(label)}<span class="role-chip-caret">⌄</span></button>` : `<span class="role-chip-label">${escHtml(label)}</span>`}
           <button type="button" class="ef-dd-x" aria-label="Убрать">×</button>
         </span>`;
       }).join("") + `</div>`;
@@ -6800,11 +7012,11 @@ function roleMuscleSelect(container, muscles, selected) {
     }
     if (rest.length) {
       html += `<div class="ef-dd-field${addOpen ? " open" : ""}">
-        <button type="button" class="ef-dd-trigger placeholder"><span class="ef-dd-trigger-label">＋ добавить…</span><span class="ef-dd-caret">⌄</span></button>
+        <button type="button" aria-expanded="${addOpen}" class="ef-dd-trigger placeholder"><span class="ef-dd-trigger-label">＋ добавить…</span><span class="ef-dd-caret">⌄</span></button>
         ${addOpen ? `<div class="ef-dd-panel">${rest.map(n => `<button type="button" class="ef-dd-opt" data-add="${escHtml(n)}">${escHtml(n)}</button>`).join("")}</div>` : ""}
       </div>`;
     }
-    container.innerHTML = html;
+    renderSelectorContent(container, html);
 
     const trig = container.querySelector(".ef-dd-trigger");
     if (trig) trig.addEventListener("click", e => { e.stopPropagation(); addOpen = !addOpen; bundleFor = null; render(); });
@@ -6838,7 +7050,7 @@ function roleMuscleSelect(container, muscles, selected) {
     }));
   };
   render();
-  return { get: () => sel.map(o => ({ muscle: o.muscle, bundle: o.bundle || "" })) };
+  return { get: () => sel.map(o => ({ muscle: o.muscle, bundle: o.bundle || "" })), set(values){if(!Array.isArray(values))return;sel=values.filter(v=>v&&typeof v.muscle==='string'&&Object.hasOwn(byName,v.muscle)).map(v=>({muscle:v.muscle,bundle:typeof v.bundle==='string'?v.bundle:''}));render();} };
 }
 
 // Автодополнение поверх обычного текстового поля (свободный ввод + подсказки
@@ -6926,6 +7138,7 @@ function openMuscleForm(existing, onSaved) {
   });
 
   if (readOnly) bd.querySelectorAll("input,button.ex-form-chip,.ef-dd-trigger,.ef-dd-x,#rf-visible,#rf-bundle-add").forEach(el => { el.disabled = true; });
+  const muscleDraft=readOnly?null:FormDrafts.bind(bd,'muscle:'+(existing?.id||existing?.name||'new'),{groups:groupSel,moves:moveSel,bundles:{get:()=>bundles,set:v=>{if(Array.isArray(v)){bundles=v.filter(x=>typeof x==='string');renderBundles();}}},visible:{get:()=>visBtn.getAttribute('aria-pressed'),set:v=>visBtn.setAttribute('aria-pressed',String(v==='true'))}});
 
   const close = () => bd.remove();
   bd.addEventListener("click", e => { if (e.target === bd) close(); });
@@ -6936,7 +7149,7 @@ function openMuscleForm(existing, onSaved) {
     if (!name) { bd.querySelector("#rf-name").focus(); return; }
     const data = { name, group: groupSel.getOne() || groups[0], visible: visBtn.getAttribute("aria-pressed") === "true", bundles, movements: moveSel.get() };
     saveBtn.disabled = true;
-    try { await refSaveMuscle(existing, data); close(); onSaved && onSaved(); }
+    try { await refSaveMuscle(existing, data); muscleDraft?.clear();close(); onSaved && onSaved(); }
     catch (err) { saveBtn.disabled = false; showToast("Ошибка сохранения: " + (err && err.message || err)); }
   });
 }
@@ -6975,6 +7188,7 @@ function openMovementForm(existing, onSaved) {
   const muscleSel = refDropdownSelect(bd.querySelector("#rf-muscles"), allMuscles, curMuscles, true);
 
   if (readOnly) bd.querySelectorAll("input,button.ex-form-chip,.ef-dd-trigger,.ef-dd-x").forEach(el => { el.disabled = true; });
+  const movementDraft=readOnly?null:FormDrafts.bind(bd,'movement:'+(existing?.id||existing?.name||'new'),{groups:groupSel,type:typeSel,muscles:muscleSel});
 
   const close = () => bd.remove();
   bd.addEventListener("click", e => { if (e.target === bd) close(); });
@@ -6985,7 +7199,7 @@ function openMovementForm(existing, onSaved) {
     if (!name) { bd.querySelector("#rf-name").focus(); return; }
     const data = { name, group: groupSel.getOne() || groups[0], type: typeSel.getOne() || "База", muscles: muscleSel.get() };
     saveBtn.disabled = true;
-    try { await refSaveMovement(existing, data); close(); onSaved && onSaved(); }
+    try { await refSaveMovement(existing, data); movementDraft?.clear();close(); onSaved && onSaved(); }
     catch (err) { saveBtn.disabled = false; showToast("Ошибка сохранения: " + (err && err.message || err)); }
   });
 }
@@ -7112,6 +7326,7 @@ function openExerciseForm(exerciseId) {
   const stabSel   = roleMuscleSelect(bd.querySelector("#ef-stab"), muscleObjs, a.stabilizer || []);
   const moveSel   = refDropdownSelect(bd.querySelector("#ef-moves"), moveNames, a.categories || [], true);
   wireComboSuggest(bd.querySelector("#ef-group"), bd.querySelector("#ef-group-panel"), exGroups.map(g => g.name));
+  const formDraft=FormDrafts.bind(bd,'exercise:'+(exerciseId||'new'),{type:typeSel,cat:catSel,level:levelSel,target:targetSel,syn:synSel,stab:stabSel,moves:moveSel});
 
   // сохранить пучок у мышцы, если он уже был задан (иначе пусто)
   const toRoles = (names, prev) => names.map(n => {
@@ -7157,6 +7372,7 @@ function openExerciseForm(exerciseId) {
       showToast("Упражнение добавлено");
     }
     DATA.setExerciseGroupByName(userId, savedId, bd.querySelector("#ef-group").value);
+    formDraft.clear();
     close();
     renderExercisesList(exercisesSearch.value);
     if (savedId && SCREENS.exerciseDetail.classList.contains("active")) openExerciseDetail(savedId, _exdReturnScreen);
@@ -7177,6 +7393,7 @@ let _exdEditCtx = null;
 // Вернуть страницу-деталь в режим просмотра (спрятать футер, показать карандаш).
 // Идемпотентно — безопасно звать из openExerciseDetail при каждом открытии.
 function exitExerciseEdit() {
+  _exdEditCtx?.draft?.dispose();
   _exdEditing = false;
   _exdEditCtx = null;
   const footer = $("exd-edit-footer");
@@ -7258,7 +7475,10 @@ function enterExerciseEdit() {
     return { muscle: n, bundle: old ? old.bundle : "" };
   });
 
-  _exdEditCtx = { a, typeSel, catSel, levelSel, targetSel, synSel, stabSel, moveSel, toRoles };
+  $('exd-e-name').setAttribute('aria-label','Название упражнения');
+  $('exd-body').setAttribute('data-draft-body','');
+  const draft=FormDrafts.bind($('screen-exercise-detail'),'inline-exercise:'+ex.id,{type:typeSel,cat:catSel,level:levelSel,target:targetSel,syn:synSel,stab:stabSel,moves:moveSel});
+  _exdEditCtx = { a, typeSel, catSel, levelSel, targetSel, synSel, stabSel, moveSel, toRoles, draft };
   $("exd-edit-btn").style.display = "none";
   $("exd-edit-footer").style.display = "";
 }
@@ -7295,6 +7515,7 @@ function saveExerciseEdit() {
   DATA.updateOwnExercise(userId, _detailExerciseId, payload);
   SyncQueue.push("exercise:update", { id: _detailExerciseId });
   DATA.setExerciseGroupByName(userId, _detailExerciseId, $("exe-group").value);
+  _exdEditCtx.draft.clear();
   showToast("Упражнение обновлено");
   renderExercisesList(exercisesSearch.value);
   openExerciseDetail(_detailExerciseId, _exdReturnScreen);  // сам вызовет exitExerciseEdit()
@@ -7403,7 +7624,7 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
         // (назад к прошлому выполнению / вперёд к следующему).
         const prevW = DATA.adjacentWorkoutForExercise(userId, ex.exerciseId, workout.startedAt, "prev");
         const nextW = DATA.adjacentWorkoutForExercise(userId, ex.exerciseId, workout.startedAt, "next");
-        return `<div class="wd-ex${ssClass}" data-ex-id="${ex.exerciseId}">
+        return `<div class="wd-ex${ssClass}" data-ex-id="${escHtml(ex.exerciseId)}">
           <div class="wd-ex-head">
             <span class="wd-ex-name${isOrphan ? " orphan" : ""}">${escHtml(exDef.name)}</span>
             ${doneSets.length ? `<span class="wd-ex-meta${volPr ? " pr" : ""}">${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
@@ -7422,9 +7643,9 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
                 if (pr) prShown = true;
                 return `<div class="wd-set${s.dropSet ? " wd-set-drop" : ""}">
                   <span class="wd-set-num">${setLabels[i]}</span>
-                  <div class="wd-cell${pr ? " pr" : ""}">${pr ? "★ " : ""}${s.weight || "—"}</div>
-                  <div class="wd-cell">${s.reps}</div>
-                  ${anyRpe ? `<div class="wd-cell wd-rpe ${s.rpe ? rpeClass(s.rpe) : "none"}">${s.rpe || "—"}</div>` : ""}
+                  <div class="wd-cell${pr ? " pr" : ""}">${pr ? "★ " : ""}${workoutNumber(s.weight) || "—"}</div>
+                  <div class="wd-cell">${workoutNumber(s.reps) ?? "—"}</div>
+                  ${anyRpe ? `<div class="wd-cell wd-rpe ${workoutNumber(s.rpe) ? rpeClass(workoutNumber(s.rpe)) : "none"}">${workoutNumber(s.rpe) || "—"}</div>` : ""}
                 </div>`;
               }).join("")}
             </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
@@ -7434,10 +7655,10 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
           ${(prevW || nextW) ? `
             <div class="wd-ex-nav">
               ${prevW
-                ? `<button class="wd-ex-nav-btn" data-ex-id="${ex.exerciseId}" data-nav="prev" title="Прошлое выполнение — ${escHtml(fmtDate(prevW.startedAt))}">${chevron("prev")}<span>${escHtml(shortDate(prevW.startedAt))}</span></button>`
+                ? `<button class="wd-ex-nav-btn" data-ex-id="${escHtml(ex.exerciseId)}" data-nav="prev" title="Прошлое выполнение — ${escHtml(fmtDate(prevW.startedAt))}">${chevron("prev")}<span>${escHtml(shortDate(prevW.startedAt))}</span></button>`
                 : `<span class="wd-ex-nav-btn disabled">${chevron("prev")}<span>—</span></span>`}
               ${nextW
-                ? `<button class="wd-ex-nav-btn" data-ex-id="${ex.exerciseId}" data-nav="next" title="Следующее выполнение — ${escHtml(fmtDate(nextW.startedAt))}"><span>${escHtml(shortDate(nextW.startedAt))}</span>${chevron("next")}</button>`
+                ? `<button class="wd-ex-nav-btn" data-ex-id="${escHtml(ex.exerciseId)}" data-nav="next" title="Следующее выполнение — ${escHtml(fmtDate(nextW.startedAt))}"><span>${escHtml(shortDate(nextW.startedAt))}</span>${chevron("next")}</button>`
                 : `<span class="wd-ex-nav-btn disabled"><span>—</span>${chevron("next")}</span>`}
             </div>` : ""}
         </div>`;
@@ -7718,6 +7939,26 @@ function renderStatsGraph(points, mode, containerW, containerH) {
 }
 
 // ── Главная функция ──
+function workoutDurationMs(workout) {
+  if (typeof workout.durationSec === "number" && Number.isFinite(workout.durationSec) && workout.durationSec >= 0) {
+    return workout.durationSec * 1000;
+  }
+  // Legacy runs stored HH:MM:SS (sometimes MM:SS), not a reliable form-open interval.
+  if (workout.type === "run") {
+    const parts = typeof workout.duration === "string" ? workout.duration.split(":") : [];
+    if ((parts.length === 2 || parts.length === 3) && parts.every(p => /^\d+$/.test(p))) {
+      const values = parts.map(Number);
+      if (values.slice(1).every(v => v < 60)) {
+        const seconds = values.reduce((total, value) => total * 60 + value, 0);
+        if (Number.isFinite(seconds)) return seconds * 1000;
+      }
+    }
+    return 0; // Unknown running duration must not count hours spent editing the form.
+  }
+  const elapsed = workout.finishedAt - workout.startedAt;
+  return Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
+}
+
 function initStatsScreen() {
   const userId = DATA.getCurrentUser();
   if (!userId) return;
@@ -7736,7 +7977,7 @@ function initStatsScreen() {
 
   // Время
   let totalMs = 0;
-  filtered.forEach(w => { if (w.finishedAt && w.startedAt) totalMs += w.finishedAt - w.startedAt; });
+  filtered.forEach(w => { totalMs += workoutDurationMs(w); });
   const totalMin = Math.round(totalMs/60000);
   const durStr = totalMin < 60 ? `${totalMin} мин` : `${Math.floor(totalMin/60)} ч ${totalMin%60>0?totalMin%60+" мин":""}`.trim();
 
@@ -7797,8 +8038,8 @@ function initStatsScreen() {
 
   // Время по типам (для карточек)
   let strengthMs = 0, runMs = 0;
-  strength.forEach(w => { if (w.finishedAt && w.startedAt) strengthMs += w.finishedAt - w.startedAt; });
-  runs.forEach(w => { if (w.finishedAt && w.startedAt) runMs += w.finishedAt - w.startedAt; });
+  strength.forEach(w => { strengthMs += workoutDurationMs(w); });
+  runs.forEach(w => { runMs += workoutDurationMs(w); });
   const _hrsStr = ms => { const h = ms / 3600000; return h < 1 ? `${Math.round(h * 60)} мин` : `${Math.round(h * 10) / 10} ч`; };
   const strengthHrs = strengthMs > 0 ? _hrsStr(strengthMs) : "—";
   const runHrs = runMs > 0 ? _hrsStr(runMs) : "—";
@@ -7839,7 +8080,7 @@ function initStatsScreen() {
       <div class="s-ex-body">
         <div class="s-chart-frame" id="s-graph-wrap">${renderStatsGraph(gpInPeriod, _statsGraphMode)}</div>
         <div class="s-ex-recs">
-          ${tile(selRec ? `${selRec.maxWeight} кг` : "—", "макс. вес")}
+          ${tile(selRec ? `${workoutNumber(selRec.maxWeight) ?? "—"} кг` : "—", "макс. вес")}
           ${tile(oneRM ? `${oneRM} кг` : "—", "1ПМ расчёт")}
           <div class="s-ex-rec${progValCls === ' up' ? ' prog-up' : ''}">
             <div class="s-ex-rec-val${progValCls}">${progTxt}</div>
@@ -8087,7 +8328,7 @@ function openStatChartScreen(exerciseId) {
   const oneRM = rec ? estimate1RM(rec.maxWeight, rec.repsAtMaxWeight) : 0;
   const recordsHtml = rec ? `
     <div class="detail-stats">
-      <div class="detail-stat"><div class="detail-stat-num">${rec.maxWeight} кг</div><div class="detail-stat-label">Макс. вес, × ${rec.repsAtMaxWeight}</div></div>
+      <div class="detail-stat"><div class="detail-stat-num">${workoutNumber(rec.maxWeight) ?? "—"} кг</div><div class="detail-stat-label">Макс. вес, × ${workoutNumber(rec.repsAtMaxWeight) ?? "—"}</div></div>
       ${oneRM ? `<div class="detail-stat"><div class="detail-stat-num">${oneRM} кг</div><div class="detail-stat-label">Оценка 1ПМ</div></div>` : ""}
     </div>` : "";
 
@@ -8103,7 +8344,7 @@ function openStatChartScreen(exerciseId) {
       ${points.slice().reverse().map(p => `
         <div class="detail-set-row">
           <span class="stat-hist-date">${fmtDate(p.date)}</span>
-          <span class="detail-set-val">${p.weight} кг × ${p.reps} повт</span>
+          <span class="detail-set-val">${workoutNumber(p.weight) ?? "—"} кг × ${workoutNumber(p.reps) ?? "—"} повт</span>
         </div>`).join("")}
     </div>` : "";
 
@@ -8356,6 +8597,7 @@ $("constructor-back-btn").addEventListener("click", () => goToScreen("templates"
 /* — Создание нового шаблона: сразу открываем режим правки, чтобы добавить состав — */
 function createNewTemplate() {
   openNameModal({
+    draftId:'template:new',
     title: "Новый шаблон",
     placeholder: "Например, День спины",
     confirmLabel: "Создать",
@@ -8417,37 +8659,45 @@ function startTplRename(wrap, id) {
   wrap.dataset.renaming = "1";
 
   const current = nameEl.textContent;
+  const userId=DATA.getCurrentUser(),owner=Auth.userId();
   const inp = document.createElement("input");
   inp.type = "text";
   inp.value = current;
   inp.className = "tpl-title-input";
+  inp.id='template-rename-'+id;
+  inp.setAttribute('aria-label','Название шаблона');
   nameEl.replaceWith(inp);
+  const draft=FormDrafts.bind(wrap,'template:rename:'+id);
   inp.focus();
   inp.select();
 
-  const commit = () => {
+  const commit = (cancelled=false) => {
     if (!wrap.dataset.renaming) return;
     delete wrap.dataset.renaming;
-    const next = inp.value.trim();
-    if (next && next !== current) {
-      const userId = DATA.getCurrentUser();
+    const sameContext=owner===Auth.userId()&&userId===DATA.getCurrentUser();
+    const next = cancelled||!sameContext?current:inp.value.trim();
+    if (!cancelled&&sameContext&&next && next !== current) {
       DATA.renameTemplate(userId, id, next);
       SyncQueue.push("template:rename", { templateId: id });
       // Все тренировки по этому шаблону носят его имя (п.4).
       DATA.renameTemplateWorkouts(userId, id, next).forEach(wid =>
         SyncQueue.push("workout:edit", { workoutId: wid }));
     }
+    if(!cancelled&&sameContext&&next)draft.clear();
+    draft.dispose();
     const div = document.createElement("div");
     div.className = "tpl-card-title tpl-card-title--edit";
     div.textContent = next || current;
     inp.replaceWith(div);
+    keyboardClickable(div);
     div.addEventListener("click", e => { e.stopPropagation(); startTplRename(wrap, id); });
+    if(cancelled)div.focus();
   };
 
-  inp.addEventListener("blur", commit);
+  inp.addEventListener("blur", () => commit());
   inp.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); inp.blur(); }
-    if (e.key === "Escape") { inp.value = current; inp.blur(); }
+    if (e.key === "Escape") { e.preventDefault();commit(true); }
   });
   inp.addEventListener("pointerdown", e => e.stopPropagation());
 }
@@ -8519,10 +8769,18 @@ function wireTplCard(id) {
   const wrap = templatesScroll.querySelector(`.tpl-card-wrap[data-id="${id}"]`);
   if (!wrap) return;
   const card = wrap.querySelector(".tpl-card");
+  appendRowActions(card,[
+    ...(_tplEditMode?[{label:'Поделиться',run:()=>tplShareTemplate(id)}]:[]),
+    ...(_tplEditMode?[]:[{label:'Редактировать',run:()=>{
+      enterTplEditMode();
+      [...templatesScroll.querySelectorAll('.tpl-card-wrap')].find(el=>el.dataset.id===id)?.querySelector('.tpl-card-title--edit')?.focus();
+    }}]),
+    {label:'Удалить шаблон',run:()=>deleteTemplateWithUndo(id)}
+  ]);
 
   if (_tplEditMode) {
     const title = wrap.querySelector(".tpl-card-title--edit");
-    if (title) title.addEventListener("click", e => { e.stopPropagation(); startTplRename(wrap, id); });
+    if (title) { keyboardClickable(title);title.addEventListener("click", e => { e.stopPropagation(); startTplRename(wrap, id); }); }
     const shareBtn = wrap.querySelector(".tpl-share-btn");
     if (shareBtn) shareBtn.addEventListener("click", e => { e.stopPropagation(); tplShareTemplate(id); });
     const addEx = wrap.querySelector(".tpl-ex-add");
@@ -8616,7 +8874,7 @@ function wireTplCardSwipe(wrap, id) {
     }
   };
   row.addEventListener("pointerup", settle);
-  row.addEventListener("pointercancel", settle);
+  row.addEventListener("pointercancel", () => {active=false;cancelSwipeVisual(wrap,row);});
   row.addEventListener("click", e => {
     if (didSwipe) { e.stopPropagation(); e.preventDefault(); didSwipe = false; }
   }, true);
@@ -8625,6 +8883,14 @@ function wireTplCardSwipe(wrap, id) {
 // Ячейка упражнения в режиме правки: тап → замена, крестик → удалить, зажатие → перетащить.
 function wireTplExCell(cell, wrap, id) {
   const listEl = wrap.querySelector(".tpl-ex-list");
+  const index=+cell.dataset.idx;
+  const total=DATA.getTemplate(DATA.getCurrentUser(),id)?.exercises.length||0;
+  appendRowActions(cell,[
+    {label:'Заменить',run:()=>tplSwapExercise(id,+cell.dataset.idx)},
+    {label:'Убрать из шаблона',run:()=>cell.querySelector('.tpl-ex-remove')?.click()},
+    {label:'Выше',disabled:()=>+cell.dataset.idx===0,run:()=>moveTemplateExercise(id,+cell.dataset.idx,-1)},
+    {label:'Ниже',disabled:()=>+cell.dataset.idx===total-1,run:()=>moveTemplateExercise(id,+cell.dataset.idx,1)}
+  ]);
   const removeBtn = cell.querySelector(".tpl-ex-remove");
   if (removeBtn) removeBtn.addEventListener("click", e => {
     e.stopPropagation();
@@ -8662,7 +8928,7 @@ function wireTplExCell(cell, wrap, id) {
   cell.addEventListener("touchstart", e => { const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
   cell.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
   cell.addEventListener("touchend",   finish);
-  cell.addEventListener("touchcancel", finish);
+  cell.addEventListener("touchcancel", () => {clearHold();moved=true;if(dragging){dragging=false;cell.dataset.justDragged='1';endTplExDrag(id,false);}});
   cell.addEventListener("mousedown", e => {
     begin(e.clientX, e.clientY, e.target);
     const mm = ev => move(ev.clientX, ev.clientY, null);
@@ -8678,12 +8944,25 @@ function wireTplExCell(cell, wrap, id) {
   });
 }
 
+function moveTemplateExercise(id,index,direction) {
+  const userId=DATA.getCurrentUser(),tpl=DATA.getTemplate(userId,id);
+  const next=index+direction;
+  if(!tpl||!Number.isInteger(index)||![-1,1].includes(direction)||index<0||index>=tpl.exercises.length||next<0||next>=tpl.exercises.length)return;
+  const exercises=[...tpl.exercises];
+  [exercises[index],exercises[next]]=[exercises[next],exercises[index]];
+  DATA.updateTemplateExercises(userId,id,exercises);
+  SyncQueue.push('template:update',{templateId:id});renderTemplatesList();
+  const card=[...templatesScroll.querySelectorAll('.tpl-card-wrap')].find(el=>el.dataset.id===id);
+  const cell=card&&[...card.querySelectorAll('.tpl-ex-cell')].find(el=>+el.dataset.idx===next);
+  cell?.querySelector('.row-actions-trigger')?.focus();
+}
+
 function startTplExDrag(cell, listEl, pointerY) {
   if (_tplDrag) return;
   const wrap = listEl.closest(".tpl-card-wrap");
   if (wrap) wrap.classList.add("dragging");      // пауза «дрожания» на время перетаскивания
   const top = cell.getBoundingClientRect().top;
-  _tplDrag = { cell, listEl, wrap, grabDy: pointerY - top, ty: 0 };
+  _tplDrag = { cell, listEl, wrap, grabDy: pointerY - top, ty: 0, originalChildren:[...listEl.children] };
   cell.style.transition = "none";
   cell.classList.add("tpl-ex-dragging");
   haptic(18);
@@ -8711,7 +8990,7 @@ function moveTplExDrag(pointerY) {
   d.cell.style.transform = `translateY(${d.ty}px)`;
 }
 
-function endTplExDrag(id) {
+function endTplExDrag(id, commit = true) {
   const d = _tplDrag; if (!d) return;
   _tplDrag = null;
   d.cell.style.transition = "transform 0.18s ease";
@@ -8720,6 +8999,7 @@ function endTplExDrag(id) {
   if (d.wrap) d.wrap.classList.remove("dragging");
   setTimeout(() => { d.cell.style.transition = ""; }, 200);
 
+  if(!commit){d.originalChildren.forEach(child=>d.listEl.appendChild(child));return;}
   const userId = DATA.getCurrentUser();
   const tpl = DATA.getTemplate(userId, id);
   if (!tpl) return;
@@ -8734,13 +9014,17 @@ function endTplExDrag(id) {
 /* — Универсальная модалка ввода имени: сохранение шаблона из тренировки / переименование — */
 let _nameModalOnConfirm = null;
 
-function openNameModal({ title, placeholder, initialValue, confirmLabel, onConfirm }) {
+function openNameModal({ title, placeholder, initialValue, confirmLabel, onConfirm, draftId }) {
+  nameModalBackdrop._formDraft?.dispose();
   nameModalTitle.textContent = title;
+  nameModalBackdrop.setAttribute('aria-label',title);
   nameModalInput.placeholder = placeholder || "";
   nameModalInput.value = initialValue || "";
   nameModalConfirm.textContent = confirmLabel || "Сохранить";
   _nameModalOnConfirm = onConfirm;
   openModal(nameModalBackdrop);
+  nameModalInput.setAttribute('aria-label',title);
+  nameModalBackdrop._formDraft=draftId?FormDrafts.bind(nameModalBackdrop,draftId):null;
   setTimeout(() => nameModalInput.focus(), 300);
 }
 
@@ -8748,13 +9032,15 @@ $("name-modal-cancel").addEventListener("click", () => closeModal(nameModalBackd
 nameModalConfirm.addEventListener("click", () => {
   const value = nameModalInput.value.trim();
   if (!value) { nameModalInput.focus(); return; }
-  closeModal(nameModalBackdrop);
   if (_nameModalOnConfirm) _nameModalOnConfirm(value);
+  nameModalBackdrop._formDraft?.clear();
+  closeModal(nameModalBackdrop);
 });
 
 // Сохранить завершённую силовую тренировку как новый шаблон (раздел 5: «готовую тренировку можно сохранить как шаблон»)
 function openSaveAsTemplateModal(workout) {
   openNameModal({
+    draftId:'template:from-workout:'+workout.id,
     title: "Сохранить как шаблон",
     placeholder: "Например, День спины",
     initialValue: workout.name || "",
@@ -8811,11 +9097,13 @@ if ("serviceWorker" in navigator) {
     location.reload();
   });
 
-  window.addEventListener("load", () => {
+  const registerServiceWorker = () => {
     navigator.serviceWorker.register("./sw.js")
       .then(reg => reg.update())   // сразу проверить, нет ли новой версии
       .catch(() => { /* нет SW — офлайн-режим работает только на уже загруженных данных */ });
-  });
+  };
+  if (document.readyState === "complete") registerServiceWorker();
+  else window.addEventListener("load", registerServiceWorker, {once:true});
 }
 
 /* ==========================================================================

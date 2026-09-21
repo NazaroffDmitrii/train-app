@@ -14,8 +14,20 @@
 
 let _authMode = "signin"; // signin | signup
 
+function reviewLegacyDraft(user){
+  const key=`train_active_${user}`,raw=localStorage.getItem(key),draft=JSON.parse(raw||'null');
+  if(!draft)return;
+  if(draft._accountOwner&&draft._accountOwner!==Auth.userId()){
+    alert('В этом профиле есть активный черновик другого аккаунта. Он сохранён, но скрыт. Завершите его в исходном аккаунте перед новой тренировкой.');return;
+  }
+  if(!draft._accountOwner&&confirm('Найден старый черновик без отметки владельца. Это ваша тренировка? Привязать её к текущему аккаунту? Отмена сохранит черновик без изменений.')){
+    DATA.adoptLegacyActiveWorkout(user,raw,true);
+  }
+}
+
 // Регистрирует реальный профиль в DATA.USERS (см. enterProfile). Идемпотентно.
 function registerUser(profile) {
+  if(typeof UX!=='undefined'&&DATA.getCurrentUser()===profile.id)UX.context((profile.auth_id===Auth.userId()?'Мой профиль: ':'Клиент: ')+(profile.name||'Без имени'));
   const initial = (profile.name || "?").trim().charAt(0).toUpperCase() || "?";
   const existing = DATA.USERS.find(u => u.id === profile.id);
   if (existing) { existing.name = profile.name || existing.name; existing.initial = initial; return; }
@@ -76,8 +88,8 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
     } else {
       await Auth.signIn(email, password);
     }
-    Outbox.flush();   // войдя, дослать всё, что ждало в очереди офлайн
-    await renderProfiles();
+    // Recreate DATA and draft guards for the new account; never reuse old DOM.
+    location.reload();
   } catch (e) {
     authSetError(e.message || "Не удалось выполнить вход.");
   } finally {
@@ -185,7 +197,116 @@ document.getElementById("switch-user-btn").addEventListener("click", async () =>
 
 // «В облако» — только принудительный PUSH. Обратную загрузку эта кнопка не
 // запускает: её задача ровно та, которую ожидает пользователь по названию.
+// Управление карантином. Native dialog удерживает фокус и поддерживает Escape.
+async function openOutboxManager() {
+  if (document.getElementById("outbox-manager")) return;
+  const uid = DATA.getCurrentUser();
+  const owner = Auth.userId();
+  if (!uid || !owner) { showToast("Выберите профиль и войдите в аккаунт", 2500); return; }
+  closeModal(settingsModalBackdrop);
+  const dialog = document.createElement("dialog");
+  dialog.id = "outbox-manager";
+  dialog.className = "modal modal-scroll";
+  dialog.setAttribute("aria-labelledby", "outbox-manager-title");
+  dialog.style.cssText = "width:min(440px,calc(100vw - 32px));max-width:440px;max-height:85dvh;overflow:auto;margin:auto;border:1px solid #777;color:var(--text-primary,#f5f5f7);line-height:1.5;overflow-wrap:anywhere;";
+  dialog.innerHTML = '<h2 class="modal-title" id="outbox-manager-title">Очередь выбранного профиля</h2>' +
+    '<p data-status role="status" aria-live="polite">Проверяем очередь…</p><ul data-items></ul>' +
+    '<p data-held></p><button type="button" class="modal-option" data-retry disabled>Повторить заблокированные</button>' +
+    '<h3>Старые записи этого профиля</h3><div data-legacy></div>' +
+    '<button type="button" class="modal-option" data-backup>Скачать архив восстановления</button>' +
+    '<button type="button" class="modal-cancel" data-close>Закрыть</button>';
+  document.body.appendChild(dialog);
+  const status = dialog.querySelector("[data-status]"), list = dialog.querySelector("[data-items]");
+  const held = dialog.querySelector("[data-held]"), retry = dialog.querySelector("[data-retry]");
+  let viewed = [], busy = false;
+  const active = () => Auth.userId() === owner && DATA.getCurrentUser() === uid;
+  const labels = { saveWorkout: "Сохранение тренировки", deleteWorkout: "Удаление тренировки", saveEntity: "Изменение справочника", saveUserData: "Настройки профиля" };
+  async function refresh() {
+    retry.disabled = true;
+    const state = await Outbox.review(uid);
+    if (!active() || state.owner !== owner) throw new Error("Аккаунт или профиль изменился. Откройте очередь заново.");
+    if (!dialog.isConnected) return;
+    viewed = state.operations.filter(op => op.blocked);
+    list.replaceChildren();
+    for (const op of state.operations.slice(0, 50)) {
+      const li = document.createElement("li");
+      li.textContent = `${labels[op.type] || "Неизвестная операция"}: ${op.blocked ? "заблокировано" : "ожидает отправки"}. Попыток: ${op.attempts}.` +
+        (op.lastError ? " Причина: " + String(op.lastError).slice(0, 180) : "");
+      list.appendChild(li);
+    }
+    status.textContent = state.operations.length ? `Ожидает: ${state.operations.length}. Заблокировано: ${viewed.length}.` +
+      (state.operations.length > 50 ? " Показаны первые 50 записей; повтор затронет все заблокированные этого профиля." : "") : "У этого аккаунта нет ожидающих операций для выбранного профиля.";
+    held.textContent = state.legacy || state.foreign ?
+      `Отдельно на устройстве: ${state.foreign} записей других аккаунтов, ${state.legacy} старых записей без владельца. Они не будут затронуты. Для чужих записей войдите в исходный аккаунт; старые требуют отдельного восстановления. Не очищайте данные приложения.` : "";
+    retry.disabled = !viewed.length;
+    const legacy = dialog.querySelector("[data-legacy]");
+    legacy.replaceChildren();
+    for (const op of (state.recoverable || []).slice(0, 50)) {
+      const button = document.createElement("button");
+      button.type = "button"; button.className = "modal-option";
+      button.textContent = "Восстановить: " + (labels[op.type] || op.type) + " — " + op.label;
+      button.addEventListener("click", async () => {
+        if (busy || !active()) return;
+        if (!window.confirm(`Восстановить запись «${op.label}»?\n\nПрофиль: ${uid}\nАккаунт: ${owner}\n\nПодтвердите, что эта запись принадлежит вам или была внесена вами для этого клиента. Она будет отправляться от текущего аккаунта и может заменить облачную запись (или удалить её, если это операция удаления). Исходная операция останется в локальном архиве. Если не уверены — отмените.`)) return;
+        if (!active()) return;
+        busy = true; button.disabled = true;
+        try {
+          await Outbox.recoverLegacy(uid, op, { expectedAccount: owner, confirmed: true });
+          await refresh();
+          status.textContent = "Запись восстановлена в очередь, оригинал сохранён в архиве. Она может отправиться при фоновой синхронизации; «В облако» запускает отправку вручную.";
+        } catch (e) { status.textContent = String(e.message || e); button.disabled = false; }
+        finally { busy = false; updateOnlineStatus(); }
+      });
+      legacy.appendChild(button);
+    }
+    if (!legacy.childElementCount) legacy.textContent = "Нет старых записей с однозначно указанным профилем и поддерживаемым форматом.";
+  }
+  dialog.querySelector("[data-backup]").addEventListener("click", async () => {
+    if (!active()) return;
+    try {
+      const records = await Outbox.recoveryBackups(uid);
+      if (!active()) return;
+      if (!records.length) { status.textContent = "Архив восстановления этого профиля пока пуст."; return; }
+      const url = URL.createObjectURL(new Blob([JSON.stringify({ format: "train-outbox-recovery", version: 1, profileId: uid, records }, null, 2)], { type: "application/json" }));
+      const link = document.createElement("a"); link.href = url; link.download = "train-outbox-recovery.json";
+      link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      status.textContent = "Архив подготовлен к скачиванию. Он содержит личные данные: храните его безопасно. Это не файл обычного импорта приложения.";
+    } catch (e) { status.textContent = String(e.message || e); }
+  });
+  retry.addEventListener("click", async () => {
+    if (busy || !active()) { status.textContent = "Проверьте выбранный аккаунт и откройте очередь заново."; return; }
+    busy = true; retry.disabled = true;
+    try {
+      const count = await Outbox.retryBlocked(uid, viewed, { expectedAccount: owner });
+      status.textContent = `Разблокировано: ${count}. Отправляем…`;
+      await Outbox.flush();
+      await refresh();
+    } catch (e) { status.textContent = String(e.message || e); }
+    finally { busy = false; updateOnlineStatus(); }
+  });
+  dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    (document.querySelector('.pill[data-action="settings"]') || document.getElementById("outbox-manager-btn"))?.focus();
+  });
+  dialog.showModal();
+  try { await refresh(); } catch (e) { status.textContent = "Очередь недоступна: " + String(e.message || e); }
+}
+document.getElementById("outbox-manager-btn")?.addEventListener("click", openOutboxManager);
+
 function showCloudUploadResult(result) {
+  if (result?.held > 0) {
+    showToast("Не всё отправлено: сохранены записи другого аккаунта или старые записи без владельца. Не очищайте данные приложения.", 5000);
+    return;
+  }
+  if (result?.storageError) {
+    showToast("Не удалось проверить очередь устройства. Не очищайте данные приложения; повторите попытку.", 5000);
+    return;
+  }
+  if (result?.skipped === "awaiting-publish") {
+    showToast("Нужна первая публикация: нажмите «В облако» и подтвердите отправку данных этого устройства.", 5000);
+    return;
+  }
   const pending = Number(result?.pending) || 0;
   const blocked = Number(result?.blocked) || 0;
   const failed = Number(result?.failed) || 0;
@@ -197,7 +318,7 @@ function showCloudUploadResult(result) {
   } else if (blocked > 0 || failed > 0 || pending > 0) {
     showToast(`Не всё выгружено — на устройстве осталось изменений: ${pending}`, 3000);
   } else {
-    showToast("Все изменения выгружены в облако", 2000);
+    showToast(result.otherPending > 0 ? "Изменения выбранного профиля выгружены. Для других профилей ещё есть записи в очереди." : "Все изменения выгружены в облако", 3000);
   }
 }
 
@@ -216,8 +337,23 @@ manualUploadBtn.addEventListener("click", async () => {
   window.__manualSyncInProgress = true;
   showToast("Выгружаем изменения в облако…", 0);
   try {
-    const result = await SyncEngine.pushOnly(uid);
-    showCloudUploadResult(result);
+    if (!SyncEngine.isMigrated(uid)) {
+      const approved = window.confirm(
+        "Первая публикация выбранного профиля\n\n" +
+        "Отправить упражнения, шаблоны и настройки этого устройства в облако? " +
+        "Если там уже есть записи с теми же идентификаторами, они будут заменены локальными версиями. " +
+        "Используйте устройство с актуальными данными.\n\n" +
+        "При прерывании нажмите «В облако» ещё раз, чтобы продолжить."
+      );
+      if (!approved) { showToast("Публикация отменена. Локальные данные сохранены.", 2500); return; }
+      if (DATA.getCurrentUser() !== uid) { showToast("Профиль изменился. Повторите отправку.", 2500); return; }
+      const result = await SyncEngine.publishAll(uid, { confirmed: true });
+      if (result.status === "ok" || result.status === "partial") showCloudUploadResult(result.flushed);
+      else throw new Error(result.error || (result.status === "offline" ? "Нет сети" : "Публикация не выполнена"));
+    } else {
+      const result = await SyncEngine.pushOnly(uid);
+      showCloudUploadResult(result);
+    }
   } catch (e) {
     const st = await Outbox.stats();
     if (st.pending > 0) {
@@ -371,94 +507,24 @@ manualRefreshBtn.addEventListener("click", async () => {
   }
 });
 
-// Удаление — необратимо, поэтому через подтверждение (openConfirmModal из
-// app.js). Режим (свой аккаунт / управляемый клиент) и цель определяются в
-// refreshSettingsButtons и лежат в dataset кнопки — обработчик оперирует
-// ЯВНЫМ targetId, а не «текущей сессией».
-document.getElementById("delete-account-btn").addEventListener("click", (e) => {
-  const btn = e.currentTarget;
-  const mode = btn.dataset.mode;               // "self" | "managed"
-  const targetId = btn.dataset.targetId;
-  closeModal(settingsModalBackdrop);
-
-  if (mode === "managed") {
-    openConfirmModal({
-      title: "Удалить клиента?",
-      message: "Профиль клиента и вся его история (тренировки, упражнения, шаблоны) будут удалены из облака безвозвратно. Отменить нельзя.",
-      confirmLabel: "Удалить",
-      danger: true,
-      onConfirm: async () => {
-        try {
-          await DB.deleteManagedClient(targetId);
-          // Мы смотрели этого клиента — возвращаемся к переключателю тренера.
-          DATA.clearCurrentUser();
-          goToScreen("profile");
-          await renderProfiles();
-          showToast("Клиент удалён");
-        } catch (err) {
-          alert("Не удалось удалить клиента: " + (err.message || "ошибка"));
-        }
-      },
-    });
-    return;
+// Dangerous operations run on an exclusive page, without DATA/Bridge writers.
+function openAccountMaintenance(mode,targetId=DATA.getCurrentUser()){
+  if(!Auth.isSignedIn()||!targetId||targetId!==DATA.getCurrentUser()||!['self','managed','invite'].includes(mode)){
+    showToast('Профиль изменился. Откройте настройки заново.');return;
   }
-
-  // mode === "self" (или отсутствует — трактуем как своё, безопасный дефолт).
-  openConfirmModal({
-    title: "Удалить аккаунт?",
-    message: "Профиль и вся его история (тренировки, упражнения, шаблоны) будут удалены из облака безвозвратно. Отменить нельзя.",
-    confirmLabel: "Удалить",
-    danger: true,
-    onConfirm: async () => {
-      try {
-        await DB.deleteMyAccount();
-        await Auth.signOut();
-        Bridge.reset();
-        DATA.clearCurrentUser();
-        goToScreen("profile");
-        await renderProfiles();
-        showToast("Аккаунт удалён");
-      } catch (err) {
-        alert("Не удалось удалить аккаунт: " + (err.message || "ошибка"));
-      }
-    },
-  });
+  location.assign('account.html?mode='+encodeURIComponent(mode));
+}
+document.getElementById("delete-account-btn").addEventListener("click",event=>{
+  openAccountMaintenance(event.currentTarget.dataset.mode,event.currentTarget.dataset.targetId);
 });
-
-// «Ввести код приглашения» — основной (и единственный) способ клиента
-// привязаться к тренеру: сначала обычная регистрация (email+пароль, без
-// кода), затем здесь код заявляется отдельно — «захватывает» управляемый
-// профиль тренера со всей накопленной историей, если код был на него
-// привязан, либо просто линкует текущий профиль к тренеру.
-document.getElementById("enter-invite-btn").addEventListener("click", async () => {
-  const code = prompt("Введите код приглашения от тренера:");
-  if (!code || !code.trim()) return;
-  try {
-    await DB.claimInvite(code.trim());
-    closeModal(settingsModalBackdrop);
-    // Профиль мог смениться (захват управляемого профиля) — перечитываем сессию
-    // с чистого листа, bootAuthAware сам разрулит и подтянет данные из облака.
-    DATA.clearCurrentUser();
-    Bridge.reset();
-    location.reload();
-  } catch (e) {
-    alert("Не удалось применить код: " + (e.message || "ошибка"));
-  }
-});
+document.getElementById("enter-invite-btn").addEventListener("click",()=>openAccountMaintenance('invite'));
 
 // «Выйти из аккаунта» — в настройках (см. index.html #auth-signout-btn),
 // отдельно от «Сменить профиль» (та не трогает сессию — нужна тренеру для
 // быстрого переключения между клиентами без повторного ввода пароля).
 document.getElementById("auth-signout-btn").addEventListener("click", async () => {
   closeModal(settingsModalBackdrop);
-  await Auth.signOut();
-  Bridge.reset();
-  DATA.clearCurrentUser();
-  goToScreen("profile");
-  // goToScreen больше не дёргает renderProfiles() сама (см. её комментарий в
-  // app.js) — здесь единственное место, где после неё явно ничего не звалось;
-  // после signOut() экран без этого остался бы со старым содержимым.
-  await renderProfiles();
+  try{await Auth.signOut();location.reload();}catch(error){alert(error.message);}
 });
 
 // ---- переопределение renderProfiles() из app.js ----
@@ -499,10 +565,7 @@ async function renderProfiles() {
       <div class="auth-error" style="margin-bottom:12px">${escHtml(message)}</div>
       <button class="btn-chip primary" id="stuck-signout-btn" type="button" style="width:100%">Выйти</button>`;
     document.getElementById("stuck-signout-btn").addEventListener("click", async () => {
-      await Auth.signOut();
-      Bridge.reset();
-      DATA.clearCurrentUser();
-      await renderProfiles();
+      try{await Auth.signOut();location.reload();}catch(error){alert(error.message);}
     });
   }
 
@@ -527,10 +590,11 @@ async function renderProfiles() {
     // который тоже опирается на DATA.USERS.
     registerUser(profile);
     const profileId = profile.id;
-    // Ограничиваем локальный след: выкидываем тяжёлые данные других облачных
-    // профилей (при возврате hydrate вернёт их из облака). См. Bridge.evictOtherProfiles.
-    Bridge.evictOtherProfiles(profileId);
+    // Не удаляем историю других профилей: наличие очереди не доказывает,
+    // что все локальные изменения уже сохранены в облаке.
     DATA.setCurrentUser(profileId);
+    UX.context((profile.auth_id===Auth.userId()?'Мой профиль: ':'Клиент: ')+(profile.name||'Без имени'));
+    reviewLegacyDraft(profileId);
     goToScreen("menu");
     onProfileEnter(profileId);
     _menuHydrating = true;
@@ -677,11 +741,33 @@ async function openInviteModal() {
   });
 }
 
+// Keep the old DOM/drafts in place, but require an explicit reload before reuse.
+function showChangedAuthContext() {
+  if (document.getElementById("auth-context-changed")) return;
+  const dialog = document.createElement("dialog");
+  dialog.id = "auth-context-changed";
+  dialog.className = "modal";
+  dialog.style.cssText = "max-width:420px;width:calc(100% - 32px);color:var(--text-primary);background:var(--bg-base);padding:24px";
+  dialog.setAttribute("aria-labelledby", "auth-context-title");
+  dialog.innerHTML = `<h2 id="auth-context-title">Вкладка приостановлена</h2>
+    <p data-auth-context-reason></p>
+    <p>Сохранённые локальные записи не удалены. При перезагрузке незавершённый ввод в формах может потеряться.</p>
+    <button type="button" class="btn-chip primary">Перезагрузить вкладку</button>`;
+  dialog.querySelector("[data-auth-context-reason]").textContent = Auth.contextReason();
+  dialog.addEventListener("cancel", event => event.preventDefault());
+  dialog.querySelector("button").addEventListener("click", () => location.reload());
+  document.body.appendChild(dialog);
+  dialog.showModal();
+}
+window.addEventListener("train-auth-context-changed", showChangedAuthContext);
+if (Auth.contextChanged()) showChangedAuthContext();
+
 /* ---- auth-aware boot ----
    init() в app.js уже отработал синхронно в конце app.js, но до загрузки
    Auth/Bridge. Здесь, когда всё загружено, приводим стартовый экран к
    реальному состоянию сессии и выполняем cloud-hydrate. */
 (async function bootAuthAware() {
+  if (Auth.contextChanged()) return;
   let resumedManualRefresh = false;
   try { resumedManualRefresh = sessionStorage.getItem(MANUAL_REFRESH_KEY) === "1"; } catch {}
   if (resumedManualRefresh) showToast("Обновляем приложение и загружаем данные…", 0);
@@ -707,6 +793,7 @@ async function openInviteModal() {
         DATA.clearCurrentUser(); goToScreen("profile"); await renderProfiles(); return;
       }
       registerUser(profile);
+      reviewLegacyDraft(currentUser);
       await Bridge.hydrate(currentUser);
       if (resumedManualRefresh) showToast("Приложение и данные синхронизированы", 2000);
     } catch (e) {

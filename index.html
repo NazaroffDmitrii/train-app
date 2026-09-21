@@ -2,7 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="ux.css">
 <meta name="theme-color" content="#0a0a12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -26,10 +27,10 @@
   --border-strong: rgba(255, 255, 255, 0.12);
 
   --text-primary: #f5f5f7;
-  --text-secondary: #8b8b97;
-  --text-tertiary: #5e5e6b;
+  --text-secondary: #aaaab6;
+  --text-tertiary: #9696a5;
 
-  --accent: #7c6ce6;
+  --accent: #6552c8;
   --accent-bright: #9c8bff;
   --accent-soft: rgba(124, 108, 230, 0.16);
 
@@ -861,7 +862,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   writing-mode: vertical-rl; transform: rotate(180deg);
   margin: 8px 0; white-space: nowrap;
   font-size: 9px; font-weight: 800; letter-spacing: 0.16em;
-  text-transform: uppercase; color: var(--accent);
+  text-transform: uppercase; color: var(--accent-bright);
 }
 /* Во время перетаскивания геометрия группы «плывёт» — прячем спайны; пересчёт и
    показ снова на endDrag (applySupersetVisuals → layoutSupersetSpines). */
@@ -3278,6 +3279,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
     <div class="modal">
       <h2 class="modal-title">Настройки</h2>
       <p class="modal-sync-info" id="settings-sync-info">Изменения отправляются автоматически. «В облако» принудительно выгружает очередь, «Синхронизировать» обновляет приложение и загружает данные из облака.</p>
+      <button class="modal-option" id="outbox-manager-btn" type="button">Очередь отправки</button>
       <!-- «В облако» — только принудительный push локальной очереди.
            «Синхронизировать» — проверка версии PWA + перезагрузка и pull. -->
       <div class="settings-grid">
@@ -3494,17 +3496,6 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   <div class="toast" id="toast"></div>
 </div>
 
-<script src="config.js"></script>
-<script src="lib.js"></script>
-<script src="atlas-seed.js"></script>
-<script src="muscle-anatomy.js"></script>
-<script src="auth.js"></script>
-<script src="db.js"></script>
-<script src="app.js"></script>
-<script src="constructor.js"></script>
-<script src="outbox.js"></script>
-<script src="syncengine.js"></script>
-<script src="bridge.js"></script>
-<script src="auth-ui.js"></script>
+<script src="app-loader.js"></script>
 </body>
 </html>

@@ -1,0 +1,30 @@
+/* Consistent keyboard focus and readable mobile controls. */
+:focus-visible{outline:3px solid var(--accent-bright,#b3a6ff);outline-offset:3px}
+.screen:not(.active){visibility:hidden}
+.modal-backdrop:not(.open),.picker-backdrop:not(.open),.bottom-sheet-backdrop:not(.open),.stats-picker-backdrop:not(.open){visibility:hidden}
+.profile-context{flex-shrink:0;margin:0;padding:8px 20px;color:var(--text-secondary);font-size:13px;line-height:1.4;overflow-wrap:anywhere;background:var(--panel);border-bottom:1px solid var(--border-subtle)}
+.form-draft-note{font-size:13px;line-height:1.5;color:var(--text-secondary);margin:12px 0}
+@media(max-width:600px){input,textarea,select{font-size:16px!important}.btn-chip,.ef-dd-trigger{min-height:44px}.profile-context{padding:6px 16px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+button.role-chip-label { background: transparent; border: 0; color: inherit; font: inherit; text-align: left; padding: 4px; cursor: pointer; }
+/* Compact gesture-first layout: overflow instead of permanent action rows. */
+.has-row-actions { position:relative; }
+.row-actions { position:absolute; right:6px; top:6px; z-index:2; }
+.row-actions-trigger { width:44px; height:44px; border:0; border-radius:12px; background:transparent; color:var(--text-secondary); font-size:24px; cursor:pointer; }
+.row-actions-trigger:active { background:var(--panel-hi); }
+.ex-row-wrap.has-row-actions > .ex-row { padding-right:54px; }
+.ex-row-wrap.has-row-actions > .ex-row > .ex-row-chevron { display:none; }
+.history-item-wrap.has-row-actions > .history-item { padding-right:54px; }
+.tpl-card.has-row-actions > .tpl-card-title { padding-right:38px; }
+.tpl-card.has-row-actions > .tpl-share-btn,.tpl-ex-cell.has-row-actions > .tpl-ex-remove { display:none; }
+.tpl-ex-cell.has-row-actions { padding-right:48px; }
+.tpl-ex-cell > .row-actions { top:0; right:2px; }
+/* Set deletion and sheet closing remain gesture-first; Tab reveals fallback. */
+.set-row-wrap > .row-actions,.picker-sheet > .picker-close-button { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.set-row-wrap > .row-actions:focus-within { width:44px; height:44px; overflow:visible; clip-path:none; background:var(--panel); }
+.picker-sheet > .picker-close-button:focus-visible { width:auto; height:44px; overflow:visible; clip-path:none; z-index:4; top:8px; right:16px; background:var(--panel); }
+.action-sheet-backdrop { z-index:100; }
+.action-sheet { padding:0 16px max(16px,env(safe-area-inset-bottom)); max-height:80dvh; overflow:auto; }
+.action-sheet .modal-title { padding:8px 4px 12px; margin:0; font-size:17px; overflow-wrap:anywhere; }
+.action-sheet .modal-option { display:block; width:100%; min-height:48px; margin:0; padding:12px 4px; border:0; border-bottom:1px solid var(--border-subtle); border-radius:0; background:transparent; text-align:left; }
+.action-sheet .modal-option:last-child { border-bottom:0; color:var(--text-secondary); }

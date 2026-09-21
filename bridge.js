@@ -33,7 +33,9 @@ const Bridge = (() => {
   async function ensureAuthProfileId() {
     if (authProfileId) return authProfileId;
     if (!Auth.isSignedIn()) return null;
+    const owner = Auth.userId?.();
     const p = await DB.myProfile();
+    if (Auth.userId?.() !== owner) return null;
     authProfileId = p?.id || null;
     // Флаг администратора общего справочника (правит Атлас на стороне всех).
     if (DATA.setAdmin) DATA.setAdmin(!!(p && p.is_admin));
@@ -114,11 +116,14 @@ const Bridge = (() => {
   const _udTimers = new Map();
   function scheduleUserDataPush(userId) {
     if (!Auth.isSignedIn()) return;
-    SyncEngine.diffAndEnqueue(userId);   // мгновенно и durable — потеря окна невозможна
+    const enqueued = SyncEngine.diffAndEnqueue(userId); // Promise: IndexedDB уже подтвердил запись
     clearTimeout(_udTimers.get(userId));
     _udTimers.set(userId, setTimeout(() => {
       _udTimers.delete(userId);
-      Outbox.flush();
+      enqueued.then(() => Outbox.flush()).catch(e => {
+        console.warn("Bridge: не удалось поставить изменение в очередь", e);
+        if (typeof updateOnlineStatus === "function") updateOnlineStatus();
+      });
     }, PUSH_DEBOUNCE_MS));
   }
 
@@ -145,16 +150,17 @@ const Bridge = (() => {
   }
   function queueWorkout(userId, workout) {
     if (!Auth.isSignedIn()) return;
+    const owner = Auth.userId();
     if (workout.createdBy) {
       // Автор уже известен (застемплен выше или пришёл из облака при более
       // раннем hydrate) — используем его, а не текущую сессию, иначе повторная
       // правка чужой записи переписала бы created_by на редактирующего.
-      Outbox.enqueueWorkout(localToRow(userId, workout.createdBy, workout)).then(() => Outbox.flush());
+      Outbox.enqueueWorkout(localToRow(userId, workout.createdBy, workout), owner).then(() => Outbox.flush());
       return;
     }
     ensureAuthProfileId().then(createdBy => {
       if (!createdBy) return;
-      Outbox.enqueueWorkout(localToRow(userId, createdBy, workout)).then(() => Outbox.flush());
+      Outbox.enqueueWorkout(localToRow(userId, createdBy, workout), owner).then(() => Outbox.flush());
     });
   }
 
@@ -171,7 +177,7 @@ const Bridge = (() => {
   };
   DATA.deleteWorkout = function (userId, workoutId) {
     _orig.deleteWorkout(userId, workoutId);
-    if (Auth.isSignedIn()) Outbox.enqueueDeleteWorkout(workoutId).then(() => Outbox.flush());
+    if (Auth.isSignedIn()) Outbox.enqueueDeleteWorkout(userId, workoutId).then(() => Outbox.flush());
   };
   // Массовая перезапись истории — редкие случаи (undo-восстановление после
   // удаления; переименование/привязка тренировок к шаблону — см. app.js
@@ -181,12 +187,13 @@ const Bridge = (() => {
   DATA.saveWorkoutHistory = function (userId, list) {
     _orig.saveWorkoutHistory(userId, list);
     if (Auth.isSignedIn() && list.length) {
+      const owner = Auth.userId();
       ensureAuthProfileId().then(fallbackCreatedBy => {
         if (!fallbackCreatedBy) return;
         // Каждый элемент сохраняет СВОЕГО автора, если он уже известен (см.
         // stampLocalCreatedBy/queueWorkout) — иначе, как запасной вариант,
         // автором становится текущая сессия.
-        Promise.all(list.map(w => Outbox.enqueueWorkout(localToRow(userId, w.createdBy || fallbackCreatedBy, w))))
+        Promise.all(list.map(w => Outbox.enqueueWorkout(localToRow(userId, w.createdBy || fallbackCreatedBy, w), owner)))
           .then(() => Outbox.flush());
       });
     }
@@ -213,10 +220,34 @@ const Bridge = (() => {
       if (page.length < HISTORY_PULL_PAGE) break;
       before = page[page.length - 1].performed_at;
     }
-    if (all.length) {
-      _orig.saveWorkoutHistory(userId, all.map(rowToLocal));
-      DATA.recomputeRecords(userId);
-    }
+    // Пустой ответ — тоже авторитетный результат: он означает, что в облаке
+    // больше нет тренировок. Раньше здесь стоял `if (all.length)`, поэтому
+    // удаление последней тренировки не очищало старую копию на другом устройстве.
+    //
+    // При этом нельзя просто заменить историю облачной: если локальная запись
+    // ещё ждёт в Outbox, временно устаревший ответ сервера не должен её стереть.
+    // Накладываем ожидающие save/delete поверх полученного облачного снимка.
+    // Неизвестное содержимое очереди нельзя считать пустым: иначе даже пустой
+    // облачный ответ сотрёт локальную тренировку при сбое IndexedDB.
+    const pending = await Outbox.all();
+    const rowsById = new Map(all.map(row => [row.id, row]));
+    pending.forEach(op => {
+      if (op.type === "saveWorkout" && op.args?.user_id === userId) {
+        rowsById.set(op.args.id, op.args);
+      } else if (
+        op.type === "deleteWorkout" &&
+        (!op.args?.userId || op.args.userId === userId)
+      ) {
+        // Отсутствующий userId поддерживает операции, поставленные старой
+        // версией приложения до добавления профиля в аргументы удаления.
+        rowsById.delete(op.args.id);
+      }
+    });
+    const localHistory = [...rowsById.values()]
+      .sort((a, b) => new Date(b.performed_at) - new Date(a.performed_at))
+      .map(rowToLocal);
+    _orig.saveWorkoutHistory(userId, localHistory);
+    DATA.recomputeRecords(userId);
 
     // Общий справочник Атласа (мышцы/движения/группы/связи/упражнения) из
     // реляционных таблиц. Подменяет локальный ATLAS (кэш + оффлайн-фолбэк на

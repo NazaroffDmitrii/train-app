@@ -53,7 +53,7 @@
   ];
 
   /* ── Данные (адаптер: база «Атлас» → форма генератора) ───────────────────── */
-  let exercises = [], categories = [], muscles = [], workout = null;
+  let exercises = [], categories = [], muscles = [], workout = null, draftContext=null;
   let _cEdit = false;   // режим правки плана (покачивание + перетаскивание), как в упражнениях
   let _cDrag = null;    // активное перетаскивание карточки
 
@@ -80,16 +80,21 @@
     return {
       readiness: "средняя", target: READINESS["средняя"].target, reps: "8–12",
       priority: [], priorityBonus: 2, restrictions: [], settingsOpen: true,
-      splitDays: 1, equipOff: [], pins: {},
+      splitDays: 2, equipOff: [], pins: {},
       days: [{ name: "Тренировка 1", items: [] }], active: 0,
     };
   }
   function persist() {
-    try { localStorage.setItem(`train_constructor_${DATA.getCurrentUser()}`, JSON.stringify(workout)); } catch (e) {}
+    try {
+      if(!draftContext||draftContext.owner!==Auth.userId()||draftContext.profile!==DATA.getCurrentUser())throw Error('Контекст изменился');
+      localStorage.setItem('train_constructor_draft_'+JSON.stringify([draftContext.owner,draftContext.profile]),JSON.stringify(workout));
+    }catch{showToast('Не удалось сохранить черновик конструктора. Не закрывайте страницу.');}
   }
   function loadWorkout() {
     try {
-      const r = localStorage.getItem(`train_constructor_${DATA.getCurrentUser()}`);
+      let r = localStorage.getItem('train_constructor_draft_'+JSON.stringify([draftContext.owner,draftContext.profile]));
+      const legacy=localStorage.getItem(`train_constructor_${draftContext.profile}`);
+      if(!r&&legacy&&confirm('Есть старый план конструктора без отметки аккаунта. Это ваш план? Скопировать его в текущий аккаунт? Исходник сохранится.'))r=legacy;
       if (r) { const d = JSON.parse(r); if (d && Array.isArray(d.days) && d.days.length) {
         d.priority = d.priority || []; d.restrictions = d.restrictions || []; d.equipOff = d.equipOff || []; d.pins = d.pins || {};
         return d;
@@ -225,10 +230,12 @@
   }
   function generate() {
     if (!exercises.length) { showToast("В базе нет упражнений для генерации"); return; }
-    const N = Math.max(1, Math.min(6, +workout.splitDays || 1));
+    let N = Math.max(1, Math.min(6, +workout.splitDays || 1));
     const restricted = new Set(workout.restrictions);
     const baseNames = baseCats().map(c => c.name).filter(n => !restricted.has(n));
     const all = generateInto(baseNames);
+    const needed=Math.min(6,Math.ceil(all.reduce((sum,item)=>sum+(+item.sets||0),0)/VOL_MAX));
+    if(needed>N){N=needed;workout.splitDays=N;showToast('План распределён на '+N+' дня: объём превышает лимит одного занятия. Проверьте предпросмотр.');}
     if (N === 1) { workout.days = [{ name: "Тренировка 1", items: all }]; }
     else {
       const days = DAY_LETTERS.slice(0, N).map(n => ({ name: n, items: [], vol: 0, fwd: false, up: false, erector: 0, joints: {} }));
@@ -243,6 +250,7 @@
           best = days[0]; let bestScore = Infinity;
           days.forEach(d => {
             let score = d.vol + Math.random() * 0.5;
+            if(d.vol+s>VOL_MAX)score+=10000;
             if (c.fwd && d.up) score += 100;
             if (c.up && d.fwd) score += 100;
             if (c.erector && d.erector >= 2) score += 100;
@@ -798,6 +806,7 @@
   /* ── Публичный API ───────────────────────────────────────────────────────── */
   window.CONSTRUCTOR = {
     init() {
+      draftContext={owner:Auth.userId(),profile:DATA.getCurrentUser()};
       loadData();
       workout = loadWorkout();
       render();

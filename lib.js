@@ -8,6 +8,15 @@
 
 const DAY_MS = 86400000;
 
+// API/backup/localStorage are untrusted: numeric-looking fields may contain HTML.
+// Keep valid legacy numeric strings and assisted (negative) weights; reject junk.
+function workoutNumber(value) {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 // Секунды → "м:сс" или "ч:мм:сс".
 function formatDuration(totalSec) {
   const h = Math.floor(totalSec / 3600);
