@@ -126,7 +126,7 @@ const Outbox = (() => {
     const options = { expectedAccount: op.owner };
     switch (op.type) {
       case "saveWorkout":   return DB.saveWorkout(op.args, options);
-      case "deleteWorkout": return DB.deleteWorkout(op.args.id, options);
+      case "deleteWorkout": return DB.deleteWorkout(op.args.id, { ...options, userId: op.args.userId });
       case "saveUserData":  return DB.saveUserData(op.args.userId, op.args.patch, options);
       case "saveEntity":    return DB.pushEntities(op.args.table, [op.args.row], options);
       default: throw new Error("Outbox: неизвестный тип операции " + op.type);

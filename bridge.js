@@ -179,7 +179,11 @@ const Bridge = (() => {
       for (const change of entry.changes) {
         if (Auth.userId() !== owner || Auth.contextChanged?.()) throw Error('Аккаунт изменился.');
         if (change.deleted) await Outbox.enqueueDeleteWorkout(entry.userId, change.id);
-        else await Outbox.enqueueWorkout(localToRow(entry.userId, change.workout.createdBy || author, change.workout), owner);
+        else {
+          const row = localToRow(entry.userId, change.workout.createdBy || author, change.workout);
+          if (change.restore === true) row.deleted = false;
+          await Outbox.enqueueWorkout(row, owner);
+        }
       }
       WorkoutSafety.acknowledge(entry);
     }
@@ -198,6 +202,14 @@ const Bridge = (() => {
     journal(userId, [{ workout }]);
     _orig.updateWorkout(userId, workout);
     scheduleWorkouts();
+  };
+  DATA.restoreWorkout = function (userId, workout) {
+    stampLocalCreatedBy(workout);
+    journal(userId, [{ workout, restore: true }]);
+    const ok = _orig.saveWorkoutHistory(userId, [workout, ...DATA.getWorkoutHistory(userId).filter(w => w.id !== workout.id)]);
+    scheduleWorkouts();
+    if (!ok) throw Error('Не удалось восстановить историю. Копия осталась в журнале.');
+    return true;
   };
   DATA.deleteWorkout = function (userId, workoutId) {
     journal(userId, [{ deleted: true, id: workoutId }]);
@@ -243,16 +255,21 @@ const Bridge = (() => {
     // sides of the request, and preserve records missing from the response.
     const pending = await Outbox.all();
     assertUnchanged();
-    // Until the server has versioned tombstones, absence is NOT deletion.
-    // Keep local-only records; never automatically publish them back.
+    // Absence is not deletion. Only an explicit server tombstone removes a
+    // local record. It also wins over stale ordinary saves still in Outbox.
     const rowsById = new Map(localBefore.map(w => [w.id, localToRow(userId, w.createdBy || authProfileId, w)]));
-    all.forEach(row => rowsById.set(row.id, row));
+    const deletedIds = new Set();
+    all.forEach(row => {
+      if (row.deleted === true) { deletedIds.add(row.id); rowsById.delete(row.id); }
+      else rowsById.set(row.id, row);
+    });
     // Include operations present before the request, even if acknowledged
     // while that request was in flight. Fresh revisions take precedence.
     [...initialPending, ...pending].forEach(op => {
       if (op.owner !== owner) return;
       if (op.type === "saveWorkout" && op.args?.user_id === userId) {
-        rowsById.set(op.args.id, op.args);
+        if (op.args.deleted === true) rowsById.delete(op.args.id);
+        else if (!deletedIds.has(op.args.id) || op.args.deleted === false) rowsById.set(op.args.id, op.args);
       } else if (
         op.type === "deleteWorkout" &&
         (!op.args?.userId || op.args.userId === userId)

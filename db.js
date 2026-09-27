@@ -81,13 +81,13 @@ const DB = (() => {
     return res.json();
   }
 
-  async function patch(table, query, fields) {
+  async function patch(table, query, fields, { expectedAccount } = {}) {
     const res = await request(restUrl(`${table}?${query}`), {
       method: "PATCH",
       headers: await authHeaders({
         "Content-Type": "application/json",
         Prefer: "return=representation",
-      }),
+      }, expectedAccount),
       body: JSON.stringify(fields),
     });
     if (!res.ok) await throwHttpError(res, `DB.patch(${table})`);
@@ -190,12 +190,12 @@ const DB = (() => {
   // limit/before — постраничная подгрузка истории (раздел 1 спеки: не тянуть
   // всё разом). before — ISO-дата performed_at, для "загрузить ещё старее".
   async function listWorkouts(userId, { limit = 30, before } = {}) {
-    let q = `user_id=eq.${enc(userId)}&select=*&order=performed_at.desc&limit=${limit}`;
+    let q = `user_id=eq.${enc(userId)}&deleted=eq.false&select=*&order=performed_at.desc&limit=${limit}`;
     if (before) q += `&performed_at=lt.${enc(before)}`;
     return select("workouts", q);
   }
   async function getWorkout(id) {
-    const rows = await select("workouts", `id=eq.${enc(id)}&select=*`);
+    const rows = await select("workouts", `id=eq.${enc(id)}&deleted=eq.false&select=*`);
     return rows?.[0] || null;
   }
   async function saveWorkout(row, { expectedAccount } = {}) {
@@ -208,7 +208,11 @@ const DB = (() => {
     if (!rows.length) return [];
     return upsert("workouts", rows, { onConflict: "id" });
   }
-  async function deleteWorkout(id, options) { return remove("workouts", `id=eq.${enc(id)}`, options); }
+  async function deleteWorkout(id, { userId, ...options } = {}) {
+    // Keep the row as a tombstone. An ordinary upsert omits deleted and cannot
+    // resurrect it; only an explicit restore sends deleted:false.
+    return patch("workouts", `id=eq.${enc(id)}${userId ? `&user_id=eq.${enc(userId)}` : ''}`, { deleted: true }, options);
+  }
 
   // ---- «мелкое» состояние пользователя (упражнения/шаблоны/категории) ------
   // Один блоб на профиль — ровно как в localStorage: DATA всегда читает и

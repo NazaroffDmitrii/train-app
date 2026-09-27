@@ -1581,10 +1581,6 @@ function deleteWorkoutWithUndo(workout, rerender) {
 }
 function doDeleteWorkout(workout, rerender, label) {
   const userId = DATA.getCurrentUser();
-  // Снимки для отката.
-  const histSnap = [...DATA.getWorkoutHistory(userId)];
-  const idxSnap  = [...DATA.getWorkoutIndex(userId)];
-  const recSnap  = JSON.parse(JSON.stringify(DATA.getRecords(userId)));
   // В корзину — полная тренировка + её запись индекса (для восстановления на неделю).
   const idxEntry = DATA.getWorkoutIndex(userId).find(e => e.id === workout.id) || null;
   const trashId = Trash.push(userId, { type: "workout", label, sub: fmtDate(workout.startedAt), data: { workout: JSON.parse(JSON.stringify(workout)), index: idxEntry ? JSON.parse(JSON.stringify(idxEntry)) : null } });
@@ -1599,11 +1595,13 @@ function doDeleteWorkout(workout, rerender, label) {
 
   // Быстрая отмена + недельная корзина. При отмене чистим и запись корзины.
   showUndoToast("Тренировка удалена", () => {
+    DATA.restoreWorkout(userId, workout);
     Trash.remove(userId, trashId);
-    DATA.saveWorkoutHistory(userId, histSnap);
-    DATA.saveWorkoutIndex(userId, idxSnap);
-    DATA.saveRecords(userId, recSnap);
-    SyncQueue.push("workout:delete", {}); // повторно зальёт восстановленный индекс
+    if (idxEntry) {
+      const index = DATA.getWorkoutIndex(userId).filter(e => e.id !== workout.id);
+      DATA.saveWorkoutIndex(userId, [...index, idxEntry]);
+    }
+    DATA.recomputeRecords(userId);
     rerender(userId);
     showToast("Восстановлено");
   });
@@ -2837,8 +2835,7 @@ const TRASH_RESTORE = {
     SyncQueue.push("user:update", {});
   },
   workout(userId, d) {
-    const hist = DATA.getWorkoutHistory(userId);
-    if (!hist.some(w => w.id === d.workout.id)) { hist.push(d.workout); DATA.saveWorkoutHistory(userId, hist); }
+    DATA.restoreWorkout(userId, d.workout);
     if (d.index) { const idx = DATA.getWorkoutIndex(userId); if (!idx.some(e => e.id === d.index.id)) { idx.push(d.index); DATA.saveWorkoutIndex(userId, idx); } }
     DATA.recomputeRecords(userId);
     SyncQueue.push("workout:create", {}); SyncQueue.push("user:update", {});

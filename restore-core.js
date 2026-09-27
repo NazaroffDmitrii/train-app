@@ -57,9 +57,9 @@ const RestoreCore = (() => {
       const ids=new Set(values.history.map(workout=>workout.id));
       for(const workout of values.history){
         const {id,type,startedAt,createdBy,...data}=workout;
-        operations.push({opId:"wk:"+id,type:"saveWorkout",args:{id,user_id:user,created_by:byId.get(id)?.created_by||author,type,performed_at:new Date(startedAt).toISOString(),data}});
+        operations.push({opId:"wk:"+id,type:"saveWorkout",args:{id,user_id:user,created_by:byId.get(id)?.created_by||author,type,performed_at:new Date(startedAt).toISOString(),data,deleted:false}});
       }
-      for(const row of existing)if(!ids.has(row.id)){operations.push({opId:"wk:"+row.id,type:"deleteWorkout",args:{userId:user,id:row.id}});cloudDeletes++;}
+      for(const row of existing)if(!row.deleted&&!ids.has(row.id)){operations.push({opId:"wk:"+row.id,type:"deleteWorkout",args:{userId:user,id:row.id}});cloudDeletes++;}
       // Index/records are derived; never import fabricated personal records.
       values.workout_index=values.history.map(({id,type,name,startedAt,durationSec})=>({id,type,name,startedAt,durationSec}));
       const records={};
