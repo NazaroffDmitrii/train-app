@@ -293,6 +293,43 @@ async function openOutboxManager() {
 }
 document.getElementById("outbox-manager-btn")?.addEventListener("click", openOutboxManager);
 
+document.getElementById('workout-backups-btn')?.addEventListener('click', async () => {
+  const owner = Auth.userId(), uid = DATA.getCurrentUser();
+  try {
+    const copies = await WorkoutSafety.backups(owner, uid);
+    if (Auth.userId() !== owner || DATA.getCurrentUser() !== uid) return;
+    const dialog = document.createElement('dialog');
+    dialog.className = 'modal';
+    const title = document.createElement('h2');
+    title.textContent = 'Копии истории';
+    const hint = document.createElement('p');
+    hint.textContent = copies.length ? 'Скачайте нужную копию. Её можно открыть через «Импорт» и проверить изменения перед восстановлением.' : 'Копии появятся перед первым изменением истории из облака. Они хранятся на этом устройстве.';
+    dialog.append(title, hint);
+    const list = document.createElement('div');
+    list.style.cssText = 'max-height:50vh;overflow:auto;display:grid;gap:8px';
+    copies.sort((a, b) => b.at - a.at).forEach(copy => {
+      const button = document.createElement('button');
+      button.className = 'btn-chip';
+      button.textContent = new Date(copy.at).toLocaleString('ru-RU') + ' · тренировок: ' + copy.history.length;
+      button.onclick = () => {
+        if (Auth.userId() !== owner || DATA.getCurrentUser() !== uid) { dialog.close(); return; }
+        const payload = { app: 'train.', version: 2, user: uid, data: { [`train_history_${uid}`]: JSON.stringify(copy.history) } };
+        const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = `train-history-${uid}-${copy.at}.json`;
+        document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      };
+      list.append(button);
+    });
+    const close = document.createElement('button');
+    close.className = 'btn-chip'; close.textContent = 'Закрыть'; close.onclick = () => dialog.close();
+    dialog.append(list, close);
+    dialog.addEventListener('close', () => dialog.remove());
+    document.body.append(dialog); dialog.showModal();
+  } catch (error) { showToast('Не удалось прочитать копии: ' + error.message); }
+});
+
 function showCloudUploadResult(result) {
   if (result?.held > 0) {
     showToast("Не всё отправлено: сохранены записи другого аккаунта или старые записи без владельца. Не очищайте данные приложения.", 5000);

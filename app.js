@@ -276,7 +276,8 @@ const DATA = (() => {
   }
   function ls(key, fallback = null) {
     assertDataAccount();
-    if (_cache.has(key)) return _cache.get(key);
+    // Workout state can change in another tab. Always read its durable value.
+    if (!key.startsWith('train_history_') && !key.startsWith('train_active_') && _cache.has(key)) return _cache.get(key);
     try {
       const r = localStorage.getItem(key);
       if (r === null) return fallback;
@@ -770,8 +771,9 @@ const DATA = (() => {
     },
 
     startWorkout(userId, type) {
+      if (this.getActiveWorkout(userId)) throw Error('Сначала завершите активную тренировку.');
       const workout = {
-        id: `w_${Date.now()}`,
+        id: `w_${crypto.randomUUID()}`,
         type,
         name: type === "run" ? "Пробежка" : "Силовая тренировка",
         startedAt: Date.now(),
@@ -790,7 +792,7 @@ const DATA = (() => {
     // Возвращает true/false — записалось ли. Вызывающий (doFinishWorkout)
     // обязан не очищать активную тренировку, если сюда вернулся false.
     saveWorkout(userId, workout) {
-      const history = ls(`train_history_${userId}`, []);
+      const history = ls(`train_history_${userId}`, []).filter(w => w.id !== workout.id);
       history.unshift(workout); // новые сверху
       return lsSet(`train_history_${userId}`, history);
     },
@@ -1110,7 +1112,7 @@ const DATA = (() => {
       if (!tpl) return null;
       const exNameById = new Map(this.getVisibleExercises(userId).map(e => [e.id, e.name]));
       const workout = {
-        id: `w_${Date.now()}`,
+        id: `w_${crypto.randomUUID()}`,
         type: "strength",
         templateId: tpl.id,                  // связь с шаблоном — для среднего времени и «посл.»
         name: tpl.name,
@@ -1134,7 +1136,7 @@ const DATA = (() => {
           };
         }),
       };
-      this.saveActiveWorkout(userId, workout);
+      if (!this.saveActiveWorkout(userId, workout)) throw Error('Не удалось сохранить черновик.');
       return workout;
     },
   };
@@ -2674,6 +2676,7 @@ function finishWorkout() {
 }
 
 function doFinishWorkout() {
+  if (typeof Bridge === 'undefined') { showToast('Приложение ещё загружается. Повторите завершение через несколько секунд.'); return; }
   const userId = DATA.getCurrentUser();
   _workout.name = $("workout-name-input").value || "Силовая тренировка";
   _workout.durationSec = Math.floor((Date.now() - _workout.startedAt) / 1000);
@@ -4422,6 +4425,7 @@ function openEmptyRunModal() {
 }
 
 $("run-save-btn").addEventListener("click", () => {
+  if (typeof Bridge === 'undefined') { showToast('Приложение ещё загружается. Повторите сохранение через несколько секунд.'); return; }
   const dist   = parseFloat($("run-distance").value);
   const durSec = getRunDurSec();
   if (!dist || !durSec) { openEmptyRunModal(); return; }

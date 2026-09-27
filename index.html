@@ -3278,6 +3278,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
     <div class="modal">
       <h2 class="modal-title">Настройки</h2>
       <p class="modal-sync-info" id="settings-sync-info">Изменения сохраняются в облако автоматически. Экспорт/импорт ниже — локальная резервная копия в файл.</p>
+      <button class="btn-chip" id="workout-backups-btn" type="button">Копии истории тренировок</button>
       <!-- Ручная синхронизация. Изменения и так уходят в облако сами (bridge.js
            → outbox.js), это — явный контроль поверх авто-режима на случай
            сомнений: «В облако» досылает очередь прямо сейчас (обычно там уже

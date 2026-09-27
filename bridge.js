@@ -8,26 +8,21 @@
  * полностью синхронным, как раньше; этот файл, загружаясь ПОСЛЕ app.js,
  * оборачивает снаружи десяток ключевых setter'ов DATA, чтобы каждая мутация
  * тихо, в фоне, зеркалилась в Supabase. Весь риск перехода сосредоточен в
- * этом одном файле — если тут баг, локальные данные (localStorage) всё равно
- * не страдают, потому что оригинальная запись всегда выполняется первой.
+ * этом одном файле. Тренировки сначала попадают в синхронный write-ahead
+ * журнал, затем в локальную историю и durable-очередь IndexedDB.
  *
  * Пуш — через durable-очередь outbox.js: каждое изменение кладётся в
  * персистентный журнал (IndexedDB) и флашится в облако при наличии сети.
  * Оффлайн/ошибка сети → изменение не теряется, уходит при реконнекте или на
- * следующем старте. Локальная запись (localStorage) всегда происходит ПЕРВОЙ —
- * local-first не нарушается, а outbox гарантирует, что облако рано или поздно
- * догонит локальное состояние.
+ * следующем старте. Журнал удаляется только после подтверждения записи в
+ * IndexedDB; сбой между двумя хранилищами не теряет задание на отправку.
  */
 "use strict";
 
 const Bridge = (() => {
+  const bridgeOwner = Auth.userId();
   let authProfileId = null; // profiles.id того, кто РЕАЛЬНО залогинен (автор правок)
 
-  const HISTORY_PULL_PAGE = 200;
-  // Кап пагинации при hydrate — просто защита от зацикливания/бага, а не
-  // реалистичный предел использования (даже тренировка каждый день десять лет
-  // подряд — это ~3650 записей).
-  const HISTORY_PULL_CAP = 5000;
   const PUSH_DEBOUNCE_MS = 400;
 
   async function ensureAuthProfileId() {
@@ -148,36 +143,66 @@ const Bridge = (() => {
   function stampLocalCreatedBy(workout) {
     if (authProfileId && workout.createdBy === undefined) workout.createdBy = authProfileId;
   }
-  function queueWorkout(userId, workout) {
-    if (!Auth.isSignedIn()) return;
-    const owner = Auth.userId();
-    if (workout.createdBy) {
-      // Автор уже известен (застемплен выше или пришёл из облака при более
-      // раннем hydrate) — используем его, а не текущую сессию, иначе повторная
-      // правка чужой записи переписала бы created_by на редактирующего.
-      Outbox.enqueueWorkout(localToRow(userId, workout.createdBy, workout), owner).then(() => Outbox.flush());
-      return;
-    }
-    ensureAuthProfileId().then(createdBy => {
-      if (!createdBy) return;
-      Outbox.enqueueWorkout(localToRow(userId, createdBy, workout), owner).then(() => Outbox.flush());
+  function journal(userId, changes) {
+    if (Auth.userId() !== bridgeOwner || Auth.contextChanged?.()) throw Error('Аккаунт изменился. Перезагрузите приложение.');
+    WorkoutSafety.record(Auth.userId(), userId, changes);
+  }
+  function scheduleWorkouts() {
+    Outbox.flush().catch(error => {
+      console.warn('Workout journal: отправка отложена', error);
+      if (typeof showToast === 'function') showToast('Тренировка сохранена на устройстве. Отправка отложена: ' + error.message);
     });
+  }
+  // Called inside Outbox's cross-tab flush lock, including after a restart.
+  async function replayWorkoutJournal() {
+    const owner = Auth.userId();
+    if (owner !== bridgeOwner || Auth.contextChanged?.()) throw Error('Аккаунт изменился.');
+    if (!WorkoutSafety.entries(owner).length) return;
+    const author = await ensureAuthProfileId();
+    if (!author || Auth.userId() !== owner) throw Error('Не удалось подтвердить автора тренировки.');
+    const entries = WorkoutSafety.entries(owner).sort((a, b) => a.createdAt - b.createdAt);
+    const histories = new Map();
+    // Apply all journal changes synchronously before the first enqueue await.
+    // Otherwise replay of an older batch could undo an edit made during IDB I/O.
+    for (const entry of entries) {
+      if (!histories.has(entry.userId)) histories.set(entry.userId, new Map(DATA.getWorkoutHistory(entry.userId).map(w => [w.id, w])));
+      const history = histories.get(entry.userId);
+      for (const change of entry.changes) {
+        if (change.deleted) history.delete(change.id);
+        else history.set(change.workout.id, change.workout);
+      }
+    }
+    for (const [userId, history] of histories) {
+      if (!_orig.saveWorkoutHistory(userId, [...history.values()])) throw Error('Не удалось восстановить локальную историю.');
+    }
+    for (const entry of entries) {
+      for (const change of entry.changes) {
+        if (Auth.userId() !== owner || Auth.contextChanged?.()) throw Error('Аккаунт изменился.');
+        if (change.deleted) await Outbox.enqueueDeleteWorkout(entry.userId, change.id);
+        else await Outbox.enqueueWorkout(localToRow(entry.userId, change.workout.createdBy || author, change.workout), owner);
+      }
+      WorkoutSafety.acknowledge(entry);
+    }
   }
 
   DATA.saveWorkout = function (userId, workout) {
     stampLocalCreatedBy(workout);
+    try { journal(userId, [{ workout }]); }
+    catch (error) { console.warn('Workout journal', error); return false; }
     const ok = _orig.saveWorkout(userId, workout);
-    if (ok) queueWorkout(userId, workout);   // локальная запись первой; пуш — durable
+    scheduleWorkouts();
     return ok;
   };
   DATA.updateWorkout = function (userId, workout) {
     stampLocalCreatedBy(workout);
+    journal(userId, [{ workout }]);
     _orig.updateWorkout(userId, workout);
-    queueWorkout(userId, workout);
+    scheduleWorkouts();
   };
   DATA.deleteWorkout = function (userId, workoutId) {
+    journal(userId, [{ deleted: true, id: workoutId }]);
     _orig.deleteWorkout(userId, workoutId);
-    if (Auth.isSignedIn()) Outbox.enqueueDeleteWorkout(userId, workoutId).then(() => Outbox.flush());
+    scheduleWorkouts();
   };
   // Массовая перезапись истории — редкие случаи (undo-восстановление после
   // удаления; переименование/привязка тренировок к шаблону — см. app.js
@@ -185,18 +210,10 @@ const Bridge = (() => {
   // отдельной записью в outbox (ключ wk:<id> — дедуп с индивидуальными
   // правками), потом один флаш.
   DATA.saveWorkoutHistory = function (userId, list) {
-    _orig.saveWorkoutHistory(userId, list);
-    if (Auth.isSignedIn() && list.length) {
-      const owner = Auth.userId();
-      ensureAuthProfileId().then(fallbackCreatedBy => {
-        if (!fallbackCreatedBy) return;
-        // Каждый элемент сохраняет СВОЕГО автора, если он уже известен (см.
-        // stampLocalCreatedBy/queueWorkout) — иначе, как запасной вариант,
-        // автором становится текущая сессия.
-        Promise.all(list.map(w => Outbox.enqueueWorkout(localToRow(userId, w.createdBy || fallbackCreatedBy, w), owner)))
-          .then(() => Outbox.flush());
-      });
-    }
+    journal(userId, list.map(workout => ({ workout })));
+    const ok = _orig.saveWorkoutHistory(userId, list);
+    scheduleWorkouts();
+    return ok;
   };
 
   /* ----- hydrate: подтянуть из облака в локальный DATA при входе/переключении
@@ -206,32 +223,34 @@ const Bridge = (() => {
      а не «облако затирает локальное». ----- */
   async function hydrate(userId) {
     if (!Auth.isSignedIn()) return;
+    const owner = Auth.userId();
+    await Outbox.flush();
     await ensureAuthProfileId();
-
+    const historyRaw = () => localStorage.getItem(`train_history_${userId}`);
+    const before = historyRaw();
+    const localBefore = DATA.getWorkoutHistory(userId);
+    const initialPending = await Outbox.all();
+    const assertUnchanged = () => {
+      if (Auth.userId() !== owner || Auth.contextChanged?.() || historyRaw() !== before || WorkoutSafety.entries(owner, userId).length) {
+        throw Error('Во время загрузки появились локальные изменения. Они сохранены; повторите синхронизацию.');
+      }
+    };
     // История — постранично, но БЕЗ урезания: секции статистики/рекордов/
     // стриков в app.js (раздел 9) синхронно считают по ПОЛНОЙ истории.
     // Настоящий ленивый хот-кэш с ограниченным окном — Фаза 4.
-    let all = [];
-    let before;
-    for (let i = 0; i < HISTORY_PULL_CAP / HISTORY_PULL_PAGE; i++) {
-      const page = await DB.listWorkouts(userId, { limit: HISTORY_PULL_PAGE, before });
-      if (!page.length) break;
-      all = all.concat(page);
-      if (page.length < HISTORY_PULL_PAGE) break;
-      before = page[page.length - 1].performed_at;
-    }
-    // Пустой ответ — тоже авторитетный результат: он означает, что в облаке
-    // больше нет тренировок. Раньше здесь стоял `if (all.length)`, поэтому
-    // удаление последней тренировки не очищало старую копию на другом устройстве.
-    //
-    // При этом нельзя просто заменить историю облачной: если локальная запись
-    // ещё ждёт в Outbox, временно устаревший ответ сервера не должен её стереть.
-    // Накладываем ожидающие save/delete поверх полученного облачного снимка.
-    // Неизвестное содержимое очереди нельзя считать пустым: иначе даже пустой
-    // облачный ответ сотрёт локальную тренировку при сбое IndexedDB.
+    const all = await DB.pullEntities('workouts', userId);
+    // Queue read failures abort the pull. Apply pending operations from both
+    // sides of the request, and preserve records missing from the response.
     const pending = await Outbox.all();
-    const rowsById = new Map(all.map(row => [row.id, row]));
-    pending.forEach(op => {
+    assertUnchanged();
+    // Until the server has versioned tombstones, absence is NOT deletion.
+    // Keep local-only records; never automatically publish them back.
+    const rowsById = new Map(localBefore.map(w => [w.id, localToRow(userId, w.createdBy || authProfileId, w)]));
+    all.forEach(row => rowsById.set(row.id, row));
+    // Include operations present before the request, even if acknowledged
+    // while that request was in flight. Fresh revisions take precedence.
+    [...initialPending, ...pending].forEach(op => {
+      if (op.owner !== owner) return;
       if (op.type === "saveWorkout" && op.args?.user_id === userId) {
         rowsById.set(op.args.id, op.args);
       } else if (
@@ -246,7 +265,11 @@ const Bridge = (() => {
     const localHistory = [...rowsById.values()]
       .sort((a, b) => new Date(b.performed_at) - new Date(a.performed_at))
       .map(rowToLocal);
-    _orig.saveWorkoutHistory(userId, localHistory);
+    if (JSON.stringify(localBefore) !== JSON.stringify(localHistory)) {
+      await WorkoutSafety.backup(owner, userId, localBefore);
+      assertUnchanged();
+      if (!_orig.saveWorkoutHistory(userId, localHistory)) throw Error('Недостаточно места для обновления истории.');
+    }
     DATA.recomputeRecords(userId);
 
     // Общий справочник Атласа (мышцы/движения/группы/связи/упражнения) из
@@ -306,7 +329,7 @@ const Bridge = (() => {
   }
 
   return {
-    hydrate, reset, ensureAuthProfileId, evictOtherProfiles,
+    hydrate, reset, ensureAuthProfileId, evictOtherProfiles, replayWorkoutJournal,
     get authProfileId() { return authProfileId; },
   };
 })();

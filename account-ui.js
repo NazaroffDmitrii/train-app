@@ -9,7 +9,7 @@
   function download(backup){const url=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='train-before-account-change.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   async function queueCheck(){
     const stats=await Outbox.stats(user);guard();if(stats.storageError||stats.pending!==0)throw Error('Очередь профиля не пуста или недоступна. Сначала обработайте её в приложении.');
-    if(mode==='self'){const rows=await Outbox.all();guard();if(rows.some(row=>row.owner===owner))throw Error('У аккаунта остались неотправленные изменения других профилей. Сначала обработайте их.');}
+    if(mode==='self'){const rows=await Outbox.all();guard();if(rows.some(row=>row.owner===owner)||WorkoutSafety.entries(owner).length)throw Error('У аккаунта остались неотправленные изменения других профилей. Сначала обработайте их.');}
   }
   async function start(){
     guard();if(!user||!['invite','self','managed'].includes(mode))throw Error('Откройте этот экран из настроек выбранного профиля.');

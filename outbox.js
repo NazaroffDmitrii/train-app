@@ -178,6 +178,7 @@ const Outbox = (() => {
     let stop = false;
     for (let pass = 0; pass < 8 && !stop; pass++) {
       _flushAgain = false;
+      if (typeof Bridge !== 'undefined') await Bridge.replayWorkoutJournal();
       const ops = (await all()).filter(op => op.owner === owner && !attempted.has(JSON.stringify([op.opId, op.revision])));
       if (!ops.length) break;
       for (const op of ops) {
@@ -236,7 +237,7 @@ const Outbox = (() => {
   // одновременно, все ждут ОДИН реальный проход очереди. Раньше последующие
   // вызовы получали `in-flight` и могли ошибочно решить, что всё уже отправлено.
   function flush() {
-    if (_flushPromise) return _flushPromise;
+    if (_flushPromise) { _flushAgain = true; return _flushPromise; }
     // Serialize network writes across same-origin tabs where Web Locks exists.
     // IndexedDB transactions alone cannot order two concurrent HTTP requests.
     _flushPromise = (navigator.locks?.request
@@ -266,7 +267,9 @@ const Outbox = (() => {
       const blocked = ops.filter(o => o.blocked).length;
       const held = ops.filter(o => !o.owner || o.owner !== accountId()).length;
       const latestFailure = ops.filter(o => o.owner === accountId() && o.lastError).sort((a, b) => (b.lastErrorAt || 0) - (a.lastErrorAt || 0))[0];
-      return { pending: ops.length, blocked, held, otherPending: deviceOps.length - ops.length,
+      const journal = typeof WorkoutSafety !== 'undefined' ? WorkoutSafety.entries(owner) : [];
+      const journalCount = journal.filter(entry => !profileId || entry.userId === profileId).reduce((n, entry) => n + entry.changes.length, 0);
+      return { pending: ops.length + journalCount, blocked, held, otherPending: deviceOps.length - ops.length + journal.filter(entry => profileId && entry.userId !== profileId).reduce((n, entry) => n + entry.changes.length, 0),
         lastError: latestFailure?.lastError || null, storageError: false };
     } catch (error) {
       return { pending: null, blocked: null, storageError: true,
@@ -388,6 +391,7 @@ const Outbox = (() => {
   }
   async function commitRestore(id, userId, owner, operations) {
     if (!window.TRAIN_RESTORE_MODE || accountId() !== owner) throw Error("Нет контекста восстановления");
+    if (typeof WorkoutSafety !== 'undefined' && WorkoutSafety.entries(owner, userId).length) throw Error('Сначала отправьте сохранённые тренировки из приложения.');
     return tx("readwrite", store => new Promise((resolve,reject)=>{
       const request=store.getAll();request.onerror=()=>reject(request.error);
       request.onsuccess=()=>{
