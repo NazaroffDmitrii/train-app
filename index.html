@@ -1615,8 +1615,8 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 
 /* ============ Toast ============ */
 .toast {
-  position: fixed; left: 50%; bottom: calc(28px + var(--safe-bottom));
-  transform: translate(-50%, 12px);
+  position: fixed; left: 50%; top: calc(16px + var(--safe-top)); bottom: auto;
+  transform: translate(-50%, -12px);
   background: var(--panel-raised); border: 1px solid var(--border-strong);
   color: var(--text-primary); padding: 12px 18px; border-radius: 20px;
   font-size: 13.5px; font-weight: 600; z-index: 50;
@@ -1629,16 +1629,16 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
      ~187px, хотя на странице есть место. Теперь короткий тост — по содержимому,
      а длинный дорастает до max-width (почти вся ширина) и лишь ТОГДА переносится,
      заполняя её. translateX(-50%) центрирует при любой ширине. */
-  width: max-content; max-width: calc(100vw - 32px); white-space: normal; text-align: left;
+  width: max-content; max-width: min(540px, calc(100vw - 32px)); white-space: normal; text-align: left;
+  max-height: calc(100dvh - var(--safe-top) - 32px); overflow-y: auto; overflow-wrap: anywhere;
 }
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast:not(.show) { visibility: hidden; }
 /* Тост с кнопкой «Отменить» — во всю ширину, текст занимает всё место (иначе
    flex сжимал его в узкий столбик по центру), кнопка прижата вправо. */
 .toast.actionable { pointer-events: auto; width: calc(100vw - 32px); }
 .toast-text { flex: 1; min-width: 0; }
-/* Когда плавающая «Готово» видна (режим правки шторки/списков) — поднимаем
-   тост выше неё, иначе они накладываются друг на друга у нижнего края. */
-body:has(.exercises-float-done.visible) .toast { bottom: calc(88px + var(--safe-bottom)); }
+.toast-close { flex: none; align-self: flex-start; min-width: 32px; min-height: 32px; font-size: 24px; line-height: 1; color: var(--text-secondary); }
 .toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 13.5px; padding: 2px 2px; white-space: nowrap; flex: none; }
 /* ============ Screen 5: exercises ============ */
 .screen-exercises { display: flex; flex-direction: column; background: var(--bg-base); }
@@ -3496,7 +3496,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
     </div>
   </section>
 
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 </div>
 
 <script src="app-loader.js"></script>

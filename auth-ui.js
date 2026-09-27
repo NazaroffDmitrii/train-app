@@ -332,11 +332,11 @@ document.getElementById('workout-backups-btn')?.addEventListener('click', async 
 
 function showCloudUploadResult(result) {
   if (result?.held > 0) {
-    showToast("Не всё отправлено: сохранены записи другого аккаунта или старые записи без владельца. Не очищайте данные приложения.", 5000);
+    showSyncError("Сохранены записи другого аккаунта или старые записи без владельца. Не очищайте данные приложения.", 'queue');
     return;
   }
   if (result?.storageError) {
-    showToast("Не удалось проверить очередь устройства. Не очищайте данные приложения; повторите попытку.", 5000);
+    showSyncError(result.lastError || "Не удалось проверить очередь устройства. Не очищайте данные приложения.", 'queue');
     return;
   }
   if (result?.skipped === "awaiting-publish") {
@@ -347,12 +347,11 @@ function showCloudUploadResult(result) {
   const blocked = Number(result?.blocked) || 0;
   const failed = Number(result?.failed) || 0;
   if (!result || result.skipped) {
-    showToast(
-      pending > 0 ? `Не выгружено — на устройстве осталось изменений: ${pending}` : "Не удалось подключиться к облаку",
-      pending > 0 ? 3000 : 2000
-    );
+    showSyncError(result?.skipped === 'offline' ? { code: 'OFFLINE' } :
+      result?.lastError || "Отправка не началась. Проверьте вход и повторите.", 'upload');
   } else if (blocked > 0 || failed > 0 || pending > 0) {
-    showToast(`Не всё выгружено — на устройстве осталось изменений: ${pending}`, 3000);
+    showToast(syncErrorText(result.lastError || "Отправка не завершена; откройте очередь отправки.", 'upload') +
+      ` Ожидают отправки: ${pending}.`, 12000);
   } else {
     showToast(result.otherPending > 0 ? "Изменения выбранного профиля выгружены. Для других профилей ещё есть записи в очереди." : "Все изменения выгружены в облако", 3000);
   }
@@ -360,15 +359,15 @@ function showCloudUploadResult(result) {
 
 const manualUploadBtn = document.getElementById("sync-upload-btn");
 manualUploadBtn.addEventListener("click", async () => {
+  if (window.__manualSyncInProgress) return;
   closeModal(settingsModalBackdrop);
   const uid = DATA.getCurrentUser();
   if (!uid) { showToast("Сначала выберите профиль", 2000); return; }
   if (!navigator.onLine) {
-    const st = await Outbox.stats();
-    showCloudUploadResult({ ...st, skipped: "offline" });
+    showSyncError({ code: 'OFFLINE' }, 'upload');
     return;
   }
-  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showToast("Вы не авторизованы", 2000); return; }
+  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showSyncError("Для отправки требуется вход.", 'session'); return; }
   manualUploadBtn.disabled = true;
   window.__manualSyncInProgress = true;
   showToast("Выгружаем изменения в облако…", 0);
@@ -391,12 +390,7 @@ manualUploadBtn.addEventListener("click", async () => {
       showCloudUploadResult(result);
     }
   } catch (e) {
-    const st = await Outbox.stats();
-    if (st.pending > 0) {
-      showToast(`Не выгружено — на устройстве осталось изменений: ${st.pending}`, 3000);
-    } else {
-      showToast("Не удалось выгрузить: " + String(e.message || "неизвестная ошибка").slice(0, 90), 2000);
-    }
+    showSyncError(e, 'upload');
   } finally {
     window.__manualSyncInProgress = false;
     manualUploadBtn.disabled = false;
@@ -502,40 +496,59 @@ function withOperationTimeout(promise, timeoutMs, message) {
   let timer;
   return Promise.race([
     promise,
-    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); }),
+    new Promise((_, reject) => { timer = setTimeout(() => {
+      const error = new Error(message); error.code = 'TIMEOUT'; reject(error);
+    }, timeoutMs); }),
   ]).finally(() => clearTimeout(timer));
+}
+
+function showSyncProgress(stage) { showToast(SYNC_STAGE_LABELS[stage] + '…', 8000); }
+function showHydrateResult(result, showSuccess = true) {
+  if (result?.warnings?.length) {
+    showToast('Синхронизация выполнена не полностью. ' + syncErrorText(result.warnings[0], 'atlas'), 12000);
+  } else if (['local-pending', 'publish-pending', 'awaiting-publish'].includes(result?.mode)) {
+    showToast('История загружена. Упражнения и настройки ещё не синхронизированы — нажмите «В облако».', 8000);
+  } else if (!result || ['no-user', 'no-session'].includes(result.mode)) {
+    showSyncError('Не удалось завершить загрузку: выберите профиль и проверьте вход.', 'session');
+  } else if (showSuccess) {
+    showToast('Приложение и данные синхронизированы', 3000);
+  }
 }
 
 const manualRefreshBtn = document.getElementById("sync-reload-btn");
 manualRefreshBtn.addEventListener("click", async () => {
+  if (window.__manualSyncInProgress) return;
   closeModal(settingsModalBackdrop);
   const uid = DATA.getCurrentUser();
   if (!uid) { showToast("Сначала выберите профиль", 2000); return; }
-  if (!navigator.onLine) { showToast("Нет сети — синхронизация невозможна", 2000); return; }
-  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showToast("Вы не авторизованы", 2000); return; }
-  const queued = await Outbox.stats();
-  if (queued.pending > 0) {
-    showToast(`Сначала нажмите «В облако» — ожидают выгрузки: ${queued.pending}`, 3000);
-    return;
-  }
+  if (!navigator.onLine) { showSyncError({ code: 'OFFLINE' }, 'history'); return; }
+  if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showSyncError("Для синхронизации требуется вход.", 'session'); return; }
   manualRefreshBtn.disabled = true;
   window.__manualSyncInProgress = true;
-  try { sessionStorage.setItem(MANUAL_REFRESH_KEY, "1"); } catch {}
-  showToast("Обновляем приложение и загружаем данные…", 0);
+  let stage = 'queue';
   try {
-    if ("serviceWorker" in navigator) {
-      const reg = await navigator.serviceWorker.getRegistration();
-      if (reg) {
-        await withOperationTimeout(reg.update(), 15_000, "Не удалось проверить обновление за 15 секунд");
-      }
+    showSyncProgress(stage);
+    const queued = await Outbox.stats();
+    if (queued.storageError) throw new Error(queued.lastError || 'Не удалось прочитать очередь устройства.');
+    if (queued.pending > 0) {
+      showToast(`Сначала нажмите «В облако» — ожидают выгрузки: ${queued.pending}`, 8000);
+      return;
     }
-    await Bridge.hydrate(uid);
+    try { sessionStorage.setItem(MANUAL_REFRESH_KEY, "1"); } catch {}
+    stage = 'update'; showSyncProgress(stage);
+    if ("serviceWorker" in navigator) {
+      await withOperationTimeout((async () => {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) await reg.update();
+      })(), 15_000, "Не удалось проверить обновление за 15 секунд");
+    }
+    const result = await Bridge.hydrate(uid, { onProgress: next => { stage = next; showSyncProgress(next); } });
     try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
-    showToast("Приложение и данные синхронизированы", 2000);
+    showHydrateResult(result);
     if (screenMenu.classList.contains("active")) refreshMenu();
   } catch (e) {
     try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
-    showToast("Синхронизация не выполнена: " + String(e.message || "неизвестная ошибка").slice(0, 90), 2000);
+    showSyncError(e, stage);
   } finally {
     window.__manualSyncInProgress = false;
     manualRefreshBtn.disabled = false;
@@ -639,12 +652,12 @@ async function renderProfiles() {
     // локальное устаревшим облаком (та же гонка, что и в bootAuthAware).
     try { await Outbox.flush(); } catch {}
     try {
-      await Bridge.hydrate(profileId);
+      showHydrateResult(await Bridge.hydrate(profileId), false);
     } catch (e) {
       // Синк не прошёл — не молчим (пользователь должен знать), но и не рушим
       // вход: локальные данные local-first остаются на экране.
       console.warn("enterProfile: hydrate", e);
-      showToast("Не удалось синхронизироваться: " + (e.message || "ошибка сети"));
+      showSyncError(e, 'history');
     }
     _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
@@ -805,7 +818,7 @@ if (Auth.contextChanged()) showChangedAuthContext();
   if (Auth.contextChanged()) return;
   let resumedManualRefresh = false;
   try { resumedManualRefresh = sessionStorage.getItem(MANUAL_REFRESH_KEY) === "1"; } catch {}
-  if (resumedManualRefresh) showToast("Обновляем приложение и загружаем данные…", 0);
+  if (resumedManualRefresh) showSyncProgress('queue');
   // ВАЖНО: ДОЖИДАЕМСЯ флаша очереди ДО hydrate. Иначе флаш (отправка локальных
   // правок в облако) и hydrate (чтение облака обратно) шли параллельно — hydrate
   // мог прочитать облако раньше, чем туда доехали правки, и откатить локальное.
@@ -821,23 +834,27 @@ if (Auth.contextChanged()) showChangedAuthContext();
     // читается (напр. стал недоступен) — возвращаемся к экрану входа.
     _menuHydrating = true;
     updateOnlineStatus();
+    let stage = 'profile';
     try {
+      if (resumedManualRefresh) showSyncProgress(stage);
       const profile = await DB.getProfile(currentUser);
       if (!profile) {
-        if (resumedManualRefresh) showToast("Синхронизация не выполнена: профиль недоступен", 2000);
+        if (resumedManualRefresh) showSyncError("Профиль недоступен этому аккаунту.", 'profile');
         DATA.clearCurrentUser(); goToScreen("profile"); await renderProfiles(); return;
       }
       registerUser(profile);
       reviewLegacyDraft(currentUser);
-      await Bridge.hydrate(currentUser);
-      if (resumedManualRefresh) showToast("Приложение и данные синхронизированы", 2000);
+      const result = await Bridge.hydrate(currentUser, { onProgress: next => {
+        stage = next; if (resumedManualRefresh) showSyncProgress(next);
+      } });
+      showHydrateResult(result, resumedManualRefresh);
     } catch (e) {
       // Раньше ошибка тут терялась в console.warn — пользователь ничего не
       // видел (та самая ситуация с Нателой: молчаливый сбой). Теперь видно
       // тостом — актуально и для обычной загрузки, и для кнопки «Синхронизация»
       // (перезагрузка страницы проходит через этот же путь).
       console.warn("bootAuthAware: hydrate", e);
-      showToast("Не удалось синхронизироваться: " + (e.message || "ошибка сети"), resumedManualRefresh ? 2000 : 2200);
+      showSyncError(e, stage);
     } finally {
       if (resumedManualRefresh) {
         try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
@@ -853,7 +870,7 @@ if (Auth.contextChanged()) showChangedAuthContext();
     if (!Auth.isSignedIn()) DATA.clearCurrentUser();
     if (resumedManualRefresh) {
       try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
-      showToast("Синхронизация не выполнена: требуется вход", 2000);
+      showSyncError("Для синхронизации требуется вход.", 'session');
     }
     goToScreen("profile");
     await renderProfiles();

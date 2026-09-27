@@ -1295,19 +1295,61 @@ const toastEl = $("toast");
    Toast
    ========================================================================== */
 let toastTimer = null;
-// durationMs <= 0 оставляет уведомление на экране, пока его не заменит
-// следующий toast. Это нужно для долгих операций вроде ручной синхронизации:
-// надпись «Синхронизируем…» не должна исчезать раньше результата.
+// No sticky notifications: progress lasts 8s, any message at most 15s.
+function toastLifetime(duration) {
+  return Number.isFinite(duration) && duration > 0 ? Math.min(duration, 15000) : 8000;
+}
+function addToastClose() {
+  const button = document.createElement('button');
+  button.className = 'toast-close'; button.type = 'button';
+  button.textContent = '×'; button.setAttribute('aria-label', 'Закрыть уведомление');
+  button.addEventListener('click', () => {
+    clearTimeout(toastTimer); toastEl.classList.remove('show', 'actionable');
+  });
+  toastEl.append(button);
+}
 function showToast(msg, durationMs = 2200) {
   clearTimeout(toastTimer);
   toastEl.classList.remove("actionable");
-  toastEl.textContent = msg;
+  toastEl.textContent = '';
+  const text = document.createElement('span');
+  text.className = 'toast-text'; text.textContent = msg; toastEl.append(text);
+  addToastClose();
   toastEl.classList.add("show");
-  toastTimer = null;
-  if (durationMs > 0) {
-    toastTimer = setTimeout(() => toastEl.classList.remove("show"), durationMs);
-  }
+  toastTimer = setTimeout(() => toastEl.classList.remove('show', 'actionable'), toastLifetime(durationMs));
 }
+
+const SYNC_STAGE_LABELS = {
+  update: 'Обновление приложения', queue: 'Очередь отправки', session: 'Проверка входа',
+  profile: 'Загрузка профиля', history: 'История тренировок', backup: 'Сохранение копии',
+  atlas: 'Справочник упражнений', settings: 'Упражнения и настройки', upload: 'Отправка в облако',
+};
+function syncErrorText(error, fallbackStage = 'history') {
+  const stage = Object.hasOwn(SYNC_STAGE_LABELS, error?.syncStage) ? error.syncStage :
+    Object.hasOwn(SYNC_STAGE_LABELS, fallbackStage) ? fallbackStage : 'history';
+  const message = String(error?.message || error || 'Неизвестная ошибка');
+  const status = error?.status || message.match(/HTTP\s+(\d{3})/i)?.[1];
+  let code, reason;
+  if (error?.code === 'OFFLINE') {
+    code = 'OFFLINE'; reason = 'Нет интернета. Подключитесь к сети и повторите.';
+  } else if (error?.code === 'TIMEOUT' || /за 15 секунд|таймаут|timeout/i.test(message)) {
+    code = 'TIMEOUT'; reason = 'Сервер не ответил за отведённое время. Повторите позже.';
+  } else if (error?.code === 'NETWORK_ERROR' || /load failed|failed to fetch|networkerror|network request failed/i.test(message)) {
+    code = 'NET'; reason = 'Соединение с сервером прервалось. Проверьте интернет и повторите.';
+  } else if (status) {
+    code = 'HTTP-' + status;
+    reason = +status === 401 ? 'Сессия не подтверждена. Повторите вход, сохранив локальные данные.' :
+      +status === 403 ? 'Сервер отказал в доступе к данным.' :
+      +status === 429 ? 'Слишком много запросов. Подождите и повторите.' :
+      +status >= 500 ? 'Ошибка сервера. Повторите позже.' : message.slice(0, 170);
+  } else if (error?.name === 'QuotaExceededError' || /места|quota|хранилищ.*заполн/i.test(message)) {
+    code = 'STORAGE'; reason = 'Недостаточно места на устройстве. Сначала экспортируйте данные.';
+  } else if (error?.name === 'SyntaxError') {
+    code = 'RESPONSE'; reason = 'Не удалось прочитать полученные данные.';
+  } else { code = 'ERROR'; reason = message.slice(0, 180); }
+  return `[${stage.toUpperCase()}-${code}] ${SYNC_STAGE_LABELS[stage]}: ${reason}`;
+}
+function showSyncError(error, stage) { showToast(syncErrorText(error, stage), 12000); }
 
 // Итог фоновой отправки тренировок. Для остальных мелких правок достаточно
 // постоянной строки статуса — иначе toast появлялся бы после каждого клика.
@@ -1318,20 +1360,14 @@ window.addEventListener("train-workout-sync-result", event => {
   const result = event.detail || {};
   if ((result.workoutFailed || 0) > 0) {
     const pending = Number(result.pending) || 0;
-    showToast(
-      pending > 0
-        ? `Не удалось синхронизировать — на устройстве осталось изменений: ${pending}`
-        : "Не удалось синхронизировать тренировку — данные сохранены на устройстве",
-      pending > 0 ? 3000 : 2000
-    );
+    showSyncError(result.lastError || `На устройстве осталось изменений: ${pending}. Откройте очередь отправки.`, 'upload');
   } else if ((result.workoutSent || 0) > 0) {
     showToast("Изменения тренировок синхронизированы с облаком", 2000);
   }
 });
 
 // Кликабельный тост с действием — для отмены удалений и для предложения
-// обновиться. onAction вызывается максимум один раз. duration<=0 — не прячем
-// автоматически (висит, пока не нажмут).
+// обновиться. onAction вызывается максимум один раз; время показа ограничено.
 function showActionToast(msg, actionLabel, onAction, duration = 5000) {
   clearTimeout(toastTimer);
   toastEl.innerHTML = "";
@@ -1349,12 +1385,13 @@ function showActionToast(msg, actionLabel, onAction, duration = 5000) {
     try { onAction(); } catch (e) { console.warn("Toast action failed", e); }
   });
   toastEl.append(text, btn);
+  addToastClose();
   toastEl.classList.add("show", "actionable");
-  if (duration > 0) toastTimer = setTimeout(() => toastEl.classList.remove("show", "actionable"), duration);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show", "actionable"), toastLifetime(duration));
 }
 // Для откатываемых удалений.
 function showUndoToast(msg, onUndo) { showActionToast(msg, "Отменить", onUndo, 5000); }
-document.addEventListener("storage-full", () => showToast("Хранилище заполнено — удали старые тренировки"));
+document.addEventListener("storage-full", () => showSyncError({ name: 'QuotaExceededError' }, 'backup'));
 
 /* ==========================================================================
    Совместимость после перехода на Bridge/Outbox.

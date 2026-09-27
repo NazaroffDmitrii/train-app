@@ -26,9 +26,16 @@ const Auth = (() => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      const body = await response.text();
+      return { ok: response.ok, status: response.status,
+        json: async () => JSON.parse(body), text: async () => body };
     } catch (e) {
-      if (controller.signal.aborted) throw new Error("Сервер не ответил за 15 секунд");
+      if (controller.signal.aborted) {
+        const error = new Error("Сервер не ответил за 15 секунд");
+        error.code = 'TIMEOUT'; error.syncStage = 'session'; throw error;
+      }
+      if (e && typeof e === 'object') { e.syncStage = 'session'; if (e.name === 'TypeError') e.code = 'NETWORK_ERROR'; }
       throw e;
     } finally {
       clearTimeout(timer);
@@ -190,6 +197,7 @@ const Auth = (() => {
     const error = new Error(`HTTP ${res.status}: ${translateAuthError(String(msg))}`);
     error.status = res.status;
     error.code = code;
+    error.syncStage = 'session';
     return error;
   }
 

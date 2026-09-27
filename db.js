@@ -20,11 +20,17 @@ const DB = (() => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      // Keep the abort timer alive until the complete body has arrived.
+      const body = await response.text();
+      return { ok: response.ok, status: response.status,
+        json: async () => JSON.parse(body), text: async () => body };
     } catch (e) {
       if (controller.signal.aborted) {
-        throw new Error("Сервер не ответил за 15 секунд");
+        const error = new Error("Сервер не ответил за 15 секунд");
+        error.code = 'TIMEOUT'; throw error;
       }
+      if (e?.name === 'TypeError') { e.code = 'NETWORK_ERROR'; }
       throw e;
     } finally {
       clearTimeout(timer);
@@ -32,8 +38,13 @@ const DB = (() => {
   }
 
   async function authHeaders(extra, expectedAccount) {
-    const session = await Auth.ensureFreshSession();
-    if (!session) throw new Error("DB: нет активной сессии — нужен вход");
+    let session;
+    try { session = await Auth.ensureFreshSession(); }
+    catch (error) { if (error && typeof error === 'object') error.syncStage = 'session'; throw error; }
+    if (!session) {
+      const error = new Error("Нет активной сессии — нужен вход");
+      error.syncStage = 'session'; throw error;
+    }
     if (expectedAccount && (session.user?.id !== expectedAccount || Auth.userId() !== expectedAccount)) {
       const error = new Error("DB: аккаунт изменился, отправка остановлена");
       error.code = "ACCOUNT_CHANGED";
@@ -50,7 +61,8 @@ const DB = (() => {
     let message = "";
     try { message = (await res.json())?.message || ""; }
     catch { try { message = await res.text(); } catch {} }
-    throw new Error(`${where}: HTTP ${res.status}${message ? ` — ${message}` : ""}`);
+    const error = new Error(`${where}: HTTP ${res.status}${message ? ` — ${message}` : ""}`);
+    error.status = res.status; throw error;
   }
 
   // ---- низкоуровневые примитивы ------------------------------------------

@@ -134,6 +134,7 @@ const Outbox = (() => {
   }
 
   function isTransientNetworkError(error) {
+    if (error?.code === 'TIMEOUT' || error?.code === 'NETWORK_ERROR') return true;
     const message = String(error?.message || error || "");
     return /сервер не ответил|failed to fetch|load failed|networkerror|network request failed|\bHTTP (408|425|429|5\d\d)\b/i.test(message);
   }

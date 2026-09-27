@@ -233,11 +233,24 @@ const Bridge = (() => {
      (упражнения/шаблоны/группы/категории/оверлей/порядок) теперь идёт через
      пер-сущностный движок (SyncEngine.hydrateSmallState) со слиянием по строкам,
      а не «облако затирает локальное». ----- */
-  async function hydrate(userId) {
+  async function hydrate(userId, { onProgress } = {}) {
+    let stage = 'queue';
+    const progress = next => { stage = next; if (onProgress) onProgress(next); };
+    try { return await runHydrate(userId, progress); }
+    catch (error) {
+      if (error && typeof error === 'object' && !error.syncStage) error.syncStage = stage;
+      throw error;
+    }
+  }
+  async function runHydrate(userId, progress) {
     if (!Auth.isSignedIn()) return;
+    const warnings = [];
     const owner = Auth.userId();
+    progress('queue');
     await Outbox.flush();
+    progress('session');
     await ensureAuthProfileId();
+    progress('history');
     const historyRaw = () => localStorage.getItem(`train_history_${userId}`);
     const before = historyRaw();
     const localBefore = DATA.getWorkoutHistory(userId);
@@ -283,6 +296,7 @@ const Bridge = (() => {
       .sort((a, b) => new Date(b.performed_at) - new Date(a.performed_at))
       .map(rowToLocal);
     if (JSON.stringify(localBefore) !== JSON.stringify(localHistory)) {
+      progress('backup');
       await WorkoutSafety.backup(owner, userId, localBefore);
       assertUnchanged();
       if (!_orig.saveWorkoutHistory(userId, localHistory)) throw Error('Недостаточно места для обновления истории.');
@@ -291,27 +305,30 @@ const Bridge = (() => {
 
     // Общий справочник Атласа (мышцы/движения/группы/связи/упражнения) из
     // реляционных таблиц. Подменяет локальный ATLAS (кэш + оффлайн-фолбэк на
-    // atlas-seed.js). Не критичен для входа — ошибку глотаем (останется кэш/сид).
+    // atlas-seed.js). Не критичен для входа — останется кэш/сид,
+    // но UI покажет предупреждение о неполной синхронизации.
     // Если содержимое изменилось (админ правил базу с другого устройства) —
     // просим приложение перерисовать открытый экран.
+    progress('atlas');
     try {
       const rows = await DB.getAtlas();
       if (rows && Array.isArray(rows.muscles) && rows.muscles.length) {
         const changed = DATA.setAtlasFromRows(rows);
         if (changed && typeof window.onAtlasUpdated === "function") window.onAtlasUpdated();
       }
-    } catch (e) { console.warn("Bridge.hydrate: atlas", e); }
+    } catch (e) { warnings.push(e); if (e && typeof e === 'object' && !e.syncStage) e.syncStage = 'atlas'; console.warn("Bridge.hydrate: atlas", e); }
 
     // «Мелкое» состояние — через пер-сущностный движок: слияние по строкам с
     // облаком (или первичное перенятие при миграции устройства). Ошибку не
     // глотаем молча — пробрасываем наверх, чтобы bootAuthAware показал тост
     // (честный статус: пользователь ДОЛЖЕН знать, если синк не прошёл).
+    progress('settings');
     const res = await SyncEngine.hydrateSmallState(userId);
     // Локальные списки после слияния полные — не даём seed плодить дубликаты
     // дефолтного набора (см. DATA.ensureExercisesSeeded). Кроме случая, когда
     // облако ещё не опубликовано (awaiting-publish) — там ничего не меняли.
     if (res.mode === "merge" || res.mode === "adopted") DATA.markExercisesSeeded(userId);
-    return res;
+    return { ...res, warnings };
   }
 
   /* ----- ограничение локального следа -----
