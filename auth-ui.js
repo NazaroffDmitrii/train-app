@@ -330,6 +330,10 @@ document.getElementById('workout-backups-btn')?.addEventListener('click', async 
   } catch (error) { showToast('Не удалось прочитать копии: ' + error.message); }
 });
 
+document.getElementById('sync-result-btn').addEventListener('click', () => {
+  closeModal(settingsModalBackdrop); openSyncDetails();
+});
+
 function showCloudUploadResult(result) {
   if (result?.held > 0) {
     showSyncError("Сохранены записи другого аккаунта или старые записи без владельца. Не очищайте данные приложения.", 'queue');
@@ -340,7 +344,7 @@ function showCloudUploadResult(result) {
     return;
   }
   if (result?.skipped === "awaiting-publish") {
-    showToast("Нужна первая публикация: нажмите «В облако» и подтвердите отправку данных этого устройства.", 5000);
+    setSyncNotice('Нужна первая отправка', 'Нажмите «В облако» и подтвердите отправку данных этого устройства.', 'warning');
     return;
   }
   const pending = Number(result?.pending) || 0;
@@ -350,16 +354,18 @@ function showCloudUploadResult(result) {
     showSyncError(result?.skipped === 'offline' ? { code: 'OFFLINE' } :
       result?.lastError || "Отправка не началась. Проверьте вход и повторите.", 'upload');
   } else if (blocked > 0 || failed > 0 || pending > 0) {
-    showToast(syncErrorText(result.lastError || "Отправка не завершена; откройте очередь отправки.", 'upload') +
-      ` Ожидают отправки: ${pending}.`, 12000);
+    showSyncError((result.lastError || "Отправка не завершена; откройте очередь отправки.") + ` Ожидают отправки: ${pending}.`, 'upload');
   } else {
-    showToast(result.otherPending > 0 ? "Изменения выбранного профиля выгружены. Для других профилей ещё есть записи в очереди." : "Все изменения выгружены в облако", 3000);
+    setSyncNotice('Изменения отправлены', result.otherPending > 0 ?
+      'Изменения выбранного профиля отправлены. Для других профилей ещё есть записи в очереди.' :
+      'Отправка изменений подтверждена. Эта кнопка не загружает изменения с другого устройства и не отправляет незавершённую тренировку.', 'success');
   }
 }
 
 const manualUploadBtn = document.getElementById("sync-upload-btn");
 manualUploadBtn.addEventListener("click", async () => {
   if (window.__manualSyncInProgress) return;
+  window.__syncNoticeEpoch = (window.__syncNoticeEpoch || 0) + 1;
   closeModal(settingsModalBackdrop);
   const uid = DATA.getCurrentUser();
   if (!uid) { showToast("Сначала выберите профиль", 2000); return; }
@@ -370,7 +376,7 @@ manualUploadBtn.addEventListener("click", async () => {
   if (typeof Auth === "undefined" || !Auth.isSignedIn()) { showSyncError("Для отправки требуется вход.", 'session'); return; }
   manualUploadBtn.disabled = true;
   window.__manualSyncInProgress = true;
-  showToast("Выгружаем изменения в облако…", 0);
+  setSyncNotice('Отправка в облако…', 'Отправка выполняется. Закрытие уведомления не отменяет её.', 'progress');
   try {
     if (!SyncEngine.isMigrated(uid)) {
       const approved = window.confirm(
@@ -502,22 +508,29 @@ function withOperationTimeout(promise, timeoutMs, message) {
   ]).finally(() => clearTimeout(timer));
 }
 
-function showSyncProgress(stage) { showToast(SYNC_STAGE_LABELS[stage] + '…', 8000); }
-function showHydrateResult(result, showSuccess = true) {
+// Stage codes remain in error details; do not replace the toast at each stage.
+function showSyncProgress() {
+  setSyncNotice('Синхронизация…', 'Проверяем обновление приложения и загружаем данные. Итог появится после завершения. Закрытие плашки не отменяет операцию.', 'progress');
+}
+function showHydrateResult(result, showSuccess = true, epoch) {
+  const options = { automatic: !showSuccess, epoch, notify: showSuccess };
   if (result?.warnings?.length) {
-    showToast('Синхронизация выполнена не полностью. ' + syncErrorText(result.warnings[0], 'atlas'), 12000);
+    setSyncNotice('Синхронизация не полная', syncErrorText(result.warnings[0], 'atlas') + '\nЧасть данных загружена, но не всё. Повторите синхронизацию.', 'warning', { ...options, notify: true });
   } else if (['local-pending', 'publish-pending', 'awaiting-publish'].includes(result?.mode)) {
-    showToast('История загружена. Упражнения и настройки ещё не синхронизированы — нажмите «В облако».', 8000);
+    setSyncNotice('Нужна отправка в облако', 'История загружена. Упражнения и настройки ещё не синхронизированы — нажмите «В облако».', 'warning', { ...options, notify: showSuccess });
   } else if (!result || ['no-user', 'no-session'].includes(result.mode)) {
-    showSyncError('Не удалось завершить загрузку: выберите профиль и проверьте вход.', 'session');
-  } else if (showSuccess) {
-    showToast('Приложение и данные синхронизированы', 3000);
+    showSyncError('Не удалось завершить загрузку: выберите профиль и проверьте вход.', 'session', { ...options, notify: true });
+  } else if (result.pending > 0 || result.held > 0) {
+    setSyncNotice('Не всё отправлено', 'Загрузка завершена, но в очереди остаются изменения. Откройте «В облако» или очередь отправки.', 'warning', { ...options, notify: showSuccess });
+  } else {
+    setSyncNotice('Синхронизация завершена', 'История, справочник и настройки загружены без ошибок. Незавершённая тренировка остаётся локальным черновиком.', 'success', options);
   }
 }
 
 const manualRefreshBtn = document.getElementById("sync-reload-btn");
 manualRefreshBtn.addEventListener("click", async () => {
   if (window.__manualSyncInProgress) return;
+  window.__syncNoticeEpoch = (window.__syncNoticeEpoch || 0) + 1;
   closeModal(settingsModalBackdrop);
   const uid = DATA.getCurrentUser();
   if (!uid) { showToast("Сначала выберите профиль", 2000); return; }
@@ -527,24 +540,27 @@ manualRefreshBtn.addEventListener("click", async () => {
   window.__manualSyncInProgress = true;
   let stage = 'queue';
   try {
-    showSyncProgress(stage);
+    showSyncProgress();
     const queued = await Outbox.stats();
     if (queued.storageError) throw new Error(queued.lastError || 'Не удалось прочитать очередь устройства.');
     if (queued.pending > 0) {
-      showToast(`Сначала нажмите «В облако» — ожидают выгрузки: ${queued.pending}`, 8000);
+      setSyncNotice('Сначала отправьте изменения', `Нажмите «В облако», затем повторите синхронизацию. Ожидают отправки: ${queued.pending}.`, 'warning');
       return;
     }
     try { sessionStorage.setItem(MANUAL_REFRESH_KEY, "1"); } catch {}
-    stage = 'update'; showSyncProgress(stage);
+    stage = 'update';
     if ("serviceWorker" in navigator) {
       await withOperationTimeout((async () => {
         const reg = await navigator.serviceWorker.getRegistration();
         if (reg) await reg.update();
       })(), 15_000, "Не удалось проверить обновление за 15 секунд");
     }
-    const result = await Bridge.hydrate(uid, { onProgress: next => { stage = next; showSyncProgress(next); } });
+    const result = await Bridge.hydrate(uid, { onProgress: next => { stage = next; } });
+    stage = 'queue';
+    const remaining = await Outbox.stats(uid);
+    if (remaining.storageError) throw new Error(remaining.lastError || 'Не удалось проверить итог отправки.');
     try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
-    showHydrateResult(result);
+    showHydrateResult(result && { ...result, pending: remaining.pending, held: remaining.held });
     if (screenMenu.classList.contains("active")) refreshMenu();
   } catch (e) {
     try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
@@ -650,14 +666,15 @@ async function renderProfiles() {
     // Сперва дослать в облако всё, что ждёт в очереди (в т.ч. правки прежде
     // просматриваемого профиля), затем читать — чтобы hydrate не откатил
     // локальное устаревшим облаком (та же гонка, что и в bootAuthAware).
+    const noticeEpoch = window.__syncNoticeEpoch || 0;
     try { await Outbox.flush(); } catch {}
     try {
-      showHydrateResult(await Bridge.hydrate(profileId), false);
+      showHydrateResult(await Bridge.hydrate(profileId), false, noticeEpoch);
     } catch (e) {
       // Синк не прошёл — не молчим (пользователь должен знать), но и не рушим
       // вход: локальные данные local-first остаются на экране.
       console.warn("enterProfile: hydrate", e);
-      showSyncError(e, 'history');
+      showSyncError(e, 'history', { automatic: true, epoch: noticeEpoch });
     }
     _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
@@ -816,6 +833,7 @@ if (Auth.contextChanged()) showChangedAuthContext();
    реальному состоянию сессии и выполняем cloud-hydrate. */
 (async function bootAuthAware() {
   if (Auth.contextChanged()) return;
+  const noticeEpoch = window.__syncNoticeEpoch || 0;
   let resumedManualRefresh = false;
   try { resumedManualRefresh = sessionStorage.getItem(MANUAL_REFRESH_KEY) === "1"; } catch {}
   if (resumedManualRefresh) showSyncProgress('queue');
@@ -836,7 +854,6 @@ if (Auth.contextChanged()) showChangedAuthContext();
     updateOnlineStatus();
     let stage = 'profile';
     try {
-      if (resumedManualRefresh) showSyncProgress(stage);
       const profile = await DB.getProfile(currentUser);
       if (!profile) {
         if (resumedManualRefresh) showSyncError("Профиль недоступен этому аккаунту.", 'profile');
@@ -845,16 +862,16 @@ if (Auth.contextChanged()) showChangedAuthContext();
       registerUser(profile);
       reviewLegacyDraft(currentUser);
       const result = await Bridge.hydrate(currentUser, { onProgress: next => {
-        stage = next; if (resumedManualRefresh) showSyncProgress(next);
+        stage = next;
       } });
-      showHydrateResult(result, resumedManualRefresh);
+      if (noticeEpoch === (window.__syncNoticeEpoch || 0)) showHydrateResult(result, resumedManualRefresh, noticeEpoch);
     } catch (e) {
       // Раньше ошибка тут терялась в console.warn — пользователь ничего не
       // видел (та самая ситуация с Нателой: молчаливый сбой). Теперь видно
       // тостом — актуально и для обычной загрузки, и для кнопки «Синхронизация»
       // (перезагрузка страницы проходит через этот же путь).
       console.warn("bootAuthAware: hydrate", e);
-      showSyncError(e, stage);
+      showSyncError(e, stage, { automatic: true, epoch: noticeEpoch });
     } finally {
       if (resumedManualRefresh) {
         try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}

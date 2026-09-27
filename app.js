@@ -1308,12 +1308,32 @@ function addToastClose() {
   });
   toastEl.append(button);
 }
-function showToast(msg, durationMs = 2200) {
+function openNoticeDetails(title, detail) {
+  document.getElementById('notice-details')?.remove();
+  const dialog = document.createElement('dialog');
+  dialog.id = 'notice-details'; dialog.className = 'notice-details';
+  dialog.setAttribute('aria-labelledby', 'notice-details-title');
+  const heading = document.createElement('h2'); heading.id = 'notice-details-title'; heading.textContent = title;
+  const text = document.createElement('p'); text.textContent = detail;
+  const close = document.createElement('button'); close.className = 'btn-chip'; close.textContent = 'Понятно';
+  close.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.append(heading, text, close); document.body.append(dialog); dialog.showModal();
+}
+function showToast(msg, durationMs = 2200, { detail, kind = 'info' } = {}) {
   clearTimeout(toastTimer);
   toastEl.classList.remove("actionable");
+  toastEl.setAttribute('data-kind', kind);
   toastEl.textContent = '';
-  const text = document.createElement('span');
-  text.className = 'toast-text'; text.textContent = msg; toastEl.append(text);
+  const expandable = detail || String(msg).length > 60;
+  const text = document.createElement(expandable ? 'button' : 'span');
+  text.className = 'toast-text'; text.textContent = msg + (detail ? '\nПодробнее ›' : '');
+  if (expandable) {
+    text.type = 'button';
+    text.setAttribute('aria-label', msg + '. Открыть подробности');
+    text.addEventListener('click', () => openNoticeDetails(detail ? msg : 'Уведомление', detail || msg));
+  }
+  toastEl.append(text);
   addToastClose();
   toastEl.classList.add("show");
   toastTimer = setTimeout(() => toastEl.classList.remove('show', 'actionable'), toastLifetime(durationMs));
@@ -1349,7 +1369,32 @@ function syncErrorText(error, fallbackStage = 'history') {
   } else { code = 'ERROR'; reason = message.slice(0, 180); }
   return `[${stage.toUpperCase()}-${code}] ${SYNC_STAGE_LABELS[stage]}: ${reason}`;
 }
-function showSyncError(error, stage) { showToast(syncErrorText(error, stage), 12000); }
+// One current result, in memory only, scoped to the selected profile. No event log.
+let lastSyncNotice = null;
+let automaticNoticeAt = 0;
+let automaticNoticeKey = '';
+function syncNoticeProfile() { return typeof DATA !== 'undefined' ? DATA.getCurrentUser() : null; }
+function setSyncNotice(title, detail, kind, { automatic = false, notify = true, epoch } = {}) {
+  if (automatic && (window.__manualSyncInProgress || (epoch !== undefined && epoch !== (window.__syncNoticeEpoch || 0)))) return;
+  const key = syncNoticeProfile() + '|' + title + '|' + detail;
+  if (automatic && key === automaticNoticeKey && Date.now() - automaticNoticeAt < 60000) return;
+  if (automatic) { automaticNoticeKey = key; automaticNoticeAt = Date.now(); }
+  lastSyncNotice = { title, detail, kind, at: Date.now(), profile: syncNoticeProfile() };
+  const button = document.getElementById('sync-result-btn');
+  if (button) button.textContent = title + ' · подробнее';
+  if (notify) showToast(title, kind === 'error' ? 10000 : kind === 'progress' ? 8000 : 5000, { detail, kind });
+}
+function openSyncDetails() {
+  const result = lastSyncNotice?.profile === syncNoticeProfile() ? lastSyncNotice : null;
+  openNoticeDetails(result?.title || 'Состояние синхронизации', result ?
+    new Date(result.at).toLocaleTimeString('ru-RU') + '\n' + result.detail :
+    'В этом сеансе результат для выбранного профиля ещё не получен. Нажмите «Синхронизация».');
+}
+function showSyncError(error, stage, options) {
+  const detail = syncErrorText(error, stage);
+  const title = /-OFFLINE\]/.test(detail) ? 'Нет интернета' : 'Синхронизация не завершена';
+  setSyncNotice(title, detail + '\nНе очищайте данные приложения. Повторите попытку при устойчивом соединении. Если ошибка повторяется, пришлите скриншот этого окна.', 'error', options);
+}
 
 // Итог фоновой отправки тренировок. Для остальных мелких правок достаточно
 // постоянной строки статуса — иначе toast появлялся бы после каждого клика.
@@ -1360,9 +1405,7 @@ window.addEventListener("train-workout-sync-result", event => {
   const result = event.detail || {};
   if ((result.workoutFailed || 0) > 0) {
     const pending = Number(result.pending) || 0;
-    showSyncError(result.lastError || `На устройстве осталось изменений: ${pending}. Откройте очередь отправки.`, 'upload');
-  } else if ((result.workoutSent || 0) > 0) {
-    showToast("Изменения тренировок синхронизированы с облаком", 2000);
+    showSyncError(result.lastError || `На устройстве осталось изменений: ${pending}. Откройте очередь отправки.`, 'upload', { automatic: true });
   }
 });
 
@@ -1370,6 +1413,7 @@ window.addEventListener("train-workout-sync-result", event => {
 // обновиться. onAction вызывается максимум один раз; время показа ограничено.
 function showActionToast(msg, actionLabel, onAction, duration = 5000) {
   clearTimeout(toastTimer);
+  toastEl.setAttribute('data-kind', 'info');
   toastEl.innerHTML = "";
   const text = document.createElement("span");
   text.className = "toast-text";

@@ -150,7 +150,7 @@ const Bridge = (() => {
   function scheduleWorkouts() {
     Outbox.flush().catch(error => {
       console.warn('Workout journal: отправка отложена', error);
-      if (typeof showToast === 'function') showToast('Тренировка сохранена на устройстве. Отправка отложена: ' + error.message);
+      if (typeof showSyncError === 'function') showSyncError(error, 'upload', { automatic: true });
     });
   }
   // Called inside Outbox's cross-tab flush lock, including after a restart.

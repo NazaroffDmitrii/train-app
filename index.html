@@ -1615,31 +1615,30 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 
 /* ============ Toast ============ */
 .toast {
-  position: fixed; left: 50%; top: calc(16px + var(--safe-top)); bottom: auto;
-  transform: translate(-50%, -12px);
+  position: fixed; left: calc(50% + 6px); top: calc(6px + var(--safe-top)); bottom: auto;
+  transform: translate(-50%, -6px);
   background: var(--panel-raised); border: 1px solid var(--border-strong);
-  color: var(--text-primary); padding: 12px 18px; border-radius: 20px;
-  font-size: 13.5px; font-weight: 600; z-index: 50;
+  color: var(--text-primary); padding: 3px 7px 3px 10px; border-radius: 8px;
+  font-size: 11px; font-weight: 600; z-index: 50;
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
-  display: flex; align-items: center; gap: 12px;
-  /* width:max-content — ширина по одной строке текста, а НЕ shrink-to-fit.
-     Без этого left:50% ограничивает доступную ширину половиной экрана (от
-     середины до правого края), и текст переносился на 2 строки в узкий столбик
-     ~187px, хотя на странице есть место. Теперь короткий тост — по содержимому,
-     а длинный дорастает до max-width (почти вся ширина) и лишь ТОГДА переносится,
-     заполняя её. translateX(-50%) центрирует при любой ширине. */
-  width: max-content; max-width: min(540px, calc(100vw - 32px)); white-space: normal; text-align: left;
-  max-height: calc(100dvh - var(--safe-top) - 32px); overflow-y: auto; overflow-wrap: anywhere;
+  display: flex; align-items: center; gap: 5px;
+  width: min(66vw, 360px); height: 38px; overflow: hidden; text-align: left;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .toast:not(.show) { visibility: hidden; }
-/* Тост с кнопкой «Отменить» — во всю ширину, текст занимает всё место (иначе
-   flex сжимал его в узкий столбик по центру), кнопка прижата вправо. */
-.toast.actionable { pointer-events: auto; width: calc(100vw - 32px); }
-.toast-text { flex: 1; min-width: 0; }
-.toast-close { flex: none; align-self: flex-start; min-width: 32px; min-height: 32px; font-size: 24px; line-height: 1; color: var(--text-secondary); }
-.toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 13.5px; padding: 2px 2px; white-space: nowrap; flex: none; }
+.toast-text { flex: 1; min-width: 0; padding: 0; font: inherit; text-align: left; line-height: 14px;
+  white-space: pre-line; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.toast-close { flex: none; width: 26px; height: 30px; padding: 0; font-size: 20px; line-height: 1; color: var(--text-secondary); }
+.toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 11px; padding: 0; white-space: nowrap; flex: none; }
+.toast[data-kind="error"] { border-color: #b95e6a; }
+.toast[data-kind="warning"] { border-color: #a98b4e; }
+.toast[data-kind="success"] { border-color: #4b9473; }
+.notice-details { width: min(420px, calc(100vw - 32px)); max-height: 80dvh; overflow: auto; padding: 22px;
+  color: var(--text-primary); background: var(--panel-raised); border: 1px solid var(--border-strong); border-radius: 20px; }
+.notice-details h2 { font-size: 18px; margin: 0 0 14px; }
+.notice-details p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; font-size: 14px; margin-bottom: 20px; }
+.notice-details::backdrop { background: #0009; }
 /* ============ Screen 5: exercises ============ */
 .screen-exercises { display: flex; flex-direction: column; background: var(--bg-base); }
 
@@ -3279,6 +3278,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
       <h2 class="modal-title">Настройки</h2>
       <p class="modal-sync-info" id="settings-sync-info">Изменения сохраняются в облако автоматически. Экспорт/импорт ниже — локальная резервная копия в файл.</p>
       <button class="btn-chip" id="workout-backups-btn" type="button">Копии истории тренировок</button>
+      <button class="btn-chip" id="sync-result-btn" type="button">Результат синхронизации · подробнее</button>
       <!-- Ручная синхронизация. Изменения и так уходят в облако сами (bridge.js
            → outbox.js), это — явный контроль поверх авто-режима на случай
            сомнений: «В облако» досылает очередь прямо сейчас (обычно там уже
