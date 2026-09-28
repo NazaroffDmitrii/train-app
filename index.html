@@ -1623,7 +1623,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
   display: flex; align-items: center; gap: 5px;
-  width: min(66vw, 360px); height: 38px; overflow: hidden; text-align: left;
+  width: min(66vw, 360px, calc(100vw - 140px)); height: 38px; overflow: hidden; text-align: left;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .toast:not(.show) { visibility: hidden; }
@@ -3276,15 +3276,15 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   <div class="modal-backdrop" id="settings-modal-backdrop">
     <div class="modal">
       <h2 class="modal-title">Настройки</h2>
-      <p class="modal-sync-info" id="settings-sync-info">Изменения сохраняются в облако автоматически. Экспорт/импорт ниже — локальная резервная копия в файл.</p>
+      <p class="modal-sync-info" id="settings-sync-info">«В облако» — отправить изменения. «Синхронизация» — загрузить данные. «Обновить приложение» — проверить новую версию. Нажмите здесь, чтобы посмотреть очередь отправки.</p>
       <button class="btn-chip" id="workout-backups-btn" type="button">Копии истории тренировок</button>
       <button class="btn-chip" id="sync-result-btn" type="button">Результат синхронизации · подробнее</button>
+      <button class="btn-chip" id="app-update-btn" type="button">Обновить приложение</button>
       <!-- Ручная синхронизация. Изменения и так уходят в облако сами (bridge.js
            → outbox.js), это — явный контроль поверх авто-режима на случай
            сомнений: «В облако» досылает очередь прямо сейчас (обычно там уже
-           пусто, кнопка просто это подтверждает), «Синхронизация» перечитывает
-           состояние с сервера через перезагрузку страницы (заодно обновляет
-           само приложение до последней версии). -->
+           пусто, кнопка просто это подтверждает), «Синхронизация» загружает
+           данные без перезагрузки. Новая версия проверяется отдельной кнопкой. -->
       <div class="settings-grid">
         <button class="modal-option settings-grid-btn" id="sync-upload-btn">
           <span class="modal-option-icon">

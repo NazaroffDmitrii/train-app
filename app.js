@@ -1392,7 +1392,7 @@ function openSyncDetails() {
 }
 function showSyncError(error, stage, options) {
   const detail = syncErrorText(error, stage);
-  const title = /-OFFLINE\]/.test(detail) ? 'Нет интернета' : 'Синхронизация не завершена';
+  const title = /-OFFLINE\]/.test(detail) ? 'Нет интернета' : 'Не синхронизировано';
   setSyncNotice(title, detail + '\nНе очищайте данные приложения. Повторите попытку при устойчивом соединении. Если ошибка повторяется, пришлите скриншот этого окна.', 'error', options);
 }
 
@@ -1401,7 +1401,7 @@ function showSyncError(error, stage, options) {
 window.addEventListener("train-workout-sync-result", event => {
   let refreshPending = false;
   try { refreshPending = sessionStorage.getItem("train_manual_refresh_pending") === "1"; } catch {}
-  if (window.__manualSyncInProgress || refreshPending) return;
+  if (window.__manualSyncInProgress || refreshPending || (typeof _menuHydrating !== 'undefined' && _menuHydrating)) return;
   const result = event.detail || {};
   if ((result.workoutFailed || 0) > 0) {
     const pending = Number(result.pending) || 0;
@@ -8929,23 +8929,19 @@ if ("serviceWorker" in navigator) {
   //   • sw.js делает skipWaiting (install) + clients.claim (activate) — новая
   //     версия активируется сразу, как только браузер её скачал;
   //   • здесь ловим controllerchange (момент, когда новый SW перехватил
-  //     управление страницей) и перезагружаемся — уже на свежий каркас.
-  // Итог: достаточно открыть/свернуть-развернуть приложение (или нажать
-  // «Синхронизация»), сносить с рабочего стола больше не нужно.
+  //     управление страницей) и предлагаем открыть новую версию.
+  // Проверка обновления доступна отдельно от синхронизации данных.
   let _reloadedForUpdate = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (_reloadedForUpdate) return;
-    // Посреди активной тренировки не перезагружаем молча — предлагаем тапом,
-    // чтобы не сбить с толку в середине подхода (активная тренировка переживёт
-    // перезагрузку — она в localStorage, — но резкий reload всё равно неприятен).
-    const inWorkout = document.getElementById("screen-workout")?.classList.contains("active")
-                   || document.getElementById("screen-run")?.classList.contains("active");
-    if (inWorkout) {
-      showActionToast("Доступна новая версия", "Обновить", () => { _reloadedForUpdate = true; location.reload(); }, 0);
-      return;
-    }
-    _reloadedForUpdate = true;
-    location.reload();
+    window.__appUpdateReady = true;
+    // Activation may happen during any network operation. Applying the new UI
+    // is an explicit action now, never an automatic interruption of data sync.
+    if (window.__manualSyncInProgress || window.__manualAppUpdateInProgress) return;
+    showActionToast('Новая версия готова', 'Открыть', () => {
+      if (window.__manualSyncInProgress) { showToast('Дождитесь завершения синхронизации', 5000); return; }
+      _reloadedForUpdate = true; location.reload();
+    }, 10000);
   });
 
   const registerServiceWorker = () => {

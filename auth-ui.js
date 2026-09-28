@@ -114,6 +114,9 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
 //         это и защита от прошлого бага (чуть не удалили тренера, «удаляя»
 //         клиента), и то, что вернуло возможность чистить управляемых клиентов.
 async function refreshSettingsButtons() {
+  const syncResult = document.getElementById('sync-result-btn');
+  if (syncResult) syncResult.textContent = lastSyncNotice?.profile === syncNoticeProfile() ?
+    lastSyncNotice.title + ' · подробнее' : 'Результат синхронизации · подробнее';
   const inviteBtn  = document.getElementById("enter-invite-btn");
   const switchBtn  = document.getElementById("switch-user-btn");
   const deleteBtn  = document.getElementById("delete-account-btn");
@@ -494,9 +497,7 @@ document.getElementById("personal-data-btn").addEventListener("click", () => {
   openPersonalDataModal();
 });
 
-// «Синхронизировать» — PULL + обновление приложения: проверяем service worker,
-// затем загружаем данные из облака. Если новый SW активируется, controllerchange
-// в app.js сам перезагрузит страницу; если обновления нет, лишний reload не нужен.
+// Legacy marker from 1.92: consumed on boot, never set by data sync in 1.93.
 const MANUAL_REFRESH_KEY = "train_manual_refresh_pending";
 function withOperationTimeout(promise, timeoutMs, message) {
   let timer;
@@ -510,7 +511,7 @@ function withOperationTimeout(promise, timeoutMs, message) {
 
 // Stage codes remain in error details; do not replace the toast at each stage.
 function showSyncProgress() {
-  setSyncNotice('Синхронизация…', 'Проверяем обновление приложения и загружаем данные. Итог появится после завершения. Закрытие плашки не отменяет операцию.', 'progress');
+  setSyncNotice('Синхронизация…', 'Загружаем данные из облака. Версия приложения не меняется. Итог появится после завершения; закрытие плашки не отменяет операцию.', 'progress');
 }
 function showHydrateResult(result, showSuccess = true, epoch) {
   const options = { automatic: !showSuccess, epoch, notify: showSuccess };
@@ -547,14 +548,6 @@ manualRefreshBtn.addEventListener("click", async () => {
       setSyncNotice('Сначала отправьте изменения', `Нажмите «В облако», затем повторите синхронизацию. Ожидают отправки: ${queued.pending}.`, 'warning');
       return;
     }
-    try { sessionStorage.setItem(MANUAL_REFRESH_KEY, "1"); } catch {}
-    stage = 'update';
-    if ("serviceWorker" in navigator) {
-      await withOperationTimeout((async () => {
-        const reg = await navigator.serviceWorker.getRegistration();
-        if (reg) await reg.update();
-      })(), 15_000, "Не удалось проверить обновление за 15 секунд");
-    }
     const result = await Bridge.hydrate(uid, { onProgress: next => { stage = next; } });
     stage = 'queue';
     const remaining = await Outbox.stats(uid);
@@ -569,6 +562,52 @@ manualRefreshBtn.addEventListener("click", async () => {
     window.__manualSyncInProgress = false;
     manualRefreshBtn.disabled = false;
     updateOnlineStatus();
+  }
+});
+
+// App-shell update never calls DB, Outbox or Bridge and never reports a sync result.
+function waitForAppWorker(worker) {
+  return new Promise((resolve, reject) => {
+    const finish = error => { clearTimeout(timer); worker.removeEventListener('statechange', check); error ? reject(error) : resolve(); };
+    const check = () => {
+      if (worker.state === 'activated') finish();
+      else if (worker.state === 'redundant') finish(new Error('Не удалось загрузить файлы новой версии. Повторите позже.'));
+    };
+    const timer = setTimeout(() => finish(Object.assign(new Error('Загрузка новой версии заняла слишком много времени.'), { code: 'TIMEOUT' })), 15000);
+    worker.addEventListener('statechange', check); check();
+  });
+}
+function offerAppReload() {
+  showActionToast('Новая версия готова', 'Открыть', () => {
+    if (window.__manualSyncInProgress) { showToast('Дождитесь завершения синхронизации', 5000); return; }
+    location.reload();
+  }, 10000);
+}
+const appUpdateBtn = document.getElementById('app-update-btn');
+appUpdateBtn.addEventListener('click', async () => {
+  if (window.__manualAppUpdateInProgress) return;
+  closeModal(settingsModalBackdrop);
+  if (window.__appUpdateReady) { offerAppReload(); return; }
+  if (!navigator.onLine) {
+    showToast('Обновление недоступно', 10000, { kind: 'error', detail: '[UPDATE-OFFLINE] Нет интернета. Синхронизация данных — отдельное действие.' }); return;
+  }
+  appUpdateBtn.disabled = true; window.__manualAppUpdateInProgress = true;
+  showToast('Проверяем новую версию…', 8000);
+  try {
+    if (!navigator.serviceWorker) throw new Error('Этот браузер не поддерживает обновление установленного приложения.');
+    const reg = await withOperationTimeout((async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (!registration) throw new Error('Приложение ещё не готово к обновлению. Откройте его заново и повторите.');
+      await registration.update(); return registration;
+    })(), 15000, 'Проверка новой версии заняла слишком много времени.');
+    const worker = reg.installing || reg.waiting;
+    if (worker) { await waitForAppWorker(worker); window.__appUpdateReady = true; }
+    if (window.__appUpdateReady) offerAppReload();
+    else showToast('Обновлений нет', 5000, { kind: 'success', detail: 'Проверка версии завершена. Эта кнопка не отправляет и не загружает тренировки.' });
+  } catch (error) {
+    showToast('Обновление не выполнено', 10000, { kind: 'error', detail: syncErrorText(error, 'update') + '\nОбмен тренировками не запускался. Для него используйте «В облако» и «Синхронизация».' });
+  } finally {
+    appUpdateBtn.disabled = false; window.__manualAppUpdateInProgress = false;
   }
 });
 
@@ -873,11 +912,11 @@ if (Auth.contextChanged()) showChangedAuthContext();
       console.warn("bootAuthAware: hydrate", e);
       showSyncError(e, stage, { automatic: true, epoch: noticeEpoch });
     } finally {
+      _menuHydrating = false;
       if (resumedManualRefresh) {
         try { sessionStorage.removeItem(MANUAL_REFRESH_KEY); } catch {}
       }
     }
-    _menuHydrating = false;
     if (screenMenu.classList.contains("active")) refreshMenu();
     refreshSettingsButtons();
   } else {
