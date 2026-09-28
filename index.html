@@ -564,6 +564,17 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 /* Полноширинные кнопки-строки в модалках (Сменить профиль, Перенести данные,
    Ввести код, Выйти, Удалить аккаунт) — текст+иконка центрируются как группа. */
 .modal-option-full { justify-content: center; }
+.modal-option-full > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.settings-action-copy { display: flex; flex-direction: column; gap: 4px; }
+.settings-action-copy small { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+dialog.history-backups { transform: none; color: var(--text-primary); }
+#settings-modal-backdrop, #recovery-modal-backdrop {
+  padding-top: max(24px, calc(var(--safe-top) + 12px));
+  padding-bottom: max(24px, calc(var(--safe-bottom) + 12px));
+}
+#settings-modal-backdrop .modal, #recovery-modal-backdrop .modal {
+  max-height: calc(100dvh - max(24px, calc(var(--safe-top) + 12px)) - max(24px, calc(var(--safe-bottom) + 12px)));
+}
 .modal-option.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
 .modal-option.danger .modal-option-icon { color: var(--red); }
 .modal-sync-info { color: var(--text-secondary); font-size: 13px; margin: -6px 0 14px; }
@@ -3277,9 +3288,6 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
     <div class="modal">
       <h2 class="modal-title">Настройки</h2>
       <p class="modal-sync-info" id="settings-sync-info">«В облако» — отправить изменения. «Синхронизация» — загрузить данные. «Обновить приложение» — проверить новую версию. Нажмите здесь, чтобы посмотреть очередь отправки.</p>
-      <button class="btn-chip" id="workout-backups-btn" type="button">Копии истории тренировок</button>
-      <button class="btn-chip" id="sync-result-btn" type="button">Результат синхронизации · подробнее</button>
-      <button class="btn-chip" id="app-update-btn" type="button">Обновить приложение</button>
       <!-- Ручная синхронизация. Изменения и так уходят в облако сами (bridge.js
            → outbox.js), это — явный контроль поверх авто-режима на случай
            сомнений: «В облако» досылает очередь прямо сейчас (обычно там уже
@@ -3303,6 +3311,18 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
           <span>Синхронизация</span>
         </button>
       </div>
+      <button class="modal-option modal-option-full" id="sync-result-btn" type="button">
+        <span class="modal-option-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg>
+        </span>
+        <span class="settings-action-copy">Результат синхронизации<small id="sync-result-status">Посмотреть подробности</small></span>
+      </button>
+      <button class="modal-option modal-option-full" id="app-update-btn" type="button">
+        <span class="modal-option-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4M4 16v4h16v-4"/></svg>
+        </span>
+        <span>Обновить приложение</span>
+      </button>
       <div class="settings-grid">
         <!-- Импорт — файл со стрелкой входящей -->
         <button class="modal-option settings-grid-btn" id="import-data-btn">
@@ -3327,6 +3347,12 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
           <span>Экспорт</span>
         </button>
       </div>
+      <button class="modal-option modal-option-full" id="recovery-settings-btn" type="button">
+        <span class="modal-option-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/></svg>
+        </span>
+        <span>Восстановление данных</span>
+      </button>
       <!-- Недавно удалённые — корзина на 7 дней со всеми удалёнными элементами
            (упражнения/мышцы/движения/группы/тренировки/шаблоны) и восстановлением. -->
       <button class="modal-option modal-option-full" id="recently-deleted-btn">
@@ -3402,6 +3428,21 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
       </button>
       <input type="file" id="import-data-input" accept="application/json,.json" hidden>
       <button class="modal-cancel" id="settings-close">Закрыть</button>
+    </div>
+  </div>
+
+  <!-- ===== Настройки: восстановление данных ===== -->
+  <div class="modal-backdrop" id="recovery-modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
+      <h2 class="modal-title" id="recovery-title">Восстановление данных</h2>
+      <p class="modal-sync-info">Если история пропала или изменилась, здесь можно скачать сохранённую копию. Это копии только с этого устройства: очистка данных сайта может их удалить.</p>
+      <button class="modal-option modal-option-full" id="workout-backups-btn" type="button">
+        <span class="modal-option-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="14" height="14" rx="2"/><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>
+        </span>
+        <span>Копии истории тренировок</span>
+      </button>
+      <button class="modal-cancel" id="recovery-settings-back" type="button">Назад в настройки</button>
     </div>
   </div>
 

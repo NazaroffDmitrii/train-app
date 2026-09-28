@@ -1315,7 +1315,7 @@ function openNoticeDetails(title, detail) {
   dialog.setAttribute('aria-labelledby', 'notice-details-title');
   const heading = document.createElement('h2'); heading.id = 'notice-details-title'; heading.textContent = title;
   const text = document.createElement('p'); text.textContent = detail;
-  const close = document.createElement('button'); close.className = 'btn-chip'; close.textContent = 'Понятно';
+  const close = document.createElement('button'); close.className = 'modal-option modal-option-full'; close.textContent = 'Понятно';
   close.addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => dialog.remove());
   dialog.append(heading, text, close); document.body.append(dialog); dialog.showModal();
@@ -1380,8 +1380,8 @@ function setSyncNotice(title, detail, kind, { automatic = false, notify = true, 
   if (automatic && key === automaticNoticeKey && Date.now() - automaticNoticeAt < 60000) return;
   if (automatic) { automaticNoticeKey = key; automaticNoticeAt = Date.now(); }
   lastSyncNotice = { title, detail, kind, at: Date.now(), profile: syncNoticeProfile() };
-  const button = document.getElementById('sync-result-btn');
-  if (button) button.textContent = title + ' · подробнее';
+  const status = document.getElementById('sync-result-status');
+  if (status) status.textContent = title;
   if (notify) showToast(title, kind === 'error' ? 10000 : kind === 'progress' ? 8000 : 5000, { detail, kind });
 }
 function openSyncDetails() {

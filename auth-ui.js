@@ -114,9 +114,9 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
 //         это и защита от прошлого бага (чуть не удалили тренера, «удаляя»
 //         клиента), и то, что вернуло возможность чистить управляемых клиентов.
 async function refreshSettingsButtons() {
-  const syncResult = document.getElementById('sync-result-btn');
+  const syncResult = document.getElementById('sync-result-status');
   if (syncResult) syncResult.textContent = lastSyncNotice?.profile === syncNoticeProfile() ?
-    lastSyncNotice.title + ' · подробнее' : 'Результат синхронизации · подробнее';
+    lastSyncNotice.title : 'Посмотреть подробности';
   const inviteBtn  = document.getElementById("enter-invite-btn");
   const switchBtn  = document.getElementById("switch-user-btn");
   const deleteBtn  = document.getElementById("delete-account-btn");
@@ -296,23 +296,38 @@ async function openOutboxManager() {
 }
 document.getElementById("outbox-manager-btn")?.addEventListener("click", openOutboxManager);
 
+// Recovery is a settings subsection; opening it never changes stored data.
+const recoveryBackdrop = document.getElementById('recovery-modal-backdrop');
+document.getElementById('recovery-settings-btn')?.addEventListener('click', () => {
+  closeModal(settingsModalBackdrop);
+  openModal(recoveryBackdrop);
+  document.getElementById('workout-backups-btn').focus();
+});
+document.getElementById('recovery-settings-back')?.addEventListener('click', () => {
+  closeModal(recoveryBackdrop);
+  openModal(settingsModalBackdrop);
+  document.getElementById('recovery-settings-btn').focus();
+});
+
 document.getElementById('workout-backups-btn')?.addEventListener('click', async () => {
   const owner = Auth.userId(), uid = DATA.getCurrentUser();
   try {
     const copies = await WorkoutSafety.backups(owner, uid);
-    if (Auth.userId() !== owner || DATA.getCurrentUser() !== uid) return;
+    if (Auth.userId() !== owner || DATA.getCurrentUser() !== uid || !recoveryBackdrop.classList.contains('open')) return;
     const dialog = document.createElement('dialog');
-    dialog.className = 'modal';
+    dialog.className = 'modal history-backups';
     const title = document.createElement('h2');
+    title.className = 'modal-title';
     title.textContent = 'Копии истории';
     const hint = document.createElement('p');
+    hint.className = 'modal-sync-info';
     hint.textContent = copies.length ? 'Скачайте нужную копию. Её можно открыть через «Импорт» и проверить изменения перед восстановлением.' : 'Копии появятся перед первым изменением истории из облака. Они хранятся на этом устройстве.';
     dialog.append(title, hint);
     const list = document.createElement('div');
     list.style.cssText = 'max-height:50vh;overflow:auto;display:grid;gap:8px';
     copies.sort((a, b) => b.at - a.at).forEach(copy => {
       const button = document.createElement('button');
-      button.className = 'btn-chip';
+      button.className = 'modal-option modal-option-full';
       button.textContent = new Date(copy.at).toLocaleString('ru-RU') + ' · тренировок: ' + copy.history.length;
       button.onclick = () => {
         if (Auth.userId() !== owner || DATA.getCurrentUser() !== uid) { dialog.close(); return; }
@@ -326,10 +341,16 @@ document.getElementById('workout-backups-btn')?.addEventListener('click', async 
       list.append(button);
     });
     const close = document.createElement('button');
-    close.className = 'btn-chip'; close.textContent = 'Закрыть'; close.onclick = () => dialog.close();
+    close.className = 'modal-cancel'; close.textContent = 'Назад'; close.onclick = () => dialog.close();
     dialog.append(list, close);
-    dialog.addEventListener('close', () => dialog.remove());
-    document.body.append(dialog); dialog.showModal();
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      if (Auth.userId() === owner && DATA.getCurrentUser() === uid) {
+        openModal(recoveryBackdrop);
+        document.getElementById('workout-backups-btn').focus();
+      }
+    });
+    document.body.append(dialog); dialog.showModal(); closeModal(recoveryBackdrop);
   } catch (error) { showToast('Не удалось прочитать копии: ' + error.message); }
 });
 
