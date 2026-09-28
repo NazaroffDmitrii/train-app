@@ -434,11 +434,18 @@ manualUploadBtn.addEventListener("click", async () => {
 // динамически, как migrate/invite — тот же паттерн в этом файле.
 async function openPersonalDataModal() {
   const viewedId = DATA.getCurrentUser();
+  const owner = Auth.userId();
   if (!viewedId) return;
+  if (document.getElementById('personal-data-modal')) return;
   let profile;
   try { profile = await DB.getProfile(viewedId); }
   catch (e) { alert("Не удалось загрузить данные: " + e.message); return; }
   if (!profile) { alert("Профиль не найден."); return; }
+  const deleteButton = document.getElementById('delete-account-btn');
+  // Reuse the existing guarded action and its current role/profile policy.
+  deleteButton.style.display = 'none';
+  await refreshSettingsButtons();
+  if (DATA.getCurrentUser() !== viewedId || Auth.userId() !== owner || document.getElementById('personal-data-modal')) return;
 
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop open";
@@ -472,10 +479,15 @@ async function openPersonalDataModal() {
         <button class="btn-chip" id="pd-cancel" type="button">Отмена</button>
         <button class="btn-chip primary" id="pd-save" type="button">Сохранить</button>
       </div>
+      <div class="personal-delete-slot" id="pd-delete-slot"></div>
     </div>`;
   document.body.appendChild(backdrop);
+  backdrop.querySelector('#pd-delete-slot').append(deleteButton);
 
-  const close = () => backdrop.remove();
+  const close = () => {
+    document.getElementById('account-actions-storage').append(deleteButton);
+    backdrop.remove();
+  };
   backdrop.querySelector("#pd-cancel").addEventListener("click", close);
   backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
 
@@ -957,5 +969,7 @@ if (Auth.contextChanged()) showChangedAuthContext();
 // изменения). Простое присвоение, без зависимости от bootAuthAware.
 const _versionEl = document.getElementById("app-version");
 if (_versionEl) _versionEl.textContent = "v" + APP_VERSION;
+const _settingsVersionEl = document.getElementById('settings-app-version');
+if (_settingsVersionEl) _settingsVersionEl.textContent = 'Версия ' + APP_VERSION;
 
 // Queue recovery is available through the clickable sync status → details.

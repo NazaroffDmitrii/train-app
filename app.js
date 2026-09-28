@@ -1425,6 +1425,7 @@ function renderSettingsSyncStatus(snapshot, profile = syncNoticeProfile()) {
     kind = 'pending'; title = result.title;
   } else if (st?.state === 'synced' || result?.kind === 'success') {
     kind = 'success'; title = result?.kind === 'success' ? result.title : 'Локальных изменений нет';
+    if (result?.kind === 'success') title += ' · ' + new Date(result.at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   }
   settingsSyncView = { profile, title, kind, snapshot: st };
   const status = document.getElementById('sync-result-status');
@@ -2060,8 +2061,15 @@ document.querySelectorAll(".pill").forEach(pill => {
 /* ==========================================================================
    Settings modal
    ========================================================================== */
-$("settings-close").addEventListener("click", () => closeModal(settingsModalBackdrop));
 $("settings-close-top").addEventListener("click", () => closeModal(settingsModalBackdrop));
+
+const transferBackdrop = $('transfer-modal-backdrop');
+$('transfer-settings-btn').addEventListener('click', () => {
+  closeModal(settingsModalBackdrop); openModal(transferBackdrop); $('import-data-btn').focus({ preventScroll: true });
+});
+$('transfer-settings-back').addEventListener('click', () => {
+  closeModal(transferBackdrop); openModal(settingsModalBackdrop); $('transfer-settings-btn').focus({ preventScroll: true });
+});
 
 // «Недавно удалённые» — корзина на 7 дней со всеми удалёнными элементами и
 // восстановлением. Открывается из раздела восстановления.
@@ -2304,7 +2312,7 @@ $("export-data-btn").addEventListener("click", () => {
   const userId = DATA.getCurrentUser();
   if (!userId) { showToast("Сначала выбери профиль"); return; }
   exportUserData(userId);
-  closeModal(settingsModalBackdrop);
+  closeModal(transferBackdrop);
   showToast("Копия данных сохранена");
 });
 
