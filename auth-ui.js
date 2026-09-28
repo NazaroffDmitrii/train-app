@@ -114,9 +114,8 @@ document.getElementById("auth-submit-btn").addEventListener("click", async () =>
 //         это и защита от прошлого бага (чуть не удалили тренера, «удаляя»
 //         клиента), и то, что вернуло возможность чистить управляемых клиентов.
 async function refreshSettingsButtons() {
-  const syncResult = document.getElementById('sync-result-status');
-  if (syncResult) syncResult.textContent = lastSyncNotice?.profile === syncNoticeProfile() ?
-    lastSyncNotice.title : 'Посмотреть подробности';
+  renderSettingsSyncStatus();
+  updateOnlineStatus();
   const inviteBtn  = document.getElementById("enter-invite-btn");
   const switchBtn  = document.getElementById("switch-user-btn");
   const deleteBtn  = document.getElementById("delete-account-btn");
@@ -341,7 +340,7 @@ document.getElementById('workout-backups-btn')?.addEventListener('click', async 
       list.append(button);
     });
     const close = document.createElement('button');
-    close.className = 'modal-cancel'; close.textContent = 'Назад'; close.onclick = () => dialog.close();
+    close.className = 'modal-option modal-option-full history-back'; close.textContent = 'Назад'; close.onclick = () => dialog.close();
     dialog.append(list, close);
     dialog.addEventListener('close', () => {
       dialog.remove();
@@ -959,5 +958,4 @@ if (Auth.contextChanged()) showChangedAuthContext();
 const _versionEl = document.getElementById("app-version");
 if (_versionEl) _versionEl.textContent = "v" + APP_VERSION;
 
-// Queue recovery remains reachable without adding layout elements.
-document.getElementById("settings-sync-info")?.addEventListener("click", openOutboxManager);
+// Queue recovery is available through the clickable sync status → details.

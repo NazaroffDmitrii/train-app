@@ -436,10 +436,17 @@ function _syncTimeAgo(ts) {
 // Честный индикатор: показывает РЕАЛЬНОЕ состояние синхронизации, а не только
 // «отправляем». Источник — SyncEngine.status() (очередь + карантин + ошибка +
 // флаг миграции + время последней успешной синхронизации).
+let _statusReadGeneration = 0;
 function updateOnlineStatus() {
+  const generation = ++_statusReadGeneration;
   const uid = (typeof DATA !== "undefined" && DATA.getCurrentUser) ? DATA.getCurrentUser() : null;
+  const owner = Auth.userId();
+  const current = () => generation === _statusReadGeneration && Auth.userId() === owner &&
+    ((typeof DATA !== 'undefined' && DATA.getCurrentUser) ? DATA.getCurrentUser() : null) === uid;
   if (typeof SyncEngine === "undefined") return; // ещё не загружен — придёт следующий вызов
   SyncEngine.status(uid).then(st => {
+    if (!current()) return;
+    if (typeof renderSettingsSyncStatus === 'function') renderSettingsSyncStatus(st, uid);
     // Точка: красная — нужно внимание (offline/error/blocked), жёлтая — в работе
     // (pending/awaiting), без класса — синхронизировано.
     statusDot.classList.toggle("offline", st.state === "offline");
@@ -474,7 +481,9 @@ function updateOnlineStatus() {
         text = st.lastSyncedAt ? "Последняя синхронизация · " + _syncTimeAgo(st.lastSyncedAt) : "Локальных изменений нет";
     }
     statusText.textContent = text;
-  }).catch(() => {
+  }).catch(error => {
+    if (!current()) return;
+    if (typeof renderSettingsSyncStatus === 'function') renderSettingsSyncStatus({ state: 'error', storageError: true, lastError: String(error?.message || error) }, uid);
     statusDot.classList.add("error");
     statusDot.classList.remove("pending");
     statusText.textContent = "⚠ Не удалось проверить синхронизацию. Не очищайте данные приложения.";

@@ -205,6 +205,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   color: var(--text-tertiary); font-size: 13px;
 }
 .status-dot {
+  flex: none;
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--status-online);
   box-shadow: 0 0 8px var(--status-online);
@@ -212,6 +213,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .status-dot.offline { background: #6b6b76; box-shadow: none; }
 .status-dot.pending { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .status-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.settings-sync-status { width: 100%; min-height: 44px; padding: 8px 2px; text-align: left; }
+.settings-sync-status:active { opacity: 0.7; }
+.settings-sync-status:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; border-radius: 8px; }
 
 /* ============ Screen 1: вход / регистрация / переключатель профиля ============ */
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
@@ -546,6 +550,15 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .modal-backdrop.open .modal { transform: scale(1) translateY(0); }
 .modal-title { margin: 2px 0 8px; font-size: 18px; font-weight: 700; text-align: center; }
+.settings-modal-header { position: sticky; top: -22px; z-index: 1; display: flex; align-items: center;
+  flex: none; gap: 8px; margin: -22px -22px 0; padding: 12px 12px 10px 22px; background: var(--panel);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.settings-modal-header .modal-title { flex: 1; margin: 0; padding-left: 22px; }
+.modal-close-icon { width: 44px; height: 44px; flex: none; display: grid; place-items: center;
+  color: var(--text-secondary); font-size: 28px; border-radius: 50%; }
+.modal-close-icon:active { background: var(--panel-raised); }
+.history-backups .history-back { align-self: center; flex: none; width: auto; min-width: 112px;
+  padding: 11px 26px; border-radius: 999px; }
 
 .modal-option {
   display: flex; align-items: center; gap: 12px;
@@ -565,8 +578,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
    Ввести код, Выйти, Удалить аккаунт) — текст+иконка центрируются как группа. */
 .modal-option-full { justify-content: center; }
 .modal-option-full > span:last-child { min-width: 0; overflow-wrap: anywhere; }
-.settings-action-copy { display: flex; flex-direction: column; gap: 4px; }
-.settings-action-copy small { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
 dialog.history-backups { transform: none; color: var(--text-primary); }
 #settings-modal-backdrop, #recovery-modal-backdrop {
   padding-top: max(24px, calc(var(--safe-top) + 12px));
@@ -1626,22 +1637,23 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 
 /* ============ Toast ============ */
 .toast {
-  position: fixed; left: calc(50% + 6px); top: calc(6px + var(--safe-top)); bottom: auto;
+  position: fixed; left: 50%; top: calc(6px + var(--safe-top)); bottom: auto;
   transform: translate(-50%, -6px);
   background: var(--panel-raised); border: 1px solid var(--border-strong);
-  color: var(--text-primary); padding: 3px 7px 3px 10px; border-radius: 8px;
-  font-size: 11px; font-weight: 600; z-index: 50;
+  color: var(--text-primary); padding: 9px 42px; border-radius: 24px;
+  font-size: 14px; font-weight: 600; z-index: 50;
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
-  display: flex; align-items: center; gap: 5px;
-  width: min(66vw, 360px, calc(100vw - 140px)); height: 38px; overflow: hidden; text-align: left;
+  display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  width: calc(100% - 24px); min-height: 52px; overflow: hidden; text-align: center;
+  touch-action: pan-x;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .toast:not(.show) { visibility: hidden; }
-.toast-text { flex: 1; min-width: 0; padding: 0; font: inherit; text-align: left; line-height: 14px;
+.toast-text { width: 100%; min-width: 0; padding: 0; font: inherit; text-align: center; line-height: 18px;
   white-space: pre-line; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.toast-close { flex: none; width: 26px; height: 30px; padding: 0; font-size: 20px; line-height: 1; color: var(--text-secondary); }
-.toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 11px; padding: 0; white-space: nowrap; flex: none; }
+.toast-close { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 36px; height: 44px; padding: 0; font-size: 22px; line-height: 1; color: var(--text-secondary); }
+.toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 14px; padding: 3px 8px; white-space: nowrap; flex: none; }
 .toast[data-kind="error"] { border-color: #b95e6a; }
 .toast[data-kind="warning"] { border-color: #a98b4e; }
 .toast[data-kind="success"] { border-color: #4b9473; }
@@ -3286,8 +3298,14 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   <!-- ===== Модалка: настройки ===== -->
   <div class="modal-backdrop" id="settings-modal-backdrop">
     <div class="modal">
-      <h2 class="modal-title">Настройки</h2>
-      <p class="modal-sync-info" id="settings-sync-info">«В облако» — отправить изменения. «Синхронизация» — загрузить данные. «Обновить приложение» — проверить новую версию. Нажмите здесь, чтобы посмотреть очередь отправки.</p>
+      <div class="settings-modal-header">
+        <h2 class="modal-title">Настройки</h2>
+        <button class="modal-close-icon" id="settings-close-top" type="button" aria-label="Закрыть настройки">×</button>
+      </div>
+      <button class="status-row settings-sync-status" id="sync-result-btn" type="button" aria-label="Проверяем состояние синхронизации. Открыть подробности">
+        <span class="status-dot offline" id="settings-sync-dot" aria-hidden="true"></span>
+        <span id="sync-result-status" aria-live="polite">Проверяем состояние…</span>
+      </button>
       <!-- Ручная синхронизация. Изменения и так уходят в облако сами (bridge.js
            → outbox.js), это — явный контроль поверх авто-режима на случай
            сомнений: «В облако» досылает очередь прямо сейчас (обычно там уже
@@ -3311,12 +3329,6 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
           <span>Синхронизация</span>
         </button>
       </div>
-      <button class="modal-option modal-option-full" id="sync-result-btn" type="button">
-        <span class="modal-option-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg>
-        </span>
-        <span class="settings-action-copy">Результат синхронизации<small id="sync-result-status">Посмотреть подробности</small></span>
-      </button>
       <button class="modal-option modal-option-full" id="app-update-btn" type="button">
         <span class="modal-option-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4M4 16v4h16v-4"/></svg>
@@ -3352,18 +3364,6 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/></svg>
         </span>
         <span>Восстановление данных</span>
-      </button>
-      <!-- Недавно удалённые — корзина на 7 дней со всеми удалёнными элементами
-           (упражнения/мышцы/движения/группы/тренировки/шаблоны) и восстановлением. -->
-      <button class="modal-option modal-option-full" id="recently-deleted-btn">
-        <span class="modal-option-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-            <path d="M12 10a4 4 0 1 0 4 4"/><path d="M16 10v4h-4"/>
-          </svg>
-        </span>
-        <span>Недавно удалённые</span>
       </button>
       <!-- Личные данные (Имя/Фамилия/Возраст/Вес/Рост) просматриваемого сейчас
            профиля — своего или клиента (см. auth-ui.js openPersonalDataModal). -->
@@ -3441,6 +3441,14 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="14" height="14" rx="2"/><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>
         </span>
         <span>Копии истории тренировок</span>
+      </button>
+      <button class="modal-option modal-option-full" id="recently-deleted-btn" type="button">
+        <span class="modal-option-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M12 10a4 4 0 1 0 4 4M16 10v4h-4"/>
+          </svg>
+        </span>
+        <span>Недавно удалённые</span>
       </button>
       <button class="modal-cancel" id="recovery-settings-back" type="button">Назад в настройки</button>
     </div>

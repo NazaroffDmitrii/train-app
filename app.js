@@ -1295,6 +1295,28 @@ const toastEl = $("toast");
    Toast
    ========================================================================== */
 let toastTimer = null;
+let toastSwipe = null;
+let toastIgnoreClickUntil = 0;
+function dismissToast() {
+  clearTimeout(toastTimer);
+  toastEl.classList.remove('show', 'actionable');
+}
+// A swipe only dismisses the notice; it must not trigger Details/Undo/Open.
+toastEl.addEventListener('pointerdown', event => {
+  toastSwipe = event.isPrimary === false ? null : { id: event.pointerId, x: event.clientX, y: event.clientY };
+});
+window.addEventListener('pointermove', event => {
+  if (!toastSwipe || toastSwipe.id !== event.pointerId) return;
+  const dy = event.clientY - toastSwipe.y, dx = event.clientX - toastSwipe.x;
+  if (dy < -24 && -dy > Math.abs(dx) * 1.2) {
+    toastSwipe = null; toastIgnoreClickUntil = Date.now() + 500; dismissToast();
+  }
+});
+window.addEventListener('pointerup', () => { toastSwipe = null; });
+window.addEventListener('pointercancel', () => { toastSwipe = null; });
+toastEl.addEventListener('click', event => {
+  if (Date.now() < toastIgnoreClickUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
+}, true);
 // No sticky notifications: progress lasts 8s, any message at most 15s.
 function toastLifetime(duration) {
   return Number.isFinite(duration) && duration > 0 ? Math.min(duration, 15000) : 8000;
@@ -1303,12 +1325,10 @@ function addToastClose() {
   const button = document.createElement('button');
   button.className = 'toast-close'; button.type = 'button';
   button.textContent = '×'; button.setAttribute('aria-label', 'Закрыть уведомление');
-  button.addEventListener('click', () => {
-    clearTimeout(toastTimer); toastEl.classList.remove('show', 'actionable');
-  });
+  button.addEventListener('click', dismissToast);
   toastEl.append(button);
 }
-function openNoticeDetails(title, detail) {
+function openNoticeDetails(title, detail, action) {
   document.getElementById('notice-details')?.remove();
   const dialog = document.createElement('dialog');
   dialog.id = 'notice-details'; dialog.className = 'notice-details';
@@ -1318,9 +1338,17 @@ function openNoticeDetails(title, detail) {
   const close = document.createElement('button'); close.className = 'modal-option modal-option-full'; close.textContent = 'Понятно';
   close.addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => dialog.remove());
-  dialog.append(heading, text, close); document.body.append(dialog); dialog.showModal();
+  dialog.append(heading, text);
+  if (action) {
+    const button = document.createElement('button'); button.className = 'modal-option modal-option-full';
+    button.textContent = action.label;
+    button.addEventListener('click', () => { dialog.close(); action.run(); });
+    dialog.append(button);
+  }
+  dialog.append(close); document.body.append(dialog); dialog.showModal();
 }
 function showToast(msg, durationMs = 2200, { detail, kind = 'info' } = {}) {
+  toastSwipe = null;
   clearTimeout(toastTimer);
   toastEl.classList.remove("actionable");
   toastEl.setAttribute('data-kind', kind);
@@ -1374,21 +1402,57 @@ let lastSyncNotice = null;
 let automaticNoticeAt = 0;
 let automaticNoticeKey = '';
 function syncNoticeProfile() { return typeof DATA !== 'undefined' ? DATA.getCurrentUser() : null; }
+let settingsSyncSnapshot = null;
+let settingsSyncView = null;
+function renderSettingsSyncStatus(snapshot, profile = syncNoticeProfile()) {
+  if (profile !== syncNoticeProfile()) return;
+  if (snapshot) settingsSyncSnapshot = { profile, snapshot };
+  const st = settingsSyncSnapshot?.profile === profile ? settingsSyncSnapshot.snapshot : null;
+  const result = lastSyncNotice?.profile === profile ? lastSyncNotice : null;
+  let kind = 'offline', title = 'Проверяем состояние…';
+  if (window.__manualSyncInProgress && result?.kind === 'progress') {
+    kind = 'pending'; title = result.title;
+  } else if (st && ['error', 'blocked', 'held'].includes(st.state)) {
+    kind = 'error'; title = st.state === 'blocked' ? 'Часть изменений не отправляется' :
+      st.state === 'held' ? 'Очередь требует внимания' : 'Ошибка синхронизации';
+  } else if (result?.kind === 'error') {
+    kind = 'error'; title = result.title;
+  } else if (st?.state === 'offline') {
+    title = st.pending ? 'Нет сети — есть изменения' : 'Нет сети — работаем локально';
+  } else if (st && ['pending', 'awaiting'].includes(st.state)) {
+    kind = 'pending'; title = st.state === 'awaiting' ? 'Нужна первая отправка в облако' : 'Есть изменения для отправки';
+  } else if (result?.kind === 'warning') {
+    kind = 'pending'; title = result.title;
+  } else if (st?.state === 'synced' || result?.kind === 'success') {
+    kind = 'success'; title = result?.kind === 'success' ? result.title : 'Локальных изменений нет';
+  }
+  settingsSyncView = { profile, title, kind, snapshot: st };
+  const status = document.getElementById('sync-result-status');
+  const dot = document.getElementById('settings-sync-dot');
+  const button = document.getElementById('sync-result-btn');
+  if (status) status.textContent = title;
+  if (dot) dot.className = 'status-dot' + (kind === 'success' ? '' : ' ' + kind);
+  if (button) button.setAttribute('aria-label', title + '. Открыть подробности синхронизации');
+}
 function setSyncNotice(title, detail, kind, { automatic = false, notify = true, epoch } = {}) {
   if (automatic && (window.__manualSyncInProgress || (epoch !== undefined && epoch !== (window.__syncNoticeEpoch || 0)))) return;
   const key = syncNoticeProfile() + '|' + title + '|' + detail;
   if (automatic && key === automaticNoticeKey && Date.now() - automaticNoticeAt < 60000) return;
   if (automatic) { automaticNoticeKey = key; automaticNoticeAt = Date.now(); }
   lastSyncNotice = { title, detail, kind, at: Date.now(), profile: syncNoticeProfile() };
-  const status = document.getElementById('sync-result-status');
-  if (status) status.textContent = title;
+  renderSettingsSyncStatus();
   if (notify) showToast(title, kind === 'error' ? 10000 : kind === 'progress' ? 8000 : 5000, { detail, kind });
 }
 function openSyncDetails() {
+  renderSettingsSyncStatus();
   const result = lastSyncNotice?.profile === syncNoticeProfile() ? lastSyncNotice : null;
-  openNoticeDetails(result?.title || 'Состояние синхронизации', result ?
-    new Date(result.at).toLocaleTimeString('ru-RU') + '\n' + result.detail :
-    'В этом сеансе результат для выбранного профиля ещё не получен. Нажмите «Синхронизация».');
+  const st = settingsSyncView?.snapshot;
+  const queue = st ? `Очередь отправки: ${st.pending || 0}. Заблокировано: ${st.blocked || 0}.` +
+    (st.lastError ? '\n' + String(st.lastError) : '') : 'Состояние очереди пока не получено.';
+  openNoticeDetails(settingsSyncView?.title || 'Состояние синхронизации', queue + '\n\n' + (result ?
+    'Последний результат · ' + new Date(result.at).toLocaleTimeString('ru-RU') + '\n' + result.detail :
+    'В этом сеансе результат загрузки данных ещё не получен. Пустая очередь не означает, что проверены изменения с других устройств.'),
+    typeof openOutboxManager === 'function' ? { label: 'Очередь отправки', run: openOutboxManager } : null);
 }
 function showSyncError(error, stage, options) {
   const detail = syncErrorText(error, stage);
@@ -1412,6 +1476,7 @@ window.addEventListener("train-workout-sync-result", event => {
 // Кликабельный тост с действием — для отмены удалений и для предложения
 // обновиться. onAction вызывается максимум один раз; время показа ограничено.
 function showActionToast(msg, actionLabel, onAction, duration = 5000) {
+  toastSwipe = null;
   clearTimeout(toastTimer);
   toastEl.setAttribute('data-kind', 'info');
   toastEl.innerHTML = "";
@@ -1996,21 +2061,28 @@ document.querySelectorAll(".pill").forEach(pill => {
    Settings modal
    ========================================================================== */
 $("settings-close").addEventListener("click", () => closeModal(settingsModalBackdrop));
+$("settings-close-top").addEventListener("click", () => closeModal(settingsModalBackdrop));
 
 // «Недавно удалённые» — корзина на 7 дней со всеми удалёнными элементами и
-// восстановлением. Открывается из настроек.
+// восстановлением. Открывается из раздела восстановления.
 $("recently-deleted-btn").addEventListener("click", () => {
-  closeModal(settingsModalBackdrop);
-  openRecentlyDeletedSheet();
+  const recovery = $("recovery-modal-backdrop");
+  closeModal(recovery);
+  openRecentlyDeletedSheet(() => { openModal(recovery); $("recently-deleted-btn").focus({ preventScroll: true }); });
 });
 
-function openRecentlyDeletedSheet() {
+function openRecentlyDeletedSheet(onClose) {
   const userId = DATA.getCurrentUser();
   const TYPE_LABEL = { exercise: "Упражнение", muscle: "Мышца", movement: "Движение", category: "Группа", workout: "Тренировка", template: "Шаблон" };
   const bd = document.createElement("div");
   bd.className = "bottom-sheet-backdrop";
   bd.style.cursor = "pointer";
-  const close = () => { bd.classList.remove("open"); setTimeout(() => bd.remove(), 300); };
+  let closed = false;
+  const close = () => {
+    if (closed) return; closed = true;
+    bd.classList.remove("open");
+    setTimeout(() => { bd.remove(); if (DATA.getCurrentUser() === userId) onClose?.(); }, 300);
+  };
   bd.addEventListener("click", e => { if (e.target === bd) close(); });
 
   bd.innerHTML = `
@@ -3699,7 +3771,7 @@ function renderSetsInBlock(block, ex, lastWorkout) {
     // блоки могут переставляться, чтобы пикер писал RPE именно в него).
     const rpeBtn = row.querySelector(".rpe-btn");
     if (rpeBtn) rpeBtn.addEventListener("click", () => {
-      openRpePicker(_workout.exercises.indexOf(ex), sIdx);
+      openRpePicker(_workout.exercises.indexOf(ex), sIdx, rpeBtn);
     });
 
     // Done toggle — у дроп-сета кнопки нет (см. выше), он уже done с момента добавления.
@@ -4132,11 +4204,28 @@ function addExerciseToWorkout(exerciseId) {
 }
 
 /* — RPE picker — */
-let _rpeTarget = null; // { exIdx, sIdx }
+let _rpeTarget = null;
+let _rpeCloseTimer = null;
 
-function openRpePicker(exIdx, sIdx) {
-  _rpeTarget = { exIdx, sIdx };
-  const current = _workout.exercises[exIdx].sets[sIdx].rpe || 0;
+function closeRpePicker() {
+  clearTimeout(_rpeCloseTimer);
+  const target = _rpeTarget;
+  _rpeTarget = null;
+  rpeBackdrop.classList.remove('open');
+  if (target && _workout === target.workout && target.button?.isConnected) {
+    target.button.focus({ preventScroll: true });
+    target.scroll.scrollTop = target.scrollTop;
+  }
+}
+
+function openRpePicker(exIdx, sIdx, button) {
+  clearTimeout(_rpeCloseTimer);
+  const set = _workout?.exercises[exIdx]?.sets[sIdx];
+  if (!set) return;
+  const scroll = $('workout-scroll');
+  const target = { workout: _workout, exercise: _workout.exercises[exIdx], set, button, scroll, scrollTop: scroll.scrollTop };
+  _rpeTarget = target;
+  const current = set.rpe || 0;
 
   rpeGrid.innerHTML = [1,2,3,4,5,6,7,8,9,10].map(n => `
     <button class="rpe-option ${n === current ? "selected" : ""}" data-rpe="${n}">${n}</button>
@@ -4145,24 +4234,26 @@ function openRpePicker(exIdx, sIdx) {
 
   rpeGrid.querySelectorAll(".rpe-option").forEach(btn => {
     btn.addEventListener("click", () => {
+      if (_rpeTarget !== target) return;
+      if (_workout !== target.workout ||
+          !_workout.exercises.includes(target.exercise) || !target.exercise.sets.includes(set)) { closeRpePicker(); return; }
       const val = parseInt(btn.dataset.rpe);
-      _workout.exercises[_rpeTarget.exIdx].sets[_rpeTarget.sIdx].rpe = val;
+      set.rpe = val;
       saveWorkoutState();
+      // Keep the existing exercise/input DOM and its scroll anchor intact.
+      if (button?.isConnected) { button.textContent = String(val); button.classList.add('has-rpe'); }
       rpeGrid.querySelectorAll(".rpe-option").forEach(b => b.classList.toggle("selected", parseInt(b.dataset.rpe) === val));
       rpeHint.textContent = DATA.RPE_LABELS[val];
-      setTimeout(() => {
-        rpeBackdrop.classList.remove("open");
-        // Re-render only the affected block
-        renderExerciseList();
-      }, 280);
+      clearTimeout(_rpeCloseTimer);
+      _rpeCloseTimer = setTimeout(() => { if (_rpeTarget === target) closeRpePicker(); }, 280);
     });
     btn.addEventListener("mouseenter", () => { rpeHint.textContent = DATA.RPE_LABELS[parseInt(btn.dataset.rpe)]; });
-    btn.addEventListener("mouseleave", () => { rpeHint.textContent = _rpeTarget ? DATA.RPE_LABELS[_workout.exercises[_rpeTarget.exIdx].sets[_rpeTarget.sIdx].rpe] || "" : ""; });
+    btn.addEventListener("mouseleave", () => { rpeHint.textContent = _rpeTarget === target ? DATA.RPE_LABELS[set.rpe] || "" : ""; });
   });
 
   rpeBackdrop.classList.add("open");
 }
-rpeBackdrop.addEventListener("click", e => { if (e.target === rpeBackdrop) rpeBackdrop.classList.remove("open"); });
+rpeBackdrop.addEventListener("click", e => { if (e.target === rpeBackdrop) closeRpePicker(); });
 
 /* ==========================================================================
    Screen 4: Run
