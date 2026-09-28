@@ -298,14 +298,7 @@ document.getElementById("outbox-manager-btn")?.addEventListener("click", openOut
 // Recovery is a settings subsection; opening it never changes stored data.
 const recoveryBackdrop = document.getElementById('recovery-modal-backdrop');
 document.getElementById('recovery-settings-btn')?.addEventListener('click', () => {
-  closeModal(settingsModalBackdrop);
-  openModal(recoveryBackdrop);
-  document.getElementById('workout-backups-btn').focus();
-});
-document.getElementById('recovery-settings-back')?.addEventListener('click', () => {
-  closeModal(recoveryBackdrop);
-  openModal(settingsModalBackdrop);
-  document.getElementById('recovery-settings-btn').focus();
+  SettingsFlow.show('recovery-modal-backdrop');
 });
 
 document.getElementById('workout-backups-btn')?.addEventListener('click', async () => {

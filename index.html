@@ -550,14 +550,47 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .modal-backdrop.open .modal { transform: scale(1) translateY(0); }
 .modal-title { margin: 2px 0 8px; font-size: 18px; font-weight: 700; text-align: center; }
-.settings-panel { max-width: 704px; padding: 16px; gap: 0; background: #101017; border-color: #292936; border-radius: 24px; }
-.settings-modal-header { position: sticky; top: -16px; z-index: 1; display: flex; align-items: center;
-  flex: none; gap: 8px; margin: -16px -16px 0; padding: 8px 8px 4px 20px; background: #101017;
+.settings-panel { max-width: 704px; padding: 16px; gap: 0; background: #101017; border-color: #292936; border-radius: 24px; overflow: hidden; }
+.settings-modal-header { display: flex; align-items: center;
+  flex: none; gap: 10px; margin: 0 0 14px; padding: 0; min-height: 44px; background: #101017;
   border-radius: 24px 24px 0 0; }
-.settings-modal-header .modal-title { flex: 1; margin: 0; text-align: left; font-size: 22px; font-weight: 600; }
+.settings-modal-header .modal-title { flex: 1; min-width: 0; margin: 0; text-align: left; font-size: 20px; font-weight: 600; }
 .modal-close-icon { width: 44px; height: 44px; flex: none; display: grid; place-items: center;
   color: var(--text-secondary); font-size: 28px; border-radius: 50%; }
 .modal-close-icon:active { background: var(--panel-raised); }
+.settings-modal-header .modal-close-icon { background: #181821; }
+.settings-modal-header .modal-close-icon svg { width: 20px; height: 20px; }
+.settings-pages { position: relative; min-height: 0; overflow: hidden auto; overscroll-behavior: contain;
+  transition: height 230ms ease-out; flex: 0 1 auto; }
+.settings-page { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.settings-page[hidden], .settings-modal-header [hidden] { display: none !important; }
+.settings-page:not(#settings-home) { min-height: 306px; }
+#settings-home { gap: 0; }
+.settings-page-leaving { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; }
+.settings-subitem { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 72px;
+  padding: 12px; border-radius: 16px; background: #181821; text-align: left; }
+.settings-subitem:active { background: #22212f; }
+.settings-subitem .modal-option-icon { width: 40px; height: 40px; padding: 10px; border-radius: 12px; background: #24203f; }
+.settings-item-text { min-width: 0; display: grid; gap: 3px; }
+.settings-item-text strong { font-size: 15px; font-weight: 600; }
+.settings-item-text small { font-size: 12px; line-height: 1.4; color: #9292a6; }
+.settings-description { margin: 0 2px 4px; font-size: 13px; line-height: 1.5; color: #a0a0b4; }
+.settings-warning { display: flex; align-items: flex-start; gap: 10px; margin: auto 0 0; padding: 12px;
+  border: 1px solid #3b3267; background: #191823; border-radius: 14px; color: #a0a0b4; font-size: 12px; line-height: 1.5; }
+.settings-warning svg { flex: none; width: 18px; height: 18px; color: #ad9cff; }
+.personal-fields { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.personal-field { grid-column: span 2; min-width: 0; display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 12px; border: 1px solid #292936; border-radius: 14px; background: #181821; }
+.personal-field-wide { grid-column: span 3; }
+.personal-field:focus-within { border-color: #9381ff; }
+.personal-field span { color: #818196; font-size: 12px; }
+.personal-field input { width: 100%; min-width: 0; padding: 0; border: 0; outline: none; background: transparent;
+  color: var(--text-primary); font: inherit; font-size: 16px; font-weight: 600; }
+.personal-save { width: 100%; min-height: 46px; border-radius: 14px; background: var(--accent); font-size: 16px; font-weight: 600; }
+.personal-save:disabled { opacity: .45; }
+.personal-delete-slot:not(:empty) { margin-top: auto; padding-top: 16px; border-top: 1px solid #292936; }
+.personal-delete-slot .modal-option.danger { justify-content: flex-start; border: 0; background: transparent; padding: 8px 4px; font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .settings-pages { transition: none; } }
 .settings-panel .settings-sync-status { padding: 4px; margin: 2px 0 10px; min-height: 28px; color: #9292a6; font-size: 14px; }
 .settings-sync-cards { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; flex: none; }
 .settings-sync-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left;
@@ -579,8 +612,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .settings-footer button:disabled { opacity: 0.5; }
 .personal-delete-slot { display: flex; flex-direction: column; }
 @media (max-width: 420px) {
-  .settings-panel { padding: 14px; }
-  .settings-modal-header { top: -14px; margin: -14px -14px 0; }
+  .settings-modal-header .modal-title { font-size: 17px; }
+  .settings-subitem { gap: 10px; padding: 10px; }
+  .settings-item-text strong { font-size: 14px; }
+  .settings-item-text small { font-size: 11px; }
+  .personal-field { padding: 10px 8px; }
   .settings-sync-card { padding: 12px 10px; }
   .settings-sync-card > span:last-of-type { font-size: clamp(11px, 3.2vw, 13px); }
   .settings-sync-card small { font-size: 11px; }
@@ -610,11 +646,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .modal-option-full > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 dialog.history-backups { transform: none; color: var(--text-primary); width: min(340px, calc(100vw - 32px)); }
 dialog.history-backups::backdrop { background: #0009; backdrop-filter: blur(6px); }
-#settings-modal-backdrop, #recovery-modal-backdrop, #transfer-modal-backdrop {
+#settings-modal-backdrop {
+  padding-left: 6vw; padding-right: 6vw;
   padding-top: max(24px, calc(var(--safe-top) + 12px));
   padding-bottom: max(24px, calc(var(--safe-bottom) + 12px));
 }
-#settings-modal-backdrop .modal, #recovery-modal-backdrop .modal, #transfer-modal-backdrop .modal {
+#settings-modal-backdrop .settings-panel {
   max-height: calc(100dvh - max(24px, calc(var(--safe-top) + 12px)) - max(24px, calc(var(--safe-bottom) + 12px)));
 }
 .modal-option.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
@@ -1668,23 +1705,27 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 
 /* ============ Toast ============ */
 .toast {
-  position: fixed; left: 50%; top: calc(6px + var(--safe-top)); bottom: auto;
-  transform: translate(-50%, -6px);
+  position: fixed; left: 50%; top: calc(10px + var(--safe-top)); bottom: auto;
+  transform: translate(-50%, calc(-100% - var(--safe-top) - 22px));
   background: var(--panel-raised); border: 1px solid var(--border-strong);
-  color: var(--text-primary); padding: 9px 42px; border-radius: 24px;
+  color: var(--text-primary); padding: 1px 36px; border-radius: 18px;
   font-size: 14px; font-weight: 600; z-index: 50;
-  opacity: 0; pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  display: flex; flex-direction: column; justify-content: center; gap: 4px;
-  width: calc(100% - 24px); min-height: 52px; overflow: hidden; text-align: center;
-  touch-action: pan-x;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: transform 0.28s cubic-bezier(.22,.8,.3,1), opacity 0.28s ease, visibility 0s linear 0.28s;
+  display: flex; flex-direction: column; justify-content: center; gap: 0;
+  width: calc(100% - 36px); height: 36px; overflow: hidden; text-align: center;
+  touch-action: pan-x; user-select: none; -webkit-user-select: none;
 }
-.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-.toast:not(.show) { visibility: hidden; }
-.toast-text { width: 100%; min-width: 0; padding: 0; font: inherit; text-align: center; line-height: 18px;
+.toast.show { opacity: 1; visibility: visible; transform: translate(-50%, var(--toast-drag-y, 0px)); pointer-events: auto; transition-delay: 0s; }
+.toast.dragging { transition: none; }
+.toast-text { width: 100%; min-width: 0; padding: 0; font: inherit; text-align: center; line-height: 16px;
   white-space: pre-line; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.toast-close { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 36px; height: 44px; padding: 0; font-size: 22px; line-height: 1; color: var(--text-secondary); }
-.toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 14px; padding: 3px 8px; white-space: nowrap; flex: none; }
+.toast-close { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 32px; height: 34px; padding: 0; font-size: 22px; line-height: 1; color: var(--text-secondary); }
+.toast-undo-btn { color: var(--accent-bright); font-weight: 700; font-size: 14px; line-height: 16px; padding: 0; white-space: nowrap; flex: none; }
+.toast.actionable .toast-text { flex: none; -webkit-line-clamp: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition-duration: 0.01s, 0.01s, 0s; transition-delay: 0s; }
+}
 .toast[data-kind="error"] { border-color: #b95e6a; }
 .toast[data-kind="warning"] { border-color: #a98b4e; }
 .toast[data-kind="success"] { border-color: #4b9473; }
@@ -3330,9 +3371,12 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   <div class="modal-backdrop" id="settings-modal-backdrop">
     <div class="modal settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="settings-modal-header">
+        <button class="modal-close-icon" id="settings-back" type="button" aria-label="Назад в настройки" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button>
         <h2 class="modal-title" id="settings-title">Настройки</h2>
         <button class="modal-close-icon" id="settings-close-top" type="button" aria-label="Закрыть настройки">×</button>
       </div>
+      <div class="settings-pages" id="settings-pages">
+      <section class="settings-page" id="settings-home" data-settings-page="Настройки">
       <button class="status-row settings-sync-status" id="sync-result-btn" type="button" aria-label="Проверяем состояние синхронизации. Открыть подробности">
         <span class="status-dot offline" id="settings-sync-dot" aria-hidden="true"></span>
         <span id="sync-result-status" aria-live="polite">Проверяем состояние…</span>
@@ -3361,52 +3405,48 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
         <span id="settings-app-version"></span><span aria-hidden="true"> · </span>
         <button id="app-update-btn" type="button">Проверить обновления</button>
       </div>
+      </section>
+
+  <!-- ===== Настройки: импорт и экспорт ===== -->
+  <section class="settings-page" id="transfer-modal-backdrop" data-settings-page="Импорт и экспорт" hidden inert>
+      <button class="settings-subitem" id="import-data-btn" type="button">
+        <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 11v6M9 14l3 3 3-3"/></svg></span><span class="settings-item-text"><strong>Импорт</strong><small>Загрузить данные из файла</small></span><span class="settings-chevron" aria-hidden="true">›</span>
+      </button>
+      <button class="settings-subitem" id="export-data-btn" type="button">
+        <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 17v-6M9 14l3-3 3 3"/></svg></span><span class="settings-item-text"><strong>Экспорт</strong><small>Сохранить данные в файл</small></span><span class="settings-chevron" aria-hidden="true">›</span>
+      </button>
+      <input type="file" id="import-data-input" accept="application/json,.json" hidden>
+  </section>
+
+  <!-- ===== Настройки: восстановление данных ===== -->
+  <section class="settings-page" id="recovery-modal-backdrop" data-settings-page="Восстановление данных" hidden inert>
+      <p class="settings-description">Если история пропала или изменилась, здесь можно скачать сохранённую копию.</p>
+      <button class="settings-subitem" id="workout-backups-btn" type="button">
+        <span class="modal-option-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="14" height="14" rx="2"/><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>
+        </span>
+        <span class="settings-item-text"><strong>Копии истории тренировок</strong><small>Автоматически сохранённые копии</small></span><span class="settings-chevron" aria-hidden="true">›</span>
+      </button>
+      <button class="settings-subitem" id="recently-deleted-btn" type="button">
+        <span class="modal-option-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/>
+          </svg>
+        </span>
+        <span class="settings-item-text"><strong>Недавно удалённые</strong><small>Можно вернуть удалённое</small></span><span class="settings-chevron" aria-hidden="true">›</span>
+      </button>
+      <p class="settings-warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7M12 6v2"/></svg><span>Копии хранятся только на этом устройстве. Очистка данных сайта может их удалить.</span></p>
+  </section>
+  <section class="settings-page" id="personal-data-page" data-settings-page="Личные данные" hidden inert></section>
+      </div>
     </div>
   </div>
 
-  <!-- Единственная кнопка удаления переносится в открытое окно личных данных. -->
+  <!-- Единственная кнопка удаления переносится на страницу личных данных. -->
   <div id="account-actions-storage" hidden>
     <button class="modal-option modal-option-full danger" id="delete-account-btn" type="button" style="display:none">
       <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg></span><span>Удалить аккаунт</span>
     </button>
-  </div>
-
-  <!-- ===== Настройки: импорт и экспорт ===== -->
-  <div class="modal-backdrop" id="transfer-modal-backdrop">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="transfer-title">
-      <h2 class="modal-title" id="transfer-title">Импорт и экспорт</h2>
-      <button class="modal-option modal-option-full" id="import-data-btn" type="button">
-        <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 11v6M9 14l3 3 3-3"/></svg></span><span>Импорт</span>
-      </button>
-      <button class="modal-option modal-option-full" id="export-data-btn" type="button">
-        <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 17v-6M9 14l3-3 3 3"/></svg></span><span>Экспорт</span>
-      </button>
-      <input type="file" id="import-data-input" accept="application/json,.json" hidden>
-      <button class="modal-cancel" id="transfer-settings-back" type="button">Назад в настройки</button>
-    </div>
-  </div>
-
-  <!-- ===== Настройки: восстановление данных ===== -->
-  <div class="modal-backdrop" id="recovery-modal-backdrop">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
-      <h2 class="modal-title" id="recovery-title">Восстановление данных</h2>
-      <p class="modal-sync-info">Если история пропала или изменилась, здесь можно скачать сохранённую копию. Это копии только с этого устройства: очистка данных сайта может их удалить.</p>
-      <button class="modal-option modal-option-full" id="workout-backups-btn" type="button">
-        <span class="modal-option-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="14" height="14" rx="2"/><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>
-        </span>
-        <span>Копии истории тренировок</span>
-      </button>
-      <button class="modal-option modal-option-full" id="recently-deleted-btn" type="button">
-        <span class="modal-option-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M12 10a4 4 0 1 0 4 4M16 10v4h-4"/>
-          </svg>
-        </span>
-        <span>Недавно удалённые</span>
-      </button>
-      <button class="modal-cancel" id="recovery-settings-back" type="button">Назад в настройки</button>
-    </div>
   </div>
 
   <!-- ===== Пикер упражнений ===== -->

@@ -1299,21 +1299,51 @@ let toastSwipe = null;
 let toastIgnoreClickUntil = 0;
 function dismissToast() {
   clearTimeout(toastTimer);
-  toastEl.classList.remove('show', 'actionable');
+  if (toastSwipe?.dragging) toastIgnoreClickUntil = Date.now() + 500;
+  toastSwipe = null;
+  toastEl.classList.remove('show', 'actionable', 'dragging');
+  toastEl.style.removeProperty('--toast-drag-y');
 }
-// A swipe only dismisses the notice; it must not trigger Details/Undo/Open.
+function resetToastGesture() {
+  toastSwipe = null;
+  toastEl.classList.remove('dragging');
+  toastEl.style.removeProperty('--toast-drag-y');
+}
+// Follow the finger, then slide off-screen on release. A short pull springs
+// back without invoking Details/Undo/Open. CSS owns the visibility delay.
 toastEl.addEventListener('pointerdown', event => {
-  toastSwipe = event.isPrimary === false ? null : { id: event.pointerId, x: event.clientX, y: event.clientY };
+  if (event.isPrimary === false || (event.button !== undefined && event.button !== 0) || !toastEl.classList.contains('show')) return;
+  toastSwipe = { id: event.pointerId, x: event.clientX, y: event.clientY, at: event.timeStamp, dy: 0, dragging: false };
 });
 window.addEventListener('pointermove', event => {
   if (!toastSwipe || toastSwipe.id !== event.pointerId) return;
   const dy = event.clientY - toastSwipe.y, dx = event.clientX - toastSwipe.x;
-  if (dy < -24 && -dy > Math.abs(dx) * 1.2) {
-    toastSwipe = null; toastIgnoreClickUntil = Date.now() + 500; dismissToast();
+  if (!toastSwipe.dragging) {
+    if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) { toastSwipe = null; return; }
+    if (dy >= -5 || -dy <= Math.abs(dx) * 1.2) return;
+    toastSwipe.dragging = true;
+    toastEl.classList.add('dragging');
   }
+  toastSwipe.dy = Math.min(0, dy);
+  toastEl.style.setProperty('--toast-drag-y', toastSwipe.dy + 'px');
 });
-window.addEventListener('pointerup', () => { toastSwipe = null; });
-window.addEventListener('pointercancel', () => { toastSwipe = null; });
+function finishToastSwipe(event, cancelled = false) {
+  if (!toastSwipe || (event?.pointerId !== undefined && event.pointerId !== toastSwipe.id)) return;
+  const swipe = toastSwipe;
+  if (!swipe.dragging) { toastSwipe = null; return; }
+  const elapsed = Math.max(1, (event?.timeStamp || swipe.at) - swipe.at);
+  const distance = -swipe.dy;
+  toastIgnoreClickUntil = Date.now() + 500;
+  if (!cancelled && (distance >= 24 || (distance >= 10 && distance / elapsed >= 0.45))) {
+    dismissToast();
+  } else {
+    resetToastGesture();
+  }
+}
+window.addEventListener('pointerup', event => finishToastSwipe(event));
+window.addEventListener('pointercancel', event => finishToastSwipe(event, true));
+window.addEventListener('blur', () => finishToastSwipe(null, true));
+toastEl.addEventListener('dragstart', event => event.preventDefault());
 toastEl.addEventListener('click', event => {
   if (Date.now() < toastIgnoreClickUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
 }, true);
@@ -1348,7 +1378,7 @@ function openNoticeDetails(title, detail, action) {
   dialog.append(close); document.body.append(dialog); dialog.showModal();
 }
 function showToast(msg, durationMs = 2200, { detail, kind = 'info' } = {}) {
-  toastSwipe = null;
+  resetToastGesture();
   clearTimeout(toastTimer);
   toastEl.classList.remove("actionable");
   toastEl.setAttribute('data-kind', kind);
@@ -1364,7 +1394,7 @@ function showToast(msg, durationMs = 2200, { detail, kind = 'info' } = {}) {
   toastEl.append(text);
   addToastClose();
   toastEl.classList.add("show");
-  toastTimer = setTimeout(() => toastEl.classList.remove('show', 'actionable'), toastLifetime(durationMs));
+  toastTimer = setTimeout(dismissToast, toastLifetime(durationMs));
 }
 
 const SYNC_STAGE_LABELS = {
@@ -1477,7 +1507,7 @@ window.addEventListener("train-workout-sync-result", event => {
 // Кликабельный тост с действием — для отмены удалений и для предложения
 // обновиться. onAction вызывается максимум один раз; время показа ограничено.
 function showActionToast(msg, actionLabel, onAction, duration = 5000) {
-  toastSwipe = null;
+  resetToastGesture();
   clearTimeout(toastTimer);
   toastEl.setAttribute('data-kind', 'info');
   toastEl.innerHTML = "";
@@ -1491,13 +1521,13 @@ function showActionToast(msg, actionLabel, onAction, duration = 5000) {
   btn.addEventListener("click", () => {
     if (used) return;
     used = true;
-    toastEl.classList.remove("show", "actionable");
+    dismissToast();
     try { onAction(); } catch (e) { console.warn("Toast action failed", e); }
   });
   toastEl.append(text, btn);
   addToastClose();
   toastEl.classList.add("show", "actionable");
-  toastTimer = setTimeout(() => toastEl.classList.remove("show", "actionable"), toastLifetime(duration));
+  toastTimer = setTimeout(dismissToast, toastLifetime(duration));
 }
 // Для откатываемых удалений.
 function showUndoToast(msg, onUndo) { showActionToast(msg, "Отменить", onUndo, 5000); }
@@ -2061,14 +2091,81 @@ document.querySelectorAll(".pill").forEach(pill => {
 /* ==========================================================================
    Settings modal
    ========================================================================== */
+// One shell, one header, and real pages (never stacked settings backdrops).
+const SettingsFlow = (() => {
+  const shell = settingsModalBackdrop, viewport = $('settings-pages');
+  const title = $('settings-title'), back = $('settings-back');
+  const pages = Array.from(viewport.querySelectorAll('[data-settings-page]'));
+  let current = $('settings-home'), finish = null, returnFocus = null;
+  let beforeLeave = null, revision = 0;
+  function show(id = 'settings-home', { focus, force = false } = {}) {
+    const next = $(id);
+    if (!pages.includes(next)) return false;
+    if (next !== current && !force && beforeLeave && !beforeLeave()) return false;
+    if (next !== current) beforeLeave = null;
+    finish?.();
+    const wasOpen = shell.classList.contains('open');
+    if (!wasOpen) returnFocus = document.activeElement;
+    shell.classList.add('open'); shell.inert = false;
+    const previous = current, oldHeight = viewport.getBoundingClientRect().height;
+    const backwards = next.id === 'settings-home';
+    current = next; revision++;
+    pages.forEach(page => {
+      page.hidden = page !== next; page.inert = page !== next;
+      page.classList.toggle('open', page === next);
+    });
+    title.textContent = next.dataset.settingsPage;
+    back.hidden = backwards;
+    viewport.scrollTop = 0;
+    if (wasOpen && previous !== next && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const targetHeight = next.getBoundingClientRect().height;
+      previous.hidden = false; previous.classList.add('settings-page-leaving');
+      const direction = backwards ? -1 : 1;
+      const options = { duration: 230, easing: 'ease-out' };
+      const animations = [
+        next.animate([{ transform: `translateX(${direction * 28}px)`, opacity: 0 }, { transform: 'translateX(0)', opacity: 1 }], options),
+        previous.animate([{ transform: 'translateX(0)', opacity: 1 }, { transform: `translateX(${-direction * 28}px)`, opacity: 0 }], options),
+      ];
+      viewport.style.height = oldHeight + 'px';
+      void viewport.offsetHeight;
+      viewport.style.height = targetHeight + 'px';
+      const timer = setTimeout(() => finish?.(), 240);
+      finish = () => {
+        clearTimeout(timer); animations.forEach(animation => animation.cancel());
+        previous.hidden = true; previous.classList.remove('settings-page-leaving');
+        viewport.style.removeProperty('height'); finish = null;
+      };
+    }
+    const target = focus ? $(focus) : backwards ? $('settings-close-top') : back;
+    target?.focus({ preventScroll: true });
+    return true;
+  }
+  function close() {
+    if (beforeLeave && !beforeLeave()) return false;
+    beforeLeave = null; finish?.(); revision++;
+    shell.classList.remove('open'); shell.inert = true;
+    current.classList.remove('open');
+    returnFocus?.focus?.({ preventScroll: true });
+    return true;
+  }
+  back.addEventListener('click', () => {
+    const focus = { 'transfer-modal-backdrop': 'transfer-settings-btn', 'recovery-modal-backdrop': 'recovery-settings-btn', 'personal-data-page': 'personal-data-btn' }[current.id];
+    show('settings-home', { focus });
+  });
+  shell.inert = true;
+  return {
+    show, close,
+    isPage: node => pages.includes(node),
+    isActive: id => shell.classList.contains('open') && current.id === id,
+    get revision() { return revision; },
+    set beforeLeave(callback) { beforeLeave = callback; },
+  };
+})();
 $("settings-close-top").addEventListener("click", () => closeModal(settingsModalBackdrop));
 
 const transferBackdrop = $('transfer-modal-backdrop');
 $('transfer-settings-btn').addEventListener('click', () => {
-  closeModal(settingsModalBackdrop); openModal(transferBackdrop); $('import-data-btn').focus({ preventScroll: true });
-});
-$('transfer-settings-back').addEventListener('click', () => {
-  closeModal(transferBackdrop); openModal(settingsModalBackdrop); $('transfer-settings-btn').focus({ preventScroll: true });
+  SettingsFlow.show('transfer-modal-backdrop');
 });
 
 // «Недавно удалённые» — корзина на 7 дней со всеми удалёнными элементами и
@@ -2352,8 +2449,15 @@ $("import-data-input").addEventListener("change", e => {
 /* ==========================================================================
    Modal helpers
    ========================================================================== */
-function openModal(backdrop)  { backdrop.classList.add("open"); }
-function closeModal(backdrop) { backdrop.classList.remove("open"); }
+function openModal(backdrop) {
+  if (backdrop === settingsModalBackdrop) return SettingsFlow.show();
+  if (SettingsFlow.isPage(backdrop)) return SettingsFlow.show(backdrop.id);
+  backdrop.classList.add("open");
+}
+function closeModal(backdrop) {
+  if (backdrop === settingsModalBackdrop || SettingsFlow.isPage(backdrop)) return SettingsFlow.close();
+  backdrop.classList.remove("open");
+}
 document.querySelectorAll(".modal-backdrop").forEach(b => {
   b.addEventListener("click", e => { if (e.target === b) closeModal(b); });
 });
@@ -2383,7 +2487,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Tab") {
     const focusables = Array.from(overlay.querySelectorAll(
       'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])'
-    )).filter(el => !el.disabled && el.offsetParent !== null);
+    )).filter(el => !el.disabled && !el.closest('[inert]') && el.offsetParent !== null);
     if (!focusables.length) return;
     const first = focusables[0], last = focusables[focusables.length - 1];
     if (!overlay.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
