@@ -598,23 +598,56 @@ function waitForAppWorker(worker) {
     const finish = error => { clearTimeout(timer); worker.removeEventListener('statechange', check); error ? reject(error) : resolve(); };
     const check = () => {
       if (worker.state === 'activated') finish();
+      else if (worker.state === 'installed') worker.postMessage({ type: 'SKIP_WAITING' });
       else if (worker.state === 'redundant') finish(new Error('Не удалось загрузить файлы новой версии. Повторите позже.'));
     };
-    const timer = setTimeout(() => finish(Object.assign(new Error('Загрузка новой версии заняла слишком много времени.'), { code: 'TIMEOUT' })), 15000);
+    const timer = setTimeout(() => finish(Object.assign(new Error('Загрузка новой версии заняла слишком много времени.'), { code: 'TIMEOUT' })), 30000);
     worker.addEventListener('statechange', check); check();
   });
 }
-function offerAppReload() {
-  showActionToast('Новая версия готова', 'Открыть', () => {
-    if (window.__manualSyncInProgress) { showToast('Дождитесь завершения синхронизации', 5000); return; }
-    location.reload();
-  }, 10000);
+
+function waitForControllerChange(previousController) {
+  if (navigator.serviceWorker.controller !== previousController) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const finish = error => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('controllerchange', changed);
+      error ? reject(error) : resolve();
+    };
+    const changed = () => finish();
+    const timer = setTimeout(() => finish(Object.assign(new Error('Новая версия загрузилась, но браузер не переключил приложение на неё.'), { code: 'TIMEOUT' })), 15000);
+    navigator.serviceWorker.addEventListener('controllerchange', changed, { once: true });
+  });
+}
+
+function refreshWorkerShell(worker) {
+  return new Promise((resolve, reject) => {
+    if (!worker) { reject(new Error('Не найден активный модуль обновления приложения.')); return; }
+    const channel = new MessageChannel();
+    const finish = error => { clearTimeout(timer); error ? reject(error) : resolve(); };
+    const timer = setTimeout(() => finish(Object.assign(new Error('Обновление файлов приложения заняло слишком много времени.'), { code: 'TIMEOUT' })), 30000);
+    channel.port1.onmessage = event => {
+      if (event.data?.ok) finish();
+      else finish(new Error(event.data?.error || 'Не удалось обновить файлы приложения.'));
+    };
+    worker.postMessage({ type: 'REFRESH_SHELL' }, [channel.port2]);
+  });
+}
+
+function openReadyApp(version) {
+  if (window.__manualSyncInProgress) { showToast('Дождитесь завершения синхронизации', 5000); return; }
+  if (typeof window.openUpdatedApp === 'function') window.openUpdatedApp(version);
+  else {
+    const url = new URL(location.href);
+    url.searchParams.set('__app_update', `${version || APP_VERSION}-${Date.now()}`);
+    location.replace(url.href);
+  }
 }
 const appUpdateBtn = document.getElementById('app-update-btn');
 appUpdateBtn.addEventListener('click', async () => {
   if (window.__manualAppUpdateInProgress) return;
   closeModal(settingsModalBackdrop);
-  if (window.__appUpdateReady) { offerAppReload(); return; }
+  if (window.__appUpdateReady) { openReadyApp('latest'); return; }
   if (!navigator.onLine) {
     showToast('Обновление недоступно', 10000, { kind: 'error', detail: '[UPDATE-OFFLINE] Нет интернета. Синхронизация данных — отдельное действие.' }); return;
   }
@@ -622,15 +655,26 @@ appUpdateBtn.addEventListener('click', async () => {
   showToast('Проверяем новую версию…', 8000);
   try {
     if (!navigator.serviceWorker) throw new Error('Этот браузер не поддерживает обновление установленного приложения.');
+    const previousController = navigator.serviceWorker.controller;
     const reg = await withOperationTimeout((async () => {
-      const registration = await navigator.serviceWorker.getRegistration();
-      if (!registration) throw new Error('Приложение ещё не готово к обновлению. Откройте его заново и повторите.');
-      await registration.update(); return registration;
-    })(), 15000, 'Проверка новой версии заняла слишком много времени.');
+      // Уникальный URL проходит через специальный алгоритм обновления Service
+      // Worker и не зависит от старого Cache Storage/HTTP-кэша PWA.
+      const workerUrl = `./sw.js?manual-update=${Date.now()}`;
+      const registration = await navigator.serviceWorker.register(workerUrl, { updateViaCache: 'none' });
+      await registration.update();
+      return registration;
+    })(), 20000, 'Проверка новой версии заняла слишком много времени.');
     const worker = reg.installing || reg.waiting;
-    if (worker) { await waitForAppWorker(worker); window.__appUpdateReady = true; }
-    if (window.__appUpdateReady) offerAppReload();
-    else showToast('Обновлений нет', 5000, { kind: 'success', detail: 'Проверка версии завершена. Эта кнопка не отправляет и не загружает тренировки.' });
+    if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+    if (worker) await waitForAppWorker(worker);
+    if (worker && navigator.serviceWorker.controller === previousController) await waitForControllerChange(previousController);
+
+    // Даже если содержимое sw.js не изменилось и новый worker не появился,
+    // активный worker принудительно заменяет весь app shell свежими ответами.
+    await refreshWorkerShell(navigator.serviceWorker.controller || reg.active);
+    window.__appUpdateReady = true;
+    showToast('Открываем новую версию…', 5000);
+    openReadyApp('latest');
   } catch (error) {
     showToast('Обновление не выполнено', 10000, { kind: 'error', detail: syncErrorText(error, 'update') + '\nОбмен тренировками не запускался. Для него используйте «В облако» и «Синхронизация».' });
   } finally {

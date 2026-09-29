@@ -1319,8 +1319,8 @@ const startBtn      = $("start-btn");
 
   function setControls(next) {
     startBtn.disabled = next !== "idle";
-    strengthOrb.disabled = next !== "split";
-    runOrb.disabled = next !== "split";
+    strengthOrb.disabled = next !== "split" && next !== "selected";
+    runOrb.disabled = next !== "split" && next !== "selected";
     returnDots.disabled = next !== "split";
     selection.inert = next !== "selected";
     selection.setAttribute("aria-hidden", String(next !== "selected"));
@@ -1560,6 +1560,7 @@ const startBtn      = $("start-btn");
   const launcher = $("workout-launcher");
   const strengthOrb = $("strength-orb");
   const runOrb = $("run-orb");
+  const returnDots = $("launcher-return-dots");
   const selection = $("launcher-selection");
   const selectedOrbHit = $("launcher-selected-orb");
   const otherOrbHit = $("launcher-other-orb");
@@ -1592,13 +1593,20 @@ const startBtn      = $("start-btn");
 
   function pinStaticChrome() {
     if (appRoot) appRoot.scrollTop = 0;
-    requestAnimationFrame(() => { if (appRoot) appRoot.scrollTop = 0; });
+    screenMenu.scrollTop = 0;
+    window.scrollTo(0, 0);
+    requestAnimationFrame(() => {
+      if (appRoot) appRoot.scrollTop = 0;
+      screenMenu.scrollTop = 0;
+      window.scrollTo(0, 0);
+    });
   }
 
   function setControls(next) {
     startBtn.disabled = next !== "idle";
-    strengthOrb.disabled = next !== "split";
-    runOrb.disabled = next !== "split";
+    strengthOrb.disabled = next !== "split" && next !== "selected";
+    runOrb.disabled = next !== "split" && next !== "selected";
+    if (returnDots) returnDots.disabled = next !== "split";
     selection.inert = next !== "selected";
     selection.setAttribute("aria-hidden", String(next !== "selected"));
   }
@@ -1610,12 +1618,10 @@ const startBtn      = $("start-btn");
 
   function hideChrome() {
     clearTimeout(chromeTimer);
-    screenMenu.classList.add("launcher-choice-active");
   }
 
   function restoreChrome(delay = 0) {
     clearTimeout(chromeTimer);
-    chromeTimer = setTimeout(() => screenMenu.classList.remove("launcher-choice-active"), delay);
   }
 
   function runGoo(duration = 820) {
@@ -1647,11 +1653,18 @@ const startBtn      = $("start-btn");
     const shift = Number.isFinite(shiftRaw) ? shiftRaw : Math.min(width * .25, 112);
     const cx = width / 2, cy = height / 2;
     const leftCx = cx - shift, rightCx = cx + shift;
-    const radius = orbSize / 2 + 12;
-    const diagonal = radius * Math.SQRT1_2;
-    const lx = leftCx + diagonal, rx = rightCx - diagonal;
-    const top = cy - diagonal, bottom = cy + diagonal;
-    const d = `M ${cx} ${cy} L ${lx} ${top} A ${radius} ${radius} 0 1 0 ${lx} ${bottom} L ${cx} ${cy} L ${rx} ${top} A ${radius} ${radius} 0 1 1 ${rx} ${bottom} Z`;
+    const radius = orbSize / 2 + 10;
+    const vertical = radius * 1.08;
+    // Одна непрерывная, касательно гладкая лемниската. В центре входящая и
+    // исходящая касательные совпадают, поэтому световая капля не дёргается.
+    const d = [
+      `M ${cx} ${cy}`,
+      `C ${cx - shift * .36} ${cy - vertical}, ${leftCx - radius} ${cy - vertical}, ${leftCx - radius} ${cy}`,
+      `C ${leftCx - radius} ${cy + vertical}, ${cx - shift * .36} ${cy + vertical}, ${cx} ${cy}`,
+      `C ${cx + shift * .36} ${cy - vertical}, ${rightCx + radius} ${cy - vertical}, ${rightCx + radius} ${cy}`,
+      `C ${rightCx + radius} ${cy + vertical}, ${cx + shift * .36} ${cy + vertical}, ${cx} ${cy}`,
+      "Z",
+    ].join(" ");
     infinity.setAttribute("viewBox", `0 0 ${width} ${height}`);
     infinity.querySelector("#infinity-gradient")?.setAttribute("x2", String(width));
     infinity.querySelectorAll(".infinity-path").forEach(path => path.setAttribute("d", d));
@@ -1730,7 +1743,6 @@ const startBtn      = $("start-btn");
     delete launcher.dataset.selected;
     setGlow();
     setControls("idle");
-    screenMenu.classList.remove("launcher-choice-active");
     disarmSelectionHistory();
   }
 
@@ -1896,8 +1908,14 @@ const startBtn      = $("start-btn");
     if (active) { goToScreen(active.type === "run" ? "run" : "workout", { resume: true }); return; }
     applySplit();
   });
-  strengthOrb.addEventListener("click", () => chooseType("strength"));
-  runOrb.addEventListener("click", () => chooseType("run"));
+  function handleOrbClick(type) {
+    if (state() === "selected" && selectedType() === type) { backToSplit(); return; }
+    chooseType(type, { switching: state() === "selected" });
+  }
+
+  strengthOrb.addEventListener("click", () => handleOrbClick("strength"));
+  runOrb.addEventListener("click", () => handleOrbClick("run"));
+  returnDots?.addEventListener("click", () => applyIdle());
   selectedOrbHit.addEventListener("click", () => backToSplit());
   otherOrbHit.addEventListener("click", () => chooseType(selectedType() === "run" ? "strength" : "run", { switching: true }));
 
@@ -1906,7 +1924,9 @@ const startBtn      = $("start-btn");
   });
   launcher.addEventListener("focusin", pinStaticChrome);
   launcher.addEventListener("click", event => {
-    if (state() === "split" && event.target === launcher) applyIdle();
+    if (event.target.closest?.("button")) return;
+    if (state() === "split") applyIdle();
+    else if (state() === "selected") backToSplit();
   });
 
   let touchY = 0, touchX = 0, touchTarget = null;
@@ -9815,6 +9835,27 @@ if ("serviceWorker" in navigator) {
   //     управление страницей) и предлагаем открыть новую версию.
   // Проверка обновления доступна отдельно от синхронизации данных.
   let _reloadedForUpdate = false;
+
+  // Обычный reload в standalone-PWA может снова получить закэшированную
+  // навигацию. Уникальный URL исключает page cache/bfcache; новый service
+  // worker при этом отдаёт уже проверенный при install app shell.
+  window.openUpdatedApp = version => {
+    if (_reloadedForUpdate) return;
+    _reloadedForUpdate = true;
+    const url = new URL(location.href);
+    url.searchParams.set("__app_update", `${version || APP_VERSION}-${Date.now()}`);
+    location.replace(url.href);
+  };
+
+  // Маркер нужен только для первой навигации. После загрузки убираем его из
+  // адреса без ещё одной перезагрузки, чтобы URL установленного PWA оставался
+  // чистым и системный жест «назад» не получил лишнюю запись.
+  const updateUrl = new URL(location.href);
+  if (updateUrl.searchParams.has("__app_update")) {
+    updateUrl.searchParams.delete("__app_update");
+    history.replaceState(history.state, "", updateUrl.pathname + updateUrl.search + updateUrl.hash);
+  }
+
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (_reloadedForUpdate) return;
     window.__appUpdateReady = true;
@@ -9823,12 +9864,12 @@ if ("serviceWorker" in navigator) {
     if (window.__manualSyncInProgress || window.__manualAppUpdateInProgress) return;
     showActionToast('Новая версия готова', 'Открыть', () => {
       if (window.__manualSyncInProgress) { showToast('Дождитесь завершения синхронизации', 5000); return; }
-      _reloadedForUpdate = true; location.reload();
+      window.openUpdatedApp(window.__remoteAppVersion || APP_VERSION);
     }, 10000);
   });
 
   const registerServiceWorker = () => {
-    navigator.serviceWorker.register("./sw.js")
+    navigator.serviceWorker.register(`./sw.js?app-version=${encodeURIComponent(APP_VERSION)}`, { updateViaCache: "none" })
       .then(reg => reg.update())   // сразу проверить, нет ли новой версии
       .catch(() => { /* нет SW — офлайн-режим работает только на уже загруженных данных */ });
   };

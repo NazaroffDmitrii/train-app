@@ -17,7 +17,7 @@
  * каркаса, чтобы activate-обработчик подчистил старые записи.
  */
 
-const CACHE_VERSION = "train-shell-v176";
+const CACHE_VERSION = "train-shell-v178";
 
 // Эти пути — относительно расположения sw.js (корень GitHub Pages).
 // manifest.json намеренно НЕ кэшируем: он не подключён в index.html (см.
@@ -55,12 +55,42 @@ const APP_SHELL = [
   "./icons/apple-touch-icon.png",
 ];
 
+async function precacheFreshShell() {
+  const cache = await caches.open(CACHE_VERSION);
+  // cache.addAll() вправе взять ответы из обычного HTTP-кэша браузера. В PWA
+  // на iOS это приводило к странному состоянию: новый sw.js уже активирован,
+  // а внутри его нового Cache Storage лежат старые index/app.js. Явный
+  // cache:"reload" заставляет проверить каждый файл в сети до активации.
+  await Promise.all(APP_SHELL.map(async path => {
+    const request = new Request(new URL(path, self.registration.scope).href, { cache: "reload" });
+    const response = await fetch(request);
+    if (!response.ok) throw new Error(`Не удалось обновить ${path}: HTTP ${response.status}`);
+    await cache.put(request, response);
+  }));
+}
+
 self.addEventListener("install", event => {
-  event.waitUntil(
-    caches.open(CACHE_VERSION)
-      .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(precacheFreshShell().then(() => self.skipWaiting()));
+});
+
+// Ручная кнопка обновления посылает это сообщение для браузеров, которые
+// оставляют установленный worker в waiting несмотря на skipWaiting в install.
+self.addEventListener("message", event => {
+  if (event.data?.type === "SKIP_WAITING") {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
+
+  // Кнопка в настройках использует этот путь даже когда браузер решил, что
+  // новый worker создавать не нужно. Сначала целиком обновляем текущий cache
+  // shell из сети и лишь затем разрешаем странице перезапуститься.
+  if (event.data?.type === "REFRESH_SHELL") {
+    event.waitUntil(
+      precacheFreshShell()
+        .then(() => event.ports[0]?.postMessage({ ok: true }))
+        .catch(error => event.ports[0]?.postMessage({ ok: false, error: error?.message || String(error) }))
+    );
+  }
 });
 
 self.addEventListener("activate", event => {
@@ -87,14 +117,31 @@ self.addEventListener("fetch", event => {
   // Прочие реальные страницы (например tests.html) обслуживаем как есть, не
   // подменяя на index.html, иначе их нельзя открыть при активном SW.
   if (req.mode === "navigate") {
-    const path = new URL(req.url).pathname;
+    const url = new URL(req.url);
+    const path = url.pathname;
     const isRoot = path.endsWith("/") || path.endsWith("/index.html");
+    if (isRoot && url.searchParams.has("__app_update")) {
+      event.respondWith(freshNavigation(req, "./index.html"));
+      return;
+    }
     event.respondWith(staleWhileRevalidate(req, isRoot ? "./index.html" : null));
     return;
   }
 
   event.respondWith(staleWhileRevalidate(req));
 });
+
+async function freshNavigation(req, fallbackKey) {
+  const cache = await caches.open(CACHE_VERSION);
+  try {
+    const response = await fetch(req, { cache: "reload" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    await cache.put(fallbackKey, response.clone());
+    return response;
+  } catch (_) {
+    return (await cache.match(fallbackKey)) || new Response("Нет сети", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  }
+}
 
 function staleWhileRevalidate(req, fallbackKey) {
   return caches.open(CACHE_VERSION).then(cache =>
