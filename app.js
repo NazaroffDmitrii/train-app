@@ -1277,6 +1277,9 @@ const startBtn      = $("start-btn");
    Goo-фильтр получает только три залитых тела. Кольца, дуги, подписи и
    пиктограммы находятся выше отдельными DOM-слоями и всегда остаются резкими. */
 (function initWorkoutLauncher() {
+  // Устаревшая первая итерация оставлена ниже только как история перехода;
+  // актуальный launcher v2 инициализируется следующим IIFE.
+  return;
   const launcher = $("workout-launcher");
   const strengthOrb = $("strength-orb");
   const runOrb = $("run-orb");
@@ -1549,6 +1552,388 @@ const startBtn      = $("start-btn");
   });
 
   setControls("idle");
+  window.resetWorkoutLauncher = leaveLauncher;
+})();
+
+/* ── Центральный launcher v2 ───────────────────────────────────────────── */
+(function initWorkoutLauncherV2() {
+  const launcher = $("workout-launcher");
+  const strengthOrb = $("strength-orb");
+  const runOrb = $("run-orb");
+  const selection = $("launcher-selection");
+  const selectedOrbHit = $("launcher-selected-orb");
+  const otherOrbHit = $("launcher-other-orb");
+  const selectedTitle = $("launcher-selected-title");
+  const selectedCounts = $("launcher-selected-counts");
+  const optionsEl = $("launcher-options");
+  const startChoiceBtn = $("launcher-start-choice");
+  const contextDate = $("launcher-context-date");
+  const week = $("launcher-week");
+  const weekDays = $("launcher-week-days");
+  const infinity = $("launcher-infinity");
+  const appRoot = document.querySelector(".app");
+  if (!launcher || !strengthOrb || !runOrb || !selection || !infinity) return;
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const lowPower = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2)
+    || (navigator.deviceMemory && navigator.deviceMemory <= 2)
+    || !(window.CSS && CSS.supports && CSS.supports("filter", "url(#launcher-goo-filter)"));
+  if (lowPower) launcher.classList.add("launcher-no-goo");
+
+  let gooTimer = 0;
+  let hapticTimer = 0;
+  let chromeTimer = 0;
+  let launchTimer = 0;
+  let selectionHistoryArmed = false;
+  let selectedChoice = { kind: "empty", id: null, name: "пустую" };
+
+  const state = () => launcher.dataset.state || "idle";
+  const selectedType = () => launcher.dataset.selected || "strength";
+
+  function pinStaticChrome() {
+    if (appRoot) appRoot.scrollTop = 0;
+    requestAnimationFrame(() => { if (appRoot) appRoot.scrollTop = 0; });
+  }
+
+  function setControls(next) {
+    startBtn.disabled = next !== "idle";
+    strengthOrb.disabled = next !== "split";
+    runOrb.disabled = next !== "split";
+    selection.inert = next !== "selected";
+    selection.setAttribute("aria-hidden", String(next !== "selected"));
+  }
+
+  function setGlow(type = "") {
+    appRoot?.classList.toggle("launcher-strength", type === "strength");
+    appRoot?.classList.toggle("launcher-run", type === "run");
+  }
+
+  function hideChrome() {
+    clearTimeout(chromeTimer);
+    screenMenu.classList.add("launcher-choice-active");
+  }
+
+  function restoreChrome(delay = 0) {
+    clearTimeout(chromeTimer);
+    chromeTimer = setTimeout(() => screenMenu.classList.remove("launcher-choice-active"), delay);
+  }
+
+  function runGoo(duration = 820) {
+    clearTimeout(gooTimer);
+    if (reduceMotion.matches || launcher.classList.contains("launcher-no-goo")) return;
+    launcher.classList.add("is-gooing");
+    let frames = 0;
+    const started = performance.now();
+    const sample = now => {
+      if (!launcher.classList.contains("is-gooing")) return;
+      frames += 1;
+      if (now - started < 720) requestAnimationFrame(sample);
+      else if (frames < 38) launcher.classList.add("launcher-no-goo");
+    };
+    requestAnimationFrame(sample);
+    gooTimer = setTimeout(() => launcher.classList.remove("is-gooing"), duration);
+  }
+
+  function updateGeometry() {
+    const launcherRect = launcher.getBoundingClientRect();
+    const screenRect = screenMenu.getBoundingClientRect();
+    const width = launcher.clientWidth;
+    const height = launcher.clientHeight;
+    if (!width || !height) return;
+    launcher.style.setProperty("--launcher-screen-top", `${launcherRect.top - screenRect.top}px`);
+
+    const orbSize = parseFloat(getComputedStyle(strengthOrb).width) || 160;
+    const shiftRaw = parseFloat(getComputedStyle(launcher).getPropertyValue("--orb-shift"));
+    const shift = Number.isFinite(shiftRaw) ? shiftRaw : Math.min(width * .25, 112);
+    const cx = width / 2, cy = height / 2;
+    const leftCx = cx - shift, rightCx = cx + shift;
+    const radius = orbSize / 2 + 12;
+    const diagonal = radius * Math.SQRT1_2;
+    const lx = leftCx + diagonal, rx = rightCx - diagonal;
+    const top = cy - diagonal, bottom = cy + diagonal;
+    const d = `M ${cx} ${cy} L ${lx} ${top} A ${radius} ${radius} 0 1 0 ${lx} ${bottom} L ${cx} ${cy} L ${rx} ${top} A ${radius} ${radius} 0 1 1 ${rx} ${bottom} Z`;
+    infinity.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    infinity.querySelector("#infinity-gradient")?.setAttribute("x2", String(width));
+    infinity.querySelectorAll(".infinity-path").forEach(path => path.setAttribute("d", d));
+  }
+
+  function renderContext(history) {
+    const now = new Date();
+    contextDate.textContent = new Intl.DateTimeFormat("ru-RU", { weekday: "long", day: "numeric", month: "long" })
+      .format(now).replace(" г.", "");
+
+    if (!history.length) {
+      week.classList.remove("has-history");
+      weekDays.innerHTML = "";
+      return;
+    }
+
+    const day = now.getDay() || 7;
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1);
+    const labels = ["П", "В", "С", "Ч", "П", "С", "В"];
+    weekDays.innerHTML = labels.map((label, index) => {
+      const from = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + index).getTime();
+      const to = from + 86400000;
+      const inDay = history.filter(item => item.startedAt >= from && item.startedAt < to);
+      const hasStrength = inDay.some(item => item.type !== "run");
+      const hasRun = inDay.some(item => item.type === "run");
+      const kind = hasStrength && hasRun ? "both" : hasStrength ? "strength" : hasRun ? "run" : "empty";
+      const today = index === day - 1 ? " today" : "";
+      return `<span class="launcher-week-day ${kind}${today}"><span>${label}</span><i class="launcher-week-dot"></i></span>`;
+    }).join("");
+    week.classList.add("has-history");
+  }
+
+  function applyIdle({ animate = true } = {}) {
+    clearTimeout(hapticTimer); clearTimeout(launchTimer);
+    if (animate && state() !== "idle") runGoo();
+    launcher.dataset.state = "idle";
+    delete launcher.dataset.selected;
+    setGlow();
+    setControls("idle");
+    restoreChrome(animate ? 450 : 0);
+    pinStaticChrome();
+    startBtn.setAttribute("aria-label", DATA.getActiveWorkout(DATA.getCurrentUser()) ? "Вернуться к тренировке" : "Выбрать тип тренировки");
+  }
+
+  function applySplit({ animate = true } = {}) {
+    clearTimeout(hapticTimer); clearTimeout(launchTimer);
+    hideChrome();
+    renderContext(DATA.getWorkoutHistory(DATA.getCurrentUser()));
+    if (animate && state() !== "split") runGoo();
+    launcher.dataset.state = "split";
+    delete launcher.dataset.selected;
+    setGlow();
+    setControls("split");
+    pinStaticChrome();
+    requestAnimationFrame(updateGeometry);
+    hapticTimer = setTimeout(() => haptic(10), reduceMotion.matches ? 80 : 390);
+  }
+
+  function disarmSelectionHistory() {
+    if (!selectionHistoryArmed) return;
+    selectionHistoryArmed = false;
+    window.history.back();
+  }
+
+  function backToSplit({ fromPop = false } = {}) {
+    if (state() !== "selected") return;
+    applySplit();
+    if (fromPop) selectionHistoryArmed = false;
+    else disarmSelectionHistory();
+  }
+
+  function leaveLauncher() {
+    clearTimeout(gooTimer); clearTimeout(hapticTimer); clearTimeout(chromeTimer); clearTimeout(launchTimer);
+    launcher.classList.remove("is-gooing");
+    launcher.dataset.state = "idle";
+    delete launcher.dataset.selected;
+    setGlow();
+    setControls("idle");
+    screenMenu.classList.remove("launcher-choice-active");
+    disarmSelectionHistory();
+  }
+
+  function startNew(type) {
+    const userId = DATA.getCurrentUser();
+    try {
+      DATA.startWorkout(userId, type);
+      haptic(24);
+      leaveLauncher();
+      goToScreen(type === "run" ? "run" : "workout");
+    } catch (error) { showToast(error?.message || "Не удалось начать тренировку"); }
+  }
+
+  function startRepeated(type, source) {
+    const userId = DATA.getCurrentUser();
+    try {
+      const workout = DATA.startWorkout(userId, type);
+      if (type === "strength") {
+        workout.name = source.name || "Силовая тренировка";
+        workout.exercises = (source.exercises || []).map(exercise => {
+          const completed = (exercise.sets || []).filter(set => set.done).length;
+          const count = Math.max(1, completed || (exercise.sets || []).length || 1);
+          return {
+            exerciseId: exercise.exerciseId,
+            name: exercise.name,
+            supersetId: exercise.supersetId || null,
+            sets: Array.from({ length: count }, () => ({ weight: 0, reps: 0, rpe: 0, done: false })),
+          };
+        });
+        DATA.saveActiveWorkout(userId, workout);
+      }
+      haptic(24);
+      leaveLauncher();
+      goToScreen(type === "run" ? "run" : "workout");
+    } catch (error) { showToast(error?.message || "Не удалось повторить тренировку"); }
+  }
+
+  function strengthMeta(workout) {
+    const exercises = (workout.exercises || []).filter(ex => (ex.sets || []).some(set => set.done));
+    const sets = exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.done).length, 0);
+    return `${exercises.length} ${pluralExercises(exercises.length)} · ${sets} ${pluralSets(sets)}`;
+  }
+
+  function exerciseLine(workout) {
+    const names = (workout.exercises || []).map(ex => ex.name).filter(Boolean);
+    if (!names.length) return "";
+    const visible = names.slice(0, 3).join(" · ");
+    return visible + (names.length > 3 ? ` +${names.length - 3}` : "");
+  }
+
+  function runBars(workout) {
+    const seed = String(workout.id || workout.startedAt || "run").split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+    return `<span class="launcher-run-bars" aria-hidden="true">${Array.from({ length: 7 }, (_, i) => `<i style="height:${9 + ((seed + i * 7) % 17)}px"></i>`).join("")}</span>`;
+  }
+
+  function choiceKey(kind, id = "") { return `${kind}:${id}`; }
+
+  function updateChoice(type, choice) {
+    selectedChoice = choice;
+    const key = choiceKey(choice.kind, choice.id || "");
+    optionsEl.querySelectorAll("[data-choice-key]").forEach(card => card.classList.toggle("is-selected", card.dataset.choiceKey === key));
+    startChoiceBtn.textContent = choice.kind === "empty" ? "Начать пустую" : `Начать: ${choice.name}`;
+  }
+
+  function renderSelection(type, recent, templates, switching = false) {
+    const isRun = type === "run";
+    const color = isRun ? "#42dea4" : "#8f7cff";
+    selection.style.setProperty("--selected-color", color);
+    selectedTitle.textContent = isRun ? "Бег" : "Силовая";
+    const countParts = [];
+    if (recent.length) countParts.push(`последних: ${recent.length}`);
+    if (templates.length) countParts.push(`шаблонов: ${templates.length}`);
+    selectedCounts.textContent = countParts.join(" · ");
+    selectedOrbHit.setAttribute("aria-label", `Вернуться к выбору типа. Выбрано: ${isRun ? "Бег" : "Силовая"}`);
+    otherOrbHit.setAttribute("aria-label", `Выбрать: ${isRun ? "Силовая" : "Бег"}`);
+    selectedChoice = { kind: "empty", id: null, name: "пустую" };
+    startChoiceBtn.textContent = "Начать пустую";
+
+    const empty = `
+      <button class="launcher-option launcher-option--empty is-selected" type="button" data-choice-key="empty:">
+        <span class="launcher-option-mark"></span><span class="launcher-option-copy"><b>Пустая тренировка</b><small>Начать с чистого листа</small></span><span class="launcher-option-plus">+</span>
+      </button>`;
+    const historyBlock = recent.length ? `
+      <section class="launcher-section"><p class="launcher-section-title">Повторить последнюю</p>
+        ${recent.map(workout => {
+          const meta = isRun
+            ? [workout.distance ? `${workout.distance} км` : null, workout.pace ? `${workout.pace}/км` : null].filter(Boolean).join(" · ") || "Пробежка"
+            : strengthMeta(workout);
+          const extra = isRun ? "" : `<span class="launcher-option-exercises">${escHtml(exerciseLine(workout))}</span>`;
+          return `<button class="launcher-option" type="button" data-choice-key="history:${escHtml(workout.id)}" data-kind="history" data-id="${escHtml(workout.id)}">
+            <span class="launcher-option-mark"></span><span class="launcher-option-copy"><b>${escHtml(workout.name || (isRun ? "Пробежка" : "Силовая тренировка"))}</b><small>${escHtml(meta)}</small>${extra}</span><span class="launcher-option-date">${escHtml(fmtDate(workout.startedAt))}</span>${isRun ? runBars(workout) : ""}
+          </button>`;
+        }).join("")}
+      </section>` : "";
+    const templateBlock = templates.length ? `
+      <section class="launcher-section"><p class="launcher-section-title">Шаблоны</p><div class="launcher-template-grid">
+        ${templates.map(template => `<button class="launcher-template-card" type="button" data-choice-key="template:${escHtml(template.id)}" data-kind="template" data-id="${escHtml(template.id)}"><b>${escHtml(template.name || "Шаблон")}</b><small>${(template.exercises || []).length} ${pluralExercises((template.exercises || []).length)}</small></button>`).join("")}
+      </div></section>` : "";
+
+    const draw = () => {
+      optionsEl.innerHTML = empty + historyBlock + templateBlock;
+      optionsEl.scrollTop = 0;
+      optionsEl.querySelectorAll("[data-choice-key]").forEach(card => card.addEventListener("click", () => {
+        const key = card.dataset.choiceKey;
+        if (key === "empty:") updateChoice(type, { kind: "empty", id: null, name: "пустую" });
+        else {
+          const [kind, id] = key.split(":");
+          const item = kind === "history" ? recent.find(entry => entry.id === id) : templates.find(entry => entry.id === id);
+          if (item) updateChoice(type, { kind, id, name: item.name || (kind === "template" ? "Шаблон" : isRun ? "Пробежка" : "Силовая тренировка") });
+        }
+      }));
+      updateChoice(type, { kind: "empty", id: null, name: "пустую" });
+      optionsEl.classList.remove("is-refreshing");
+    };
+    if (switching) { optionsEl.classList.add("is-refreshing"); setTimeout(draw, 130); }
+    else draw();
+
+    startChoiceBtn.onclick = () => {
+      if (selectedChoice.kind === "empty") { startNew(type); return; }
+      if (selectedChoice.kind === "template") { const id = selectedChoice.id; leaveLauncher(); tplStartWorkout(id); return; }
+      const source = recent.find(item => item.id === selectedChoice.id);
+      if (source) startRepeated(type, source);
+    };
+  }
+
+  function chooseType(type, { switching = false } = {}) {
+    if (state() !== "split" && state() !== "selected") return;
+    const userId = DATA.getCurrentUser();
+    const recent = DATA.getWorkoutHistory(userId).filter(item => item.type === type).slice(0, 3);
+    const templates = type === "strength" ? DATA.getTemplates(userId) : [];
+    haptic(24);
+
+    if (!recent.length && !templates.length) {
+      launcher.dataset.selected = type;
+      launcher.dataset.state = "launching";
+      setGlow(type);
+      setControls("launching");
+      launchTimer = setTimeout(() => startNew(type), reduceMotion.matches ? 80 : 280);
+      return;
+    }
+
+    hideChrome();
+    renderSelection(type, recent, templates, switching);
+    if (state() === "split") runGoo();
+    launcher.dataset.selected = type;
+    launcher.dataset.state = "selected";
+    setGlow(type);
+    setControls("selected");
+    pinStaticChrome();
+    requestAnimationFrame(updateGeometry);
+
+    if (!selectionHistoryArmed) {
+      try {
+        window.history.pushState({ ...(window.history.state || {}), trainLauncherSelection: true }, "");
+        selectionHistoryArmed = true;
+      } catch {}
+    }
+  }
+
+  startBtn.addEventListener("click", () => {
+    const userId = DATA.getCurrentUser();
+    const active = DATA.getActiveWorkout(userId);
+    if (active) { goToScreen(active.type === "run" ? "run" : "workout", { resume: true }); return; }
+    applySplit();
+  });
+  strengthOrb.addEventListener("click", () => chooseType("strength"));
+  runOrb.addEventListener("click", () => chooseType("run"));
+  selectedOrbHit.addEventListener("click", () => backToSplit());
+  otherOrbHit.addEventListener("click", () => chooseType(selectedType() === "run" ? "strength" : "run", { switching: true }));
+
+  launcher.addEventListener("pointerdown", event => {
+    if (event.target.closest?.("button")) event.preventDefault();
+  });
+  launcher.addEventListener("focusin", pinStaticChrome);
+  launcher.addEventListener("click", event => {
+    if (state() === "split" && event.target === launcher) applyIdle();
+  });
+
+  let touchY = 0, touchX = 0, touchTarget = null;
+  launcher.addEventListener("touchstart", event => {
+    const touch = event.touches[0]; if (!touch) return;
+    touchY = touch.clientY; touchX = touch.clientX; touchTarget = event.target;
+  }, { passive: true });
+  launcher.addEventListener("touchend", event => {
+    const touch = event.changedTouches[0];
+    if (!touch || touch.clientY - touchY < 56 || Math.abs(touch.clientY - touchY) < Math.abs(touch.clientX - touchX)) return;
+    if (state() === "selected" && touchTarget?.closest?.(".launcher-options") && optionsEl.scrollTop > 0) return;
+    if (state() === "selected") backToSplit();
+    else if (state() === "split") applyIdle();
+  }, { passive: true });
+
+  window.addEventListener("popstate", () => {
+    if (selectionHistoryArmed || state() === "selected") backToSplit({ fromPop: true });
+  });
+  window.addEventListener("resize", updateGeometry);
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || !screenMenu.classList.contains("active")) return;
+    if (state() === "selected") { event.preventDefault(); backToSplit(); }
+    else if (state() === "split") { event.preventDefault(); applyIdle(); }
+  });
+
+  setControls("idle");
+  updateGeometry();
   window.resetWorkoutLauncher = leaveLauncher;
 })();
 const sheet         = $("history-sheet");
