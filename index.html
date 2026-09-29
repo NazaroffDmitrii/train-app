@@ -59,7 +59,6 @@
 
 html, body {
   margin: 0; padding: 0; height: 100%;
-  overflow: hidden;
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
@@ -98,7 +97,6 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   margin: 0 auto;
   height: 100vh;
   overflow: hidden;
-  overflow: clip; /* корень не должен становиться focus-scroll контейнером */
   background: var(--bg-base);
 }
 
@@ -242,7 +240,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .profile-list-actions .btn-chip { flex: 1; justify-content: center; }
 
 /* ============ Screen 2: main menu ============ */
-.screen-menu { padding-top: calc(20px + var(--safe-top)); overflow: hidden; }
+.screen-menu { padding-top: calc(20px + var(--safe-top)); }
 
 /* z-index МЕЖДУ .menu-center (кнопка с кольцами, z-index 1) и .sheet (шторка,
    z-index 3): кольца пульсации проходят ПОД навигацией, а раскрытая шторка —
@@ -305,560 +303,193 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   padding-bottom: var(--sheet-peek, calc(116px + var(--safe-bottom)));
 }
 
-/* Центральный выбор тренировки живёт в собственной сцене. Шапка и история
-   остаются соседними слоями и поэтому не участвуют ни в одном transform. */
+/* Центральная сцена и полноэкранный выбор тренировки. */
 .workout-launcher {
-  position: absolute;
-  inset: 0 0 var(--sheet-peek, calc(116px + var(--safe-bottom))) 0;
-  min-height: 250px;
-  overflow: hidden;
-  touch-action: pan-y;
-  --orb-shift: clamp(84px, 24vw, 112px);
-  --strength: #8f7cff;
-  --run: #42dea4;
+  position:absolute; inset:0 0 var(--sheet-peek, calc(116px + var(--safe-bottom)));
+  min-height:220px; isolation:isolate;
+  --orb-size:clamp(138px, 37vw, 150px);
+  --orb-shift:min(25vw, 108px);
+  --strength:#7c6ce6; --run:#34d399;
+  --content-left:max(20px, calc((100% - 560px) / 2));
+  transition:top 720ms cubic-bezier(.22,.8,.25,1), bottom 720ms cubic-bezier(.22,.8,.25,1);
 }
-.launcher-filter-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
-.launcher-goo {
-  position: absolute; inset: 0;
-  pointer-events: none;
-}
-.workout-launcher.is-gooing:not(.launcher-no-goo) .launcher-goo {
-  filter: url(#launcher-goo-filter);
-}
+.launcher-filter-defs { position:absolute; width:0; height:0; overflow:hidden; }
+.launcher-goo { position:absolute; inset:0; pointer-events:none; }
+.workout-launcher.is-gooing:not(.launcher-no-goo) .launcher-goo { filter:url(#launcher-goo-filter); }
 .launcher-body {
-  position: absolute; left: 50%; top: 50%;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  will-change: transform, opacity;
-  transition: top 760ms cubic-bezier(.22,.9,.24,1.12), transform 760ms cubic-bezier(.22,.9,.24,1.12), opacity 250ms ease;
+  position:absolute; left:50%; top:50%; width:var(--orb-size); height:var(--orb-size);
+  border-radius:50%; background:#11111b; opacity:0;
+  transform:translate(-50%,-50%) scale(.72);
+  transition:left 720ms cubic-bezier(.22,.8,.25,1), top 720ms cubic-bezier(.22,.8,.25,1), transform 720ms cubic-bezier(.22,.8,.25,1), opacity 260ms ease;
 }
-.launcher-body--main {
-  width: 190px; height: 190px;
-  background: #11111b;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.055);
-}
-.launcher-body--strength, .launcher-body--run { width: 145px; height: 145px; opacity: 0; }
-.launcher-body--strength { background: #171429; }
-.launcher-body--run { background: #10231d; }
-
-.workout-launcher[data-state="split"] .launcher-body--main,
-.workout-launcher[data-state="selected"] .launcher-body--main {
-  opacity: 0; transform: translate(-50%, -50%) scale(.72);
-}
-.workout-launcher[data-state="split"] .launcher-body--strength {
-  opacity: 1; transform: translate(calc(-50% - var(--orb-shift)), -50%);
-}
-.workout-launcher[data-state="split"] .launcher-body--run {
-  opacity: 1; transform: translate(calc(-50% + var(--orb-shift)), -50%);
-}
-.workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--strength,
-.workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--run {
-  top: 52px; opacity: 1; transform: translate(-50%, -50%) scale(.44);
-}
-.workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--run {
-  transform: translate(calc(-50% + var(--orb-shift) + 80px), -50%) scale(.82);
-}
-.workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--strength {
-  transform: translate(calc(-50% - var(--orb-shift) - 80px), -50%) scale(.82);
-}
-
-/* Исходный круг — визуальный слой поверх goo-тел. */
+.launcher-body--main { width:190px; height:190px; opacity:1; transform:translate(-50%,-50%); }
+.workout-launcher:not([data-state="idle"]) .launcher-body--main { opacity:0; transform:translate(-50%,-50%) scale(.72); }
 .workout-launcher .start-btn {
-  position: absolute; left: 50%; top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 3;
-  transition: transform 240ms ease, opacity 220ms ease;
+  position:absolute; left:50%; top:50%; z-index:3;
+  transform:translate(-50%,-50%);
+  transition:transform 300ms ease, opacity 260ms ease;
 }
-.workout-launcher .start-btn:active { transform: translate(-50%, -50%) scale(.94); }
-.workout-launcher[data-state="split"] .start-btn,
-.workout-launcher[data-state="selected"] .start-btn {
-  opacity: 0; pointer-events: none;
-  transform: translate(-50%, -50%) scale(.72);
-}
-
+.workout-launcher .start-btn:active { transform:translate(-50%,-50%) scale(.94); }
+.workout-launcher:not([data-state="idle"]) .start-btn { opacity:0; pointer-events:none; transform:translate(-50%,-50%) scale(.72); }
 .type-orb {
-  position: absolute; left: 50%; top: 50%; z-index: 4;
-  width: 145px; height: 145px; border-radius: 50%;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 9px;
-  opacity: 0; pointer-events: none;
-  transform: translate(-50%, -50%) scale(.72);
-  transition: top 760ms cubic-bezier(.22,.9,.24,1.12), transform 760ms cubic-bezier(.22,.9,.24,1.12), opacity 220ms ease;
-  will-change: transform, opacity;
+  position:absolute; left:50%; top:50%; z-index:4;
+  width:var(--orb-size); height:var(--orb-size); border-radius:50%;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px;
+  background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06);
+  opacity:0; pointer-events:none; isolation:isolate;
+  transform:translate(-50%,-50%) scale(.72);
+  transition:left 720ms cubic-bezier(.22,.8,.25,1), top 720ms cubic-bezier(.22,.8,.25,1), transform 720ms cubic-bezier(.22,.8,.25,1), opacity 260ms ease;
 }
-.type-orb:active { transition-duration: 120ms; }
-.type-orb-icon { width: 31px; height: 31px; position: relative; z-index: 2; }
-.type-orb-label {
-  position: relative; z-index: 2;
-  font-size: 13px; font-weight: 720; letter-spacing: .01em;
-  color: #f7f7fb;
-}
-.type-orb-outline {
-  position: absolute; inset: 5px; border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.13); pointer-events: none;
-}
+.type-orb-icon { width:34px; height:34px; position:relative; z-index:2; }
+.type-orb-label { color:#f5f5f7; font-size:13px; font-weight:700; position:relative; z-index:2; }
+.type-orb--strength { color:var(--strength); }
+.type-orb--run { color:var(--run); }
+.type-orb-outline, .launcher-infinity { display:none; }
+/* Тот же градиент, маска и свечение, что у главного круга.
+   Второй градиент отражён: яркие головы встречаются на внутренних краях
+   одновременно, при одинаковом периоде 3.4 секунды. */
 .type-orb-ring, .type-orb-glow {
-  position: absolute; inset: 0; border-radius: 50%; padding: 2px;
-  pointer-events: none;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor; mask-composite: exclude;
+  position:absolute; border-radius:50%; pointer-events:none;
+  background:conic-gradient(from 0deg, rgba(124,108,230,0) 0deg, rgba(124,108,230,0) 130deg, rgba(167,150,255,.85) 225deg, #7c6ce6 300deg, #cec4ff 332deg, rgba(124,108,230,0) 360deg);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor; mask-composite:exclude;
+  animation:orb-clockwise 3.4s linear infinite paused;
 }
-.type-orb-glow { inset: -5px; padding: 7px; filter: blur(7px); opacity: .68; }
-.type-orb--strength { color: var(--strength); }
-.type-orb--run { color: var(--run); }
-.type-orb--strength .type-orb-ring, .type-orb--strength .type-orb-glow {
-  background: conic-gradient(from 0deg, transparent 0 135deg, rgba(183,169,255,.84) 225deg, var(--strength) 304deg, #ded6ff 334deg, transparent 360deg);
-  animation: start-neon-spin 4s linear infinite;
-}
+.type-orb-ring { inset:0; padding:2px; }
+.type-orb-glow { inset:-6px; padding:8px; filter:blur(8px); opacity:.7; }
 .type-orb--run .type-orb-ring, .type-orb--run .type-orb-glow {
-  background: conic-gradient(from 0deg, transparent 0 135deg, rgba(118,244,200,.84) 225deg, var(--run) 304deg, #caffea 334deg, transparent 360deg);
-  animation: start-neon-spin 3s linear infinite;
+  background:conic-gradient(from 0deg, transparent 0deg, #c6ffe6 28deg, #34d399 60deg, rgba(110,240,195,.85) 135deg, transparent 230deg, transparent 360deg);
+  animation-name:orb-counterclockwise;
 }
-.workout-launcher[data-state="split"] .type-orb { opacity: 1; pointer-events: auto; }
-.workout-launcher[data-state="split"] .type-orb--strength {
-  transform: translate(calc(-50% - var(--orb-shift)), -50%);
+@keyframes orb-clockwise { from { transform:rotate(118deg); } to { transform:rotate(478deg); } }
+@keyframes orb-counterclockwise { from { transform:rotate(-118deg); } to { transform:rotate(-478deg); } }
+.workout-launcher:not([data-state="idle"]) .type-orb-ring,
+.workout-launcher:not([data-state="idle"]) .type-orb-glow { animation-play-state:running; }
+.type-orb-pulse {
+  position:absolute; inset:0; border:1px solid currentColor; border-radius:50%; pointer-events:none;
+  animation:orb-pulse 2s cubic-bezier(.22,.61,.36,1) infinite; opacity:0;
 }
-.workout-launcher[data-state="split"] .type-orb--run {
-  transform: translate(calc(-50% + var(--orb-shift)), -50%);
-}
-.workout-launcher[data-state="split"] .type-orb:active {
-  transform: translate(calc(-50% + var(--press-shift, 0px)), -50%) scale(.95);
-}
-.workout-launcher[data-state="split"] .type-orb--strength { --press-shift: calc(-1 * var(--orb-shift)); }
-.workout-launcher[data-state="split"] .type-orb--run { --press-shift: var(--orb-shift); }
-.workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--strength,
-.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--run {
-  top: 52px; opacity: 1; transform: translate(-50%, -50%) scale(.44);
-}
-.workout-launcher[data-state="selected"] .type-orb-label { opacity: 0; }
-.workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--run {
-  transform: translate(calc(-50% + var(--orb-shift) + 80px), -50%) scale(.82);
-}
-.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--strength {
-  transform: translate(calc(-50% - var(--orb-shift) - 80px), -50%) scale(.82);
-}
-
+.type-orb-pulse--second { animation-delay:-1s; }
+@keyframes orb-pulse { from { transform:scale(1); opacity:.18; } to { transform:scale(1.45); opacity:0; } }
+.workout-launcher:not([data-state="split"]) .type-orb-pulse { visibility:hidden; }
+.workout-launcher[data-state="split"] .type-orb { opacity:1; pointer-events:auto; }
+.workout-launcher[data-state="split"] .type-orb--strength,
+.workout-launcher[data-state="split"] .launcher-body--strength { opacity:1; transform:translate(calc(-50% - var(--orb-shift)), -50%); }
+.workout-launcher[data-state="split"] .type-orb--run,
+.workout-launcher[data-state="split"] .launcher-body--run { opacity:1; transform:translate(calc(-50% + var(--orb-shift)), -50%); }
 .launcher-return-dots {
-  position: absolute; left: 50%; top: 50%; z-index: 5;
-  width: 42px; height: 58px; border-radius: 22px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-  transform: translate(-50%, -50%) scale(.7); opacity: 0; pointer-events: none;
-  transition: opacity 220ms ease 370ms, transform 300ms ease 350ms;
+  position:absolute; left:50%; top:50%; z-index:5; width:40px; height:56px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+  transform:translate(-50%,-50%); opacity:0; pointer-events:none;
+  transition:opacity 240ms ease;
 }
-.launcher-return-dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(203,195,255,.9); box-shadow: 0 0 8px rgba(143,124,255,.62); }
-.workout-launcher[data-state="split"] .launcher-return-dots { opacity: 1; transform: translate(-50%, -50%); pointer-events: auto; }
-
-.launcher-selection {
-  position: absolute; inset: 0; z-index: 6;
-  display: flex; flex-direction: column; align-items: center;
-  padding: 20px 18px 12px;
-  opacity: 0; visibility: hidden; pointer-events: none;
-  transition: opacity 260ms ease 220ms, visibility 0s linear 500ms;
-}
-.workout-launcher[data-state="selected"] .launcher-selection {
-  opacity: 1; visibility: visible; pointer-events: auto;
-  transition: opacity 260ms ease 210ms, visibility 0s;
-}
-.workout-launcher[data-state="selected"] .type-orb { pointer-events: none; }
-.launcher-selected-orb {
-  width: 64px; height: 64px; border-radius: 50%; flex: none;
-  display: grid; place-items: center;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(18,18,29,.94);
-  box-shadow: 0 0 26px var(--selected-glow, rgba(124,108,230,.24));
-  color: var(--selected-color, var(--strength));
-  opacity: 0; /* прозрачная hit-area поверх уменьшившегося настоящего круга */
-}
-.launcher-selected-orb svg { width: 27px; height: 27px; }
-.launcher-change {
-  margin-top: 8px; padding: 5px 10px;
-  color: #d7d4e2; font-size: 12px; font-weight: 650;
-}
-.launcher-options {
-  width: min(100%, 390px); margin-top: 7px;
-  overflow-y: auto; overscroll-behavior: contain;
-  scrollbar-width: none;
-}
-.launcher-options::-webkit-scrollbar { display: none; }
-.launcher-section + .launcher-section { margin-top: 12px; }
-.launcher-section-title {
-  margin: 0 4px 6px; color: #8f8e9c;
-  font-size: 10px; font-weight: 750; letter-spacing: .075em; text-transform: uppercase;
-}
-.launcher-option {
-  width: 100%; min-height: 46px; padding: 9px 12px; margin-bottom: 6px;
-  display: flex; align-items: center; gap: 10px; text-align: left;
-  color: #f5f5f8; background: rgba(25,25,36,.94);
-  border: 1px solid rgba(255,255,255,.075); border-radius: 14px;
-  transition: transform 130ms ease, border-color 180ms ease, background 180ms ease;
-}
-.launcher-option:active { transform: scale(.985); background: #20202d; }
-.launcher-option-mark { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--selected-color, var(--strength)); box-shadow: 0 0 8px var(--selected-glow, rgba(124,108,230,.4)); }
-.launcher-option-copy { min-width: 0; flex: 1; }
-.launcher-option-copy b, .launcher-option-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.launcher-option-copy b { font-size: 12.5px; font-weight: 650; }
-.launcher-option-copy small { color: #8f8e9c; font-size: 10.5px; margin-top: 2px; }
-.launcher-option-arrow { color: #696875; font-size: 18px; }
-.launcher-new-btn {
-  width: min(100%, 390px); min-height: 40px; margin-top: 8px; flex: none;
-  border: 1px solid color-mix(in srgb, var(--selected-color, var(--strength)) 42%, transparent);
-  border-radius: 13px; color: #f7f7fb; background: color-mix(in srgb, var(--selected-color, var(--strength)) 11%, transparent);
-  font-size: 12px; font-weight: 700;
-}
-
-.app.launcher-strength .bg-glow { --bg-glow: rgba(124,108,230,.26); }
-.app.launcher-run .bg-glow { --bg-glow: rgba(52,211,153,.21); }
-.bg-glow { transition: background 620ms ease; }
-
-@media (max-width: 370px) {
-  .workout-launcher { --orb-shift: 82px; }
-  .type-orb, .launcher-body--strength, .launcher-body--run { width: 138px; height: 138px; }
-}
-@media (max-height: 620px) {
-  .launcher-selection { padding-top: 8px; }
-  .launcher-selected-orb { width: 54px; height: 54px; }
-  .launcher-selected-orb svg { width: 23px; height: 23px; }
-  .launcher-change { margin-top: 3px; }
-  .launcher-options { margin-top: 2px; }
-  .launcher-option { min-height: 40px; padding: 7px 10px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .workout-launcher.is-gooing .launcher-goo { filter: none !important; }
-  .launcher-body, .type-orb, .workout-launcher .start-btn,
-  .launcher-return-dots, .launcher-selection { transition-duration: 220ms !important; transition-delay: 0ms !important; }
-  .launcher-body, .type-orb, .workout-launcher .start-btn { transition-property: opacity !important; }
-  .type-orb-ring, .type-orb-glow, .start-neon-ring, .start-neon-glow { animation: none !important; }
-}
-
-/* ── Центральный launcher v2: бесконечность, недельный контекст и список ── */
-.workout-launcher {
-  overflow: hidden;
-  --orb-size: clamp(142px, 38vw, 150px);
-  --orb-shift: min(25vw, 112px);
-  --launcher-screen-top: 124px;
-}
-.launcher-body--strength, .launcher-body--run,
-.type-orb { width: var(--orb-size); height: var(--orb-size); }
-.launcher-body--strength { background: #18142b; }
-.launcher-body--run { background: #10251e; }
-.type-orb {
-  gap: 10px;
-  transition: left 760ms cubic-bezier(.22,.9,.24,1.08), top 760ms cubic-bezier(.22,.9,.24,1.08), transform 760ms cubic-bezier(.22,.9,.24,1.08), opacity 300ms ease;
-}
-.type-orb-icon { width: 33px; height: 33px; }
-.type-orb-label { font-size: 14px; }
-.type-orb-outline { inset: 0; border-color: rgba(255,255,255,.1); }
-.workout-launcher[data-state="split"] .type-orb--strength { transform: translate(calc(-50% - var(--orb-shift)), -50%); }
-.workout-launcher[data-state="split"] .type-orb--run { transform: translate(calc(-50% + var(--orb-shift)), -50%); }
-
+.launcher-return-dots span { width:4.5px; height:4.5px; border-radius:50%; background:rgba(124,108,230,.9); }
+.workout-launcher[data-state="split"] .launcher-return-dots { opacity:1; pointer-events:auto; }
 .launcher-context {
-  position: fixed; left: 0; right: 0; top: calc(25px + var(--safe-top));
-  z-index: 5; text-align: center;
-  opacity: 0; transform: translateY(-8px); pointer-events: none;
-  transition: opacity 320ms ease, transform 420ms cubic-bezier(.22,.8,.28,1);
+  position:absolute; left:20px; right:20px; top:16px; text-align:center;
+  opacity:0; pointer-events:none; transition:opacity 300ms ease;
 }
-.launcher-context, .launcher-infinity, .launcher-week { display: none !important; }
-.launcher-context-date {
-  display: block; color: #777684; font-size: 10px; font-weight: 720;
-  letter-spacing: .09em; text-transform: uppercase;
+.launcher-context-date { color:#8b8b97; font-size:11px; }
+.launcher-context h2 { margin:8px auto 0; max-width:300px; font-size:25px; line-height:1.12; letter-spacing:-.035em; }
+.workout-launcher[data-state="split"] .launcher-context { opacity:1; }
+.launcher-week { display:none; }
+.workout-launcher[data-state="split"] .launcher-week.has-history {
+  position:absolute; left:22px; right:22px; bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:18px; pointer-events:none;
 }
-.launcher-context h2 { margin: 7px 0 0; color: #f7f7fa; font-size: 20px; line-height: 1.1; letter-spacing: -.02em; }
-.workout-launcher[data-state="split"] .launcher-context {
-  opacity: 1; transform: translateY(0); transition-delay: 480ms;
-}
+.launcher-week-title { font-size:12px; color:#8b8b97; }
+.launcher-week-days { display:flex; gap:15px; }
+.launcher-week-day { display:grid; justify-items:center; gap:6px; color:#858491; font-size:10px; }
+.launcher-week-dot { width:8px; height:8px; border-radius:50%; background:#262630; }
+.launcher-week-day.strength .launcher-week-dot { background:#7c6ce6; }
+.launcher-week-day.run .launcher-week-dot { background:#34d399; }
+.launcher-week-day.both .launcher-week-dot { background:linear-gradient(90deg,#7c6ce6 50%,#34d399 50%); }
+.launcher-week-day.today .launcher-week-dot { outline:1px solid #a89aef; outline-offset:3px; }
 
-.launcher-infinity {
-  position: absolute; inset: 0; z-index: 3;
-  width: 100%; height: 100%; overflow: visible;
-  opacity: 0; pointer-events: none;
-  transition: opacity 320ms ease 430ms;
+/* Выбор заполняет весь экран, включая область меню и истории. */
+.screen-menu .menu-top { transition:opacity 260ms ease; }
+.screen-menu.launcher-selected-screen .menu-top,
+.screen-menu.launcher-selected-screen .sheet { opacity:0; pointer-events:none; }
+.screen-menu.launcher-selected-screen .menu-center { z-index:4; }
+.workout-launcher[data-state="selected"] {
+  top:calc(-1 * var(--launcher-screen-top, 124px)); bottom:0;
 }
-.workout-launcher[data-state="split"] .launcher-infinity { opacity: 1; }
-.infinity-path { fill: none; stroke: url(#infinity-gradient); stroke-linecap: round; stroke-linejoin: round; }
-.infinity-track { stroke-width: 1; opacity: .16; }
-.infinity-tail { stroke-dasharray: 62 938; }
-.infinity-tail--wide { stroke-width: 13; opacity: .16; filter: url(#infinity-blur-wide); }
-.infinity-tail--mid { stroke-width: 6; opacity: .38; filter: url(#infinity-blur-mid); }
-.infinity-tail--bright { stroke-width: 2.2; opacity: .96; }
-.infinity-tail--a { animation: infinity-run-a 6.5s linear infinite; }
-.infinity-tail--b { animation: infinity-run-b 6.5s linear infinite; }
-@keyframes infinity-run-a { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -1000; } }
-@keyframes infinity-run-b { from { stroke-dashoffset: -500; } to { stroke-dashoffset: -1500; } }
-
-.launcher-week {
-  position: fixed; left: 20px; right: 20px; bottom: calc(28px + var(--safe-bottom)); z-index: 5;
-  display: none; align-items: center; justify-content: space-between; gap: 18px;
-  opacity: 0; transform: translateY(8px); pointer-events: none;
-  transition: opacity 320ms ease, transform 420ms cubic-bezier(.22,.8,.28,1);
+.workout-launcher::before {
+  content:""; position:absolute; inset:0; z-index:-1; opacity:0; pointer-events:none;
+  background:radial-gradient(ellipse at 50% 34%, rgba(124,108,230,.18), transparent 65%), var(--bg-base);
+  transition:opacity 400ms ease;
 }
-.launcher-week.has-history { display: flex; }
-.workout-launcher[data-state="split"] .launcher-week.has-history { opacity: 1; transform: translateY(0); transition-delay: 500ms; }
-.launcher-week-title { color: #aaa9b5; font-size: 12px; font-weight: 680; white-space: nowrap; }
-.launcher-week-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; flex: 1; max-width: 246px; }
-.launcher-week-day { display: grid; justify-items: center; gap: 5px; color: #656472; font-size: 8px; font-weight: 700; }
-.launcher-week-dot { width: 8px; height: 8px; border-radius: 50%; background: #4c4b57; }
-.launcher-week-day.strength .launcher-week-dot { background: #8f7cff; box-shadow: 0 0 8px rgba(143,124,255,.42); }
-.launcher-week-day.run .launcher-week-dot { background: #42dea4; box-shadow: 0 0 8px rgba(66,222,164,.38); }
-.launcher-week-day.both .launcher-week-dot { background: linear-gradient(90deg,#8f7cff 0 50%,#42dea4 50%); }
-.launcher-week-day.today .launcher-week-dot { outline: 1px solid #f2f0f8; outline-offset: 3px; }
-.launcher-week-day.today { color: #d4d2dc; }
-
-/* Выбранный тип остаётся внутри центральной зоны: круг уменьшается и уходит
-   вверх, а второй уезжает в сторону и гаснет. Меню и история не участвуют. */
-.workout-launcher[data-state="selected"] .type-orb-label,
-.workout-launcher[data-state="launching"] .type-orb-label { opacity: 0; }
+.workout-launcher[data-selected="run"]::before {
+  background:radial-gradient(ellipse at 50% 34%, rgba(52,211,153,.14), transparent 65%), var(--bg-base);
+}
+.workout-launcher[data-state="selected"]::before { opacity:1; }
+.workout-launcher[data-state="selected"] .type-orb { z-index:8; pointer-events:auto; opacity:1; }
 .workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--strength,
-.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--run {
-  left: 50%; top: 48px;
-  opacity: 1; transform: translate(-50%,-50%) scale(.38);
-}
-.workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--run {
-  opacity: 0; transform: translate(calc(-50% + 190px),-50%) scale(.45);
-}
-.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--strength {
-  opacity: 0; transform: translate(calc(-50% - 190px),-50%) scale(.45);
-}
+.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--run,
 .workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--strength,
 .workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--run {
-  left: 50%; top: 48px; opacity: 1;
-  transform: translate(-50%,-50%) scale(.38);
-}
-.workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--run {
-  opacity: 0; transform: translate(calc(-50% + 190px),-50%) scale(.45);
-}
-.workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--strength {
-  opacity: 0; transform: translate(calc(-50% - 190px),-50%) scale(.45);
-}
-.launcher-body { transition: left 760ms cubic-bezier(.22,.9,.24,1.08), top 760ms cubic-bezier(.22,.9,.24,1.08), transform 760ms cubic-bezier(.22,.9,.24,1.08), opacity 300ms ease; }
-
-.workout-launcher[data-state="launching"][data-selected="strength"] .type-orb--strength,
-.workout-launcher[data-state="launching"][data-selected="run"] .type-orb--run,
-.workout-launcher[data-state="launching"][data-selected="strength"] .launcher-body--strength,
-.workout-launcher[data-state="launching"][data-selected="run"] .launcher-body--run {
-  left: 50%; top: 50%; opacity: 1; transform: translate(-50%,-50%) scale(.4);
-}
-.workout-launcher[data-state="launching"][data-selected="strength"] .type-orb--run,
-.workout-launcher[data-state="launching"][data-selected="run"] .type-orb--strength,
-.workout-launcher[data-state="launching"][data-selected="strength"] .launcher-body--run,
-.workout-launcher[data-state="launching"][data-selected="run"] .launcher-body--strength { opacity: 0; }
-
-.launcher-selection {
-  position: absolute; inset: 0; z-index: 6;
-  padding: 8px 18px 10px;
-  display: grid; grid-template-rows: 94px minmax(0,1fr) 52px; align-items: stretch;
-  opacity: 0; visibility: hidden; pointer-events: none;
-  transition: opacity 260ms ease 260ms, visibility 0s linear 520ms;
-}
-.workout-launcher[data-state="selected"] .launcher-selection {
-  opacity: 1; visibility: visible; pointer-events: auto;
-  transition: opacity 260ms ease 250ms, visibility 0s;
-}
-.launcher-selection-header { position: relative; display: flex; justify-content: center; align-items: flex-start; min-width: 0; }
-.launcher-selected-orb, .launcher-other-orb {
-  position: absolute; top: 7px; border-radius: 50%; opacity: 0; z-index: 2;
-}
-.launcher-selected-orb { left: 50%; width: 62px; height: 62px; transform: translateX(-50%); }
-.launcher-other-orb { display: none; }
-.launcher-selection-heading { min-width: 0; padding-top: 68px; text-align: center; cursor: pointer; }
-.launcher-selection-heading h2 { margin: 0; color: #d7d4e2; font-size: 12px; line-height: 1.1; letter-spacing: .01em; }
-.launcher-selection-heading p { display: none; }
-.launcher-options {
-  width: 100%; max-width: 560px; margin: 8px auto 0; padding-bottom: 14px;
-  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
-  opacity: 1; transition: opacity 140ms ease;
-}
-.launcher-options.is-refreshing { opacity: 0; }
-.launcher-section + .launcher-section { margin-top: 18px; }
-.launcher-section-title { margin: 0 3px 8px; }
-.launcher-option {
-  min-height: 68px; margin-bottom: 8px; padding: 12px 14px;
-  border-radius: 17px; background: rgba(24,24,35,.94);
-  border: 1px solid rgba(255,255,255,.075);
-}
-.launcher-option--empty { border-style: dashed; background: rgba(255,255,255,.018); }
-.launcher-option.is-selected {
-  border-color: color-mix(in srgb, var(--selected-color) 72%, transparent);
-  background: color-mix(in srgb, var(--selected-color) 10%, rgba(24,24,35,.95));
-  box-shadow: 0 0 24px color-mix(in srgb, var(--selected-color) 13%, transparent);
-}
-.launcher-option-plus { margin-left: auto; color: var(--selected-color); font-size: 24px; font-weight: 300; }
-.launcher-option-copy b { font-size: 13.5px; }
-.launcher-option-copy small { font-size: 11px; }
-.launcher-option-date { align-self: flex-start; margin-left: auto; color: #777683; font-size: 10px; white-space: nowrap; }
-.launcher-option-exercises { display: block; margin-top: 7px; color: #a2a0ad; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.launcher-run-bars { width: 48px; height: 26px; display: flex; align-items: flex-end; gap: 2px; margin-left: auto; }
-.launcher-run-bars i { flex: 1; min-height: 5px; border-radius: 2px 2px 1px 1px; background: var(--selected-color); opacity: .72; }
-.launcher-template-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-.launcher-template-card {
-  position: relative; min-height: 88px; padding: 13px; overflow: hidden; text-align: left;
-  border-radius: 17px; border: 1px solid rgba(255,255,255,.075); background: rgba(24,24,35,.94);
-}
-.launcher-template-card::before { content:""; position:absolute; width:70px; height:70px; top:-38px; right:-24px; border-radius:50%; background:var(--selected-color); filter:blur(24px); opacity:.23; }
-.launcher-template-card b, .launcher-template-card small { position:relative; display:block; }
-.launcher-template-card b { font-size:13px; color:#f5f4f8; }
-.launcher-template-card small { margin-top:7px; color:#878692; font-size:10px; }
-.launcher-template-card.is-selected { border-color:color-mix(in srgb,var(--selected-color) 72%,transparent); background:color-mix(in srgb,var(--selected-color) 9%,rgba(24,24,35,.95)); box-shadow:0 0 22px color-mix(in srgb,var(--selected-color) 13%,transparent); }
-.launcher-start-choice {
-  width: 100%; max-width: 560px; height: 48px; margin: 4px auto 0; border-radius: 16px;
-  color: #0a0a12; background: var(--selected-color); font-size: 14px; font-weight: 800;
-  box-shadow: 0 8px 30px color-mix(in srgb,var(--selected-color) 25%,transparent);
-}
-
-.app.launcher-strength .bg-glow { --bg-glow: rgba(124,108,230,.27); }
-.app.launcher-run .bg-glow { --bg-glow: rgba(52,211,153,.23); }
-.bg-glow { transition-duration: 800ms; }
-
-@media (max-height: 660px) {
-  .launcher-selection { padding-top: 4px; grid-template-rows: 88px minmax(0,1fr) 46px; }
-  .launcher-selection-heading h2 { font-size: 12px; }
-  .launcher-option { min-height: 58px; padding: 9px 12px; }
-  .launcher-context { top: calc(12px + var(--safe-top)); }
-  .launcher-week { bottom: calc(14px + var(--safe-bottom)); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .infinity-tail { animation-play-state: paused !important; }
-  .launcher-infinity { transition: opacity 220ms ease !important; }
-  .launcher-context, .launcher-week { transition-delay: 0ms !important; }
-}
-
-/* ── Launcher v3: визуально продолжает исходный центральный круг ─────── */
-.workout-launcher {
-  overflow: hidden;
-  --orb-size: clamp(142px, 38vw, 150px);
-  --orb-shift: min(25vw, 108px);
-}
-.launcher-body--strength, .launcher-body--run {
-  background: #101019;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.045);
-}
-.type-orb {
-  color: #f7f7fb;
-  gap: 9px;
-  transition:
-    left 720ms cubic-bezier(.2,.84,.24,1),
-    top 720ms cubic-bezier(.2,.84,.24,1),
-    transform 720ms cubic-bezier(.2,.84,.24,1),
-    opacity 260ms ease;
-}
-.type-orb--strength .type-orb-icon { color: #8f7cff; }
-.type-orb--run .type-orb-icon { color: #42dea4; }
-.type-orb-icon { width: 34px; height: 34px; filter: drop-shadow(0 0 7px currentColor); }
-.type-orb-label { color: #f7f7fb; font-size: 13px; font-weight: 760; }
-.type-orb-outline { display: none; }
-
-/* В раздельном состоянии нет двух независимых дуг: одна световая капля
-   проходит по всей бесконечности и меняет цвет слева направо. */
-.workout-launcher[data-state="split"] .type-orb-ring,
-.workout-launcher[data-state="split"] .type-orb-glow { opacity: 0; }
-.launcher-infinity {
-  display: block !important;
-  z-index: 3;
-  opacity: 0;
-  transition: opacity 300ms ease 300ms;
-}
-.workout-launcher[data-state="split"] .launcher-infinity { opacity: 1; }
-.infinity-path { vector-effect: non-scaling-stroke; }
-.infinity-track { stroke: rgba(177,174,202,.2); stroke-width: 1.1; opacity: 1; }
-.infinity-tail {
-  stroke-dasharray: 68 932;
-  animation: launcher-orbit 5.4s linear infinite;
-}
-.infinity-tail--wide { stroke-width: 14; opacity: .14; filter: url(#infinity-blur-wide); }
-.infinity-tail--mid { stroke-width: 6; opacity: .36; filter: url(#infinity-blur-mid); }
-.infinity-tail--bright { stroke-width: 2.2; opacity: 1; }
-@keyframes launcher-orbit { to { stroke-dashoffset: -1000; } }
-
-.launcher-context {
-  display: block !important;
-  position: absolute; left: 18px; right: 18px; top: 12px;
-  z-index: 5;
-}
-.launcher-context-date { font-size: 10px; color: #858392; }
-.launcher-context h2 { margin-top: 5px; font-size: clamp(20px,5.8vw,25px); }
-.launcher-week { display: none !important; position: absolute; bottom: 14px; z-index: 5; }
-.launcher-week.has-history { display: flex !important; }
-.launcher-week-days { gap: clamp(7px,2.4vw,11px); }
-.launcher-return-dots { z-index: 6; }
-
-/* Выбранный тип: крупный круг слева, второй круг справа. Оба являются
-   настоящими интерактивными кругами, поэтому переключение не рвётся. */
-.workout-launcher[data-state="selected"] .type-orb { z-index: 8; pointer-events: auto; }
-.workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--strength,
-.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--run {
-  left: 72px; top: 68px; opacity: 1;
-  transform: translate(-50%,-50%) scale(.62);
+  left:calc(var(--content-left) + 38px); top:calc(76px + var(--safe-top)); opacity:1;
+  transform:translate(-50%,-50%) scale(.52);
 }
 .workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--run,
-.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--strength {
-  left: calc(100% - 45px); top: 68px; opacity: .74;
-  transform: translate(-50%,-50%) scale(.38);
-}
-.workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--strength,
-.workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--run {
-  left: 72px; top: 68px; opacity: 1;
-  transform: translate(-50%,-50%) scale(.62);
-}
+.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--strength,
 .workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--run,
 .workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--strength {
-  left: calc(100% - 45px); top: 68px; opacity: .74;
-  transform: translate(-50%,-50%) scale(.38);
+  left:calc(100% - var(--content-left) - 24px); top:calc(76px + var(--safe-top)); opacity:.68;
+  transform:translate(-50%,-50%) scale(.34);
 }
-.workout-launcher[data-state="selected"] .type-orb-ring,
-.workout-launcher[data-state="selected"] .type-orb-glow { display: block !important; opacity: 1; }
-.workout-launcher[data-state="selected"] .type-orb-glow { opacity: .36; }
-.workout-launcher[data-state="selected"] .type-orb-label { opacity: 0; transition: opacity 180ms ease; }
-.workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--strength .type-orb-label,
-.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--run .type-orb-label { opacity: 1; }
-
+.workout-launcher[data-state="selected"] .type-orb-label { display:none; }
 .launcher-selection {
-  position: absolute; inset: 0; z-index: 6;
-  padding: 8px 18px 10px;
-  grid-template-rows: 122px minmax(0,1fr) 52px;
+  position:absolute; inset:0; z-index:6; padding:calc(30px + var(--safe-top)) var(--content-left) calc(22px + var(--safe-bottom));
+  display:grid; grid-template-rows:112px minmax(0,1fr) 62px; gap:12px;
+  opacity:0; visibility:hidden; pointer-events:none;
+  transition:opacity 280ms ease, visibility 0s 280ms;
 }
-.launcher-selection-header { display: block; position: relative; min-width: 0; }
-.launcher-selected-orb, .launcher-other-orb { display: none; }
-.launcher-selection-heading {
-  min-width: 0; padding: 21px 66px 0 126px; text-align: left;
-  pointer-events: none;
-}
-.launcher-selection-heading h2 {
-  margin: 0; color: #f8f7fb; font-size: clamp(25px,7vw,31px);
-  line-height: 1.05; letter-spacing: -.035em;
-}
-.launcher-selection-heading p {
-  display: block; margin: 8px 0 0; color: #8f8d9e;
-  font-size: 11px; font-weight: 650; white-space: nowrap;
-}
-.launcher-options { margin-top: 3px; padding-bottom: 10px; }
+.workout-launcher[data-state="selected"] .launcher-selection { opacity:1; visibility:visible; pointer-events:auto; transition:opacity 300ms ease 180ms; }
+.launcher-selection-header { min-width:0; }
+.launcher-selected-orb, .launcher-other-orb { display:none; }
+.launcher-selection-heading { padding:22px 54px 0 86px; }
+.launcher-selection-heading h2 { margin:0; font-size:clamp(25px,7vw,31px); line-height:1.1; letter-spacing:-.035em; }
+.launcher-selection-heading p { margin:8px 0 0; color:#8b8b97; font-size:12px; line-height:1.4; }
+.launcher-options { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; opacity:1; transition:opacity 180ms ease; }
+.launcher-options::-webkit-scrollbar { display:none; }
+.launcher-options.is-refreshing { opacity:0; }
+.launcher-section { margin-top:22px; }
+.launcher-section-title { margin:0 2px 10px; font-size:12px; font-weight:700; letter-spacing:.06em; color:#8b8b97; text-transform:uppercase; }
 .launcher-option {
-  min-height: 64px; border-radius: 18px;
-  background: rgba(17,17,27,.96); border-color: rgba(159,155,186,.14);
+  display:flex; align-items:center; gap:10px; width:100%; min-height:90px; margin-bottom:10px; padding:16px;
+  background:rgba(16,16,25,.86); border:1px solid rgba(159,155,186,.15); border-radius:23px; text-align:left;
+  transition:border-color 200ms ease, background 200ms ease;
 }
-.launcher-option--empty { border-color: rgba(159,155,186,.18); }
-.launcher-template-card {
-  background: rgba(17,17,27,.96); border-color: rgba(159,155,186,.14);
+.launcher-option--empty { min-height:74px; border-style:dashed; background:transparent; }
+.launcher-option.is-selected:not(.launcher-option--empty), .launcher-template-card.is-selected { border-color:var(--selected-color); background:color-mix(in srgb,var(--selected-color) 9%,#101019); }
+.launcher-option-mark { display:none; }
+.launcher-option-copy { min-width:0; flex:1; }
+.launcher-option-copy b { display:block; font-size:16px; font-weight:700; }
+.launcher-option-copy small { display:block; margin-top:5px; color:#8b8b97; font-size:13px; }
+.launcher-option-exercises { display:block; margin-top:10px; color:#777584; font-size:12px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.launcher-option-plus { font-size:28px; color:var(--selected-color); }
+.launcher-option-date { align-self:flex-start; font-size:11px; color:#8b8b97; white-space:nowrap; }
+.launcher-run-bars { display:none; }
+.launcher-template-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.launcher-template-card { position:relative; overflow:hidden; min-height:85px; padding:16px; border-radius:23px; text-align:left; background:#101019; border:1px solid rgba(159,155,186,.15); }
+.launcher-template-card::before { content:""; position:absolute; width:90px; height:90px; top:-55px; right:-25px; border-radius:50%; background:var(--selected-color); filter:blur(24px); opacity:.28; }
+.launcher-template-card b { display:block; font-size:16px; }
+.launcher-template-card small { display:block; margin-top:12px; font-size:13px; color:#8b8b97; }
+.launcher-start-choice { width:100%; align-self:end; height:56px; border-radius:22px; color:#080810; background:var(--selected-color); font-size:17px; font-weight:800; box-shadow:0 8px 30px color-mix(in srgb,var(--selected-color) 22%,transparent); transition:background 500ms ease; }
+.workout-launcher[data-state="launching"] .type-orb { opacity:0; }
+.app.launcher-strength .bg-glow { --bg-glow:rgba(124,108,230,.26); }
+.app.launcher-run .bg-glow { --bg-glow:rgba(52,211,153,.21); }
+.bg-glow { transition:background 600ms ease; }
+@media (max-height:660px) {
+  .launcher-context { top:5px; } .launcher-context h2 { font-size:20px; }
+  .launcher-selection { padding-top:calc(12px + var(--safe-top)); grid-template-rows:100px minmax(0,1fr) 54px; gap:6px; }
 }
-.launcher-start-choice { border-radius: 18px; }
-
-@media (max-width: 370px) {
-  .workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--strength,
-  .workout-launcher[data-state="selected"][data-selected="run"] .type-orb--run,
-  .workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--strength,
-  .workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--run { left: 65px; }
-  .launcher-selection-heading { padding-left: 115px; }
+@media (prefers-reduced-motion:reduce) {
+  .workout-launcher, .type-orb, .launcher-body { transition-property:opacity !important; transition-duration:180ms !important; }
+  .workout-launcher .launcher-goo { filter:none !important; }
+  .type-orb-ring, .type-orb-glow, .type-orb-pulse { animation:none !important; }
 }
-@media (max-height: 660px) {
-  .launcher-context { top: 5px; }
-  .launcher-week { bottom: 7px; }
-  .launcher-selection { grid-template-rows: 108px minmax(0,1fr) 46px; }
-  .launcher-options { margin-top: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .infinity-tail { animation: none !important; stroke-dashoffset: -210; }
-  .type-orb, .launcher-body { transition-duration: 220ms !important; }
-}
-
 /* ── Центральная кнопка (покой + активная тренировка) ── */
 .start-btn {
   position: relative;
@@ -3636,6 +3267,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 
         <button class="type-orb type-orb--strength" id="strength-orb" data-type="strength" aria-label="Силовая тренировка">
           <span class="type-orb-glow"></span><span class="type-orb-ring"></span><span class="type-orb-outline"></span>
+          <span class="type-orb-pulse"></span><span class="type-orb-pulse type-orb-pulse--second"></span>
           <svg class="type-orb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3.5 9v6M6.5 7.2v9.6M17.5 7.2v9.6M20.5 9v6M6.5 12h11"/>
           </svg>
@@ -3643,9 +3275,10 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
         </button>
         <button class="type-orb type-orb--run" id="run-orb" data-type="run" aria-label="Беговая тренировка">
           <span class="type-orb-glow"></span><span class="type-orb-ring"></span><span class="type-orb-outline"></span>
+          <span class="type-orb-pulse"></span><span class="type-orb-pulse type-orb-pulse--second"></span>
           <svg class="type-orb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="15.4" cy="4.2" r="1.75" fill="currentColor" stroke="none"/>
-            <path d="m13.7 8.1-3.1 4.1 3.1 2.2 1.9-3.2 2.9 1.2M10.6 12.2l-4.1 1.3M13.7 14.4l-2.9 5.4M13.7 14.4l4.7 5"/>
+            <path d="M3 6.5v10.2a1.3 1.3 0 0 0 1.3 1.3h15.4a1.3 1.3 0 0 0 1.3-1.3v-1.4c0-1.4-.9-2.5-2.2-2.9l-3.6-1.1-4.5-5.1c-.5 2-1.8 3.4-3.5 3.4C5.7 9.6 4.3 8.5 3 6.5Z"/>
+            <path d="M3 15h17.8M11 9.5l2-1.5M13 11.8l2-1.5"/>
           </svg>
           <span class="type-orb-label">Бег</span>
         </button>

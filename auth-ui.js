@@ -637,17 +637,12 @@ function refreshWorkerShell(worker) {
 function openReadyApp(version) {
   if (window.__manualSyncInProgress) { showToast('Дождитесь завершения синхронизации', 5000); return; }
   if (typeof window.openUpdatedApp === 'function') window.openUpdatedApp(version);
-  else {
-    const url = new URL(location.href);
-    url.searchParams.set('__app_update', `${version || APP_VERSION}-${Date.now()}`);
-    location.replace(url.href);
-  }
+  else location.reload();
 }
 const appUpdateBtn = document.getElementById('app-update-btn');
 appUpdateBtn.addEventListener('click', async () => {
   if (window.__manualAppUpdateInProgress) return;
   closeModal(settingsModalBackdrop);
-  if (window.__appUpdateReady) { openReadyApp('latest'); return; }
   if (!navigator.onLine) {
     showToast('Обновление недоступно', 10000, { kind: 'error', detail: '[UPDATE-OFFLINE] Нет интернета. Синхронизация данных — отдельное действие.' }); return;
   }
@@ -657,10 +652,7 @@ appUpdateBtn.addEventListener('click', async () => {
     if (!navigator.serviceWorker) throw new Error('Этот браузер не поддерживает обновление установленного приложения.');
     const previousController = navigator.serviceWorker.controller;
     const reg = await withOperationTimeout((async () => {
-      // Уникальный URL проходит через специальный алгоритм обновления Service
-      // Worker и не зависит от старого Cache Storage/HTTP-кэша PWA.
-      const workerUrl = `./sw.js?manual-update=${Date.now()}`;
-      const registration = await navigator.serviceWorker.register(workerUrl, { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
       await registration.update();
       return registration;
     })(), 20000, 'Проверка новой версии заняла слишком много времени.');

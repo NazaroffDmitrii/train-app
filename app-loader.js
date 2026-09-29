@@ -2,11 +2,6 @@
 // Restore uses an exclusive lease on a separate page with no DATA/Bridge boot.
 (() => {
   const scripts = ["config.js","lib.js","atlas-seed.js","muscle-anatomy.js","auth.js","db.js","backup-core.js","account-safety.js","app.js","constructor.js","outbox.js","syncengine.js","bridge.js","auth-ui.js"];
-  // После ручного обновления все исполняемые файлы должны прийти из одной
-  // свежей версии. Уникальный маркер даёт Cache Storage отдельный ключ; после
-  // загрузки app.js удалит его из адресной строки без новой навигации.
-  const updateToken = new URL(location.href).searchParams.get("__app_update");
-  const scriptUrl = src => updateToken ? `${src}?__app_update=${encodeURIComponent(updateToken)}` : src;
   function notice(message, restore = false) {
     const panel = document.createElement("dialog");
     panel.style.cssText="padding:24px;max-width:420px;color:white;background:#11111c;border-radius:20px";
@@ -23,7 +18,7 @@
       }}
       for(const src of scripts){
         if(src==='app.js'&&localStorage.getItem('train_current_owner')!==Auth.userId())localStorage.removeItem('train_current_user');
-        await new Promise((resolve,reject)=>{const script=document.createElement("script");script.src=scriptUrl(src);script.onload=resolve;script.onerror=()=>reject(Error("Не удалось загрузить "+src));document.body.append(script);});
+        await new Promise((resolve,reject)=>{const script=document.createElement("script");script.src=src;script.onload=resolve;script.onerror=()=>reject(Error("Не удалось загрузить "+src));document.body.append(script);});
       }
     }catch(error){notice(error.message);}
   }
