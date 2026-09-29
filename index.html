@@ -97,6 +97,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   margin: 0 auto;
   height: 100vh;
   overflow: hidden;
+  overflow: clip; /* корень не должен становиться focus-scroll контейнером */
   background: var(--bg-base);
 }
 
@@ -301,6 +302,232 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
      он измеряет её и кладёт в --sheet-peek (см. setupSheetDrag). До первого
      замера используем приблизительный фолбэк. */
   padding-bottom: var(--sheet-peek, calc(116px + var(--safe-bottom)));
+}
+
+/* Центральный выбор тренировки живёт в собственной сцене. Шапка и история
+   остаются соседними слоями и поэтому не участвуют ни в одном transform. */
+.workout-launcher {
+  position: absolute;
+  inset: 0 0 var(--sheet-peek, calc(116px + var(--safe-bottom))) 0;
+  min-height: 250px;
+  overflow: hidden;
+  touch-action: pan-y;
+  --orb-shift: clamp(84px, 24vw, 112px);
+  --strength: #8f7cff;
+  --run: #42dea4;
+}
+.launcher-filter-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.launcher-goo {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
+.workout-launcher.is-gooing:not(.launcher-no-goo) .launcher-goo {
+  filter: url(#launcher-goo-filter);
+}
+.launcher-body {
+  position: absolute; left: 50%; top: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+  transition: top 760ms cubic-bezier(.22,.9,.24,1.12), transform 760ms cubic-bezier(.22,.9,.24,1.12), opacity 250ms ease;
+}
+.launcher-body--main {
+  width: 190px; height: 190px;
+  background: #11111b;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.055);
+}
+.launcher-body--strength, .launcher-body--run { width: 145px; height: 145px; opacity: 0; }
+.launcher-body--strength { background: #171429; }
+.launcher-body--run { background: #10231d; }
+
+.workout-launcher[data-state="split"] .launcher-body--main,
+.workout-launcher[data-state="selected"] .launcher-body--main {
+  opacity: 0; transform: translate(-50%, -50%) scale(.72);
+}
+.workout-launcher[data-state="split"] .launcher-body--strength {
+  opacity: 1; transform: translate(calc(-50% - var(--orb-shift)), -50%);
+}
+.workout-launcher[data-state="split"] .launcher-body--run {
+  opacity: 1; transform: translate(calc(-50% + var(--orb-shift)), -50%);
+}
+.workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--strength,
+.workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--run {
+  top: 52px; opacity: 1; transform: translate(-50%, -50%) scale(.44);
+}
+.workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--run {
+  transform: translate(calc(-50% + var(--orb-shift) + 80px), -50%) scale(.82);
+}
+.workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--strength {
+  transform: translate(calc(-50% - var(--orb-shift) - 80px), -50%) scale(.82);
+}
+
+/* Исходный круг — визуальный слой поверх goo-тел. */
+.workout-launcher .start-btn {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  transition: transform 240ms ease, opacity 220ms ease;
+}
+.workout-launcher .start-btn:active { transform: translate(-50%, -50%) scale(.94); }
+.workout-launcher[data-state="split"] .start-btn,
+.workout-launcher[data-state="selected"] .start-btn {
+  opacity: 0; pointer-events: none;
+  transform: translate(-50%, -50%) scale(.72);
+}
+
+.type-orb {
+  position: absolute; left: 50%; top: 50%; z-index: 4;
+  width: 145px; height: 145px; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 9px;
+  opacity: 0; pointer-events: none;
+  transform: translate(-50%, -50%) scale(.72);
+  transition: top 760ms cubic-bezier(.22,.9,.24,1.12), transform 760ms cubic-bezier(.22,.9,.24,1.12), opacity 220ms ease;
+  will-change: transform, opacity;
+}
+.type-orb:active { transition-duration: 120ms; }
+.type-orb-icon { width: 31px; height: 31px; position: relative; z-index: 2; }
+.type-orb-label {
+  position: relative; z-index: 2;
+  font-size: 13px; font-weight: 720; letter-spacing: .01em;
+  color: #f7f7fb;
+}
+.type-orb-outline {
+  position: absolute; inset: 5px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.13); pointer-events: none;
+}
+.type-orb-ring, .type-orb-glow {
+  position: absolute; inset: 0; border-radius: 50%; padding: 2px;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.type-orb-glow { inset: -5px; padding: 7px; filter: blur(7px); opacity: .68; }
+.type-orb--strength { color: var(--strength); }
+.type-orb--run { color: var(--run); }
+.type-orb--strength .type-orb-ring, .type-orb--strength .type-orb-glow {
+  background: conic-gradient(from 0deg, transparent 0 135deg, rgba(183,169,255,.84) 225deg, var(--strength) 304deg, #ded6ff 334deg, transparent 360deg);
+  animation: start-neon-spin 4s linear infinite;
+}
+.type-orb--run .type-orb-ring, .type-orb--run .type-orb-glow {
+  background: conic-gradient(from 0deg, transparent 0 135deg, rgba(118,244,200,.84) 225deg, var(--run) 304deg, #caffea 334deg, transparent 360deg);
+  animation: start-neon-spin 3s linear infinite;
+}
+.workout-launcher[data-state="split"] .type-orb { opacity: 1; pointer-events: auto; }
+.workout-launcher[data-state="split"] .type-orb--strength {
+  transform: translate(calc(-50% - var(--orb-shift)), -50%);
+}
+.workout-launcher[data-state="split"] .type-orb--run {
+  transform: translate(calc(-50% + var(--orb-shift)), -50%);
+}
+.workout-launcher[data-state="split"] .type-orb:active {
+  transform: translate(calc(-50% + var(--press-shift, 0px)), -50%) scale(.95);
+}
+.workout-launcher[data-state="split"] .type-orb--strength { --press-shift: calc(-1 * var(--orb-shift)); }
+.workout-launcher[data-state="split"] .type-orb--run { --press-shift: var(--orb-shift); }
+.workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--strength,
+.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--run {
+  top: 52px; opacity: 1; transform: translate(-50%, -50%) scale(.44);
+}
+.workout-launcher[data-state="selected"] .type-orb-label { opacity: 0; }
+.workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--run {
+  transform: translate(calc(-50% + var(--orb-shift) + 80px), -50%) scale(.82);
+}
+.workout-launcher[data-state="selected"][data-selected="run"] .type-orb--strength {
+  transform: translate(calc(-50% - var(--orb-shift) - 80px), -50%) scale(.82);
+}
+
+.launcher-return-dots {
+  position: absolute; left: 50%; top: 50%; z-index: 5;
+  width: 42px; height: 58px; border-radius: 22px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  transform: translate(-50%, -50%) scale(.7); opacity: 0; pointer-events: none;
+  transition: opacity 220ms ease 370ms, transform 300ms ease 350ms;
+}
+.launcher-return-dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(203,195,255,.9); box-shadow: 0 0 8px rgba(143,124,255,.62); }
+.workout-launcher[data-state="split"] .launcher-return-dots { opacity: 1; transform: translate(-50%, -50%); pointer-events: auto; }
+
+.launcher-selection {
+  position: absolute; inset: 0; z-index: 6;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 20px 18px 12px;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 260ms ease 220ms, visibility 0s linear 500ms;
+}
+.workout-launcher[data-state="selected"] .launcher-selection {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transition: opacity 260ms ease 210ms, visibility 0s;
+}
+.workout-launcher[data-state="selected"] .type-orb { pointer-events: none; }
+.launcher-selected-orb {
+  width: 64px; height: 64px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(18,18,29,.94);
+  box-shadow: 0 0 26px var(--selected-glow, rgba(124,108,230,.24));
+  color: var(--selected-color, var(--strength));
+  opacity: 0; /* прозрачная hit-area поверх уменьшившегося настоящего круга */
+}
+.launcher-selected-orb svg { width: 27px; height: 27px; }
+.launcher-change {
+  margin-top: 8px; padding: 5px 10px;
+  color: #d7d4e2; font-size: 12px; font-weight: 650;
+}
+.launcher-options {
+  width: min(100%, 390px); margin-top: 7px;
+  overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.launcher-options::-webkit-scrollbar { display: none; }
+.launcher-section + .launcher-section { margin-top: 12px; }
+.launcher-section-title {
+  margin: 0 4px 6px; color: #8f8e9c;
+  font-size: 10px; font-weight: 750; letter-spacing: .075em; text-transform: uppercase;
+}
+.launcher-option {
+  width: 100%; min-height: 46px; padding: 9px 12px; margin-bottom: 6px;
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  color: #f5f5f8; background: rgba(25,25,36,.94);
+  border: 1px solid rgba(255,255,255,.075); border-radius: 14px;
+  transition: transform 130ms ease, border-color 180ms ease, background 180ms ease;
+}
+.launcher-option:active { transform: scale(.985); background: #20202d; }
+.launcher-option-mark { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--selected-color, var(--strength)); box-shadow: 0 0 8px var(--selected-glow, rgba(124,108,230,.4)); }
+.launcher-option-copy { min-width: 0; flex: 1; }
+.launcher-option-copy b, .launcher-option-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.launcher-option-copy b { font-size: 12.5px; font-weight: 650; }
+.launcher-option-copy small { color: #8f8e9c; font-size: 10.5px; margin-top: 2px; }
+.launcher-option-arrow { color: #696875; font-size: 18px; }
+.launcher-new-btn {
+  width: min(100%, 390px); min-height: 40px; margin-top: 8px; flex: none;
+  border: 1px solid color-mix(in srgb, var(--selected-color, var(--strength)) 42%, transparent);
+  border-radius: 13px; color: #f7f7fb; background: color-mix(in srgb, var(--selected-color, var(--strength)) 11%, transparent);
+  font-size: 12px; font-weight: 700;
+}
+
+.app.launcher-strength .bg-glow { --bg-glow: rgba(124,108,230,.26); }
+.app.launcher-run .bg-glow { --bg-glow: rgba(52,211,153,.21); }
+.bg-glow { transition: background 620ms ease; }
+
+@media (max-width: 370px) {
+  .workout-launcher { --orb-shift: 82px; }
+  .type-orb, .launcher-body--strength, .launcher-body--run { width: 138px; height: 138px; }
+}
+@media (max-height: 620px) {
+  .launcher-selection { padding-top: 8px; }
+  .launcher-selected-orb { width: 54px; height: 54px; }
+  .launcher-selected-orb svg { width: 23px; height: 23px; }
+  .launcher-change { margin-top: 3px; }
+  .launcher-options { margin-top: 2px; }
+  .launcher-option { min-height: 40px; padding: 7px 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workout-launcher.is-gooing .launcher-goo { filter: none !important; }
+  .launcher-body, .type-orb, .workout-launcher .start-btn,
+  .launcher-return-dots, .launcher-selection { transition-duration: 220ms !important; transition-delay: 0ms !important; }
+  .launcher-body, .type-orb, .workout-launcher .start-btn { transition-property: opacity !important; }
+  .type-orb-ring, .type-orb-glow, .start-neon-ring, .start-neon-glow { animation: none !important; }
 }
 
 /* ── Центральная кнопка (покой + активная тренировка) ── */
@@ -3030,18 +3257,60 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
     </header>
 
     <main class="menu-center">
-      <button id="start-btn" class="start-btn" aria-label="Начать тренировку">
-        <span class="start-neon-glow"></span>
-        <span class="start-neon-ring"></span>
-        <div class="start-pulse-ring" id="start-pulse-ring-1"></div>
-        <div class="start-pulse-ring" id="start-pulse-ring-2"></div>
-        <div class="start-timer" id="start-timer">
-          <div class="start-colon" id="start-colon-idle">
-            <div class="start-colon-dot"></div>
-            <div class="start-colon-dot"></div>
-          </div>
+      <div class="workout-launcher" id="workout-launcher" data-state="idle">
+        <svg class="launcher-filter-defs" aria-hidden="true">
+          <defs>
+            <filter id="launcher-goo-filter" x="-55%" y="-55%" width="210%" height="210%" color-interpolation-filters="sRGB">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="11" result="blur"/>
+              <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 25 -11"/>
+            </filter>
+          </defs>
+        </svg>
+
+        <div class="launcher-goo" aria-hidden="true">
+          <span class="launcher-body launcher-body--main"></span>
+          <span class="launcher-body launcher-body--strength"></span>
+          <span class="launcher-body launcher-body--run"></span>
         </div>
-      </button>
+
+        <button id="start-btn" class="start-btn" aria-label="Выбрать тип тренировки">
+          <span class="start-neon-glow"></span>
+          <span class="start-neon-ring"></span>
+          <div class="start-pulse-ring" id="start-pulse-ring-1"></div>
+          <div class="start-pulse-ring" id="start-pulse-ring-2"></div>
+          <div class="start-timer" id="start-timer">
+            <div class="start-colon" id="start-colon-idle">
+              <div class="start-colon-dot"></div>
+              <div class="start-colon-dot"></div>
+            </div>
+          </div>
+        </button>
+
+        <button class="type-orb type-orb--strength" id="strength-orb" data-type="strength" aria-label="Силовая тренировка">
+          <span class="type-orb-glow"></span><span class="type-orb-ring"></span><span class="type-orb-outline"></span>
+          <svg class="type-orb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/>
+            <rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/>
+          </svg>
+          <span class="type-orb-label">Силовая</span>
+        </button>
+        <button class="type-orb type-orb--run" id="run-orb" data-type="run" aria-label="Беговая тренировка">
+          <span class="type-orb-glow"></span><span class="type-orb-ring"></span><span class="type-orb-outline"></span>
+          <svg class="type-orb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="14.5" cy="4.5" r="2"/><path d="M9.5 21l2.2-6.2-3.2-2.4 2.7-4.2 3.2 2.4 3.4.2M5 13.5l3.5-1.1M13 14.8l4.6 5.2"/>
+          </svg>
+          <span class="type-orb-label">Бег</span>
+        </button>
+
+        <button class="launcher-return-dots" id="launcher-return-dots" aria-label="Вернуться к одному кругу"><span></span><span></span></button>
+
+        <section class="launcher-selection" id="launcher-selection" aria-live="polite">
+          <button class="launcher-selected-orb" id="launcher-selected-orb" aria-label="Сменить тип тренировки"></button>
+          <button class="launcher-change" id="launcher-change" type="button"></button>
+          <div class="launcher-options" id="launcher-options"></div>
+          <button class="launcher-new-btn" id="launcher-new-btn" type="button"></button>
+        </section>
+      </div>
     </main>
 
     <div class="sheet no-anim" id="history-sheet">

@@ -1272,6 +1272,285 @@ const startBtn      = $("start-btn");
   // Экспортируем updateStartBtn в глобальный скоуп чтобы refreshMenu мог вызвать
   window.updateStartBtn = updateStartBtn;
 })();
+
+/* ── Выбор типа тренировки в центральной зоне ────────────────────────────
+   Goo-фильтр получает только три залитых тела. Кольца, дуги, подписи и
+   пиктограммы находятся выше отдельными DOM-слоями и всегда остаются резкими. */
+(function initWorkoutLauncher() {
+  const launcher = $("workout-launcher");
+  const strengthOrb = $("strength-orb");
+  const runOrb = $("run-orb");
+  const returnDots = $("launcher-return-dots");
+  const selection = $("launcher-selection");
+  const selectedOrb = $("launcher-selected-orb");
+  const changeBtn = $("launcher-change");
+  const optionsEl = $("launcher-options");
+  const newBtn = $("launcher-new-btn");
+  const appRoot = document.querySelector(".app");
+  if (!launcher || !strengthOrb || !runOrb || !selection) return;
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const lowPower = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2)
+    || (navigator.deviceMemory && navigator.deviceMemory <= 2)
+    || !(window.CSS && CSS.supports && CSS.supports("filter", "url(#launcher-goo-filter)"));
+  if (lowPower) launcher.classList.add("launcher-no-goo");
+
+  const ICONS = {
+    strength: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="9.5" width="3" height="5" rx="1"/><rect x="19" y="9.5" width="3" height="5" rx="1"/><rect x="6" y="7.5" width="2.6" height="9" rx="1"/><rect x="15.4" y="7.5" width="2.6" height="9" rx="1"/><line x1="8.6" y1="12" x2="15.4" y2="12"/></svg>`,
+    run: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="14.5" cy="4.5" r="2"/><path d="M9.5 21l2.2-6.2-3.2-2.4 2.7-4.2 3.2 2.4 3.4.2M5 13.5l3.5-1.1M13 14.8l4.6 5.2"/></svg>`,
+  };
+
+  let gooTimer = 0;
+  let splitHapticTimer = 0;
+  let selectionHistoryArmed = false;
+
+  function state() { return launcher.dataset.state || "idle"; }
+
+  function pinStaticChrome() {
+    // Chromium может программно проскроллить даже overflow:hidden-контейнер,
+    // когда фокус переходит на круг. Это сдвигает шапку и историю целиком.
+    // Возвращаем корневой viewport приложения строго в ноль.
+    if (appRoot) appRoot.scrollTop = 0;
+    requestAnimationFrame(() => { if (appRoot) appRoot.scrollTop = 0; });
+  }
+
+  function setControls(next) {
+    startBtn.disabled = next !== "idle";
+    strengthOrb.disabled = next !== "split";
+    runOrb.disabled = next !== "split";
+    returnDots.disabled = next !== "split";
+    selection.inert = next !== "selected";
+    selection.setAttribute("aria-hidden", String(next !== "selected"));
+  }
+
+  function runGoo(duration = 820) {
+    clearTimeout(gooTimer);
+    if (reduceMotion.matches || launcher.classList.contains("launcher-no-goo")) return;
+    launcher.classList.add("is-gooing");
+
+    // Если первый тяжёлый переход заметно не дотягивает до плавного кадра,
+    // следующие переходы автоматически используют обычный разъезд.
+    let frames = 0;
+    const started = performance.now();
+    const sample = now => {
+      if (!launcher.classList.contains("is-gooing")) return;
+      frames += 1;
+      if (now - started < 720) requestAnimationFrame(sample);
+      else if (frames < 38) launcher.classList.add("launcher-no-goo");
+    };
+    requestAnimationFrame(sample);
+    gooTimer = setTimeout(() => launcher.classList.remove("is-gooing"), duration);
+  }
+
+  function setGlow(type = "") {
+    appRoot?.classList.toggle("launcher-strength", type === "strength");
+    appRoot?.classList.toggle("launcher-run", type === "run");
+  }
+
+  function applyIdle({ animate = true } = {}) {
+    clearTimeout(splitHapticTimer);
+    if (animate && state() !== "idle") runGoo();
+    launcher.dataset.state = "idle";
+    delete launcher.dataset.selected;
+    setGlow();
+    setControls("idle");
+    pinStaticChrome();
+    startBtn.setAttribute("aria-label", DATA.getActiveWorkout(DATA.getCurrentUser()) ? "Вернуться к тренировке" : "Выбрать тип тренировки");
+  }
+
+  function applySplit({ animate = true } = {}) {
+    clearTimeout(splitHapticTimer);
+    if (animate) runGoo();
+    launcher.dataset.state = "split";
+    delete launcher.dataset.selected;
+    setGlow();
+    setControls("split");
+    pinStaticChrome();
+    splitHapticTimer = setTimeout(() => haptic(10), reduceMotion.matches ? 80 : 390);
+  }
+
+  function disarmSelectionHistory() {
+    if (!selectionHistoryArmed) return;
+    selectionHistoryArmed = false;
+    // Убираем служебную запись из browser history. popstate уже не меняет UI,
+    // потому что нужное состояние выставляется синхронно до history.back().
+    window.history.back();
+  }
+
+  function backToSplit({ fromPop = false } = {}) {
+    if (state() !== "selected") return;
+    applySplit();
+    if (fromPop) selectionHistoryArmed = false;
+    else disarmSelectionHistory();
+  }
+
+  function leaveLauncher() {
+    clearTimeout(splitHapticTimer);
+    launcher.classList.remove("is-gooing");
+    launcher.dataset.state = "idle";
+    delete launcher.dataset.selected;
+    setGlow();
+    setControls("idle");
+    disarmSelectionHistory();
+  }
+
+  function startNew(type) {
+    const userId = DATA.getCurrentUser();
+    try {
+      DATA.startWorkout(userId, type);
+      haptic(24);
+      leaveLauncher();
+      goToScreen(type === "run" ? "run" : "workout");
+    } catch (error) {
+      showToast(error?.message || "Не удалось начать тренировку");
+    }
+  }
+
+  function recentMeta(workout) {
+    if (workout.type === "run") {
+      return [workout.distance ? `${workout.distance} км` : null, workout.durationSec ? formatDuration(workout.durationSec) : null]
+        .filter(Boolean).join(" · ") || "Пробежка";
+    }
+    const exercises = (workout.exercises || []).filter(ex => (ex.sets || []).some(set => set.done)).length;
+    return exercises ? `${exercises} ${pluralExercises(exercises)}` : "Силовая тренировка";
+  }
+
+  function renderSelection(type, recent, templates) {
+    const isRun = type === "run";
+    const color = isRun ? "#42dea4" : "#8f7cff";
+    const glow = isRun ? "rgba(52,211,153,.42)" : "rgba(124,108,230,.44)";
+    selection.style.setProperty("--selected-color", color);
+    selection.style.setProperty("--selected-glow", glow);
+    selectedOrb.innerHTML = ICONS[type];
+    changeBtn.textContent = `${isRun ? "Бег" : "Силовая"} · сменить`;
+    newBtn.textContent = isRun ? "Начать новую пробежку" : "Начать без шаблона";
+
+    const historyHtml = recent.length ? `
+      <div class="launcher-section">
+        <p class="launcher-section-title">Последние тренировки</p>
+        ${recent.map(workout => `
+          <button class="launcher-option" type="button" data-kind="history" data-id="${escHtml(workout.id)}">
+            <span class="launcher-option-mark"></span>
+            <span class="launcher-option-copy"><b>${escHtml(workout.name || (isRun ? "Пробежка" : "Силовая тренировка"))}</b><small>${escHtml(fmtDate(workout.startedAt))} · ${escHtml(recentMeta(workout))}</small></span>
+            <span class="launcher-option-arrow">›</span>
+          </button>`).join("")}
+      </div>` : "";
+    const templatesHtml = templates.length ? `
+      <div class="launcher-section">
+        <p class="launcher-section-title">Шаблоны</p>
+        ${templates.map(template => {
+          const count = (template.exercises || []).length;
+          return `<button class="launcher-option" type="button" data-kind="template" data-id="${escHtml(template.id)}">
+            <span class="launcher-option-mark"></span>
+            <span class="launcher-option-copy"><b>${escHtml(template.name || "Шаблон")}</b><small>${count} ${pluralExercises(count)}</small></span>
+            <span class="launcher-option-arrow">›</span>
+          </button>`;
+        }).join("")}
+      </div>` : "";
+    optionsEl.innerHTML = historyHtml + templatesHtml;
+    optionsEl.scrollTop = 0;
+
+    optionsEl.querySelectorAll(".launcher-option").forEach(option => {
+      option.addEventListener("click", () => {
+        const kind = option.dataset.kind;
+        const id = option.dataset.id;
+        if (kind === "template") {
+          leaveLauncher();
+          tplStartWorkout(id);
+          return;
+        }
+        const workout = DATA.getWorkoutHistory(DATA.getCurrentUser()).find(item => item.id === id);
+        if (workout) {
+          leaveLauncher();
+          openDetailScreen(workout, "menu");
+        }
+      });
+    });
+    newBtn.onclick = () => startNew(type);
+  }
+
+  function selectType(type) {
+    if (state() !== "split") return;
+    const userId = DATA.getCurrentUser();
+    const recent = DATA.getWorkoutHistory(userId).filter(item => item.type === type).slice(0, 3);
+    const templates = type === "strength" ? DATA.getTemplates(userId).slice(0, 3) : [];
+    haptic(24);
+
+    // Пустая ветка не заставляет пользователя проходить лишний экран.
+    if (!recent.length && !templates.length) {
+      startNew(type);
+      return;
+    }
+
+    renderSelection(type, recent, templates);
+    runGoo();
+    launcher.dataset.selected = type;
+    launcher.dataset.state = "selected";
+    setGlow(type);
+    setControls("selected");
+    pinStaticChrome();
+
+    if (!selectionHistoryArmed) {
+      try {
+        window.history.pushState({ ...(window.history.state || {}), trainLauncherSelection: true }, "");
+        selectionHistoryArmed = true;
+      } catch {}
+    }
+  }
+
+  startBtn.addEventListener("click", () => {
+    const userId = DATA.getCurrentUser();
+    const active = DATA.getActiveWorkout(userId);
+    if (active) {
+      goToScreen(active.type === "run" ? "run" : "workout", { resume: true });
+      return;
+    }
+    applySplit();
+  });
+  strengthOrb.addEventListener("click", () => selectType("strength"));
+  runOrb.addEventListener("click", () => selectType("run"));
+  returnDots.addEventListener("click", () => applyIdle());
+  selectedOrb.addEventListener("click", () => backToSplit());
+  changeBtn.addEventListener("click", () => backToSplit());
+
+  // Не отдаём кнопкам внутри сцены нативный focus-scroll. Клавиатурная
+  // навигация сохраняется: отменяем только pointerdown, а не focus/click.
+  launcher.addEventListener("pointerdown", event => {
+    if (event.target.closest?.("button")) event.preventDefault();
+  });
+  launcher.addEventListener("focusin", pinStaticChrome);
+
+  launcher.addEventListener("click", event => {
+    if (state() === "split" && event.target === launcher) applyIdle();
+    else if (state() === "selected" && (event.target === launcher || event.target === selection)) backToSplit();
+  });
+
+  let touchY = 0, touchX = 0, touchTarget = null;
+  launcher.addEventListener("touchstart", event => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    touchY = touch.clientY; touchX = touch.clientX; touchTarget = event.target;
+  }, { passive: true });
+  launcher.addEventListener("touchend", event => {
+    const touch = event.changedTouches[0];
+    if (!touch || touch.clientY - touchY < 56 || Math.abs(touch.clientY - touchY) < Math.abs(touch.clientX - touchX)) return;
+    if (state() === "selected" && touchTarget?.closest?.(".launcher-options") && optionsEl.scrollTop > 0) return;
+    if (state() === "selected") backToSplit();
+    else if (state() === "split") applyIdle();
+  }, { passive: true });
+
+  window.addEventListener("popstate", () => {
+    if (selectionHistoryArmed || state() === "selected") backToSplit({ fromPop: true });
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || !screenMenu.classList.contains("active")) return;
+    if (state() === "selected") { event.preventDefault(); backToSplit(); }
+    else if (state() === "split") { event.preventDefault(); applyIdle(); }
+  });
+
+  setControls("idle");
+  window.resetWorkoutLauncher = leaveLauncher;
+})();
 const sheet         = $("history-sheet");
 const sheetDragArea = $("sheet-drag-area");
 const historyCount  = $("history-count");
@@ -1601,6 +1880,7 @@ function goToScreen(name, opts = {}) {
   // назад" — если экран меняется, пока форма открыта, закрываем её сразу
   // Сворачивание приложения само по себе форму не закрывает.
   closeStaleExerciseForms();
+  if (name !== "menu" && window.resetWorkoutLauncher) window.resetWorkoutLauncher();
 
   // opts.instant — переключить БЕЗ кроссфейд-анимации (0.32s). Нужно, когда
   // переключение происходит под перекрывающей шторкой: иначе, сняв шторку, мы
@@ -1690,7 +1970,9 @@ function refreshMenu() {
     $("profile-chip-name").textContent = user.name;
   }
   const active = DATA.getActiveWorkout(userId);
+  if (active && window.resetWorkoutLauncher) window.resetWorkoutLauncher();
   startBtn.classList.toggle("active-workout", !!active);
+  startBtn.setAttribute("aria-label", active ? "Вернуться к тренировке" : "Выбрать тип тренировки");
   updateStartBtn(active);
   renderHistory(userId);
 }
@@ -2049,16 +2331,9 @@ $("history-back-btn").addEventListener("click", () => goToScreen("menu"));
 /* ==========================================================================
    Start button
    ========================================================================== */
-startBtn.addEventListener("click", () => {
-  const userId = DATA.getCurrentUser();
-  const active = DATA.getActiveWorkout(userId);
-  if (active) {
-    goToScreen(active.type === "run" ? "run" : "workout", { resume: true });
-    return;
-  }
-  openModal(typeModalBackdrop);
-});
-
+// Выбор типа теперь встроен в центральную сцену (initWorkoutLauncher выше).
+// Старое модальное окно оставлено в DOM для обратной совместимости разметки,
+// но центральная кнопка его больше не открывает.
 document.querySelectorAll(".modal-option[data-type]").forEach(btn => {
   btn.addEventListener("click", () => {
     const userId = DATA.getCurrentUser();
