@@ -423,77 +423,75 @@ manualUploadBtn.addEventListener("click", async () => {
 // «Личные данные» — Имя/Фамилия/Возраст/Вес/Рост ПРОСМАТРИВАЕМОГО СЕЙЧАС
 // профиля (DATA.getCurrentUser()) — своего или клиента (RLS profiles_update
 // пускает тренера редактировать данные его клиентов, в т.ч. управляемых без
-// логина — например, вписать вес/рост подопечного самому). Модалка строится
-// динамически, как migrate/invite — тот же паттерн в этом файле.
+// логина — например, вписать вес/рост подопечного самому). Форма размещается
+// на странице единого окна настроек; старые ответы не открывают её повторно.
 async function openPersonalDataModal() {
   const viewedId = DATA.getCurrentUser();
   const owner = Auth.userId();
   if (!viewedId) return;
-  if (document.getElementById('personal-data-modal')) return;
-  let profile;
-  try { profile = await DB.getProfile(viewedId); }
-  catch (e) { alert("Не удалось загрузить данные: " + e.message); return; }
-  if (!profile) { alert("Профиль не найден."); return; }
+  if (SettingsFlow.isActive('personal-data-page')) return;
+  const backdrop = document.getElementById('personal-data-page');
   const deleteButton = document.getElementById('delete-account-btn');
+  document.getElementById('account-actions-storage').append(deleteButton);
+  backdrop.innerHTML = '<p class="settings-description" role="status">Загружаем личные данные…</p>';
+  if (!SettingsFlow.show('personal-data-page')) return;
+  const revision = SettingsFlow.revision;
+  const isCurrent = () => SettingsFlow.isActive('personal-data-page') && SettingsFlow.revision === revision && DATA.getCurrentUser() === viewedId && Auth.userId() === owner;
+  let profile;
+  try {
+    profile = await DB.getProfile(viewedId);
+    if (!profile) throw new Error('Профиль не найден.');
+  } catch (e) {
+    if (isCurrent()) backdrop.querySelector('p').textContent = 'Не удалось загрузить данные: ' + e.message + ' Вернитесь назад и попробуйте снова.';
+    return;
+  }
+  if (!isCurrent()) return;
   // Reuse the existing guarded action and its current role/profile policy.
   deleteButton.style.display = 'none';
   await refreshSettingsButtons();
-  if (DATA.getCurrentUser() !== viewedId || Auth.userId() !== owner || document.getElementById('personal-data-modal')) return;
-
-  const backdrop = document.createElement("div");
-  backdrop.className = "modal-backdrop open";
-  backdrop.id = "personal-data-modal";
+  if (!isCurrent()) return;
   const num = v => (v === null || v === undefined ? "" : String(v));
   backdrop.innerHTML = `
-    <div class="modal modal-form modal-scroll">
-      <h2 class="modal-title">Личные данные</h2>
-      <div class="ex-form-field">
-        <span class="ex-form-label">Имя</span>
-        <input class="ex-form-input" id="pd-name" type="text" value="${escHtml(profile.name || "")}">
+    <form id="personal-data-form">
+      <div class="personal-fields">
+        <label class="personal-field personal-field-wide"><span>Имя</span><input id="pd-name" autocomplete="given-name" required type="text" value="${escHtml(profile.name || "")}"></label>
+        <label class="personal-field personal-field-wide"><span>Фамилия</span><input id="pd-last-name" autocomplete="family-name" type="text" value="${escHtml(profile.last_name || "")}"></label>
+        <label class="personal-field"><span>Возраст</span><input id="pd-age" type="number" inputmode="numeric" min="0" max="120" step="1" value="${escHtml(num(profile.age))}"></label>
+        <label class="personal-field"><span>Вес, кг</span><input id="pd-weight" type="number" inputmode="decimal" step="0.1" min="0" value="${escHtml(num(profile.weight))}"></label>
+        <label class="personal-field"><span>Рост, см</span><input id="pd-height" type="number" inputmode="decimal" step="0.1" min="0" value="${escHtml(num(profile.height))}"></label>
       </div>
-      <div class="ex-form-field">
-        <span class="ex-form-label">Фамилия</span>
-        <input class="ex-form-input" id="pd-last-name" type="text" value="${escHtml(profile.last_name || "")}">
-      </div>
-      <div class="ex-form-field">
-        <span class="ex-form-label">Возраст</span>
-        <input class="ex-form-input" id="pd-age" type="number" inputmode="numeric" min="0" max="120" value="${escHtml(num(profile.age))}">
-      </div>
-      <div class="ex-form-field">
-        <span class="ex-form-label">Вес, кг</span>
-        <input class="ex-form-input" id="pd-weight" type="number" inputmode="decimal" step="0.1" min="0" value="${escHtml(num(profile.weight))}">
-      </div>
-      <div class="ex-form-field">
-        <span class="ex-form-label">Рост, см</span>
-        <input class="ex-form-input" id="pd-height" type="number" inputmode="decimal" step="0.1" min="0" value="${escHtml(num(profile.height))}">
-      </div>
-      <div class="auth-error" id="pd-status"></div>
-      <div class="modal-form-actions">
-        <button class="btn-chip" id="pd-cancel" type="button">Отмена</button>
-        <button class="btn-chip primary" id="pd-save" type="button">Сохранить</button>
-      </div>
-      <div class="personal-delete-slot" id="pd-delete-slot"></div>
-    </div>`;
-  document.body.appendChild(backdrop);
-  backdrop.querySelector('#pd-delete-slot').append(deleteButton);
-
-  const close = () => {
-    document.getElementById('account-actions-storage').append(deleteButton);
-    backdrop.remove();
+      <p class="auth-error" id="pd-status" role="status"></p>
+      <button class="personal-save" id="pd-save" type="submit" disabled>Сохранить</button>
+    </form>
+    <div class="personal-delete-slot" id="pd-delete-slot"></div>`;
+  if (deleteButton.style.display !== 'none') backdrop.querySelector('#pd-delete-slot').append(deleteButton);
+  const form = backdrop.querySelector('form'), saveBtn = backdrop.querySelector('#pd-save');
+  const status = backdrop.querySelector('#pd-status');
+  const inputs = Array.from(form.querySelectorAll('input'));
+  const values = () => JSON.stringify(inputs.map(input => input.value));
+  const initial = values();
+  let saving = false;
+  const dirty = () => values() !== initial;
+  const update = () => { saveBtn.disabled = saving || !dirty(); };
+  form.addEventListener('input', update);
+  SettingsFlow.beforeLeave = () => {
+    if (saving) { showToast('Дождитесь завершения сохранения'); return false; }
+    return !dirty() || window.confirm('Выйти без сохранения изменений?');
   };
-  backdrop.querySelector("#pd-cancel").addEventListener("click", close);
-  backdrop.addEventListener("click", e => { if (e.target === backdrop) close(); });
-
-  backdrop.querySelector("#pd-save").addEventListener("click", async () => {
-    const status = backdrop.querySelector("#pd-status");
-    const saveBtn = backdrop.querySelector("#pd-save");
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (saving || !dirty()) return;
+    if (!isCurrent()) { status.textContent = 'Профиль изменился. Откройте личные данные заново.'; return; }
+    if (!form.reportValidity()) return;
     const toNum = id => {
       const v = backdrop.querySelector(id).value.trim();
       return v === "" ? null : Number(v);
     };
     const name = backdrop.querySelector("#pd-name").value.trim();
     if (!name) { status.textContent = "Имя не может быть пустым."; return; }
-    saveBtn.disabled = true;
+    saving = true; update(); status.textContent = 'Сохраняем…';
+    inputs.forEach(input => { input.disabled = true; });
+    deleteButton.disabled = true;
     try {
       const updated = await DB.updateProfile(viewedId, {
         name,
@@ -504,21 +502,25 @@ async function openPersonalDataModal() {
       });
       // Если это МОЙ профиль (или тот, что сейчас открыт на экране) — обновить
       // чип/заголовок сразу, не дожидаясь следующего hydrate.
-      if (updated) {
+      if (updated && isCurrent()) {
         registerUser(updated);
         if (screenMenu.classList.contains("active")) refreshMenu();
       }
-      close();
-      showToast("Сохранено");
+      if (isCurrent()) {
+        SettingsFlow.beforeLeave = null;
+        SettingsFlow.show('settings-home', { focus: 'personal-data-btn' });
+        showToast("Сохранено");
+      }
     } catch (e) {
-      saveBtn.disabled = false;
-      status.textContent = "Не удалось сохранить: " + e.message;
+      if (isCurrent()) status.textContent = "Не удалось сохранить: " + e.message;
+    } finally {
+      saving = false; inputs.forEach(input => { input.disabled = false; });
+      deleteButton.disabled = false; update();
     }
   });
 }
 
 document.getElementById("personal-data-btn").addEventListener("click", () => {
-  closeModal(settingsModalBackdrop);
   openPersonalDataModal();
 });
 
@@ -644,6 +646,7 @@ function openAccountMaintenance(mode,targetId=DATA.getCurrentUser()){
   location.assign('account.html?mode='+encodeURIComponent(mode));
 }
 document.getElementById("delete-account-btn").addEventListener("click",event=>{
+  if (SettingsFlow.isActive('personal-data-page') && !SettingsFlow.close()) return;
   openAccountMaintenance(event.currentTarget.dataset.mode,event.currentTarget.dataset.targetId);
 });
 document.getElementById("enter-invite-btn").addEventListener("click",()=>openAccountMaintenance('invite'));

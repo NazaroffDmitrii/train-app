@@ -2098,6 +2098,17 @@ const SettingsFlow = (() => {
   const pages = Array.from(viewport.querySelectorAll('[data-settings-page]'));
   let current = $('settings-home'), finish = null, returnFocus = null;
   let beforeLeave = null, revision = 0;
+  // iOS keyboard reduces the visual viewport, not always 100dvh.
+  function fitViewport() {
+    const visual = window.visualViewport;
+    if (!visual) return;
+    shell.style.height = visual.height + 'px';
+    shell.style.top = visual.offsetTop + 'px';
+    shell.style.setProperty('--settings-viewport-height', visual.height + 'px');
+  }
+  window.visualViewport?.addEventListener('resize', fitViewport);
+  window.visualViewport?.addEventListener('scroll', fitViewport);
+  fitViewport();
   function show(id = 'settings-home', { focus, force = false } = {}) {
     const next = $(id);
     if (!pages.includes(next)) return false;
@@ -2121,7 +2132,9 @@ const SettingsFlow = (() => {
       const targetHeight = next.getBoundingClientRect().height;
       previous.hidden = false; previous.classList.add('settings-page-leaving');
       const direction = backwards ? -1 : 1;
-      const options = { duration: 230, easing: 'ease-out' };
+      // Hold the final frame until the outgoing page is actually hidden.
+      // Without fill, it reappears between animation end and cleanup.
+      const options = { duration: 230, easing: 'ease-out', fill: 'both' };
       const animations = [
         next.animate([{ transform: `translateX(${direction * 28}px)`, opacity: 0 }, { transform: 'translateX(0)', opacity: 1 }], options),
         previous.animate([{ transform: 'translateX(0)', opacity: 1 }, { transform: `translateX(${-direction * 28}px)`, opacity: 0 }], options),
@@ -2129,12 +2142,19 @@ const SettingsFlow = (() => {
       viewport.style.height = oldHeight + 'px';
       void viewport.offsetHeight;
       viewport.style.height = targetHeight + 'px';
-      const timer = setTimeout(() => finish?.(), 240);
-      finish = () => {
-        clearTimeout(timer); animations.forEach(animation => animation.cancel());
+      let settled = false;
+      const complete = () => {
+        if (settled) return;
+        settled = true;
+        // Hide before cancelling the held frame. An older completion must
+        // never clean up a newer transition after rapid Back/Forward clicks.
         previous.hidden = true; previous.classList.remove('settings-page-leaving');
-        viewport.style.removeProperty('height'); finish = null;
+        animations.forEach(animation => animation.cancel());
+        viewport.style.removeProperty('height');
+        if (finish === complete) finish = null;
       };
+      finish = complete;
+      Promise.all(animations.map(animation => animation.finished)).then(complete, complete);
     }
     const target = focus ? $(focus) : backwards ? $('settings-close-top') : back;
     target?.focus({ preventScroll: true });

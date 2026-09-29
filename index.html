@@ -588,6 +588,9 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   color: var(--text-primary); font: inherit; font-size: 16px; font-weight: 600; }
 .personal-save { width: 100%; min-height: 46px; border-radius: 14px; background: var(--accent); font-size: 16px; font-weight: 600; }
 .personal-save:disabled { opacity: .45; }
+#personal-data-form { display: grid; gap: 12px; }
+#personal-data-form .auth-error { margin: 0; min-height: 0; }
+#personal-data-form .auth-error:empty { display: none; }
 .personal-delete-slot:not(:empty) { margin-top: auto; padding-top: 16px; border-top: 1px solid #292936; }
 .personal-delete-slot .modal-option.danger { justify-content: flex-start; border: 0; background: transparent; padding: 8px 4px; font-size: 14px; }
 @media (prefers-reduced-motion: reduce) { .settings-pages { transition: none; } }
@@ -652,7 +655,7 @@ dialog.history-backups::backdrop { background: #0009; backdrop-filter: blur(6px)
   padding-bottom: max(24px, calc(var(--safe-bottom) + 12px));
 }
 #settings-modal-backdrop .settings-panel {
-  max-height: calc(100dvh - max(24px, calc(var(--safe-top) + 12px)) - max(24px, calc(var(--safe-bottom) + 12px)));
+  max-height: calc(var(--settings-viewport-height, 100dvh) - max(24px, calc(var(--safe-top) + 12px)) - max(24px, calc(var(--safe-bottom) + 12px)));
 }
 .modal-option.danger { background: var(--red-soft); border-color: rgba(248,113,113,0.2); color: var(--red); }
 .modal-option.danger .modal-option-icon { color: var(--red); }
