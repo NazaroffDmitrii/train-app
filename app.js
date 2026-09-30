@@ -1490,6 +1490,125 @@ const startBtn      = $("start-btn");
     return `<span class="launcher-run-bars" aria-hidden="true">${Array.from({ length: 7 }, (_, i) => `<i style="height:${9 + ((seed + i * 7) % 17)}px"></i>`).join("")}</span>`;
   }
 
+  const LAUNCHER_ICONS = {
+    chevron: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`,
+    clock: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+    history: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>`,
+    weight: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/></svg>`,
+    play: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg>`,
+    repeat: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>`,
+    edit: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="m16.5 3.5 4 4L8 20l-5 1 1-5Z"/></svg>`,
+    details: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M7 16v1M11 12v5M15 9v8M19 6v11"/></svg>`,
+  };
+
+  function launcherGroups(items, exerciseById) {
+    const groups = [];
+    (items || []).forEach(item => {
+      const exercise = exerciseById.get(item.exerciseId);
+      const ownGroups = exercise?.groups?.length ? exercise.groups : [exercise?.cat].filter(Boolean);
+      ownGroups.forEach(group => { if (!groups.includes(group)) groups.push(group); });
+    });
+    return groups;
+  }
+
+  function launcherMinutes(seconds) {
+    return `${Math.max(1, Math.round((seconds || 0) / 60))} мин`;
+  }
+
+  function launcherVolume(workout) {
+    const kilos = (workout.exercises || []).reduce((total, exercise) => total + (exercise.sets || [])
+      .reduce((sum, set) => sum + (set.done ? setVolume(set) : 0), 0), 0);
+    if (kilos >= 1000) return `${(kilos / 1000).toFixed(1).replace(".", ",")} т`;
+    return `${Math.round(kilos)} кг`;
+  }
+
+  function launcherExerciseRows(items, exerciseById, template = false) {
+    return (items || []).map((exercise, index) => {
+      const definition = exerciseById.get(exercise.exerciseId);
+      const name = exercise.name || definition?.name || "Упражнение недоступно";
+      let result = "";
+      if (!template) {
+        const sets = (exercise.sets || []).filter(set => set.done);
+        const reps = [...new Set(sets.map(set => Number(set.reps) || 0).filter(Boolean))];
+        result = reps.length === 1 ? `${sets.length} × ${reps[0]}` : sets.length ? `${sets.length} подх.` : "—";
+      }
+      return `<div class="launcher-card-exercise"><span>${index + 1}</span><b>${escHtml(name)}</b>${result ? `<em>${escHtml(result)}</em>` : ""}</div>`;
+    }).join("");
+  }
+
+  function launcherTags(groups) {
+    return groups.length ? `<div class="launcher-card-tags">${groups.map(group => `<span>${escHtml(group)}</span>`).join("")}</div>` : "";
+  }
+
+  function launcherTemplateCard(template, exerciseById, history) {
+    const usage = templateUsage(template, history);
+    const groups = launcherGroups(template.exercises, exerciseById);
+    return `<article class="launcher-detail-card launcher-detail-card--template" data-launcher-card="template" data-id="${escHtml(template.id)}" role="button" tabindex="0" aria-expanded="false">
+      <div class="launcher-card-top"><h3>${escHtml(template.name || "Шаблон")}</h3><span class="launcher-card-chevron">${LAUNCHER_ICONS.chevron}</span></div>
+      ${launcherTags(groups)}
+      <div class="launcher-card-stats"><span>${LAUNCHER_ICONS.clock}${usage.avgMin} мин</span>${usage.lastTs ? `<span>${LAUNCHER_ICONS.history}${escHtml(relPastText(usage.lastTs))}</span>` : ""}</div>
+      <div class="launcher-card-expanded">
+        <div class="launcher-card-exercises">${launcherExerciseRows(template.exercises, exerciseById, true)}</div>
+        <div class="launcher-card-actions"><button class="launcher-card-primary" type="button" data-template-start="${escHtml(template.id)}">${LAUNCHER_ICONS.play}Начать</button><button class="launcher-card-secondary" type="button" data-template-edit="${escHtml(template.id)}" aria-label="Изменить шаблон">${LAUNCHER_ICONS.edit}</button></div>
+      </div>
+    </article>`;
+  }
+
+  function launcherHistoryCard(workout, exerciseById, open = false) {
+    const exercises = (workout.exercises || []).filter(exercise => (exercise.sets || []).some(set => set.done));
+    const shownExercises = exercises.length ? exercises : (workout.exercises || []);
+    const groups = launcherGroups(shownExercises, exerciseById);
+    const duration = workout.durationSec ? launcherMinutes(workout.durationSec) : "—";
+    return `<article class="launcher-detail-card launcher-detail-card--history${open ? " is-open" : ""}" data-launcher-card="history" data-id="${escHtml(workout.id)}" role="button" tabindex="0" aria-expanded="${open}">
+      <div class="launcher-card-top"><h3>${escHtml(workout.name || "Силовая тренировка")}</h3><span class="launcher-card-chevron">${LAUNCHER_ICONS.chevron}</span></div>
+      ${launcherTags(groups)}
+      <div class="launcher-card-stats"><span>${LAUNCHER_ICONS.clock}${duration}</span><span>${LAUNCHER_ICONS.weight}${launcherVolume(workout)}</span><span>${LAUNCHER_ICONS.history}${escHtml(relPastText(workout.finishedAt || workout.startedAt) || fmtDate(workout.startedAt))}</span></div>
+      <div class="launcher-card-expanded">
+        <div class="launcher-card-exercises">${launcherExerciseRows(shownExercises, exerciseById)}</div>
+        <div class="launcher-card-actions"><button class="launcher-card-primary" type="button" data-history-repeat="${escHtml(workout.id)}">${LAUNCHER_ICONS.repeat}Повторить</button><button class="launcher-card-secondary" type="button" data-history-details="${escHtml(workout.id)}" aria-label="Подробная информация о тренировке">${LAUNCHER_ICONS.details}</button></div>
+      </div>
+    </article>`;
+  }
+
+  function wireStrengthSelection(recent) {
+    const toggle = card => {
+      const open = !card.classList.contains("is-open");
+      card.classList.toggle("is-open", open);
+      card.setAttribute("aria-expanded", String(open));
+    };
+    optionsEl.querySelectorAll("[data-launcher-card]").forEach(card => {
+      card.addEventListener("click", event => { if (!event.target.closest("button")) toggle(card); });
+      card.addEventListener("keydown", event => {
+        if ((event.key === "Enter" || event.key === " ") && event.target === card) { event.preventDefault(); toggle(card); }
+      });
+    });
+    optionsEl.querySelector("[data-empty-start]")?.addEventListener("click", () => startNew("strength"));
+    optionsEl.querySelectorAll("[data-template-start]").forEach(button => button.addEventListener("click", event => {
+      event.stopPropagation();
+      const id = button.dataset.templateStart;
+      leaveLauncher();
+      tplStartWorkout(id);
+    }));
+    optionsEl.querySelectorAll("[data-template-edit]").forEach(button => button.addEventListener("click", event => {
+      event.stopPropagation();
+      leaveLauncher();
+      goToScreen("templates");
+      enterTplEditMode();
+    }));
+    optionsEl.querySelectorAll("[data-history-repeat]").forEach(button => button.addEventListener("click", event => {
+      event.stopPropagation();
+      const workout = recent.find(item => item.id === button.dataset.historyRepeat);
+      if (workout) startRepeated("strength", workout);
+    }));
+    optionsEl.querySelectorAll("[data-history-details]").forEach(button => button.addEventListener("click", event => {
+      event.stopPropagation();
+      const workout = recent.find(item => item.id === button.dataset.historyDetails);
+      if (!workout) return;
+      leaveLauncher();
+      openDetailScreen(workout, "menu");
+    }));
+  }
+
   function choiceKey(kind, id = "") { return `${kind}:${id}`; }
 
   function updateChoice(type, choice) {
@@ -1505,14 +1624,39 @@ const startBtn      = $("start-btn");
     const color = isRun ? "#42dea4" : "#8f7cff";
     selection.style.setProperty("--selected-color", color);
     selectedTitle.textContent = isRun ? "Бег" : "Силовая";
+    selection.classList.toggle("launcher-selection--strength-cards", !isRun);
     const countParts = [];
-    if (recent.length) countParts.push(`последних: ${recent.length}`);
-    if (templates.length) countParts.push(`шаблонов: ${templates.length}`);
-    selectedCounts.textContent = countParts.join(" · ");
+    if (isRun) {
+      if (recent.length) countParts.push(`последних: ${recent.length}`);
+      if (templates.length) countParts.push(`шаблонов: ${templates.length}`);
+      selectedCounts.textContent = countParts.join(" · ");
+    } else {
+      const weekAgo = Date.now() - 7 * 86400000;
+      const weekCount = DATA.getWorkoutHistory(DATA.getCurrentUser()).filter(item => item.type !== "run" && item.startedAt >= weekAgo).length;
+      selectedCounts.textContent = `За неделю: ${weekCount} ${weekCount % 10 === 1 && weekCount % 100 !== 11 ? "тренировка" : [2, 3, 4].includes(weekCount % 10) && ![12, 13, 14].includes(weekCount % 100) ? "тренировки" : "тренировок"}`;
+    }
     selectedOrbHit.setAttribute("aria-label", `Вернуться к выбору типа. Выбрано: ${isRun ? "Бег" : "Силовая"}`);
     otherOrbHit.setAttribute("aria-label", `Выбрать: ${isRun ? "Силовая" : "Бег"}`);
     selectedChoice = { kind: "empty", id: null, name: "пустую" };
     startChoiceBtn.textContent = "Начать пустую";
+
+    if (!isRun) {
+      const userId = DATA.getCurrentUser();
+      const exerciseById = new Map(DATA.getVisibleExercises(userId).map(exercise => [exercise.id, exercise]));
+      const history = DATA.getWorkoutHistory(userId);
+      const emptyStrength = `<button class="launcher-strength-empty" type="button" data-empty-start><span><b>Пустая тренировка</b><small>Начать с чистого листа</small></span><i>+</i></button>`;
+      const templateBlockStrength = templates.length ? `<section class="launcher-section launcher-section--templates"><p class="launcher-section-title">Шаблоны</p><div class="launcher-cards-carousel">${templates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}</div></section>` : "";
+      const historyBlockStrength = recent.length ? `<section class="launcher-section"><p class="launcher-section-title">Последние тренировки</p><div class="launcher-history-cards">${recent.map((workout, index) => launcherHistoryCard(workout, exerciseById, index === 0)).join("")}</div></section>` : "";
+      const drawStrength = () => {
+        optionsEl.innerHTML = emptyStrength + templateBlockStrength + historyBlockStrength;
+        optionsEl.scrollTop = 0;
+        wireStrengthSelection(recent);
+        optionsEl.classList.remove("is-refreshing");
+      };
+      if (switching) { optionsEl.classList.add("is-refreshing"); selectionRenderTimer = setTimeout(drawStrength, 180); }
+      else drawStrength();
+      return;
+    }
 
     const empty = `
       <button class="launcher-option launcher-option--empty is-selected" type="button" data-choice-key="empty:">
@@ -1564,7 +1708,9 @@ const startBtn      = $("start-btn");
   function chooseType(type, { switching = false } = {}) {
     if (state() !== "split" && state() !== "selected") return;
     const userId = DATA.getCurrentUser();
-    const recent = DATA.getWorkoutHistory(userId).filter(item => item.type === type).slice(0, 3);
+    const recent = DATA.getWorkoutHistory(userId)
+      .filter(item => type === "strength" ? item.type !== "run" : item.type === "run")
+      .slice(0, 3);
     const templates = type === "strength" ? DATA.getTemplates(userId) : [];
     haptic(24);
 

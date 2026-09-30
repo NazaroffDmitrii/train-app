@@ -480,6 +480,63 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-template-card b { display:block; font-size:16px; }
 .launcher-template-card small { display:block; margin-top:12px; font-size:13px; color:#8b8b97; }
 .launcher-start-choice { width:100%; align-self:end; height:56px; border-radius:22px; color:#080810; background:var(--selected-color); font-size:17px; font-weight:800; box-shadow:0 8px 30px color-mix(in srgb,var(--selected-color) 22%,transparent); transition:background 500ms ease; }
+.launcher-selection--strength-cards { grid-template-rows:112px minmax(0,1fr); }
+.launcher-selection--strength-cards .launcher-start-choice { display:none; }
+.launcher-strength-empty {
+  width:100%; min-height:76px; padding:14px 16px; border:1px dashed #3d3c55; border-radius:20px;
+  display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left;
+  background:transparent; color:var(--text-primary); transition:border-color .16s ease, transform .12s ease;
+}
+.launcher-strength-empty:active { transform:scale(.985); border-color:var(--selected-color); }
+.launcher-strength-empty span { min-width:0; }
+.launcher-strength-empty b { display:block; font-size:17px; font-weight:650; }
+.launcher-strength-empty small { display:block; margin-top:5px; color:#9c9bae; font-size:13px; }
+.launcher-strength-empty i { flex:none; color:var(--selected-color); font-size:28px; line-height:1; font-style:normal; }
+.launcher-selection--strength-cards .launcher-section { margin-top:24px; }
+.launcher-selection--strength-cards .launcher-section-title { margin-left:4px; letter-spacing:.14em; font-weight:600; }
+.launcher-cards-carousel {
+  display:flex; align-items:flex-start; gap:10px; margin:0 calc(-1 * var(--content-left)); padding:0 var(--content-left);
+  overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-inline:var(--content-left); scrollbar-width:none;
+}
+.launcher-cards-carousel::-webkit-scrollbar { display:none; }
+.launcher-cards-carousel::after { content:""; flex:0 0 6px; }
+.launcher-detail-card {
+  width:100%; padding:14px 16px; border-radius:20px; background:#12111c; border:1px solid #26253a;
+  color:var(--text-primary); cursor:pointer; outline:none; text-align:left;
+}
+.launcher-detail-card:focus-visible { border-color:var(--selected-color); box-shadow:0 0 0 2px color-mix(in srgb,var(--selected-color) 22%,transparent); }
+.launcher-detail-card--template {
+  flex-grow:0; flex-shrink:0; flex-basis:82%; max-width:430px; scroll-snap-align:start;
+  background:linear-gradient(225deg,#26224a 0%,#12111c 55%);
+}
+.launcher-history-cards { display:flex; flex-direction:column; gap:10px; }
+.launcher-card-top { display:flex; align-items:center; gap:8px; }
+.launcher-card-top h3 { flex:1; min-width:0; margin:0; font-size:17px; line-height:1.25; font-weight:650; }
+.launcher-card-chevron { flex:none; width:20px; height:20px; color:#8a8a9c; transition:transform .2s ease; }
+.launcher-card-chevron svg, .launcher-card-stats svg, .launcher-card-actions svg { width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.launcher-detail-card.is-open .launcher-card-chevron { transform:rotate(180deg); }
+.launcher-card-tags { display:flex; gap:6px; margin-top:10px; overflow-x:auto; scrollbar-width:none; }
+.launcher-card-tags::-webkit-scrollbar { display:none; }
+.launcher-card-tags span { flex:none; padding:4px 9px; border-radius:10px; background:#26224a; color:#b9b2ff; font-size:12px; white-space:nowrap; }
+.launcher-card-stats { display:flex; align-items:center; flex-wrap:wrap; gap:7px 14px; margin-top:12px; color:#9c9bae; font-size:13px; }
+.launcher-card-stats span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+.launcher-card-stats svg { width:15px; height:15px; color:#7d7c90; }
+.launcher-card-expanded { display:none; }
+.launcher-detail-card.is-open .launcher-card-expanded { display:block; }
+.launcher-detail-card.is-open .launcher-card-tags, .launcher-detail-card.is-open .launcher-card-stats { display:none; }
+.launcher-card-exercises { margin-top:10px; padding-top:6px; border-top:1px solid #26253a; }
+.launcher-card-exercise { display:flex; align-items:baseline; gap:10px; min-height:35px; padding:7px 0; border-bottom:1px solid #1d1c2c; }
+.launcher-card-exercise:last-child { border-bottom:0; }
+.launcher-card-exercise span { width:14px; flex:none; color:#7d7c90; font-size:12px; font-weight:400; }
+.launcher-card-exercise b { min-width:0; flex:1; color:#e4e3f0; font-size:14px; font-weight:500; line-height:1.25; }
+.launcher-card-exercise em { flex:none; color:#9c9bae; font-size:13px; font-style:normal; white-space:nowrap; }
+.launcher-card-actions { display:flex; gap:8px; margin-top:10px; }
+.launcher-card-actions button { height:44px; display:flex; align-items:center; justify-content:center; border-radius:22px; }
+.launcher-card-primary { flex:1; gap:7px; background:var(--selected-color); color:#090812; font-size:16px; font-weight:750; }
+.launcher-card-primary svg { width:19px; height:19px; stroke-width:2; }
+.launcher-card-secondary { width:44px; flex:none; border:1px solid #3d3c55; color:#d6d5e4; }
+.launcher-card-secondary svg { width:20px; height:20px; }
+.launcher-card-actions button:active { transform:scale(.96); }
 .workout-launcher[data-state="launching"] .type-orb { opacity:0; }
 .app.launcher-strength .bg-glow { --bg-glow:rgba(124,108,230,.26); }
 .app.launcher-run .bg-glow { --bg-glow:rgba(52,211,153,.21); }
@@ -487,6 +544,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 @media (max-height:660px) {
   .launcher-context { top:5px; } .launcher-context h2 { font-size:20px; }
   .launcher-selection { padding-top:calc(12px + var(--safe-top)); grid-template-rows:100px minmax(0,1fr) 54px; gap:6px; }
+  .launcher-selection--strength-cards { grid-template-rows:100px minmax(0,1fr); }
+}
+@media (max-width:390px) {
+  .launcher-selection--strength-cards { padding-left:16px; padding-right:16px; }
+  .launcher-selection--strength-cards .launcher-selection-heading { padding-left:82px; }
+  .launcher-selection--strength-cards .launcher-cards-carousel { margin-left:-16px; margin-right:-16px; padding-left:16px; padding-right:16px; scroll-padding-inline:16px; }
+  .launcher-detail-card--template { flex-basis:86%; }
 }
 @media (prefers-reduced-motion:reduce) {
   .workout-launcher, .type-orb, .launcher-body { transition-property:opacity !important; transition-duration:180ms !important; }
