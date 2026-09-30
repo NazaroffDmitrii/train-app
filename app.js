@@ -1290,9 +1290,8 @@ const startBtn      = $("start-btn");
   const contextDate = $("launcher-context-date");
   const week = $("launcher-week");
   const weekDays = $("launcher-week-days");
-  const infinity = $("launcher-infinity");
   const appRoot = document.querySelector(".app");
-  if (!launcher || !strengthOrb || !runOrb || !selection || !infinity) return;
+  if (!launcher || !strengthOrb || !runOrb || !selection) return;
 
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const lowPower = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2)
@@ -1302,8 +1301,8 @@ const startBtn      = $("start-btn");
 
   let gooTimer = 0;
   let hapticTimer = 0;
-  let chromeTimer = 0;
   let launchTimer = 0;
+  let selectionRenderTimer = 0;
   let selectionHistoryArmed = false;
   let selectedChoice = { kind: "empty", id: null, name: "пустую" };
 
@@ -1311,8 +1310,14 @@ const startBtn      = $("start-btn");
   const selectedType = () => launcher.dataset.selected || "strength";
 
   function pinStaticChrome() {
-    if (appRoot) appRoot.scrollTop = 0;
+    if (appRoot) { appRoot.scrollLeft = 0; appRoot.scrollTop = 0; }
   }
+
+  // Скрытые анимированные элементы могут вызвать горизонтальный focus-scroll
+  // overflow:hidden-контейнера. Исправляем только оболочку, не viewport iOS.
+  appRoot?.addEventListener("scroll", () => {
+    if (screenMenu.classList.contains("active") && appRoot.scrollLeft) appRoot.scrollLeft = 0;
+  }, { passive: true });
 
   function setControls(next) {
     const fullScreen = next === "selected";
@@ -1330,14 +1335,6 @@ const startBtn      = $("start-btn");
   function setGlow(type = "") {
     appRoot?.classList.toggle("launcher-strength", type === "strength");
     appRoot?.classList.toggle("launcher-run", type === "run");
-  }
-
-  function hideChrome() {
-    clearTimeout(chromeTimer);
-  }
-
-  function restoreChrome(delay = 0) {
-    clearTimeout(chromeTimer);
   }
 
   function runGoo(duration = 820) {
@@ -1390,21 +1387,22 @@ const startBtn      = $("start-btn");
   }
 
   function applyIdle({ animate = true } = {}) {
+    clearTimeout(selectionRenderTimer);
     clearTimeout(hapticTimer); clearTimeout(launchTimer);
     if (animate && state() !== "idle") runGoo();
     launcher.dataset.state = "idle";
     delete launcher.dataset.selected;
     setGlow();
     setControls("idle");
-    restoreChrome(animate ? 450 : 0);
     pinStaticChrome();
     startBtn.setAttribute("aria-label", DATA.getActiveWorkout(DATA.getCurrentUser()) ? "Вернуться к тренировке" : "Выбрать тип тренировки");
   }
 
   function applySplit({ animate = true } = {}) {
+    clearTimeout(selectionRenderTimer);
+    launcher.classList.add("has-interacted");
     clearTimeout(hapticTimer); clearTimeout(launchTimer);
     if (state() === "idle") updateGeometry();
-    hideChrome();
     renderContext(DATA.getWorkoutHistory(DATA.getCurrentUser()));
     if (animate && state() !== "split") runGoo();
     launcher.dataset.state = "split";
@@ -1430,7 +1428,8 @@ const startBtn      = $("start-btn");
   }
 
   function leaveLauncher() {
-    clearTimeout(gooTimer); clearTimeout(hapticTimer); clearTimeout(chromeTimer); clearTimeout(launchTimer);
+    clearTimeout(selectionRenderTimer);
+    clearTimeout(gooTimer); clearTimeout(hapticTimer); clearTimeout(launchTimer);
     launcher.classList.remove("is-gooing");
     launcher.dataset.state = "idle";
     delete launcher.dataset.selected;
@@ -1501,6 +1500,7 @@ const startBtn      = $("start-btn");
   }
 
   function renderSelection(type, recent, templates, switching = false) {
+    clearTimeout(selectionRenderTimer);
     const isRun = type === "run";
     const color = isRun ? "#42dea4" : "#8f7cff";
     selection.style.setProperty("--selected-color", color);
@@ -1550,7 +1550,7 @@ const startBtn      = $("start-btn");
       updateChoice(type, { kind: "empty", id: null, name: "пустую" });
       optionsEl.classList.remove("is-refreshing");
     };
-    if (switching) { optionsEl.classList.add("is-refreshing"); setTimeout(draw, 130); }
+    if (switching) { optionsEl.classList.add("is-refreshing"); selectionRenderTimer = setTimeout(draw, 180); }
     else draw();
 
     startChoiceBtn.onclick = () => {
@@ -1577,7 +1577,6 @@ const startBtn      = $("start-btn");
       return;
     }
 
-    hideChrome();
     renderSelection(type, recent, templates, switching);
     if (state() === "split") runGoo();
     launcher.dataset.selected = type;
@@ -9518,16 +9517,9 @@ function openSaveAsTemplateModal(workout) {
    без сети (раздел 2, раздел 8 спецификации).
    ========================================================================== */
 if ("serviceWorker" in navigator) {
-  // Авто-обновление PWA. Раньше location.reload() (в т.ч. кнопка «Синхронизация»)
-  // НЕ обновляла приложение: старый service worker продолжал отдавать старый
-  // каркас из кэша, и единственным способом получить новую версию было снести
-  // иконку с рабочего стола и добавить заново. Теперь:
-  //   • sw.js делает skipWaiting (install) + clients.claim (activate) — новая
-  //     версия активируется сразу, как только браузер её скачал;
-  //   • здесь ловим controllerchange (момент, когда новый SW перехватил
-  //     управление страницей) и предлагаем открыть новую версию.
-  // Проверка обновления доступна отдельно от синхронизации данных.
+  // Новый worker предлагает перезапуск; первая установка не является обновлением.
   let _reloadedForUpdate = false;
+  let hadController = Boolean(navigator.serviceWorker.controller);
 
   // Свежая оболочка уже записана worker'ом. Сохраняем адрес установленного PWA.
   window.openUpdatedApp = () => {
@@ -9546,6 +9538,7 @@ if ("serviceWorker" in navigator) {
   }
 
   navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) { hadController = true; return; }
     if (_reloadedForUpdate) return;
     window.__appUpdateReady = true;
     // Activation may happen during any network operation. Applying the new UI
