@@ -1475,6 +1475,10 @@ const startBtn      = $("start-btn");
           };
         });
         DATA.saveActiveWorkout(userId, workout);
+      } else {
+        workout.runType = source.runType || "easy";
+        workout.name = source.name || "Пробежка";
+        DATA.saveActiveWorkout(userId, workout);
       }
       haptic(24);
       leaveLauncher();
@@ -1509,6 +1513,7 @@ const startBtn      = $("start-btn");
     repeat: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>`,
     edit: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="m16.5 3.5 4 4L8 20l-5 1 1-5Z"/></svg>`,
     details: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M7 16v1M11 12v5M15 9v8M19 6v11"/></svg>`,
+    route: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h3a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h7"/></svg>`,
   };
 
   function launcherGroups(items, exerciseById) {
@@ -1580,7 +1585,32 @@ const startBtn      = $("start-btn");
     </article>`;
   }
 
-  function wireStrengthSelection(recent) {
+  function launcherRunHistoryCard(workout) {
+    const typeNames = { easy: "Лёгкая", long: "Длинная", hard: "Тяжёлая" };
+    const typeName = typeNames[workout.runType] || "Пробежка";
+    const duration = workout.durationSec ? launcherMinutes(workout.durationSec) : "—";
+    const distance = workout.distance ? `${workout.distance} км` : "—";
+    const pace = workout.pace ? `${workout.pace} /км` : "—";
+    const cadence = workout.cadence ? `${workout.cadence} шаг/мин` : "—";
+    const heartRate = workout.heartRate ? `${workout.heartRate} уд/мин` : "—";
+    return `<article class="launcher-detail-card launcher-detail-card--history launcher-detail-card--run" data-launcher-card="history" data-id="${escHtml(workout.id)}" role="button" tabindex="0" aria-expanded="false">
+      <div class="launcher-card-top"><h3>${escHtml(workout.name || `${typeName} пробежка`)}</h3><button class="launcher-card-chevron" type="button" data-card-toggle aria-label="Раскрыть пробежку">${LAUNCHER_ICONS.chevron}</button></div>
+      ${launcherTags([typeName])}
+      <div class="launcher-card-stats"><span>${LAUNCHER_ICONS.clock}${duration}</span><span>${LAUNCHER_ICONS.route}${distance}</span><span>${LAUNCHER_ICONS.history}${escHtml(relPastText(workout.finishedAt || workout.startedAt) || fmtDate(workout.startedAt))}</span></div>
+      <div class="launcher-card-expanded"><div class="launcher-card-expanded-inner">
+        <div class="launcher-run-metrics"><span class="launcher-run-metric"><small>Дистанция</small><b>${escHtml(distance)}</b></span><span class="launcher-run-metric"><small>Темп</small><b>${escHtml(pace)}</b></span><span class="launcher-run-metric"><small>Каденс</small><b>${escHtml(cadence)}</b></span><span class="launcher-run-metric"><small>Средний пульс</small><b>${escHtml(heartRate)}</b></span></div>
+        <div class="launcher-card-actions"><button class="launcher-card-primary" type="button" data-history-repeat="${escHtml(workout.id)}">${LAUNCHER_ICONS.repeat}Повторить</button><button class="launcher-card-secondary" type="button" data-history-details="${escHtml(workout.id)}" aria-label="Подробная информация о пробежке">${LAUNCHER_ICONS.details}</button></div>
+      </div></div>
+    </article>`;
+  }
+
+  function launcherEmptyState(title, copy, { action = "", mark = "+" } = {}) {
+    const tag = action ? "button" : "div";
+    const attrs = action ? ` type="button" ${action}` : "";
+    return `<${tag} class="launcher-empty-state"${attrs}><i class="launcher-empty-state-mark">${mark}</i><span class="launcher-empty-state-copy"><b>${escHtml(title)}</b><small>${escHtml(copy)}</small></span></${tag}>`;
+  }
+
+  function wireWorkoutSelection(type, recent) {
     const templateCarousel = optionsEl.querySelector("[data-templates-carousel]");
     const templateCards = [...optionsEl.querySelectorAll('.launcher-detail-card--template')];
     const templatesMore = optionsEl.querySelector("[data-templates-more]");
@@ -1621,7 +1651,7 @@ const startBtn      = $("start-btn");
       });
       card.querySelector("[data-card-toggle]")?.addEventListener("click", event => { event.stopPropagation(); toggle(card); });
     });
-    optionsEl.querySelector("[data-empty-start]")?.addEventListener("click", () => startNew("strength"));
+    optionsEl.querySelector("[data-empty-start]")?.addEventListener("click", () => startNew(type));
     optionsEl.querySelectorAll("[data-template-start]").forEach(button => button.addEventListener("click", event => {
       event.stopPropagation();
       const id = button.dataset.templateStart;
@@ -1637,7 +1667,7 @@ const startBtn      = $("start-btn");
     optionsEl.querySelectorAll("[data-history-repeat]").forEach(button => button.addEventListener("click", event => {
       event.stopPropagation();
       const workout = recent.find(item => item.id === button.dataset.historyRepeat);
-      if (workout) startRepeated("strength", workout);
+      if (workout) startRepeated(type, workout);
     }));
     optionsEl.querySelectorAll("[data-history-details]").forEach(button => button.addEventListener("click", event => {
       event.stopPropagation();
@@ -1651,6 +1681,10 @@ const startBtn      = $("start-btn");
       goToScreen("templates");
     };
     optionsEl.querySelector("[data-templates-more]")?.addEventListener("click", event => {
+      event.stopPropagation();
+      openAllTemplates();
+    });
+    optionsEl.querySelector("[data-templates-empty]")?.addEventListener("click", event => {
       event.stopPropagation();
       openAllTemplates();
     });
@@ -1679,14 +1713,14 @@ const startBtn      = $("start-btn");
     const isRun = type === "run";
     const color = isRun ? "#42dea4" : "#8f7cff";
     selection.style.setProperty("--selected-color", color);
-    selection.classList.toggle("launcher-selection--strength-cards", !isRun);
+    selection.classList.add("launcher-selection--strength-cards");
     const updateHeading = () => {
       const countParts = [];
       selectedTitle.textContent = isRun ? "Бег" : "Силовая";
       if (isRun) {
         if (recent.length) countParts.push(`последних: ${recent.length}`);
         if (templates.length) countParts.push(`шаблонов: ${templates.length}`);
-        selectedCounts.textContent = countParts.join(" · ");
+        selectedCounts.textContent = countParts.join(" · ") || "Начните с первого шага";
       } else {
         const weekAgo = Date.now() - 7 * 86400000;
         const weekCount = DATA.getWorkoutHistory(DATA.getCurrentUser()).filter(item => item.type !== "run" && item.startedAt >= weekAgo).length;
@@ -1708,70 +1742,27 @@ const startBtn      = $("start-btn");
     selectedChoice = { kind: "empty", id: null, name: "пустую" };
     startChoiceBtn.textContent = "Начать пустую";
 
-    if (!isRun) {
-      const userId = DATA.getCurrentUser();
-      const exerciseById = new Map(DATA.getVisibleExercises(userId).map(exercise => [exercise.id, exercise]));
-      const history = DATA.getWorkoutHistory(userId);
-      const featuredTemplates = templates.slice(0, 3);
-      const emptyStrength = `<button class="launcher-strength-empty" type="button" data-empty-start><span><b>Пустая тренировка</b><small>Начать с чистого листа</small></span><i>+</i></button>`;
-      const templateBlockStrength = featuredTemplates.length ? `<section class="launcher-section launcher-section--templates"><p class="launcher-section-title">Шаблоны</p><div class="launcher-cards-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все<br>шаблоны</b><i>→</i></button></div></section>` : "";
-      const historyBlockStrength = recent.length ? `<section class="launcher-section"><p class="launcher-section-title">Последние тренировки</p><div class="launcher-history-cards">${recent.map(workout => launcherHistoryCard(workout, exerciseById)).join("")}</div></section>` : "";
-      const drawStrength = () => {
-        optionsEl.innerHTML = emptyStrength + templateBlockStrength + historyBlockStrength;
-        optionsEl.scrollTop = 0;
-        wireStrengthSelection(recent);
-        optionsEl.classList.remove("is-refreshing");
-      };
-      if (switching) { optionsEl.classList.add("is-refreshing"); selectionRenderTimer = setTimeout(drawStrength, 220); }
-      else drawStrength();
-      return;
-    }
-
-    const empty = `
-      <button class="launcher-option launcher-option--empty is-selected" type="button" data-choice-key="empty:">
-        <span class="launcher-option-mark"></span><span class="launcher-option-copy"><b>Пустая тренировка</b><small>Начать с чистого листа</small></span><span class="launcher-option-plus">+</span>
-      </button>`;
-    const historyBlock = recent.length ? `
-      <section class="launcher-section"><p class="launcher-section-title">Повторить последнюю</p>
-        ${recent.map(workout => {
-          const meta = isRun
-            ? [workout.distance ? `${workout.distance} км` : null, workout.pace ? `${workout.pace}/км` : null].filter(Boolean).join(" · ") || "Пробежка"
-            : strengthMeta(workout);
-          const extra = isRun ? "" : `<span class="launcher-option-exercises">${escHtml(exerciseLine(workout))}</span>`;
-          return `<button class="launcher-option" type="button" data-choice-key="history:${escHtml(workout.id)}" data-kind="history" data-id="${escHtml(workout.id)}">
-            <span class="launcher-option-mark"></span><span class="launcher-option-copy"><b>${escHtml(workout.name || (isRun ? "Пробежка" : "Силовая тренировка"))}</b><small>${escHtml(meta)}</small>${extra}</span><span class="launcher-option-date">${escHtml(fmtDate(workout.startedAt))}</span>${isRun ? runBars(workout) : ""}
-          </button>`;
-        }).join("")}
-      </section>` : "";
-    const templateBlock = templates.length ? `
-      <section class="launcher-section"><p class="launcher-section-title">Шаблоны</p><div class="launcher-template-grid">
-        ${templates.map(template => `<button class="launcher-template-card" type="button" data-choice-key="template:${escHtml(template.id)}" data-kind="template" data-id="${escHtml(template.id)}"><b>${escHtml(template.name || "Шаблон")}</b><small>${(template.exercises || []).length} ${pluralExercises((template.exercises || []).length)}</small></button>`).join("")}
-      </div></section>` : "";
-
+    const userId = DATA.getCurrentUser();
+    const history = DATA.getWorkoutHistory(userId);
+    const exerciseById = isRun ? null : new Map(DATA.getVisibleExercises(userId).map(exercise => [exercise.id, exercise]));
+    const featuredTemplates = isRun ? [] : templates.slice(0, 3);
+    const emptyStart = `<button class="launcher-strength-empty" type="button" data-empty-start><span><b>${isRun ? "Пустая пробежка" : "Пустая тренировка"}</b><small>${isRun ? "Записать новый маршрут" : "Начать с чистого листа"}</small></span><i>+</i></button>`;
+    const templateContent = featuredTemplates.length
+      ? `<div class="launcher-cards-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все<br>шаблоны</b><i>→</i></button></div>`
+      : launcherEmptyState("Шаблонов пока нет", isRun ? "Здесь можно будет собрать лёгкую, длинную или тяжёлую пробежку." : "Создайте первый и сохраните любимый план тренировки.", isRun ? { mark: "•" } : { action: "data-templates-empty", mark: "+" });
+    const templateBlock = `<section class="launcher-section launcher-section--templates"><p class="launcher-section-title">Шаблоны</p>${templateContent}</section>`;
+    const historyContent = recent.length
+      ? `<div class="launcher-history-cards">${recent.map(workout => isRun ? launcherRunHistoryCard(workout) : launcherHistoryCard(workout, exerciseById)).join("")}</div>`
+      : launcherEmptyState(isRun ? "Пробежек пока нет" : "Тренировок пока нет", isRun ? "Первый километр начинается с одного шага — самое время выйти на старт." : "Начните первую — и здесь появится ваша история прогресса.", { mark: "→" });
+    const historyBlock = `<section class="launcher-section"><p class="launcher-section-title">Последние ${isRun ? "пробежки" : "тренировки"}</p>${historyContent}</section>`;
     const draw = () => {
-      optionsEl.innerHTML = empty + historyBlock + templateBlock;
+      optionsEl.innerHTML = emptyStart + templateBlock + historyBlock;
       optionsEl.scrollTop = 0;
-      optionsEl.querySelectorAll("[data-choice-key]").forEach(card => card.addEventListener("click", () => {
-        const key = card.dataset.choiceKey;
-        if (key === "empty:") updateChoice(type, { kind: "empty", id: null, name: "пустую" });
-        else {
-          const [kind, id] = key.split(":");
-          const item = kind === "history" ? recent.find(entry => entry.id === id) : templates.find(entry => entry.id === id);
-          if (item) updateChoice(type, { kind, id, name: item.name || (kind === "template" ? "Шаблон" : isRun ? "Пробежка" : "Силовая тренировка") });
-        }
-      }));
-      updateChoice(type, { kind: "empty", id: null, name: "пустую" });
+      wireWorkoutSelection(type, recent);
       optionsEl.classList.remove("is-refreshing");
     };
     if (switching) { optionsEl.classList.add("is-refreshing"); selectionRenderTimer = setTimeout(draw, 220); }
     else draw();
-
-    startChoiceBtn.onclick = () => {
-      if (selectedChoice.kind === "empty") { startNew(type); return; }
-      if (selectedChoice.kind === "template") { const id = selectedChoice.id; leaveLauncher(); tplStartWorkout(id); return; }
-      const source = recent.find(item => item.id === selectedChoice.id);
-      if (source) startRepeated(type, source);
-    };
   }
 
   function chooseType(type, { switching = false } = {}) {
@@ -1781,17 +1772,8 @@ const startBtn      = $("start-btn");
     const recent = history
       .filter(item => type === "strength" ? item.type !== "run" : item.type === "run")
       .slice(0, 3);
-    const templates = type === "strength" ? sortTemplatesByLastUse(DATA.getTemplates(userId), history) : [];
+    const templates = type === "strength" ? sortTemplatesByLastUse(DATA.getTemplates(userId).filter(template => template.type !== "run"), history) : [];
     haptic(24);
-
-    if (!recent.length && !templates.length) {
-      launcher.dataset.selected = type;
-      launcher.dataset.state = "launching";
-      setGlow(type);
-      setControls("launching");
-      launchTimer = setTimeout(() => startNew(type), reduceMotion.matches ? 80 : 280);
-      return;
-    }
 
     renderSelection(type, recent, templates, switching);
     if (state() === "split") runGoo();
