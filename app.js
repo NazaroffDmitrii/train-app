@@ -1357,7 +1357,10 @@ const startBtn      = $("start-btn");
   function updateGeometry() {
     // Родитель остаётся на месте, даже когда сама сцена раскрывается на весь экран.
     const top = launcher.parentElement.getBoundingClientRect().top - screenMenu.getBoundingClientRect().top;
+    const width = launcher.getBoundingClientRect().width;
+    const contentLeft = Math.max(20, (width - 560) / 2);
     launcher.style.setProperty("--launcher-screen-top", `${top}px`);
+    launcher.style.setProperty("--selected-orb-shift", `${Math.max(0, width / 2 - contentLeft - 38)}px`);
   }
 
   function renderContext(history) {
@@ -1555,8 +1558,8 @@ const startBtn      = $("start-btn");
       ${launcherTags(groups)}
       <div class="launcher-card-stats"><span>${LAUNCHER_ICONS.clock}${usage.avgMin} мин</span>${usage.lastTs ? `<span>${LAUNCHER_ICONS.history}${escHtml(relPastText(usage.lastTs))}</span>` : ""}</div>
       <div class="launcher-card-expanded">
-        <div class="launcher-card-exercises">${launcherExerciseRows(template.exercises, exerciseById, true)}</div>
-        <div class="launcher-card-actions"><button class="launcher-card-primary" type="button" data-template-start="${escHtml(template.id)}">${LAUNCHER_ICONS.play}Начать</button><button class="launcher-card-secondary" type="button" data-template-edit="${escHtml(template.id)}" aria-label="Изменить шаблон">${LAUNCHER_ICONS.edit}</button></div>
+        <div class="launcher-card-expanded-inner"><div class="launcher-card-exercises">${launcherExerciseRows(template.exercises, exerciseById, true)}</div>
+        <div class="launcher-card-actions"><button class="launcher-card-primary" type="button" data-template-start="${escHtml(template.id)}">${LAUNCHER_ICONS.play}Начать</button><button class="launcher-card-secondary" type="button" data-template-edit="${escHtml(template.id)}" aria-label="Изменить шаблон">${LAUNCHER_ICONS.edit}</button></div></div>
       </div>
     </article>`;
   }
@@ -1571,18 +1574,45 @@ const startBtn      = $("start-btn");
       ${launcherTags(groups)}
       <div class="launcher-card-stats"><span>${LAUNCHER_ICONS.clock}${duration}</span><span>${LAUNCHER_ICONS.weight}${launcherVolume(workout)}</span><span>${LAUNCHER_ICONS.history}${escHtml(relPastText(workout.finishedAt || workout.startedAt) || fmtDate(workout.startedAt))}</span></div>
       <div class="launcher-card-expanded">
-        <div class="launcher-card-exercises">${launcherExerciseRows(shownExercises, exerciseById)}</div>
-        <div class="launcher-card-actions"><button class="launcher-card-primary" type="button" data-history-repeat="${escHtml(workout.id)}">${LAUNCHER_ICONS.repeat}Повторить</button><button class="launcher-card-secondary" type="button" data-history-details="${escHtml(workout.id)}" aria-label="Подробная информация о тренировке">${LAUNCHER_ICONS.details}</button></div>
+        <div class="launcher-card-expanded-inner"><div class="launcher-card-exercises">${launcherExerciseRows(shownExercises, exerciseById)}</div>
+        <div class="launcher-card-actions"><button class="launcher-card-primary" type="button" data-history-repeat="${escHtml(workout.id)}">${LAUNCHER_ICONS.repeat}Повторить</button><button class="launcher-card-secondary" type="button" data-history-details="${escHtml(workout.id)}" aria-label="Подробная информация о тренировке">${LAUNCHER_ICONS.details}</button></div></div>
       </div>
     </article>`;
   }
 
   function wireStrengthSelection(recent) {
+    const templateCarousel = optionsEl.querySelector("[data-templates-carousel]");
+    const templateCards = [...optionsEl.querySelectorAll('.launcher-detail-card--template')];
+    const templatesMore = optionsEl.querySelector("[data-templates-more]");
+    const syncTemplateHeights = () => {
+      if (!templateCarousel || !templateCards.length || templateCards.some(card => card.classList.contains("is-open"))) return;
+      templateCards.forEach(card => { card.style.minHeight = ""; });
+      if (templatesMore) templatesMore.style.height = "";
+      requestAnimationFrame(() => {
+        if (!templateCarousel.isConnected) return;
+        const height = Math.max(...templateCards.map(card => Math.ceil(card.getBoundingClientRect().height)));
+        templateCards.forEach(card => { card.style.minHeight = `${height}px`; });
+        if (templatesMore) templatesMore.style.height = `${height}px`;
+      });
+    };
+    requestAnimationFrame(syncTemplateHeights);
+    if (templateCarousel && window.ResizeObserver) {
+      let carouselWidth = templateCarousel.clientWidth;
+      const observer = new ResizeObserver(() => {
+        if (!templateCarousel.isConnected) { observer.disconnect(); return; }
+        const nextWidth = templateCarousel.clientWidth;
+        if (Math.abs(nextWidth - carouselWidth) < 1) return;
+        carouselWidth = nextWidth;
+        syncTemplateHeights();
+      });
+      observer.observe(templateCarousel);
+    }
     const toggle = card => {
       const open = !card.classList.contains("is-open");
       card.classList.toggle("is-open", open);
       card.setAttribute("aria-expanded", String(open));
       card.querySelector("[data-card-toggle]")?.setAttribute("aria-label", open ? "Скрыть содержимое" : card.dataset.launcherCard === "template" ? "Раскрыть шаблон" : "Раскрыть тренировку");
+      if (!open && card.dataset.launcherCard === "template") setTimeout(syncTemplateHeights, 340);
     };
     optionsEl.querySelectorAll("[data-launcher-card]").forEach(card => {
       card.addEventListener("click", event => { if (!event.target.closest("button")) toggle(card); });
@@ -1666,9 +1696,9 @@ const startBtn      = $("start-btn");
     };
     if (switching) {
       selection.classList.add("is-switching");
-      // The orbs ease into their new sides before the full 720 ms transition ends.
+      // The orbs ease into their new sides before the full 800 ms transition ends.
       // Start the heading fade then, so the new label is readable as the motion settles.
-      selectionHeadingTimer = setTimeout(updateHeading, reduceMotion.matches ? 100 : 520);
+      selectionHeadingTimer = setTimeout(updateHeading, reduceMotion.matches ? 100 : 500);
     } else {
       selection.classList.remove("is-switching");
       updateHeading();
@@ -1692,7 +1722,7 @@ const startBtn      = $("start-btn");
         wireStrengthSelection(recent);
         optionsEl.classList.remove("is-refreshing");
       };
-      if (switching) { optionsEl.classList.add("is-refreshing"); selectionRenderTimer = setTimeout(drawStrength, 180); }
+      if (switching) { optionsEl.classList.add("is-refreshing"); selectionRenderTimer = setTimeout(drawStrength, 220); }
       else drawStrength();
       return;
     }
@@ -1733,7 +1763,7 @@ const startBtn      = $("start-btn");
       updateChoice(type, { kind: "empty", id: null, name: "пустую" });
       optionsEl.classList.remove("is-refreshing");
     };
-    if (switching) { optionsEl.classList.add("is-refreshing"); selectionRenderTimer = setTimeout(draw, 180); }
+    if (switching) { optionsEl.classList.add("is-refreshing"); selectionRenderTimer = setTimeout(draw, 220); }
     else draw();
 
     startChoiceBtn.onclick = () => {

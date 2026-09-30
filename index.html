@@ -312,7 +312,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   --strength:#7c6ce6; --run:#34d399;
   --content-left:max(20px, calc((100% - 560px) / 2));
 }
-.workout-launcher.has-interacted { transition:top 720ms cubic-bezier(.22,.8,.25,1), bottom 720ms cubic-bezier(.22,.8,.25,1); }
+.workout-launcher.has-interacted { transition:top 800ms cubic-bezier(.2,.72,.2,1), bottom 800ms cubic-bezier(.2,.72,.2,1); }
 .launcher-filter-defs { position:absolute; width:0; height:0; overflow:hidden; }
 .launcher-goo { position:absolute; inset:0; pointer-events:none; }
 .workout-launcher.is-gooing:not(.launcher-no-goo) .launcher-goo { filter:url(#launcher-goo-filter); }
@@ -320,7 +320,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   position:absolute; left:50%; top:50%; width:var(--orb-size); height:var(--orb-size);
   border-radius:50%; background:#11111b; opacity:0;
   transform:translate(-50%,-50%) scale(.72);
-  transition:left 720ms cubic-bezier(.22,.8,.25,1), top 720ms cubic-bezier(.22,.8,.25,1), transform 720ms cubic-bezier(.22,.8,.25,1), opacity 260ms ease;
+  will-change:transform,top,opacity; backface-visibility:hidden;
+  transition:left 800ms cubic-bezier(.2,.72,.2,1), top 800ms cubic-bezier(.2,.72,.2,1), transform 800ms cubic-bezier(.2,.72,.2,1), opacity 300ms ease;
 }
 .launcher-body--main { width:190px; height:190px; opacity:1; transform:translate(-50%,-50%); }
 .workout-launcher:not([data-state="idle"]) .launcher-body--main { opacity:0; transform:translate(-50%,-50%) scale(.72); }
@@ -338,7 +339,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06);
   opacity:0; pointer-events:none; isolation:isolate;
   transform:translate(-50%,-50%) scale(.72);
-  transition:left 720ms cubic-bezier(.22,.8,.25,1), top 720ms cubic-bezier(.22,.8,.25,1), transform 720ms cubic-bezier(.22,.8,.25,1), opacity 260ms ease;
+  will-change:transform,top,opacity; backface-visibility:hidden;
+  transition:left 800ms cubic-bezier(.2,.72,.2,1), top 800ms cubic-bezier(.2,.72,.2,1), transform 800ms cubic-bezier(.2,.72,.2,1), opacity 300ms ease;
 }
 .type-orb-icon { width:34px; height:34px; position:relative; z-index:2; }
 .type-orb-label { color:#f5f5f7; font-size:13px; font-weight:700; position:relative; z-index:2; }
@@ -431,15 +433,15 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .workout-launcher[data-state="selected"][data-selected="run"] .type-orb--run,
 .workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--strength,
 .workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--run {
-  left:calc(var(--content-left) + 38px); top:calc(76px + var(--safe-top)); opacity:1;
-  transform:translate(-50%,-50%) scale(.52);
+  left:50%; top:calc(76px + var(--safe-top)); opacity:1;
+  transform:translate(calc(-50% - var(--selected-orb-shift, 137px)),-50%) scale(.52);
 }
 .workout-launcher[data-state="selected"][data-selected="strength"] .type-orb--run,
 .workout-launcher[data-state="selected"][data-selected="run"] .type-orb--strength,
 .workout-launcher[data-state="selected"][data-selected="strength"] .launcher-body--run,
 .workout-launcher[data-state="selected"][data-selected="run"] .launcher-body--strength {
-  left:calc(100% - var(--content-left) - 24px); top:calc(76px + var(--safe-top)); opacity:.68;
-  transform:translate(-50%,-50%) scale(.34);
+  left:50%; top:calc(76px + var(--safe-top)); opacity:1;
+  transform:translate(calc(-50% + var(--selected-orb-shift, 137px)),-50%) scale(.52);
 }
 .workout-launcher[data-state="selected"] .type-orb-label { display:none; }
 .launcher-selection {
@@ -451,11 +453,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .workout-launcher[data-state="selected"] .launcher-selection { opacity:1; visibility:visible; pointer-events:auto; transition:opacity 300ms ease 180ms; }
 .launcher-selection-header { min-width:0; }
 .launcher-selected-orb, .launcher-other-orb { display:none; }
-.launcher-selection-heading { padding:22px 76px 0; text-align:center; opacity:1; transform:translateY(0); transition:opacity 240ms ease, transform 240ms ease; }
-.launcher-selection.is-switching .launcher-selection-heading { opacity:0; transform:translateY(4px); }
+.launcher-selection-heading { padding:22px 76px 0; text-align:center; opacity:1; transform:translateY(0); transition:opacity 300ms cubic-bezier(.2,.7,.2,1), transform 300ms cubic-bezier(.2,.7,.2,1); }
+.launcher-selection.is-switching .launcher-selection-heading { opacity:0; transform:translateY(2px); }
 .launcher-selection-heading h2 { margin:0; font-size:clamp(25px,7vw,31px); line-height:1.1; letter-spacing:-.035em; }
 .launcher-selection-heading p { margin:8px 0 0; color:#8b8b97; font-size:12px; line-height:1.4; }
-.launcher-options { width:100%; min-width:0; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; scrollbar-width:none; opacity:1; transition:opacity 180ms ease; }
+.launcher-options { width:100%; min-width:0; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; scrollbar-width:none; opacity:1; transition:opacity 220ms ease; }
 .launcher-options::-webkit-scrollbar { display:none; }
 .launcher-options.is-refreshing { opacity:0; }
 .launcher-section { margin-top:22px; }
@@ -482,12 +484,12 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-template-card small { display:block; margin-top:12px; font-size:13px; color:#8b8b97; }
 .launcher-start-choice { width:100%; align-self:end; height:56px; border-radius:22px; color:#080810; background:var(--selected-color); font-size:17px; font-weight:800; box-shadow:0 8px 30px color-mix(in srgb,var(--selected-color) 22%,transparent); transition:background 500ms ease; }
 .launcher-selection--strength-cards {
-  grid-template-rows:104px minmax(0,1fr); gap:8px;
-  padding-top:calc(24px + var(--safe-top)); padding-bottom:calc(12px + var(--safe-bottom));
+  grid-template-rows:108px minmax(0,1fr); gap:10px;
+  padding-top:calc(26px + var(--safe-top)); padding-bottom:calc(14px + var(--safe-bottom));
 }
 .launcher-selection--strength-cards .launcher-start-choice { display:none; }
 .launcher-strength-empty {
-  width:100%; min-height:68px; padding:11px 15px; border:1px dashed #3d3c55; border-radius:20px;
+  width:100%; min-height:70px; padding:12px 15px; border:1px dashed #3d3c55; border-radius:20px;
   display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left;
   background:transparent; color:var(--text-primary); transition:border-color .16s ease, transform .12s ease;
 }
@@ -496,8 +498,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-strength-empty b { display:block; font-size:17px; font-weight:650; }
 .launcher-strength-empty small { display:block; margin-top:5px; color:#9c9bae; font-size:13px; }
 .launcher-strength-empty i { flex:none; color:var(--selected-color); font-size:28px; line-height:1; font-style:normal; }
-.launcher-selection--strength-cards .launcher-section { margin-top:16px; }
-.launcher-selection--strength-cards .launcher-section-title { margin:0 4px 7px; letter-spacing:.14em; font-weight:600; }
+.launcher-selection--strength-cards .launcher-section { margin-top:18px; }
+.launcher-selection--strength-cards .launcher-section-title { margin:0 4px 8px; letter-spacing:.14em; font-weight:600; }
 .launcher-cards-carousel {
   display:flex; width:100%; max-width:100%; min-width:0; align-items:flex-start; gap:10px; margin:0; padding:0;
   overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; touch-action:pan-x pan-y; scroll-snap-type:x mandatory; scroll-padding-inline:0; scrollbar-width:none;
@@ -510,26 +512,27 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 .launcher-detail-card:focus-visible { border-color:var(--selected-color); box-shadow:0 0 0 2px color-mix(in srgb,var(--selected-color) 22%,transparent); }
 .launcher-detail-card--template {
-  width:auto; min-width:0; flex:0 0 82%; max-width:430px; min-height:100px; align-self:flex-start; scroll-snap-align:start;
+  width:100%; min-width:0; flex:0 0 100%; max-width:none; min-height:105px; align-self:flex-start; scroll-snap-align:start;
   background:linear-gradient(225deg,#26224a 0%,#12111c 55%);
 }
-.launcher-selection--strength-cards .launcher-detail-card { padding:11px 14px; }
-.launcher-history-cards { display:flex; flex-direction:column; gap:8px; }
+.launcher-selection--strength-cards .launcher-detail-card { padding:12px 15px; }
+.launcher-history-cards { display:flex; flex-direction:column; gap:9px; }
 .launcher-card-top { display:flex; align-items:center; gap:8px; }
 .launcher-card-top h3 { flex:1; min-width:0; margin:0; font-size:17px; line-height:1.25; font-weight:650; }
 .launcher-card-chevron { flex:none; width:32px; height:32px; margin:-6px -6px -6px 0; padding:6px; display:grid; place-items:center; color:#8a8a9c; border-radius:50%; transition:transform .2s ease, background .15s ease; }
 .launcher-card-chevron:active { background:rgba(255,255,255,.06); }
 .launcher-card-chevron svg, .launcher-card-stats svg, .launcher-card-actions svg { width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .launcher-detail-card.is-open .launcher-card-chevron { transform:rotate(180deg); }
-.launcher-card-tags { display:flex; gap:6px; margin-top:10px; overflow-x:auto; scrollbar-width:none; }
+.launcher-card-tags { display:flex; gap:6px; margin-top:10px; max-height:28px; opacity:1; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; transition:max-height 260ms cubic-bezier(.2,.7,.2,1), margin 260ms cubic-bezier(.2,.7,.2,1), opacity 160ms ease; }
 .launcher-card-tags::-webkit-scrollbar { display:none; }
 .launcher-card-tags span { flex:none; padding:4px 9px; border-radius:10px; background:#26224a; color:#b9b2ff; font-size:12px; white-space:nowrap; }
-.launcher-card-stats { display:flex; align-items:center; flex-wrap:wrap; gap:7px 14px; margin-top:12px; color:#9c9bae; font-size:13px; }
+.launcher-card-stats { display:flex; align-items:center; flex-wrap:wrap; gap:7px 14px; margin-top:12px; max-height:44px; opacity:1; overflow:hidden; color:#9c9bae; font-size:13px; transition:max-height 260ms cubic-bezier(.2,.7,.2,1), margin 260ms cubic-bezier(.2,.7,.2,1), opacity 160ms ease; }
 .launcher-card-stats span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
 .launcher-card-stats svg { width:15px; height:15px; color:#7d7c90; }
-.launcher-card-expanded { display:none; }
-.launcher-detail-card.is-open .launcher-card-expanded { display:block; }
-.launcher-detail-card.is-open .launcher-card-tags, .launcher-detail-card.is-open .launcher-card-stats { display:none; }
+.launcher-card-expanded { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows 320ms cubic-bezier(.2,.72,.2,1), opacity 220ms ease; }
+.launcher-card-expanded-inner { min-height:0; overflow:hidden; }
+.launcher-detail-card.is-open .launcher-card-expanded { grid-template-rows:1fr; opacity:1; }
+.launcher-detail-card.is-open .launcher-card-tags, .launcher-detail-card.is-open .launcher-card-stats { max-height:0; margin-top:0; opacity:0; pointer-events:none; }
 .launcher-card-exercises { margin-top:10px; padding-top:6px; border-top:1px solid #26253a; }
 .launcher-card-exercise { display:flex; align-items:baseline; gap:10px; min-height:35px; padding:7px 0; border-bottom:1px solid #1d1c2c; }
 .launcher-card-exercise:last-child { border-bottom:0; }
@@ -544,7 +547,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-card-secondary svg { width:20px; height:20px; }
 .launcher-card-actions button:active { transform:scale(.96); }
 .launcher-templates-more {
-  flex:0 0 41%; height:105px; align-self:flex-start; padding:12px; border:1px dashed #3d3c55; border-radius:20px;
+  flex:0 0 50%; min-height:105px; align-self:flex-start; padding:12px; border:1px dashed #3d3c55; border-radius:20px;
   display:flex; flex-direction:column; align-items:center; justify-content:center; scroll-snap-align:start; text-align:center; color:var(--text-primary);
 }
 .launcher-templates-more b { font-size:15px; line-height:1.15; }
@@ -564,13 +567,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   .launcher-selection--strength-cards .launcher-card-tags { margin-top:6px; }
   .launcher-selection--strength-cards .launcher-card-stats { margin-top:7px; }
   .launcher-detail-card--template { min-height:92px; }
-  .launcher-templates-more { height:92px; }
+  .launcher-templates-more { min-height:92px; }
 }
 @media (max-width:390px) {
   .launcher-selection--strength-cards { padding-left:16px; padding-right:16px; }
   .launcher-selection--strength-cards .launcher-selection-heading { padding-left:70px; padding-right:70px; }
-  .launcher-detail-card--template { flex-basis:86%; }
-  .launcher-templates-more { flex-basis:43%; }
+  .launcher-detail-card--template { flex-basis:100%; }
+  .launcher-templates-more { flex-basis:50%; }
 }
 @media (prefers-reduced-motion:reduce) {
   .workout-launcher, .type-orb, .launcher-body { transition-property:opacity !important; transition-duration:180ms !important; }
