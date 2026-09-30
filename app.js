@@ -1666,7 +1666,9 @@ const startBtn      = $("start-btn");
     };
     if (switching) {
       selection.classList.add("is-switching");
-      selectionHeadingTimer = setTimeout(updateHeading, reduceMotion.matches ? 100 : 700);
+      // The orbs ease into their new sides before the full 720 ms transition ends.
+      // Start the heading fade then, so the new label is readable as the motion settles.
+      selectionHeadingTimer = setTimeout(updateHeading, reduceMotion.matches ? 100 : 520);
     } else {
       selection.classList.remove("is-switching");
       updateHeading();
