@@ -1624,22 +1624,6 @@ const startBtn      = $("start-btn");
       event.stopPropagation();
       openAllTemplates();
     });
-    const carousel = optionsEl.querySelector("[data-templates-carousel]");
-    if (carousel) {
-      let userScrolled = false, endTimer = 0;
-      const arm = () => { userScrolled = true; };
-      carousel.addEventListener("touchmove", arm, { passive: true });
-      carousel.addEventListener("pointermove", event => { if (event.buttons) arm(); }, { passive: true });
-      carousel.addEventListener("wheel", arm, { passive: true });
-      carousel.addEventListener("scroll", () => {
-        clearTimeout(endTimer);
-        if (!userScrolled) return;
-        endTimer = setTimeout(() => {
-          const atEnd = carousel.scrollLeft >= carousel.scrollWidth - carousel.clientWidth - 6;
-          if (atEnd && state() === "selected") openAllTemplates();
-        }, 180);
-      }, { passive: true });
-    }
   }
 
   function sortTemplatesByLastUse(templates, history) {
@@ -1698,7 +1682,7 @@ const startBtn      = $("start-btn");
       const history = DATA.getWorkoutHistory(userId);
       const featuredTemplates = templates.slice(0, 3);
       const emptyStrength = `<button class="launcher-strength-empty" type="button" data-empty-start><span><b>Пустая тренировка</b><small>Начать с чистого листа</small></span><i>+</i></button>`;
-      const templateBlockStrength = featuredTemplates.length ? `<section class="launcher-section launcher-section--templates"><p class="launcher-section-title">Шаблоны</p><div class="launcher-cards-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все шаблоны</b><span>Открыть список</span><i>→</i></button></div></section>` : "";
+      const templateBlockStrength = featuredTemplates.length ? `<section class="launcher-section launcher-section--templates"><p class="launcher-section-title">Шаблоны</p><div class="launcher-cards-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все<br>шаблоны</b><i>→</i></button></div></section>` : "";
       const historyBlockStrength = recent.length ? `<section class="launcher-section"><p class="launcher-section-title">Последние тренировки</p><div class="launcher-history-cards">${recent.map(workout => launcherHistoryCard(workout, exerciseById)).join("")}</div></section>` : "";
       const drawStrength = () => {
         optionsEl.innerHTML = emptyStrength + templateBlockStrength + historyBlockStrength;

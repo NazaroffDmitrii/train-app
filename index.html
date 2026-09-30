@@ -64,8 +64,6 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
-  overflow: hidden;
-  max-width: 100vw;
 }
 
 button {
@@ -498,8 +496,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-selection--strength-cards .launcher-section { margin-top:24px; }
 .launcher-selection--strength-cards .launcher-section-title { margin-left:4px; letter-spacing:.14em; font-weight:600; }
 .launcher-cards-carousel {
-  display:flex; width:100%; max-width:100%; min-width:0; align-items:flex-start; gap:10px; margin:0; padding:0;
-  overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; touch-action:pan-x; scroll-snap-type:x mandatory; scroll-padding-inline:0; scrollbar-width:none;
+  display:flex; width:100%; max-width:100%; min-width:0; align-items:stretch; gap:10px; margin:0; padding:0;
+  overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; touch-action:pan-x pan-y; scroll-snap-type:x mandatory; scroll-padding-inline:0; scrollbar-width:none;
 }
 .launcher-cards-carousel::-webkit-scrollbar { display:none; }
 .launcher-cards-carousel::after { content:""; flex:0 0 1px; }
@@ -542,12 +540,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-card-secondary svg { width:20px; height:20px; }
 .launcher-card-actions button:active { transform:scale(.96); }
 .launcher-templates-more {
-  flex:0 0:42%; min-height:116px; align-self:stretch; padding:16px; border:1px dashed #3d3c55; border-radius:20px;
-  display:flex; flex-direction:column; align-items:flex-start; justify-content:center; scroll-snap-align:start; text-align:left; color:var(--text-primary);
+  flex:0 0 41%; min-height:0; align-self:stretch; padding:12px; border:1px dashed #3d3c55; border-radius:20px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; scroll-snap-align:start; text-align:center; color:var(--text-primary);
 }
-.launcher-templates-more b { font-size:15px; }
-.launcher-templates-more span { margin-top:5px; color:#8b8b97; font-size:12px; }
-.launcher-templates-more i { margin-top:12px; color:var(--selected-color); font-size:22px; font-style:normal; }
+.launcher-templates-more b { font-size:15px; line-height:1.15; }
+.launcher-templates-more i { margin-top:8px; color:var(--selected-color); font-size:20px; line-height:1; font-style:normal; }
 .workout-launcher[data-state="launching"] .type-orb { opacity:0; }
 .app.launcher-strength .bg-glow { --bg-glow:rgba(124,108,230,.26); }
 .app.launcher-run .bg-glow { --bg-glow:rgba(52,211,153,.21); }
@@ -561,6 +558,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
   .launcher-selection--strength-cards { padding-left:16px; padding-right:16px; }
   .launcher-selection--strength-cards .launcher-selection-heading { padding-left:70px; padding-right:70px; }
   .launcher-detail-card--template { flex-basis:86%; }
+  .launcher-templates-more { flex-basis:43%; }
 }
 @media (prefers-reduced-motion:reduce) {
   .workout-launcher, .type-orb, .launcher-body { transition-property:opacity !important; transition-duration:180ms !important; }
