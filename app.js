@@ -998,8 +998,11 @@ const DATA = (() => {
        редактируются после создания. «Поделиться» = независимая копия
        у другого пользователя — дальнейшие правки одной не влияют на другую. */
 
-    getTemplates(userId) { return ls(`train_templates_${userId}`, []); },
+    // Старые записи не имели type: считаем их силовыми без миграции хранилища.
+    getTemplates(userId) { return ls(`train_templates_${userId}`, []).map(t => ({ ...t, type: t.type === "run" ? "run" : "strength", exercises: Array.isArray(t.exercises) ? t.exercises : [] })); },
     saveTemplates(userId, list) { lsSet(`train_templates_${userId}`, list); },
+    getTemplateGroups(userId) { return ls(`train_template_groups_${userId}`, []); },
+    saveTemplateGroups(userId, groups) { lsSet(`train_template_groups_${userId}`, [...new Set(groups.map(x => String(x || "").trim()).filter(Boolean))]); },
     getTemplate(userId, templateId) {
       return this.getTemplates(userId).find(t => t.id === templateId) || null;
     },
@@ -1011,13 +1014,23 @@ const DATA = (() => {
       const tpl = {
         id: `t_${Date.now()}`,
         name: (name || "").trim() || workout.name || "Новый шаблон",
+        type: workout.type === "run" ? "run" : "strength",
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        exercises: (workout.exercises || []).map(ex => ({
+        exercises: workout.type === "run" ? [] : (workout.exercises || []).map(ex => ({
           exerciseId: ex.exerciseId,
           supersetId: ex.supersetId || null,   // связки суперсета переносим в шаблон
           sets: ex.sets.filter(s => s.done).map(s => ({ weight: s.weight, reps: s.reps })),
         })),
+        ...(workout.type === "run" ? {
+          runType: workout.runType || "easy",
+          distance: workout.distance || null,
+          duration: workout.duration || null,
+          durationSec: workout.durationSec || null,
+          pace: workout.pace || null,
+          cadence: workout.cadence || null,
+          heartRate: workout.heartRate || null,
+        } : {}),
       };
       list.unshift(tpl);
       this.saveTemplates(userId, list);
@@ -1026,14 +1039,16 @@ const DATA = (() => {
 
     // Создать пустой шаблон с нуля (п.7) — состав упражнений добавляется потом
     // на экране редактирования шаблона.
-    createBlankTemplate(userId, name) {
+    createBlankTemplate(userId, name, type = "strength") {
       const list = this.getTemplates(userId);
       const tpl = {
         id: `t_${Date.now()}`,
         name: (name || "").trim() || "Новый шаблон",
+        type: type === "run" ? "run" : "strength",
         createdAt: Date.now(),
         updatedAt: Date.now(),
         exercises: [],
+        ...(type === "run" ? { runType: "easy", distance: null, duration: null, pace: null, cadence: null, heartRate: null } : {}),
       };
       list.unshift(tpl);
       this.saveTemplates(userId, list);
@@ -1059,6 +1074,31 @@ const DATA = (() => {
       tpl.updatedAt = Date.now();
       this.saveTemplates(userId, list);
       return tpl;
+    },
+
+    updateTemplate(userId, templateId, patch) {
+      const list = this.getTemplates(userId);
+      const tpl = list.find(t => t.id === templateId);
+      if (!tpl) return null;
+      Object.assign(tpl, patch, { updatedAt: Date.now() });
+      this.saveTemplates(userId, list);
+      return tpl;
+    },
+
+    duplicateTemplate(userId, templateId) {
+      const source = this.getTemplate(userId, templateId);
+      if (!source) return null;
+      const copy = JSON.parse(JSON.stringify(source));
+      copy.id = `t_${Date.now()}`;
+      copy.name = `${source.name} (копия)`;
+      copy.createdAt = Date.now();
+      copy.updatedAt = Date.now();
+      copy.archived = false;
+      const list = this.getTemplates(userId);
+      const index = list.findIndex(t => t.id === templateId);
+      list.splice(index < 0 ? 0 : index + 1, 0, copy);
+      this.saveTemplates(userId, list);
+      return copy;
     },
 
     deleteTemplate(userId, templateId) {
@@ -1092,11 +1132,11 @@ const DATA = (() => {
       const tpl = this.getTemplate(fromUserId, templateId);
       if (!tpl) return null;
       const copy = {
+        ...JSON.parse(JSON.stringify(tpl)),
         id: `t_${Date.now()}`,
-        name: tpl.name,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        exercises: tpl.exercises.map(ex => ({ exerciseId: ex.exerciseId, supersetId: ex.supersetId || null, sets: ex.sets.map(s => ({ ...s })) })),
+        archived: false,
       };
       const list = this.getTemplates(toUserId);
       list.unshift(copy);
@@ -1110,6 +1150,25 @@ const DATA = (() => {
       if (this.getActiveWorkout(userId)) return null;
       const tpl = this.getTemplate(userId, templateId);
       if (!tpl) return null;
+      if (tpl.type === "run") {
+        const workout = {
+          id: `w_${crypto.randomUUID()}`,
+          type: "run",
+          templateId: tpl.id,
+          name: tpl.name || "Пробежка",
+          startedAt: Date.now(),
+          exercises: [],
+          runType: tpl.runType || "easy",
+          distance: tpl.distance || null,
+          duration: tpl.duration || null,
+          durationSec: tpl.durationSec || null,
+          pace: tpl.pace || null,
+          cadence: tpl.cadence || null,
+          heartRate: tpl.heartRate || null,
+        };
+        if (!this.saveActiveWorkout(userId, workout)) throw Error('Не удалось сохранить черновик.');
+        return workout;
+      }
       const exNameById = new Map(this.getVisibleExercises(userId).map(e => [e.id, e.name]));
       const workout = {
         id: `w_${crypto.randomUUID()}`,
@@ -1557,6 +1616,22 @@ const startBtn      = $("start-btn");
 
   function launcherTemplateCard(template, exerciseById, history) {
     const usage = templateUsage(template, history);
+    if (template.type === "run") {
+      const typeName = tplRunTypeLabel(template.runType);
+      const duration = template.duration || (usage.avgMin ? `${usage.avgMin} мин` : "—");
+      const distance = template.distance ? `${template.distance} км` : "—";
+      const pace = template.pace ? `${template.pace} /км` : "—";
+      const heartRate = template.heartRate ? `${template.heartRate} уд/мин` : "—";
+      return `<article class="launcher-detail-card launcher-detail-card--template launcher-detail-card--run" data-launcher-card="template" data-id="${escHtml(template.id)}" role="button" tabindex="0" aria-expanded="false">
+        <div class="launcher-card-top"><h3>${escHtml(template.name || "Беговой шаблон")}</h3><button class="launcher-card-chevron" type="button" data-card-toggle aria-label="Раскрыть шаблон">${LAUNCHER_ICONS.chevron}</button></div>
+        ${launcherTags([typeName])}
+        <div class="launcher-card-stats"><span>${LAUNCHER_ICONS.clock}${escHtml(duration)}</span><span>${LAUNCHER_ICONS.route}${escHtml(distance)}</span>${usage.lastTs ? `<span>${LAUNCHER_ICONS.history}${escHtml(relPastText(usage.lastTs))}</span>` : ""}</div>
+        <div class="launcher-card-expanded"><div class="launcher-card-expanded-inner">
+          <div class="launcher-run-metrics"><span class="launcher-run-metric"><small>Дистанция</small><b>${escHtml(distance)}</b></span><span class="launcher-run-metric"><small>Темп</small><b>${escHtml(pace)}</b></span><span class="launcher-run-metric"><small>Время</small><b>${escHtml(duration)}</b></span><span class="launcher-run-metric"><small>Пульс</small><b>${escHtml(heartRate)}</b></span></div>
+          <div class="launcher-card-actions"><button class="launcher-card-primary" type="button" data-template-start="${escHtml(template.id)}">${LAUNCHER_ICONS.play}Начать</button><button class="launcher-card-secondary" type="button" data-template-edit="${escHtml(template.id)}" aria-label="Изменить шаблон">${LAUNCHER_ICONS.edit}</button></div>
+        </div></div>
+      </article>`;
+    }
     const groups = launcherGroups(template.exercises, exerciseById);
     return `<article class="launcher-detail-card launcher-detail-card--template" data-launcher-card="template" data-id="${escHtml(template.id)}" role="button" tabindex="0" aria-expanded="false">
       <div class="launcher-card-top"><h3>${escHtml(template.name || "Шаблон")}</h3><button class="launcher-card-chevron" type="button" data-card-toggle aria-label="Раскрыть шаблон">${LAUNCHER_ICONS.chevron}</button></div>
@@ -1660,7 +1735,11 @@ const startBtn      = $("start-btn");
     }));
     optionsEl.querySelectorAll("[data-template-edit]").forEach(button => button.addEventListener("click", event => {
       event.stopPropagation();
+      const id = button.dataset.templateEdit;
+      const template = DATA.getTemplate(DATA.getCurrentUser(), id);
       leaveLauncher();
+      _tplFilter = template?.type === "run" ? "run" : "strength";
+      _tplOpenId = id;
       goToScreen("templates");
       enterTplEditMode();
     }));
@@ -1745,11 +1824,11 @@ const startBtn      = $("start-btn");
     const userId = DATA.getCurrentUser();
     const history = DATA.getWorkoutHistory(userId);
     const exerciseById = isRun ? null : new Map(DATA.getVisibleExercises(userId).map(exercise => [exercise.id, exercise]));
-    const featuredTemplates = isRun ? [] : templates.slice(0, 3);
+    const featuredTemplates = templates.slice(0, 3);
     const emptyStart = `<button class="launcher-strength-empty" type="button" data-empty-start><span><b>${isRun ? "Пустая пробежка" : "Пустая тренировка"}</b><small>${isRun ? "Записать новый маршрут" : "Начать с чистого листа"}</small></span><i>+</i></button>`;
     const templateContent = featuredTemplates.length
       ? `<div class="launcher-cards-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все<br>шаблоны</b><i>→</i></button></div>`
-      : launcherEmptyState("Шаблонов пока нет", isRun ? "Здесь можно будет собрать лёгкую, длинную или тяжёлую пробежку." : "Создайте первый и сохраните любимый план тренировки.", isRun ? { mark: "•" } : { action: "data-templates-empty", mark: "+" });
+      : launcherEmptyState("Шаблонов пока нет", isRun ? "Соберите лёгкую, длинную или тяжёлую пробежку." : "Создайте первый и сохраните любимый план тренировки.", { action: "data-templates-empty", mark: "+" });
     const templateBlock = `<section class="launcher-section launcher-section--templates"><p class="launcher-section-title">Шаблоны</p>${templateContent}</section>`;
     const historyContent = recent.length
       ? `<div class="launcher-history-cards">${recent.map(workout => isRun ? launcherRunHistoryCard(workout) : launcherHistoryCard(workout, exerciseById)).join("")}</div>`
@@ -1772,7 +1851,7 @@ const startBtn      = $("start-btn");
     const recent = history
       .filter(item => type === "strength" ? item.type !== "run" : item.type === "run")
       .slice(0, 3);
-    const templates = type === "strength" ? sortTemplatesByLastUse(DATA.getTemplates(userId).filter(template => template.type !== "run"), history) : [];
+    const templates = sortTemplatesByLastUse(DATA.getTemplates(userId).filter(template => !template.archived && (type === "strength" ? template.type !== "run" : template.type === "run")), history);
     haptic(24);
 
     renderSelection(type, recent, templates, switching);
@@ -1853,6 +1932,7 @@ const historyBody   = $("history-body");
 
 const typeModalBackdrop     = $("type-modal-backdrop");
 const settingsModalBackdrop = $("settings-modal-backdrop");
+let _typeModalPurpose = "workout";
 
 const pickerBackdrop = $("picker-backdrop");
 const pickerSearch   = $("picker-search");
@@ -2631,15 +2711,21 @@ $("history-back-btn").addEventListener("click", () => goToScreen("menu"));
 // но центральная кнопка его больше не открывает.
 document.querySelectorAll(".modal-option[data-type]").forEach(btn => {
   btn.addEventListener("click", () => {
-    const userId = DATA.getCurrentUser();
     const type = btn.dataset.type;
-    DATA.startWorkout(userId, type);
     closeModal(typeModalBackdrop);
+    if (_typeModalPurpose === "template") {
+      _typeModalPurpose = "workout";
+      $("type-modal-title").textContent = "Какая тренировка?";
+      createNewTemplate(type);
+      return;
+    }
+    const userId = DATA.getCurrentUser();
+    DATA.startWorkout(userId, type);
     goToScreen(type === "run" ? "run" : "workout");
   });
 });
 
-$("modal-cancel").addEventListener("click", () => closeModal(typeModalBackdrop));
+$("modal-cancel").addEventListener("click", () => { _typeModalPurpose = "workout"; $("type-modal-title").textContent = "Какая тренировка?"; closeModal(typeModalBackdrop); });
 
 /* ==========================================================================
    Pill nav
@@ -8270,7 +8356,12 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
           <div class="detail-stat-label">${s.label}</div>
         </div>`).join("")}
       </div>
+      <button class="wd-add-btn" id="save-as-template-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Добавить в шаблоны
+      </button>
     `;
+    $("save-as-template-btn").addEventListener("click", () => openSaveAsTemplateModal(workout));
   } else {
     const userId    = DATA.getCurrentUser();
     const exercises = DATA.getVisibleExercises(userId);
@@ -9121,8 +9212,17 @@ const nameModalTitle     = $("name-modal-title");
 const nameModalInput     = $("name-modal-input");
 const nameModalConfirm   = $("name-modal-confirm");
 
-let _tplEditMode = false;  // глобальный режим правки: все карточки «дрожат»
-let _tplDrag = null;       // активное перетаскивание ячейки упражнения внутри карточки
+let _tplEditMode = false;
+let _tplEditingId = null;
+let _tplDrag = null;
+let _tplOpenId = null;
+let _tplMoreId = null;
+let _tplGroupPickerId = null;
+let _tplFilter = "all";
+let _tplView = "list";
+let _tplFilterMenuOpen = false;
+let _tplArchiveOpen = false;
+let _tplArchiveCardId = null;
 
 // Иконки карточек шаблона
 const TPL_PLAY_SVG  = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>`;
@@ -9131,6 +9231,13 @@ const TPL_X_SVG     = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const TPL_TRASH_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 const TPL_HANDLE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/></svg>`;
 const TPL_SHARE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>`;
+const TPL_CHEVRON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
+const TPL_EDIT_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="m16.5 3.5 4 4L8 20l-5 1 1-5Z"/></svg>`;
+const TPL_MORE_SVG = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>`;
+const TPL_FOLDER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>`;
+const TPL_COPY_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>`;
+const TPL_ARCHIVE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v13H4Z"/><path d="M3 3h18v4H3ZM9 11h6"/></svg>`;
+const TPL_SPARKLES_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 1.3 3.7L17 8l-3.7 1.3L12 13l-1.3-3.7L7 8l3.7-1.3ZM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8ZM5 13l.8 2.2L8 16l-2.2.8L5 19l-.8-2.2L2 16l2.2-.8Z"/></svg>`;
 
 function pluralExercises(n) {
   const mod10 = n % 10, mod100 = n % 100;
@@ -9168,15 +9275,20 @@ function relPastText(ts) {
 function templateUsage(tpl, history) {
   const runs = history.filter(w => w.templateId === tpl.id);
   const withDur = runs.filter(w => w.durationSec);
-  let avgMin;
+  let avgMin = 0;
   if (withDur.length) {
     avgMin = Math.round(withDur.reduce((s, w) => s + w.durationSec, 0) / withDur.length / 60);
+  } else if (tpl.type === "run" && tpl.durationSec) {
+    avgMin = Math.round(tpl.durationSec / 60);
+  } else if (tpl.type === "run" && tpl.duration) {
+    const parts = String(tpl.duration).split(":").map(Number);
+    avgMin = Math.round((parts.length === 3 ? parts[0] * 60 + parts[1] + parts[2] / 60 : parts[0] + (parts[1] || 0) / 60));
   } else {
     avgMin = tpl.exercises.length * 12;
   }
   let lastTs = null;
   runs.forEach(w => { const t = w.finishedAt || w.startedAt; if (t && (!lastTs || t > lastTs)) lastTs = t; });
-  return { avgMin: Math.max(1, avgMin), lastTs };
+  return { avgMin: avgMin ? Math.max(1, avgMin) : 0, lastTs };
 }
 
 function templateExName(ex, lib) {
@@ -9187,90 +9299,302 @@ function templateExName(ex, lib) {
 /* — Единый экран шаблонов: список карточек + правка inline — */
 function initTemplatesScreen() {
   _tplEditMode = false;
+  _tplMoreId = null;
+  _tplGroupPickerId = null;
+  closeTemplatesFilterMenu();
   const b = $("templates-done-btn"); if (b) b.classList.remove("visible");
   renderTemplatesList();
 }
 
+function tplRunTypeLabel(type) {
+  return ({ easy: "Лёгкий", long: "Длинный", hard: "Тяжёлый" })[type] || "Бег";
+}
+
+function tplTags(t, lib) {
+  if (t.type === "run") {
+    const tags = [tplRunTypeLabel(t.runType)];
+    if (t.distance) tags.push(`${t.distance} км`);
+    if (t.pace) tags.push(`Темп ${t.pace}`);
+    return tags;
+  }
+  const byId = new Map(lib.map(ex => [ex.id, ex]));
+  const tags = [];
+  (t.exercises || []).forEach(item => {
+    const ex = byId.get(item.exerciseId);
+    const groups = ex?.groups?.length ? ex.groups : [ex?.cat].filter(Boolean);
+    groups.forEach(group => { if (group && !tags.includes(group)) tags.push(group); });
+  });
+  return tags;
+}
+
+function tplGroupPickerHtml(t, groups) {
+  if (_tplGroupPickerId !== t.id) return "";
+  const buttons = [...groups, null].map(group => {
+    const active = (t.group || null) === group;
+    return `<button class="tpl-group-option${active ? " active" : ""}" type="button" data-tpl-group-value="${group === null ? "" : escHtml(group)}">${active ? "✓ " : ""}${escHtml(group || "Без группы")}</button>`;
+  }).join("");
+  return `<div class="tpl-group-picker"><small>Перенести в группу</small><div class="tpl-group-options">${buttons}<button class="tpl-group-option new" type="button" data-tpl-new-group-for="${escHtml(t.id)}">+ Новая группа</button></div></div>`;
+}
+
+function tplMoreHtml(t, groups) {
+  if (_tplMoreId !== t.id && _tplGroupPickerId !== t.id) return "";
+  if (_tplGroupPickerId === t.id) return tplGroupPickerHtml(t, groups);
+  return `<div class="tpl-more-panel">
+    <button class="tpl-action-chip" type="button" data-tpl-action="group">${TPL_FOLDER_SVG}В группу</button>
+    <button class="tpl-action-chip" type="button" data-tpl-action="copy">${TPL_COPY_SVG}Копия</button>
+    <button class="tpl-action-chip" type="button" data-tpl-action="archive">${TPL_ARCHIVE_SVG}В архив</button>
+    <button class="tpl-action-chip danger" type="button" data-tpl-action="delete">${TPL_TRASH_SVG}Удалить</button>
+  </div>`;
+}
+
 function tplCardHtml(t, history, lib) {
-  const n = t.exercises.length;
+  const n = (t.exercises || []).length;
   const { avgMin, lastTs } = templateUsage(t, history);
-  const metaParts = [`${n} ${pluralExercises(n)}`];
-  if (n) metaParts.push(`~${avgMin} мин`);
+  const isRun = t.type === "run";
+  const metaParts = isRun ? [] : [`${n} ${pluralExercises(n)}`];
+  if (avgMin) metaParts.push(`~${avgMin} мин`);
   const last = relPastText(lastTs);
   if (last) metaParts.push(`посл. ${last}`);
+  if (!metaParts.length) metaParts.push(isRun ? "Беговой шаблон" : "Пустой шаблон");
   const meta = metaParts.join(" · ");
+  const tags = tplTags(t, lib);
+  const groups = DATA.getTemplateGroups(DATA.getCurrentUser());
+  const editing = _tplEditMode && _tplEditingId === t.id;
 
   let body;
-  if (_tplEditMode) {
-    const cells = t.exercises.map((ex, i) => `
-      <div class="tpl-ex-cell" data-idx="${i}">
-        <span class="tpl-ex-handle">${TPL_HANDLE_SVG}</span>
-        <span class="tpl-ex-name">${escHtml(templateExName(ex, lib))}</span>
-        <button class="tpl-ex-remove" title="Убрать из шаблона">${TPL_X_SVG}</button>
-      </div>`).join("");
-    body = `
-      <div class="tpl-ex-list">${cells}</div>
-      <button class="tpl-ex-add">${TPL_PLUS_SVG}<span>Добавить упражнение</span></button>`;
+  if (editing) {
+    if (isRun) {
+      body = `<div class="tpl-run-editor">
+        <div class="tpl-run-kinds">${[["easy","Лёгкий"],["long","Длинный"],["hard","Тяжёлый"]].map(([value,label]) => `<button class="tpl-run-kind${(t.runType || "easy") === value ? " active" : ""}" type="button" data-run-kind="${value}">${label}</button>`).join("")}</div>
+        <div class="tpl-run-fields">
+          <label class="tpl-run-field">Дистанция, км<input class="tpl-run-input" data-run-field="distance" type="number" step="0.1" inputmode="decimal" value="${escHtml(t.distance || "")}" placeholder="8"></label>
+          <label class="tpl-run-field">Время<input class="tpl-run-input" data-run-field="duration" value="${escHtml(t.duration || "")}" placeholder="00:48:00"></label>
+          <label class="tpl-run-field">Темп<input class="tpl-run-input" data-run-field="pace" value="${escHtml(t.pace || "")}" placeholder="6:00"></label>
+          <label class="tpl-run-field">Пульс<input class="tpl-run-input" data-run-field="heartRate" type="number" inputmode="numeric" value="${escHtml(t.heartRate || "")}" placeholder="145"></label>
+        </div>
+      </div>`;
+    } else {
+      const cells = t.exercises.map((ex, i) => `
+        <div class="tpl-ex-cell" data-idx="${i}">
+          <span class="tpl-ex-handle">${TPL_HANDLE_SVG}</span>
+          <span class="tpl-ex-name">${escHtml(templateExName(ex, lib))}</span>
+          <button class="tpl-ex-remove" title="Убрать из шаблона">${TPL_X_SVG}</button>
+        </div>`).join("");
+      body = `<div class="tpl-ex-list">${cells}</div><button class="tpl-ex-add">${TPL_PLUS_SVG}<span>Добавить упражнение</span></button>`;
+    }
   } else {
-    const chips = n
-      ? t.exercises.map(ex => `<span class="tpl-chip">${escHtml(templateExName(ex, lib))}</span>`).join("")
-      : `<span class="tpl-chip tpl-chip--empty">Пока нет упражнений</span>`;
-    body = `
-      <div class="tpl-card-chips">${chips}</div>
-      <button class="tpl-card-start"${n ? "" : " disabled"}>${TPL_PLAY_SVG}<span>Начать тренировку</span></button>`;
+    const detail = isRun
+      ? `<div class="tpl-run-metrics">
+          <span class="tpl-run-metric"><small>Дистанция</small><b>${t.distance ? `${escHtml(t.distance)} км` : "—"}</b></span>
+          <span class="tpl-run-metric"><small>Время</small><b>${escHtml(t.duration || "—")}</b></span>
+          <span class="tpl-run-metric"><small>Темп</small><b>${t.pace ? `${escHtml(t.pace)} /км` : "—"}</b></span>
+          <span class="tpl-run-metric"><small>Пульс</small><b>${t.heartRate ? `${escHtml(t.heartRate)} уд/мин` : "—"}</b></span>
+        </div>`
+      : `<div class="tpl-card-rows">${n ? t.exercises.map((ex, i) => `<div class="tpl-card-row"><span>${i + 1}</span><span>${escHtml(templateExName(ex, lib))}</span></div>`).join("") : `<div class="tpl-card-row"><span>—</span><span>Пока нет упражнений</span></div>`}</div>`;
+    body = `<div class="tpl-card-expanded"><div class="tpl-card-expanded-inner">${detail}<div class="tpl-card-actions"><button class="tpl-card-edit" type="button" data-tpl-edit>${TPL_EDIT_SVG}Изменить</button><button class="tpl-card-more" type="button" data-tpl-more aria-label="Действия">${TPL_MORE_SVG}</button></div>${tplMoreHtml(t, groups)}</div></div>`;
   }
 
-  const titleCls = _tplEditMode ? "tpl-card-title tpl-card-title--edit" : "tpl-card-title";
-  // Кнопка «Поделиться» — только в режиме правки, в правом верхнем углу карточки.
-  const shareBtn = _tplEditMode
+  const titleCls = editing ? "tpl-card-title tpl-card-title--edit" : "tpl-card-title";
+  const shareBtn = editing
     ? `<button class="tpl-share-btn" title="Поделиться шаблоном">${TPL_SHARE_SVG}</button>`
     : "";
+  const open = editing || _tplOpenId === t.id;
   return `
     <div class="tpl-card-wrap" data-id="${escHtml(t.id)}">
       <div class="tpl-card-delete">${TPL_TRASH_SVG}<span>Удалить</span></div>
-      <div class="tpl-card tpl-card--strength" data-id="${escHtml(t.id)}">
+      <div class="tpl-card tpl-card--${isRun ? "run" : "strength"}${open ? " is-open" : ""}${editing ? " is-editing" : ""}" data-id="${escHtml(t.id)}">
         ${shareBtn}
-        <div class="${titleCls}">${escHtml(t.name)}</div>
-        <div class="tpl-card-meta">${escHtml(meta)}</div>
+        <div class="tpl-card-head" data-tpl-toggle>
+          <div class="tpl-card-heading"><div class="${titleCls}">${escHtml(t.name)}</div><div class="tpl-card-meta">${escHtml(meta)}</div></div>
+          ${editing ? "" : `<button class="tpl-card-chevron" type="button" aria-label="${open ? "Свернуть" : "Раскрыть"}">${TPL_CHEVRON_SVG}</button><button class="tpl-card-play" type="button" data-tpl-start aria-label="Начать тренировку"${!isRun && !n ? " disabled" : ""}>${TPL_PLAY_SVG}</button>`}
+        </div>
+        ${!editing && tags.length ? `<div class="tpl-card-tags">${tags.map(tag => `<span class="tpl-tag">${escHtml(tag)}</span>`).join("")}</div>` : ""}
         ${body}
       </div>
     </div>`;
 }
 
-function tplAddBtnHtml() {
-  return `<button class="tpl-add-new" id="tpl-add-new">${TPL_PLUS_SVG}<span>Добавить новый шаблон</span></button>`;
+function tplArchiveHtml(t, history) {
+  const open = _tplArchiveCardId === t.id;
+  const usage = templateUsage(t, history);
+  const meta = [t.type === "run" ? "Бег" : `${t.exercises.length} ${pluralExercises(t.exercises.length)}`, usage.lastTs ? relPastText(usage.lastTs) : null].filter(Boolean).join(" · ");
+  return `<div class="tpl-archive-card${t.type === "run" ? " run" : ""}" data-id="${escHtml(t.id)}"><div class="tpl-archive-head" data-tpl-archive-card><span class="tpl-archive-dot"></span><span class="tpl-archive-copy"><b>${escHtml(t.name)}</b><small>${escHtml(meta)}</small></span>${TPL_CHEVRON_SVG}</div>${open ? `<div class="tpl-archive-actions"><button type="button" data-tpl-restore>Вернуть</button><button class="danger" type="button" data-tpl-delete-archived>Удалить</button></div>` : ""}</div>`;
+}
+
+function renderTemplatesHeader() {
+  const label = ({ all: "Все", strength: "Силовые", run: "Бег" })[_tplFilter];
+  const button = $("templates-filter-btn");
+  $("templates-filter-label").textContent = label;
+  button.classList.toggle("open", _tplFilterMenuOpen);
+  button.setAttribute("aria-expanded", String(_tplFilterMenuOpen));
+  $("templates-filter-menu").hidden = !_tplFilterMenuOpen;
+  document.querySelectorAll("[data-template-filter]").forEach(item => {
+    const active = item.dataset.templateFilter === _tplFilter;
+    item.classList.toggle("active", active);
+    item.querySelector(".tpl-menu-check").textContent = active ? "✓" : "";
+  });
+  document.querySelectorAll("[data-template-view]").forEach(item => {
+    const active = item.dataset.templateView === _tplView;
+    item.classList.toggle("active", active);
+    item.querySelector(".tpl-menu-check").textContent = active ? "✓" : "";
+  });
+}
+
+function closeTemplatesFilterMenu() {
+  _tplFilterMenuOpen = false;
+  if ($("templates-filter-btn")) renderTemplatesHeader();
 }
 
 function renderTemplatesList() {
   const userId  = DATA.getCurrentUser();
   const history = DATA.getWorkoutHistory(userId);
-  const list    = DATA.getTemplates(userId).slice().sort((a, b) => {
+  const all = DATA.getTemplates(userId).slice().sort((a, b) => {
     const aLast = templateUsage(a, history).lastTs || 0;
     const bLast = templateUsage(b, history).lastTs || 0;
     return bLast - aLast || (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
   });
+  const active = all.filter(t => !t.archived);
+  const archived = all.filter(t => t.archived);
+  const list = active.filter(t => _tplFilter === "all" || t.type === _tplFilter);
   const lib     = DATA.getVisibleExercises(userId);
 
   templatesScroll.classList.toggle("tpl-editing", _tplEditMode);
+  renderTemplatesHeader();
 
-  const cards = list.map(t => tplCardHtml(t, history, lib)).join("");
-  const constructorBtn = `<button class="tpl-constructor-btn" id="tpl-constructor-btn">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.2"/></svg>
-    <span><b>Собрать тренировку</b><small>Конструктор по движениям и балансу</small></span>
-    <svg class="tpl-constructor-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
-  </button>`;
-  templatesScroll.innerHTML = `<div class="tpl-list">${constructorBtn}${cards}${tplAddBtnHtml()}</div>`;
+  let cards = "";
+  if (_tplEditMode || _tplView === "list") {
+    cards = list.length ? list.map(t => tplCardHtml(t, history, lib)).join("") : `<div class="tpl-empty">Здесь пока пусто</div>`;
+  } else {
+    const savedGroups = DATA.getTemplateGroups(userId);
+    const presentGroups = list.map(t => t.group).filter(Boolean);
+    const groups = [...new Set([...savedGroups, ...presentGroups])];
+    const sections = [...groups, null].map(group => {
+      const items = list.filter(t => (t.group || null) === group);
+      if (!items.length && (_tplFilter !== "all" || group === null)) return "";
+      const key = group || "__none__";
+      return `<section class="tpl-group" data-tpl-group="${escHtml(key)}"><div class="tpl-group-head"><span class="tpl-group-title">${escHtml(group || "Без группы")}</span>${items.length > 1 ? `<span class="tpl-group-dots">${items.map((_, i) => `<i class="${i === 0 ? "active" : ""}"></i>`).join("")}</span>` : ""}</div>${items.length ? `<div class="tpl-carousel">${items.map(t => tplCardHtml(t, history, lib)).join("")}</div>` : `<div class="tpl-empty">Пока пусто · добавь шаблон через «В группу»</div>`}</section>`;
+    }).join("");
+    cards = sections || `<div class="tpl-empty">Здесь пока пусто</div>`;
+    cards += `<button class="tpl-new-group" type="button" data-tpl-new-group>${TPL_FOLDER_SVG}Новая группа</button>`;
+  }
+  const archive = `<button class="tpl-archive-toggle" type="button" data-tpl-archive-toggle>${TPL_ARCHIVE_SVG}<span>Архив</span><small>${archived.length}</small>${TPL_CHEVRON_SVG}</button>${_tplArchiveOpen ? `<div class="tpl-archive-list">${archived.length ? archived.map(t => tplArchiveHtml(t, history)).join("") : `<div class="tpl-empty">В архиве ничего нет</div>`}</div>` : ""}`;
+  const generate = _tplEditMode ? "" : `<button class="tpl-generate-btn" type="button" data-tpl-generate>${TPL_SPARKLES_SVG}Сгенерировать силовую тренировку</button>`;
+  templatesScroll.innerHTML = `<div class="tpl-list">${generate}${cards}${_tplEditMode ? "" : archive}</div>`;
 
   list.forEach(t => wireTplCard(t.id));
-  const addBtn = $("tpl-add-new");
-  if (addBtn) addBtn.addEventListener("click", createNewTemplate);
-  const conBtn = $("tpl-constructor-btn");
-  if (conBtn) conBtn.addEventListener("click", () => { exitTplEditMode(); goToScreen("constructor"); });
+  wireTemplateListControls();
 }
 
-function enterTplEditMode() {
+function promptTemplateGroup(templateId = null) {
+  openNameModal({
+    title: "Новая группа",
+    placeholder: "Например, Сплит на 3 дня",
+    confirmLabel: "Создать",
+    onConfirm: name => {
+      const userId = DATA.getCurrentUser();
+      const groups = DATA.getTemplateGroups(userId);
+      if (!groups.includes(name)) DATA.saveTemplateGroups(userId, [...groups, name]);
+      if (templateId) {
+        DATA.updateTemplate(userId, templateId, { group: name });
+        SyncQueue.push("template:update", { templateId });
+      }
+      _tplMoreId = null;
+      _tplGroupPickerId = null;
+      renderTemplatesList();
+    },
+  });
+}
+
+function wireTemplateListControls() {
+  const userId = DATA.getCurrentUser();
+  const on = (selector, handler) => templatesScroll.querySelectorAll(selector).forEach(el => el.addEventListener("click", event => {
+    event.stopPropagation();
+    handler(el, event);
+  }));
+  const idFor = el => el.closest("[data-id]")?.dataset.id;
+
+  on("[data-tpl-toggle]", el => {
+    if (_tplEditMode) return;
+    const id = idFor(el);
+    _tplOpenId = _tplOpenId === id ? null : id;
+    _tplMoreId = null;
+    _tplGroupPickerId = null;
+    renderTemplatesList();
+  });
+  on("[data-tpl-start]", el => tplStartWorkout(idFor(el)));
+  on("[data-tpl-edit]", el => {
+    _tplOpenId = idFor(el);
+    enterTplEditMode();
+  });
+  on("[data-tpl-more]", el => {
+    const id = idFor(el);
+    _tplMoreId = _tplMoreId === id ? null : id;
+    _tplGroupPickerId = null;
+    renderTemplatesList();
+  });
+  on("[data-tpl-action]", el => {
+    const id = idFor(el);
+    const action = el.dataset.tplAction;
+    if (action === "group") {
+      _tplMoreId = null;
+      _tplGroupPickerId = id;
+      renderTemplatesList();
+    } else if (action === "copy") {
+      const copy = DATA.duplicateTemplate(userId, id);
+      if (copy) SyncQueue.push("template:create", { templateId: copy.id });
+      _tplMoreId = null;
+      renderTemplatesList();
+      showToast("Создана копия шаблона");
+    } else if (action === "archive") {
+      DATA.updateTemplate(userId, id, { archived: true });
+      SyncQueue.push("template:update", { templateId: id });
+      _tplOpenId = null;
+      _tplMoreId = null;
+      renderTemplatesList();
+      showToast("Шаблон перемещён в архив");
+    } else if (action === "delete") {
+      _tplMoreId = null;
+      deleteTemplateWithUndo(id);
+    }
+  });
+  on("[data-tpl-group-value]", el => {
+    const id = idFor(el);
+    DATA.updateTemplate(userId, id, { group: el.dataset.tplGroupValue || null });
+    SyncQueue.push("template:update", { templateId: id });
+    _tplGroupPickerId = null;
+    renderTemplatesList();
+  });
+  on("[data-tpl-new-group-for]", el => promptTemplateGroup(el.dataset.tplNewGroupFor));
+  on("[data-tpl-new-group]", () => promptTemplateGroup());
+  on("[data-tpl-generate]", () => { exitTplEditMode(); goToScreen("constructor"); });
+  on("[data-tpl-archive-toggle]", () => { _tplArchiveOpen = !_tplArchiveOpen; renderTemplatesList(); });
+  on("[data-tpl-archive-card]", el => {
+    const id = idFor(el);
+    _tplArchiveCardId = _tplArchiveCardId === id ? null : id;
+    renderTemplatesList();
+  });
+  on("[data-tpl-restore]", el => {
+    const id = idFor(el);
+    DATA.updateTemplate(userId, id, { archived: false });
+    SyncQueue.push("template:update", { templateId: id });
+    _tplArchiveCardId = null;
+    renderTemplatesList();
+    showToast("Шаблон восстановлен");
+  });
+  on("[data-tpl-delete-archived]", el => deleteTemplateWithUndo(idFor(el)));
+
+  templatesScroll.querySelectorAll(".tpl-carousel").forEach(carousel => carousel.addEventListener("scroll", () => {
+    const dots = carousel.closest(".tpl-group")?.querySelectorAll(".tpl-group-dots i");
+    if (!dots?.length) return;
+    const index = Math.round(carousel.scrollLeft / Math.max(1, carousel.clientWidth + 10));
+    dots.forEach((dot, i) => dot.classList.toggle("active", i === index));
+  }, { passive: true }));
+}
+
+function enterTplEditMode(id = _tplOpenId) {
   if (_tplEditMode) return;
   _tplEditMode = true;
+  _tplEditingId = id;
   haptic(22);
   renderTemplatesList();
   const b = $("templates-done-btn"); if (b) b.classList.add("visible");
@@ -9279,6 +9603,7 @@ function enterTplEditMode() {
 function exitTplEditMode() {
   if (!_tplEditMode) return;
   _tplEditMode = false;
+  _tplEditingId = null;
   renderTemplatesList();
   const b = $("templates-done-btn"); if (b) b.classList.remove("visible");
 }
@@ -9286,18 +9611,47 @@ function exitTplEditMode() {
 $("templates-back-btn").addEventListener("click", () => { exitTplEditMode(); goToScreen("menu"); });
 $("templates-done-btn").addEventListener("click", exitTplEditMode);
 $("constructor-back-btn").addEventListener("click", () => goToScreen("templates"));
+$("templates-filter-btn").addEventListener("click", event => {
+  event.stopPropagation();
+  _tplFilterMenuOpen = !_tplFilterMenuOpen;
+  renderTemplatesHeader();
+});
+$("templates-filter-menu").addEventListener("click", event => event.stopPropagation());
+document.querySelectorAll("[data-template-filter]").forEach(item => item.addEventListener("click", () => {
+  _tplFilter = item.dataset.templateFilter;
+  _tplOpenId = null;
+  closeTemplatesFilterMenu();
+  renderTemplatesList();
+}));
+document.querySelectorAll("[data-template-view]").forEach(item => item.addEventListener("click", () => {
+  _tplView = item.dataset.templateView;
+  _tplOpenId = null;
+  closeTemplatesFilterMenu();
+  renderTemplatesList();
+}));
+$("templates-add-btn").addEventListener("click", () => {
+  _typeModalPurpose = "template";
+  $("type-modal-title").textContent = "Какой шаблон?";
+  openModal(typeModalBackdrop);
+});
+document.addEventListener("click", event => {
+  if (_tplFilterMenuOpen && !event.target.closest(".tpl-header-actions")) closeTemplatesFilterMenu();
+});
 
 /* — Создание нового шаблона: сразу открываем режим правки, чтобы добавить состав — */
-function createNewTemplate() {
+function createNewTemplate(type = "strength") {
   openNameModal({
-    title: "Новый шаблон",
-    placeholder: "Например, День спины",
+    title: type === "run" ? "Новый беговой шаблон" : "Новый силовой шаблон",
+    placeholder: type === "run" ? "Например, Лёгкие 8 км" : "Например, День спины",
     confirmLabel: "Создать",
     onConfirm: name => {
       const userId = DATA.getCurrentUser();
-      const tpl = DATA.createBlankTemplate(userId, name);
+      const tpl = DATA.createBlankTemplate(userId, name, type);
       SyncQueue.push("template:create", { templateId: tpl.id });
+      _tplFilter = type;
+      _tplOpenId = tpl.id;
       _tplEditMode = true;
+      _tplEditingId = tpl.id;
       renderTemplatesList();
       const b = $("templates-done-btn"); if (b) b.classList.add("visible");
       templatesScroll.scrollTop = 0;
@@ -9309,14 +9663,15 @@ function createNewTemplate() {
    прошлого раза (всё как при ручном старте и добавлении упражнений) — */
 function tplStartWorkout(id) {
   const userId = DATA.getCurrentUser();
-  if (DATA.getActiveWorkout(userId)) {
+  const active = DATA.getActiveWorkout(userId);
+  if (active) {
     showToast("Сначала заверши текущую тренировку");
-    goToScreen("workout");
+    goToScreen(active.type === "run" ? "run" : "workout", { resume: true });
     return;
   }
   const workout = DATA.startWorkoutFromTemplate(userId, id);
   if (!workout) { showToast("Не удалось начать тренировку"); return; }
-  goToScreen("workout");
+  goToScreen(workout.type === "run" ? "run" : "workout", workout.type === "run" ? { resume: true } : {});
 }
 
 function deleteTemplateWithUndo(id) {
@@ -9454,7 +9809,7 @@ function wireTplCard(id) {
   if (!wrap) return;
   const card = wrap.querySelector(".tpl-card");
 
-  if (_tplEditMode) {
+  if (_tplEditMode && _tplEditingId === id) {
     const title = wrap.querySelector(".tpl-card-title--edit");
     if (title) title.addEventListener("click", e => { e.stopPropagation(); startTplRename(wrap, id); });
     const shareBtn = wrap.querySelector(".tpl-share-btn");
@@ -9462,9 +9817,25 @@ function wireTplCard(id) {
     const addEx = wrap.querySelector(".tpl-ex-add");
     if (addEx) addEx.addEventListener("click", e => { e.stopPropagation(); tplAddExercise(id); });
     wrap.querySelectorAll(".tpl-ex-cell").forEach(cell => wireTplExCell(cell, wrap, id));
+    wrap.querySelectorAll("[data-run-kind]").forEach(button => button.addEventListener("click", e => {
+      e.stopPropagation();
+      DATA.updateTemplate(DATA.getCurrentUser(), id, { runType: button.dataset.runKind });
+      SyncQueue.push("template:update", { templateId: id });
+      renderTemplatesList();
+    }));
+    wrap.querySelectorAll("[data-run-field]").forEach(input => input.addEventListener("change", e => {
+      e.stopPropagation();
+      const field = input.dataset.runField;
+      const value = field === "distance" || field === "heartRate" ? (parseFloat(input.value) || null) : (input.value.trim() || null);
+      const patch = { [field]: value };
+      if (field === "duration") {
+        const parts = String(value || "").split(":").map(Number);
+        patch.durationSec = value ? (parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + (parts[1] || 0)) : null;
+      }
+      DATA.updateTemplate(DATA.getCurrentUser(), id, patch);
+      SyncQueue.push("template:update", { templateId: id });
+    }));
   } else {
-    const startBtn = wrap.querySelector(".tpl-card-start");
-    if (startBtn) startBtn.addEventListener("click", e => { e.stopPropagation(); tplStartWorkout(id); });
     wireTplCardHold(wrap, card);
     wireTplCardSwipe(wrap, id);
   }
@@ -9477,7 +9848,7 @@ function wireTplCardHold(wrap, card) {
   const begin = (x, y, target) => {
     if (target.closest("button, input")) return;
     moved = false; sx = x; sy = y; clearHold();
-    holdTimer = setTimeout(() => { holdTimer = null; if (!moved) enterTplEditMode(); }, 430);
+    holdTimer = setTimeout(() => { holdTimer = null; if (!moved) { _tplOpenId = wrap.dataset.id; enterTplEditMode(wrap.dataset.id); } }, 430);
   };
   const move = (x, y) => { if (holdTimer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) { moved = true; clearHold(); } };
   const finish = () => clearHold();
@@ -9688,9 +10059,10 @@ nameModalConfirm.addEventListener("click", () => {
 
 // Сохранить завершённую силовую тренировку как новый шаблон (раздел 5: «готовую тренировку можно сохранить как шаблон»)
 function openSaveAsTemplateModal(workout) {
+  const isRun = workout.type === "run";
   openNameModal({
-    title: "Сохранить как шаблон",
-    placeholder: "Например, День спины",
+    title: isRun ? "Сохранить беговой шаблон" : "Сохранить как шаблон",
+    placeholder: isRun ? "Например, Лёгкие 8 км" : "Например, День спины",
     initialValue: workout.name || "",
     confirmLabel: "Сохранить",
     onConfirm: name => {

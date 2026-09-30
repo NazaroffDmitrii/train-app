@@ -527,6 +527,9 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
   width:100%; min-width:0; flex:0 0 100%; max-width:none; min-height:105px; align-self:flex-start; scroll-snap-align:start;
   background:linear-gradient(225deg,#26224a 0%,#12111c 55%);
 }
+.workout-launcher[data-selected="run"] .launcher-detail-card--template {
+  background:linear-gradient(225deg,#17342c 0%,#111b19 55%); border-color:#23433a;
+}
 .launcher-selection--strength-cards .launcher-detail-card { padding:12px 15px; }
 .launcher-history-cards { display:flex; flex-direction:column; gap:9px; }
 .launcher-card-top { display:flex; align-items:center; gap:8px; }
@@ -3052,30 +3055,69 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 /* ============ Screen 7: templates ============ */
 .screen-templates { display: flex; flex-direction: column; background: var(--bg-base); }
 
-/* ====== Шаблоны: единый экран — список карточек ====== */
-.tpl-list { display: flex; flex-direction: column; gap: 14px; }
-.tpl-constructor-btn {
-  display: flex; align-items: center; gap: 13px; width: 100%; text-align: left;
-  padding: 15px 16px; border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--accent-soft), var(--panel-raised));
-  border: 1px solid var(--accent); color: var(--text-primary);
+/* ====== Шаблоны: фильтры, группы и раскрывающиеся карточки ====== */
+.templates-header { position:relative; z-index:8; }
+.templates-header .exercises-header-top { gap:10px; }
+.templates-header .exercises-header-title { flex:1; min-width:0; }
+.tpl-header-actions { position:relative; display:flex; align-items:center; gap:8px; }
+.tpl-filter-btn {
+  height:34px; padding:0 10px 0 13px; border:1px solid var(--border-strong); border-radius:17px;
+  display:flex; align-items:center; gap:4px; color:var(--text-secondary); font-size:13.5px; font-weight:650;
+  background:rgba(18,18,28,.94);
 }
-.tpl-constructor-btn > svg:first-child { flex: none; width: 24px; height: 24px; color: var(--accent-bright); }
-.tpl-constructor-btn span { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.tpl-constructor-btn b { font-size: 15.5px; font-weight: 700; }
-.tpl-constructor-btn small { font-size: 12.5px; color: var(--text-tertiary); }
-.tpl-constructor-arrow { flex: none; width: 18px; height: 18px; color: var(--text-tertiary); }
-.tpl-constructor-btn:active { transform: scale(0.99); }
+.tpl-filter-btn.open { border-color:var(--accent); color:var(--text-primary); }
+.tpl-filter-btn svg { width:15px; height:15px; transition:transform .18s ease; }
+.tpl-filter-btn.open svg { transform:rotate(180deg); }
+.tpl-header-add {
+  width:36px; height:36px; border-radius:50%; display:grid; place-items:center;
+  color:#fff; background:var(--accent); box-shadow:0 6px 18px rgba(124,108,230,.2);
+}
+.tpl-header-add:active { transform:scale(.94); }
+.tpl-header-add svg { width:18px; height:18px; }
+.tpl-filter-menu {
+  position:absolute; top:44px; right:0; width:208px; padding:6px 0; z-index:20;
+  border:1px solid var(--border-strong); border-radius:15px; background:#15151f;
+  box-shadow:0 16px 36px rgba(0,0,0,.38);
+}
+.tpl-filter-menu[hidden] { display:none; }
+.tpl-menu-label { padding:7px 13px 3px; color:var(--text-tertiary); font-size:10px; letter-spacing:.1em; }
+.tpl-menu-rule { height:1px; margin:5px 0; background:var(--border-subtle); }
+.tpl-menu-item { width:100%; min-height:38px; padding:0 13px; display:flex; align-items:center; gap:8px; color:var(--text-secondary); font-size:14px; text-align:left; }
+.tpl-menu-item.active { color:var(--text-primary); }
+.tpl-menu-check { width:16px; color:var(--accent-bright); font-size:15px; }
+
+.tpl-list { display:flex; flex-direction:column; gap:9px; }
+.tpl-generate-btn {
+  width:100%; min-height:44px; margin-bottom:3px; border:1px dashed rgba(143,124,255,.75); border-radius:22px;
+  display:flex; align-items:center; justify-content:center; gap:8px; color:#bbb2ff; font-size:14px; font-weight:650;
+}
+.tpl-generate-btn:active { transform:scale(.99); border-color:var(--accent-bright); }
+.tpl-generate-btn svg { width:18px; height:18px; }
+.tpl-empty { padding:30px 10px; color:var(--text-tertiary); font-size:14px; text-align:center; }
+.tpl-group { margin-bottom:8px; }
+.tpl-group-head { min-height:28px; padding:0 3px 7px; display:flex; align-items:center; gap:10px; }
+.tpl-group-title { flex:1; color:var(--text-tertiary); font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; }
+.tpl-group-dots { display:flex; align-items:center; gap:4px; }
+.tpl-group-dots i { width:4px; height:4px; border-radius:4px; background:#3a3950; transition:width .18s ease, background .18s ease; }
+.tpl-group-dots i.active { width:14px; background:#9d93f0; }
+.tpl-carousel { display:flex; align-items:flex-start; gap:10px; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; }
+.tpl-carousel::-webkit-scrollbar, .tpl-card-tags::-webkit-scrollbar { display:none; }
+.tpl-carousel > .tpl-card-wrap { flex:0 0 100%; width:100%; scroll-snap-align:start; }
+.tpl-new-group {
+  width:100%; height:40px; margin:2px 0 6px; border:1px dashed var(--border-strong); border-radius:14px;
+  display:flex; align-items:center; justify-content:center; gap:7px; color:var(--text-tertiary); font-size:14px;
+}
+.tpl-new-group svg { width:17px; height:17px; }
 
 /* Обёртка для свайпа-удаления: под карточкой — красная зона «Удалить» */
 .tpl-card-wrap {
-  position: relative; overflow: hidden; border-radius: var(--radius-md);
+  position:relative; overflow:hidden; border-radius:20px;
   -webkit-user-select: none; user-select: none;
 }
 .tpl-card-delete {
   position: absolute; inset: 0; z-index: 0;
   display: flex; align-items: center; justify-content: flex-end; gap: 6px;
-  padding-right: 20px; border-radius: var(--radius-md);
+  padding-right:20px; border-radius:20px;
   background: var(--red); color: #fff; font-size: 13.5px; font-weight: 700; opacity: 0;
   transition: opacity 0.12s ease;
 }
@@ -3083,20 +3125,68 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 .tpl-card-wrap.swiping .tpl-card-delete { opacity: 0.9; }
 .tpl-card-wrap.will-delete .tpl-card-delete { opacity: 1; }
 
-/* Карточка шаблона. Заливка по типу — поверх непрозрачной чёрной подложки
-   (var(--bg-base)), как у карточки прошлой тренировки (.history-item--strength):
-   так цвет «поинтереснее» на чёрном фоне и не зависит от того, что под ним. */
+/* Те же спокойные градиенты, что у шаблонов после выбора типа тренировки. */
 .tpl-card {
-  position: relative; z-index: 1; touch-action: pan-y;
-  border-radius: var(--radius-md); padding: 16px 16px 14px;
-  border: 1px solid var(--border-subtle);
-  transition: transform 0.12s ease;
+  position:relative; z-index:1; touch-action:pan-y; padding:14px;
+  border:1px solid #26253a; border-radius:20px; color:var(--text-primary);
+  transition:transform .12s ease, border-color .18s ease;
 }
 .tpl-card--strength {
-  background: linear-gradient(rgba(124,108,230,0.06), rgba(124,108,230,0.06)), var(--bg-base);
-  border-color: rgba(124,108,230,0.22);
+  background:linear-gradient(225deg,#26224a 0%,#12111c 55%);
+  border-color:#2c2945;
 }
-.tpl-card-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; padding-right: 4px; }
+.tpl-card--run { background:linear-gradient(225deg,#17342c 0%,#111b19 55%); border-color:#23433a; }
+.tpl-card-head { display:flex; align-items:center; gap:9px; cursor:pointer; }
+.tpl-card-heading { flex:1; min-width:0; }
+.tpl-card-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:17px; font-weight:650; line-height:1.24; letter-spacing:-.01em; }
+.tpl-card.is-open .tpl-card-title { white-space:normal; }
+.tpl-card-meta { margin-top:3px; color:#9291a3; font-size:12px; }
+.tpl-card-chevron { flex:none; width:30px; height:30px; display:grid; place-items:center; color:#9794bd; border-radius:50%; transition:transform .2s ease, background .15s ease; }
+.tpl-card--run .tpl-card-chevron { color:#7faf9c; }
+.tpl-card-chevron:active { background:rgba(255,255,255,.06); }
+.tpl-card-chevron svg { width:18px; height:18px; }
+.tpl-card.is-open .tpl-card-chevron { transform:rotate(180deg); }
+.tpl-card-play { flex:none; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; color:#fff; background:#6f64d6; }
+.tpl-card--run .tpl-card-play { background:#3a8f74; }
+.tpl-card-play:active { transform:scale(.94); }
+.tpl-card-play:disabled { opacity:.38; }
+.tpl-card-play svg { width:15px; height:15px; margin-left:2px; }
+.tpl-card-tags { display:flex; gap:6px; max-width:100%; margin-top:10px; overflow-x:auto; scrollbar-width:none; -webkit-mask-image:linear-gradient(90deg,#000 92%,transparent); mask-image:linear-gradient(90deg,#000 92%,transparent); }
+.tpl-tag { flex:none; padding:4px 9px; border-radius:10px; background:#26224a; color:#b9b2ff; font-size:12px; white-space:nowrap; }
+.tpl-card--run .tpl-tag { background:#15382f; color:#86d5b8; }
+.tpl-card-expanded { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows .28s cubic-bezier(.2,.72,.2,1),opacity .18s ease; }
+.tpl-card-expanded-inner { min-height:0; overflow:hidden; }
+.tpl-card.is-open .tpl-card-expanded { grid-template-rows:1fr; opacity:1; }
+.tpl-card-rows { margin-top:12px; padding-top:5px; border-top:1px solid rgba(127,121,166,.22); }
+.tpl-card--run .tpl-card-rows { border-color:rgba(78,139,116,.27); }
+.tpl-card-row { min-height:34px; padding:7px 0; display:flex; align-items:baseline; gap:10px; border-bottom:1px solid rgba(84,80,115,.2); color:#dfddec; font-size:13.5px; }
+.tpl-card--run .tpl-card-row { border-color:rgba(49,103,82,.2); color:#d6eee4; }
+.tpl-card-row:last-child { border-bottom:0; }
+.tpl-card-row > span:first-child { width:18px; flex:none; color:#77729c; font-size:12px; }
+.tpl-card--run .tpl-card-row > span:first-child { color:#5b917c; }
+.tpl-run-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }
+.tpl-run-metric { min-width:0; padding:10px 11px; border-radius:13px; background:rgba(12,28,23,.48); }
+.tpl-run-metric small { display:block; color:#789889; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+.tpl-run-metric b { display:block; margin-top:4px; overflow:hidden; color:#d6eee4; font-size:13.5px; font-weight:650; white-space:nowrap; text-overflow:ellipsis; }
+.tpl-card-actions { display:flex; gap:8px; margin-top:9px; }
+.tpl-card-edit { flex:1; height:38px; border-radius:19px; display:flex; align-items:center; justify-content:center; gap:6px; background:#25224a; color:#cfcaf7; font-size:13px; }
+.tpl-card--run .tpl-card-edit { background:#1a3529; color:#b0e6d0; }
+.tpl-card-more { width:38px; height:38px; flex:none; border-radius:50%; display:grid; place-items:center; background:#25224a; color:#cfcaf7; }
+.tpl-card--run .tpl-card-more { background:#1a3529; color:#b0e6d0; }
+.tpl-card-edit svg,.tpl-card-more svg { width:17px; height:17px; }
+.tpl-more-panel { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.tpl-action-chip { min-height:32px; padding:0 11px; border-radius:16px; display:flex; align-items:center; gap:6px; background:#25224a; color:#cfcaf7; font-size:12.5px; }
+.tpl-card--run .tpl-action-chip { background:#1a3529; color:#b0e6d0; }
+.tpl-action-chip.danger { color:#f29a9a; }
+.tpl-action-chip svg { width:15px; height:15px; }
+.tpl-group-picker { margin-top:8px; padding:10px; border-radius:14px; background:rgba(255,255,255,.04); }
+.tpl-group-picker > small { display:block; margin-bottom:8px; color:#9291a3; font-size:12px; }
+.tpl-group-options { display:flex; flex-wrap:wrap; gap:6px; }
+.tpl-group-option { min-height:31px; padding:0 11px; border-radius:16px; background:#25224a; color:#cfcaf7; font-size:12.5px; }
+.tpl-card--run .tpl-group-option { background:#1a3529; color:#b0e6d0; }
+.tpl-group-option.active { color:#fff; background:#6f64d6; }
+.tpl-card--run .tpl-group-option.active { background:#3a8f74; }
+.tpl-group-option.new { border:1px dashed currentColor; background:transparent; }
 
 /* Кнопка «Поделиться» — в правом верхнем углу карточки, только в режиме правки */
 .tpl-share-btn {
@@ -3107,42 +3197,9 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 }
 .tpl-share-btn:active { transform: scale(0.94); }
 .tpl-share-btn svg { width: 17px; height: 17px; }
-.tpl-editing .tpl-card-title { padding-right: 44px; }
+.tpl-card.is-editing .tpl-card-title { padding-right:44px; }
 .avatar.sm { width: 30px; height: 30px; border-radius: 9px; font-size: 13px; }
 #share-modal-list { display: flex; flex-direction: column; gap: 8px; }
-.tpl-card-meta { font-size: 12.5px; color: var(--text-tertiary); margin-top: 4px; }
-
-/* Чипы упражнений (режим просмотра) — показываем все, без скрытия */
-.tpl-card-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 13px 0 15px; }
-.tpl-chip {
-  padding: 7px 12px; background: rgba(255,255,255,0.04);
-  border: 1px solid var(--border-subtle); border-radius: 10px;
-  font-size: 13px; font-weight: 600; color: var(--text-secondary);
-}
-.tpl-chip--empty { color: var(--text-tertiary); font-style: italic; }
-
-.tpl-card-start {
-  width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 14px; border-radius: var(--radius-md);
-  background: var(--accent); color: #fff;
-  font-size: 15px; font-weight: 700; cursor: pointer;
-  transition: transform 0.12s ease, opacity 0.15s ease;
-}
-.tpl-card-start:active { transform: scale(0.98); }
-.tpl-card-start:disabled { opacity: 0.45; }
-.tpl-card-start svg { width: 17px; height: 17px; }
-
-/* Кнопка «Добавить новый шаблон» — пунктирная, во всю ширину (как на референсе) */
-.tpl-add-new {
-  width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 22px 16px; border-radius: var(--radius-md);
-  background: transparent; border: 1.5px dashed var(--border-strong);
-  color: var(--text-tertiary); font-size: 14.5px; font-weight: 700; font-style: italic;
-  cursor: pointer; transition: border-color 0.15s ease, color 0.15s ease;
-}
-.tpl-add-new:active { border-color: var(--accent); color: var(--accent-bright); }
-.tpl-add-new svg { width: 18px; height: 18px; }
-
 /* Инлайн-правка названия шаблона */
 .tpl-card-title--edit { cursor: text; }
 .tpl-title-input {
@@ -3152,9 +3209,8 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   -webkit-user-select: text; user-select: text;
 }
 
-/* ====== Режим правки: карточки «дрожат», состав — редактируемые ячейки ====== */
-.tpl-editing .tpl-card-wrap:not(.dragging) { animation: catJiggle 0.3s ease-in-out infinite; }
-.tpl-editing .tpl-card-wrap:nth-child(even):not(.dragging) { animation-delay: -0.15s; }
+/* ====== Режим правки: состав шаблона внутри той же спокойной карточки ====== */
+.tpl-card.is-editing { padding-top:16px; }
 
 .tpl-ex-list { display: flex; flex-direction: column; gap: 8px; margin: 13px 0 10px; }
 .tpl-ex-cell {
@@ -3187,6 +3243,29 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   color: var(--text-secondary); font-size: 13.5px; font-weight: 600; cursor: pointer;
 }
 .tpl-ex-add svg { width: 16px; height: 16px; }
+.tpl-run-editor { display:flex; flex-direction:column; gap:10px; margin-top:13px; }
+.tpl-run-kinds { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+.tpl-run-kind { min-height:34px; border:1px solid #285143; border-radius:11px; color:#8dc9b2; font-size:12px; }
+.tpl-run-kind.active { background:#2d8065; border-color:#3a9e7d; color:#fff; }
+.tpl-run-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.tpl-run-field { display:flex; flex-direction:column; gap:5px; color:#789889; font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+.tpl-run-input { width:100%; height:38px; padding:0 10px; border:1px solid #285143; border-radius:11px; background:rgba(7,18,15,.55); color:#e4f5ed; font-size:14px; }
+.tpl-archive-toggle { width:100%; min-height:44px; margin-top:5px; padding:0 12px; border:1px dashed var(--border-strong); border-radius:14px; display:flex; align-items:center; gap:9px; color:var(--text-tertiary); font-size:14px; text-align:left; }
+.tpl-archive-toggle span:first-of-type { flex:1; }
+.tpl-archive-toggle svg { width:18px; height:18px; }
+.tpl-archive-list { display:flex; flex-direction:column; gap:8px; }
+.tpl-archive-card { padding:12px; border:1px solid #29283a; border-radius:16px; background:#14141d; color:#c9c9d8; }
+.tpl-archive-head { display:flex; align-items:center; gap:9px; cursor:pointer; }
+.tpl-archive-dot { width:8px; height:8px; flex:none; border-radius:50%; background:#6f64d6; }
+.tpl-archive-card.run .tpl-archive-dot { background:#3a8f74; }
+.tpl-archive-copy { flex:1; min-width:0; }
+.tpl-archive-copy b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14.5px; font-weight:600; }
+.tpl-archive-copy small { display:block; margin-top:2px; color:#7a7a90; font-size:12px; }
+.tpl-archive-head > svg { width:17px; height:17px; color:#7a7a90; transition:transform .18s ease; }
+.tpl-archive-actions { display:flex; gap:8px; margin-top:10px; padding-top:10px; border-top:1px solid #29283a; }
+.tpl-archive-actions button { min-height:36px; padding:0 13px; border-radius:18px; background:#25224a; color:#cfcaf7; font-size:13px; }
+.tpl-archive-actions button:first-child { flex:1; }
+.tpl-archive-actions .danger { flex:none; background:#1c1c28; color:#f29a9a; }
 
 /* ===== Адаптив (в конце — чтобы перекрывать базовые правила компонентов;
    медиазапросы не повышают специфичность, решает порядок в исходнике) ===== */
@@ -3607,12 +3686,31 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 
   <!-- ===== ЭКРАН: список шаблонов (раздел 5 спецификации) ===== -->
   <section id="screen-templates" class="screen screen-templates slide-right">
-    <div class="exercises-header">
+    <div class="exercises-header templates-header">
       <div class="exercises-header-top">
         <button class="btn-chip" id="templates-back-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
         </button>
         <div class="exercises-header-title">Шаблоны</div>
+        <div class="tpl-header-actions">
+          <button class="tpl-filter-btn" id="templates-filter-btn" type="button" aria-expanded="false">
+            <span id="templates-filter-label">Все</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 10 5 5 5-5"/></svg>
+          </button>
+          <button class="tpl-header-add" id="templates-add-btn" type="button" aria-label="Добавить шаблон">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <div class="tpl-filter-menu" id="templates-filter-menu" hidden>
+            <div class="tpl-menu-label">ПОКАЗАТЬ</div>
+            <button class="tpl-menu-item" type="button" data-template-filter="all"><span class="tpl-menu-check"></span>Все</button>
+            <button class="tpl-menu-item" type="button" data-template-filter="strength"><span class="tpl-menu-check"></span>Силовые</button>
+            <button class="tpl-menu-item" type="button" data-template-filter="run"><span class="tpl-menu-check"></span>Бег</button>
+            <div class="tpl-menu-rule"></div>
+            <div class="tpl-menu-label">ВИД</div>
+            <button class="tpl-menu-item" type="button" data-template-view="list"><span class="tpl-menu-check"></span>Списком</button>
+            <button class="tpl-menu-item" type="button" data-template-view="groups"><span class="tpl-menu-check"></span>По группам</button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="exercises-scroll" id="templates-scroll"></div>
@@ -3720,7 +3818,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   <!-- ===== Модалка: тип тренировки ===== -->
   <div class="modal-backdrop" id="type-modal-backdrop">
     <div class="modal">
-      <h2 class="modal-title">Какая тренировка?</h2>
+      <h2 class="modal-title" id="type-modal-title">Какая тренировка?</h2>
       <button class="modal-option modal-option--strength" data-type="strength">Силовая</button>
       <button class="modal-option modal-option--run" data-type="run">Бег</button>
       <button class="modal-cancel" id="modal-cancel">Отмена</button>
