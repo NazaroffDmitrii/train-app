@@ -9391,7 +9391,7 @@ function tplCardHtml(t, history, lib) {
           <span class="tpl-run-metric"><small>Пульс</small><b>${t.heartRate ? `${escHtml(t.heartRate)} уд/мин` : "—"}</b></span>
         </div>`
       : `<div class="tpl-card-rows">${n ? t.exercises.map((ex, i) => `<div class="tpl-card-row"><span>${i + 1}</span><span>${escHtml(templateExName(ex, lib))}</span></div>`).join("") : `<div class="tpl-card-row"><span>—</span><span>Пока нет упражнений</span></div>`}</div>`;
-    body = `<div class="tpl-card-expanded"><div class="tpl-card-expanded-inner">${detail}<div class="tpl-card-actions"><button class="tpl-card-edit" type="button" data-tpl-edit>${TPL_EDIT_SVG}Изменить</button><button class="tpl-card-more" type="button" data-tpl-more aria-label="Действия">${TPL_MORE_SVG}</button></div>${tplMoreHtml(t, groups)}</div></div>`;
+    body = `<div class="tpl-card-expanded"><div class="tpl-card-expanded-inner">${detail}<div class="tpl-card-actions"><button class="tpl-card-start" type="button" data-tpl-start${!isRun && !n ? " disabled" : ""}>${TPL_PLAY_SVG}Начать</button><button class="tpl-card-edit" type="button" data-tpl-edit aria-label="Изменить шаблон">${TPL_EDIT_SVG}</button><button class="tpl-card-more" type="button" data-tpl-more aria-label="Действия">${TPL_MORE_SVG}</button></div>${tplMoreHtml(t, groups)}</div></div>`;
   }
 
   const titleCls = editing ? "tpl-card-title tpl-card-title--edit" : "tpl-card-title";
@@ -9401,12 +9401,11 @@ function tplCardHtml(t, history, lib) {
   const open = editing || _tplOpenId === t.id;
   return `
     <div class="tpl-card-wrap" data-id="${escHtml(t.id)}">
-      <div class="tpl-card-delete">${TPL_TRASH_SVG}<span>Удалить</span></div>
       <div class="tpl-card tpl-card--${isRun ? "run" : "strength"}${open ? " is-open" : ""}${editing ? " is-editing" : ""}" data-id="${escHtml(t.id)}">
         ${shareBtn}
         <div class="tpl-card-head" data-tpl-toggle>
           <div class="tpl-card-heading"><div class="${titleCls}">${escHtml(t.name)}</div><div class="tpl-card-meta">${escHtml(meta)}</div></div>
-          ${editing ? "" : `<button class="tpl-card-chevron" type="button" aria-label="${open ? "Свернуть" : "Раскрыть"}">${TPL_CHEVRON_SVG}</button><button class="tpl-card-play" type="button" data-tpl-start aria-label="Начать тренировку"${!isRun && !n ? " disabled" : ""}>${TPL_PLAY_SVG}</button>`}
+          ${editing ? "" : `<button class="tpl-card-chevron" type="button" aria-label="${open ? "Свернуть" : "Раскрыть"}">${TPL_CHEVRON_SVG}</button>`}
         </div>
         ${!editing && tags.length ? `<div class="tpl-card-tags">${tags.map(tag => `<span class="tpl-tag">${escHtml(tag)}</span>`).join("")}</div>` : ""}
         ${body}
@@ -9414,11 +9413,15 @@ function tplCardHtml(t, history, lib) {
     </div>`;
 }
 
-function tplArchiveHtml(t, history) {
+function tplArchiveHtml(t, history, lib) {
   const open = _tplArchiveCardId === t.id;
   const usage = templateUsage(t, history);
-  const meta = [t.type === "run" ? "Бег" : `${t.exercises.length} ${pluralExercises(t.exercises.length)}`, usage.lastTs ? relPastText(usage.lastTs) : null].filter(Boolean).join(" · ");
-  return `<div class="tpl-archive-card${t.type === "run" ? " run" : ""}" data-id="${escHtml(t.id)}"><div class="tpl-archive-head" data-tpl-archive-card><span class="tpl-archive-dot"></span><span class="tpl-archive-copy"><b>${escHtml(t.name)}</b><small>${escHtml(meta)}</small></span>${TPL_CHEVRON_SVG}</div>${open ? `<div class="tpl-archive-actions"><button type="button" data-tpl-restore>Вернуть</button><button class="danger" type="button" data-tpl-delete-archived>Удалить</button></div>` : ""}</div>`;
+  const isRun = t.type === "run";
+  const meta = [isRun ? "Бег" : `${t.exercises.length} ${pluralExercises(t.exercises.length)}`, usage.lastTs ? relPastText(usage.lastTs) : null].filter(Boolean).join(" · ");
+  const details = isRun
+    ? `<div class="tpl-run-metrics"><span class="tpl-run-metric"><small>Дистанция</small><b>${t.distance ? `${escHtml(t.distance)} км` : "—"}</b></span><span class="tpl-run-metric"><small>Время</small><b>${escHtml(t.duration || "—")}</b></span><span class="tpl-run-metric"><small>Темп</small><b>${t.pace ? `${escHtml(t.pace)} /км` : "—"}</b></span><span class="tpl-run-metric"><small>Пульс</small><b>${t.heartRate ? `${escHtml(t.heartRate)} уд/мин` : "—"}</b></span></div>`
+    : `<div class="tpl-card-rows">${t.exercises.length ? t.exercises.map((ex, i) => `<div class="tpl-card-row"><span>${i + 1}</span><span>${escHtml(templateExName(ex, lib))}</span></div>`).join("") : `<div class="tpl-card-row"><span>—</span><span>Пока нет упражнений</span></div>`}</div>`;
+  return `<div class="tpl-archive-card tpl-archive-card--${isRun ? "run" : "strength"}${open ? " is-open" : ""}" data-id="${escHtml(t.id)}"><div class="tpl-archive-head" data-tpl-archive-card><span class="tpl-archive-copy"><b>${escHtml(t.name)}</b><small>${escHtml(meta)}</small></span>${TPL_CHEVRON_SVG}</div>${open ? `<div class="tpl-archive-details">${details}</div><div class="tpl-archive-actions"><button type="button" data-tpl-restore>Вернуть</button><button class="danger" type="button" data-tpl-delete-archived>Удалить</button></div>` : ""}</div>`;
 }
 
 function renderTemplatesHeader() {
@@ -9477,7 +9480,7 @@ function renderTemplatesList() {
     cards = sections || `<div class="tpl-empty">Здесь пока пусто</div>`;
     cards += `<button class="tpl-new-group" type="button" data-tpl-new-group>${TPL_FOLDER_SVG}Новая группа</button>`;
   }
-  const archive = `<button class="tpl-archive-toggle" type="button" data-tpl-archive-toggle>${TPL_ARCHIVE_SVG}<span>Архив</span><small>${archived.length}</small>${TPL_CHEVRON_SVG}</button>${_tplArchiveOpen ? `<div class="tpl-archive-list">${archived.length ? archived.map(t => tplArchiveHtml(t, history)).join("") : `<div class="tpl-empty">В архиве ничего нет</div>`}</div>` : ""}`;
+  const archive = `<button class="tpl-archive-toggle" type="button" data-tpl-archive-toggle>${TPL_ARCHIVE_SVG}<span>Архив</span><small>${archived.length}</small>${TPL_CHEVRON_SVG}</button>${_tplArchiveOpen ? `<div class="tpl-archive-list">${archived.length ? archived.map(t => tplArchiveHtml(t, history, lib)).join("") : `<div class="tpl-empty">В архиве ничего нет</div>`}</div>` : ""}`;
   const generate = _tplEditMode ? "" : `<button class="tpl-generate-btn" type="button" data-tpl-generate>${TPL_SPARKLES_SVG}Сгенерировать силовую тренировку</button>`;
   templatesScroll.innerHTML = `<div class="tpl-list">${generate}${cards}${_tplEditMode ? "" : archive}</div>`;
 
@@ -9837,7 +9840,6 @@ function wireTplCard(id) {
     }));
   } else {
     wireTplCardHold(wrap, card);
-    wireTplCardSwipe(wrap, id);
   }
 }
 
@@ -9863,68 +9865,6 @@ function wireTplCardHold(wrap, card) {
     const mu = () => { finish(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); };
     window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu);
   });
-}
-
-// Свайп влево по карточке (вне режима правки) → удалить шаблон (с откатом).
-function wireTplCardSwipe(wrap, id) {
-  const row = wrap.querySelector(".tpl-card");
-  if (!row) return;
-  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, didSwipe = false;
-  const MAX = 124, DEL = 86;
-
-  row.addEventListener("pointerdown", e => {
-    if (e.target.closest("button, input")) return;
-    sx = e.clientX; sy = e.clientY; dx = 0;
-    active = true; decided = false; horiz = false; didSwipe = false;
-    row.style.transition = "";
-  });
-  row.addEventListener("pointermove", e => {
-    if (!active) return;
-    const mx = e.clientX - sx, my = e.clientY - sy;
-    if (!decided) {
-      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
-      decided = true;
-      horiz = mx < 0 && Math.abs(mx) > Math.abs(my);
-      if (!horiz) { active = false; return; }
-      wrap.classList.add("swiping");
-      try { row.setPointerCapture(e.pointerId); } catch {}
-    }
-    if (!horiz) return;
-    dx = Math.max(-MAX, Math.min(0, mx));
-    if (dx < -4) didSwipe = true;
-    row.style.transform = `translateX(${dx}px)`;
-    wrap.classList.toggle("will-delete", dx <= -DEL);
-  });
-  row.addEventListener("touchmove", e => {
-    if (!active) return;
-    const t = e.touches[0]; if (!t) return;
-    const mx = t.clientX - sx, my = t.clientY - sy;
-    if (horiz || (Math.abs(mx) >= 8 && mx < 0 && Math.abs(mx) > Math.abs(my))) {
-      if (e.cancelable) e.preventDefault();
-    }
-  }, { passive: false });
-  const settle = () => {
-    if (!active) return;
-    active = false;
-    if (!horiz) return;
-    if (dx <= -DEL) {
-      // Возврат карточки + подтверждение (удаление/корзина внутри).
-      row.style.transition = "transform 0.18s ease"; row.style.transform = "";
-      wrap.classList.remove("will-delete");
-      setTimeout(() => wrap.classList.remove("swiping"), 200);
-      deleteTemplateWithUndo(id);
-    } else {
-      row.style.transition = "transform 0.18s ease";
-      row.style.transform = "";
-      wrap.classList.remove("will-delete");
-      setTimeout(() => wrap.classList.remove("swiping"), 200);
-    }
-  };
-  row.addEventListener("pointerup", settle);
-  row.addEventListener("pointercancel", settle);
-  row.addEventListener("click", e => {
-    if (didSwipe) { e.stopPropagation(); e.preventDefault(); didSwipe = false; }
-  }, true);
 }
 
 // Ячейка упражнения в режиме правки: тап → замена, крестик → удалить, зажатие → перетащить.
