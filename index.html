@@ -64,6 +64,8 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+  overflow: hidden;
+  max-width: 100vw;
 }
 
 button {
@@ -451,10 +453,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .workout-launcher[data-state="selected"] .launcher-selection { opacity:1; visibility:visible; pointer-events:auto; transition:opacity 300ms ease 180ms; }
 .launcher-selection-header { min-width:0; }
 .launcher-selected-orb, .launcher-other-orb { display:none; }
-.launcher-selection-heading { padding:22px 54px 0 86px; }
+.launcher-selection-heading { padding:22px 76px 0; text-align:center; opacity:1; transform:translateY(0); transition:opacity 240ms ease, transform 240ms ease; }
+.launcher-selection.is-switching .launcher-selection-heading { opacity:0; transform:translateY(4px); }
 .launcher-selection-heading h2 { margin:0; font-size:clamp(25px,7vw,31px); line-height:1.1; letter-spacing:-.035em; }
 .launcher-selection-heading p { margin:8px 0 0; color:#8b8b97; font-size:12px; line-height:1.4; }
-.launcher-options { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; opacity:1; transition:opacity 180ms ease; }
+.launcher-options { width:100%; min-width:0; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; scrollbar-width:none; opacity:1; transition:opacity 180ms ease; }
 .launcher-options::-webkit-scrollbar { display:none; }
 .launcher-options.is-refreshing { opacity:0; }
 .launcher-section { margin-top:22px; }
@@ -495,11 +498,11 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-selection--strength-cards .launcher-section { margin-top:24px; }
 .launcher-selection--strength-cards .launcher-section-title { margin-left:4px; letter-spacing:.14em; font-weight:600; }
 .launcher-cards-carousel {
-  display:flex; align-items:flex-start; gap:10px; margin:0 calc(-1 * var(--content-left)); padding:0 var(--content-left);
-  overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-inline:var(--content-left); scrollbar-width:none;
+  display:flex; width:100%; max-width:100%; min-width:0; align-items:flex-start; gap:10px; margin:0; padding:0;
+  overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; touch-action:pan-x; scroll-snap-type:x mandatory; scroll-padding-inline:0; scrollbar-width:none;
 }
 .launcher-cards-carousel::-webkit-scrollbar { display:none; }
-.launcher-cards-carousel::after { content:""; flex:0 0 6px; }
+.launcher-cards-carousel::after { content:""; flex:0 0 1px; }
 .launcher-detail-card {
   width:100%; padding:14px 16px; border-radius:20px; background:#12111c; border:1px solid #26253a;
   color:var(--text-primary); cursor:pointer; outline:none; text-align:left;
@@ -512,7 +515,8 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-history-cards { display:flex; flex-direction:column; gap:10px; }
 .launcher-card-top { display:flex; align-items:center; gap:8px; }
 .launcher-card-top h3 { flex:1; min-width:0; margin:0; font-size:17px; line-height:1.25; font-weight:650; }
-.launcher-card-chevron { flex:none; width:20px; height:20px; color:#8a8a9c; transition:transform .2s ease; }
+.launcher-card-chevron { flex:none; width:32px; height:32px; margin:-6px -6px -6px 0; padding:6px; display:grid; place-items:center; color:#8a8a9c; border-radius:50%; transition:transform .2s ease, background .15s ease; }
+.launcher-card-chevron:active { background:rgba(255,255,255,.06); }
 .launcher-card-chevron svg, .launcher-card-stats svg, .launcher-card-actions svg { width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .launcher-detail-card.is-open .launcher-card-chevron { transform:rotate(180deg); }
 .launcher-card-tags { display:flex; gap:6px; margin-top:10px; overflow-x:auto; scrollbar-width:none; }
@@ -537,6 +541,13 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-card-secondary { width:44px; flex:none; border:1px solid #3d3c55; color:#d6d5e4; }
 .launcher-card-secondary svg { width:20px; height:20px; }
 .launcher-card-actions button:active { transform:scale(.96); }
+.launcher-templates-more {
+  flex:0 0:42%; min-height:116px; align-self:stretch; padding:16px; border:1px dashed #3d3c55; border-radius:20px;
+  display:flex; flex-direction:column; align-items:flex-start; justify-content:center; scroll-snap-align:start; text-align:left; color:var(--text-primary);
+}
+.launcher-templates-more b { font-size:15px; }
+.launcher-templates-more span { margin-top:5px; color:#8b8b97; font-size:12px; }
+.launcher-templates-more i { margin-top:12px; color:var(--selected-color); font-size:22px; font-style:normal; }
 .workout-launcher[data-state="launching"] .type-orb { opacity:0; }
 .app.launcher-strength .bg-glow { --bg-glow:rgba(124,108,230,.26); }
 .app.launcher-run .bg-glow { --bg-glow:rgba(52,211,153,.21); }
@@ -548,8 +559,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 }
 @media (max-width:390px) {
   .launcher-selection--strength-cards { padding-left:16px; padding-right:16px; }
-  .launcher-selection--strength-cards .launcher-selection-heading { padding-left:82px; }
-  .launcher-selection--strength-cards .launcher-cards-carousel { margin-left:-16px; margin-right:-16px; padding-left:16px; padding-right:16px; scroll-padding-inline:16px; }
+  .launcher-selection--strength-cards .launcher-selection-heading { padding-left:70px; padding-right:70px; }
   .launcher-detail-card--template { flex-basis:86%; }
 }
 @media (prefers-reduced-motion:reduce) {

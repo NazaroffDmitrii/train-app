@@ -1303,6 +1303,7 @@ const startBtn      = $("start-btn");
   let hapticTimer = 0;
   let launchTimer = 0;
   let selectionRenderTimer = 0;
+  let selectionHeadingTimer = 0;
   let selectionHistoryArmed = false;
   let selectedChoice = { kind: "empty", id: null, name: "пустую" };
 
@@ -1388,6 +1389,8 @@ const startBtn      = $("start-btn");
 
   function applyIdle({ animate = true } = {}) {
     clearTimeout(selectionRenderTimer);
+    clearTimeout(selectionHeadingTimer);
+    selection.classList.remove("is-switching");
     clearTimeout(hapticTimer); clearTimeout(launchTimer);
     if (animate && state() !== "idle") runGoo();
     launcher.dataset.state = "idle";
@@ -1400,6 +1403,8 @@ const startBtn      = $("start-btn");
 
   function applySplit({ animate = true } = {}) {
     clearTimeout(selectionRenderTimer);
+    clearTimeout(selectionHeadingTimer);
+    selection.classList.remove("is-switching");
     launcher.classList.add("has-interacted");
     clearTimeout(hapticTimer); clearTimeout(launchTimer);
     if (state() === "idle") updateGeometry();
@@ -1429,6 +1434,8 @@ const startBtn      = $("start-btn");
 
   function leaveLauncher() {
     clearTimeout(selectionRenderTimer);
+    clearTimeout(selectionHeadingTimer);
+    selection.classList.remove("is-switching");
     clearTimeout(gooTimer); clearTimeout(hapticTimer); clearTimeout(launchTimer);
     launcher.classList.remove("is-gooing");
     launcher.dataset.state = "idle";
@@ -1529,8 +1536,8 @@ const startBtn      = $("start-btn");
       let result = "";
       if (!template) {
         const sets = (exercise.sets || []).filter(set => set.done);
-        const reps = [...new Set(sets.map(set => Number(set.reps) || 0).filter(Boolean))];
-        result = reps.length === 1 ? `${sets.length} × ${reps[0]}` : sets.length ? `${sets.length} подх.` : "—";
+        const reps = sets.map(set => Number(set.reps) || 0).filter(Boolean);
+        result = sets.length ? `${sets.length} × ${reps.length ? Math.max(...reps) : "—"}` : "—";
       }
       return `<div class="launcher-card-exercise"><span>${index + 1}</span><b>${escHtml(name)}</b>${result ? `<em>${escHtml(result)}</em>` : ""}</div>`;
     }).join("");
@@ -1544,7 +1551,7 @@ const startBtn      = $("start-btn");
     const usage = templateUsage(template, history);
     const groups = launcherGroups(template.exercises, exerciseById);
     return `<article class="launcher-detail-card launcher-detail-card--template" data-launcher-card="template" data-id="${escHtml(template.id)}" role="button" tabindex="0" aria-expanded="false">
-      <div class="launcher-card-top"><h3>${escHtml(template.name || "Шаблон")}</h3><span class="launcher-card-chevron">${LAUNCHER_ICONS.chevron}</span></div>
+      <div class="launcher-card-top"><h3>${escHtml(template.name || "Шаблон")}</h3><button class="launcher-card-chevron" type="button" data-card-toggle aria-label="Раскрыть шаблон">${LAUNCHER_ICONS.chevron}</button></div>
       ${launcherTags(groups)}
       <div class="launcher-card-stats"><span>${LAUNCHER_ICONS.clock}${usage.avgMin} мин</span>${usage.lastTs ? `<span>${LAUNCHER_ICONS.history}${escHtml(relPastText(usage.lastTs))}</span>` : ""}</div>
       <div class="launcher-card-expanded">
@@ -1554,13 +1561,13 @@ const startBtn      = $("start-btn");
     </article>`;
   }
 
-  function launcherHistoryCard(workout, exerciseById, open = false) {
+  function launcherHistoryCard(workout, exerciseById) {
     const exercises = (workout.exercises || []).filter(exercise => (exercise.sets || []).some(set => set.done));
     const shownExercises = exercises.length ? exercises : (workout.exercises || []);
     const groups = launcherGroups(shownExercises, exerciseById);
     const duration = workout.durationSec ? launcherMinutes(workout.durationSec) : "—";
-    return `<article class="launcher-detail-card launcher-detail-card--history${open ? " is-open" : ""}" data-launcher-card="history" data-id="${escHtml(workout.id)}" role="button" tabindex="0" aria-expanded="${open}">
-      <div class="launcher-card-top"><h3>${escHtml(workout.name || "Силовая тренировка")}</h3><span class="launcher-card-chevron">${LAUNCHER_ICONS.chevron}</span></div>
+    return `<article class="launcher-detail-card launcher-detail-card--history" data-launcher-card="history" data-id="${escHtml(workout.id)}" role="button" tabindex="0" aria-expanded="false">
+      <div class="launcher-card-top"><h3>${escHtml(workout.name || "Силовая тренировка")}</h3><button class="launcher-card-chevron" type="button" data-card-toggle aria-label="Раскрыть тренировку">${LAUNCHER_ICONS.chevron}</button></div>
       ${launcherTags(groups)}
       <div class="launcher-card-stats"><span>${LAUNCHER_ICONS.clock}${duration}</span><span>${LAUNCHER_ICONS.weight}${launcherVolume(workout)}</span><span>${LAUNCHER_ICONS.history}${escHtml(relPastText(workout.finishedAt || workout.startedAt) || fmtDate(workout.startedAt))}</span></div>
       <div class="launcher-card-expanded">
@@ -1575,12 +1582,14 @@ const startBtn      = $("start-btn");
       const open = !card.classList.contains("is-open");
       card.classList.toggle("is-open", open);
       card.setAttribute("aria-expanded", String(open));
+      card.querySelector("[data-card-toggle]")?.setAttribute("aria-label", open ? "Скрыть содержимое" : card.dataset.launcherCard === "template" ? "Раскрыть шаблон" : "Раскрыть тренировку");
     };
     optionsEl.querySelectorAll("[data-launcher-card]").forEach(card => {
       card.addEventListener("click", event => { if (!event.target.closest("button")) toggle(card); });
       card.addEventListener("keydown", event => {
         if ((event.key === "Enter" || event.key === " ") && event.target === card) { event.preventDefault(); toggle(card); }
       });
+      card.querySelector("[data-card-toggle]")?.addEventListener("click", event => { event.stopPropagation(); toggle(card); });
     });
     optionsEl.querySelector("[data-empty-start]")?.addEventListener("click", () => startNew("strength"));
     optionsEl.querySelectorAll("[data-template-start]").forEach(button => button.addEventListener("click", event => {
@@ -1607,6 +1616,38 @@ const startBtn      = $("start-btn");
       leaveLauncher();
       openDetailScreen(workout, "menu");
     }));
+    const openAllTemplates = () => {
+      leaveLauncher();
+      goToScreen("templates");
+    };
+    optionsEl.querySelector("[data-templates-more]")?.addEventListener("click", event => {
+      event.stopPropagation();
+      openAllTemplates();
+    });
+    const carousel = optionsEl.querySelector("[data-templates-carousel]");
+    if (carousel) {
+      let userScrolled = false, endTimer = 0;
+      const arm = () => { userScrolled = true; };
+      carousel.addEventListener("touchmove", arm, { passive: true });
+      carousel.addEventListener("pointermove", event => { if (event.buttons) arm(); }, { passive: true });
+      carousel.addEventListener("wheel", arm, { passive: true });
+      carousel.addEventListener("scroll", () => {
+        clearTimeout(endTimer);
+        if (!userScrolled) return;
+        endTimer = setTimeout(() => {
+          const atEnd = carousel.scrollLeft >= carousel.scrollWidth - carousel.clientWidth - 6;
+          if (atEnd && state() === "selected") openAllTemplates();
+        }, 180);
+      }, { passive: true });
+    }
+  }
+
+  function sortTemplatesByLastUse(templates, history) {
+    return templates.slice().sort((a, b) => {
+      const aLast = templateUsage(a, history).lastTs || 0;
+      const bLast = templateUsage(b, history).lastTs || 0;
+      return bLast - aLast || (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
+    });
   }
 
   function choiceKey(kind, id = "") { return `${kind}:${id}`; }
@@ -1620,20 +1661,31 @@ const startBtn      = $("start-btn");
 
   function renderSelection(type, recent, templates, switching = false) {
     clearTimeout(selectionRenderTimer);
+    clearTimeout(selectionHeadingTimer);
     const isRun = type === "run";
     const color = isRun ? "#42dea4" : "#8f7cff";
     selection.style.setProperty("--selected-color", color);
-    selectedTitle.textContent = isRun ? "Бег" : "Силовая";
     selection.classList.toggle("launcher-selection--strength-cards", !isRun);
-    const countParts = [];
-    if (isRun) {
-      if (recent.length) countParts.push(`последних: ${recent.length}`);
-      if (templates.length) countParts.push(`шаблонов: ${templates.length}`);
-      selectedCounts.textContent = countParts.join(" · ");
+    const updateHeading = () => {
+      const countParts = [];
+      selectedTitle.textContent = isRun ? "Бег" : "Силовая";
+      if (isRun) {
+        if (recent.length) countParts.push(`последних: ${recent.length}`);
+        if (templates.length) countParts.push(`шаблонов: ${templates.length}`);
+        selectedCounts.textContent = countParts.join(" · ");
+      } else {
+        const weekAgo = Date.now() - 7 * 86400000;
+        const weekCount = DATA.getWorkoutHistory(DATA.getCurrentUser()).filter(item => item.type !== "run" && item.startedAt >= weekAgo).length;
+        selectedCounts.textContent = `За неделю: ${weekCount} ${weekCount % 10 === 1 && weekCount % 100 !== 11 ? "тренировка" : [2, 3, 4].includes(weekCount % 10) && ![12, 13, 14].includes(weekCount % 100) ? "тренировки" : "тренировок"}`;
+      }
+      selection.classList.remove("is-switching");
+    };
+    if (switching) {
+      selection.classList.add("is-switching");
+      selectionHeadingTimer = setTimeout(updateHeading, reduceMotion.matches ? 100 : 700);
     } else {
-      const weekAgo = Date.now() - 7 * 86400000;
-      const weekCount = DATA.getWorkoutHistory(DATA.getCurrentUser()).filter(item => item.type !== "run" && item.startedAt >= weekAgo).length;
-      selectedCounts.textContent = `За неделю: ${weekCount} ${weekCount % 10 === 1 && weekCount % 100 !== 11 ? "тренировка" : [2, 3, 4].includes(weekCount % 10) && ![12, 13, 14].includes(weekCount % 100) ? "тренировки" : "тренировок"}`;
+      selection.classList.remove("is-switching");
+      updateHeading();
     }
     selectedOrbHit.setAttribute("aria-label", `Вернуться к выбору типа. Выбрано: ${isRun ? "Бег" : "Силовая"}`);
     otherOrbHit.setAttribute("aria-label", `Выбрать: ${isRun ? "Силовая" : "Бег"}`);
@@ -1644,9 +1696,10 @@ const startBtn      = $("start-btn");
       const userId = DATA.getCurrentUser();
       const exerciseById = new Map(DATA.getVisibleExercises(userId).map(exercise => [exercise.id, exercise]));
       const history = DATA.getWorkoutHistory(userId);
+      const featuredTemplates = templates.slice(0, 3);
       const emptyStrength = `<button class="launcher-strength-empty" type="button" data-empty-start><span><b>Пустая тренировка</b><small>Начать с чистого листа</small></span><i>+</i></button>`;
-      const templateBlockStrength = templates.length ? `<section class="launcher-section launcher-section--templates"><p class="launcher-section-title">Шаблоны</p><div class="launcher-cards-carousel">${templates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}</div></section>` : "";
-      const historyBlockStrength = recent.length ? `<section class="launcher-section"><p class="launcher-section-title">Последние тренировки</p><div class="launcher-history-cards">${recent.map((workout, index) => launcherHistoryCard(workout, exerciseById, index === 0)).join("")}</div></section>` : "";
+      const templateBlockStrength = featuredTemplates.length ? `<section class="launcher-section launcher-section--templates"><p class="launcher-section-title">Шаблоны</p><div class="launcher-cards-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все шаблоны</b><span>Открыть список</span><i>→</i></button></div></section>` : "";
+      const historyBlockStrength = recent.length ? `<section class="launcher-section"><p class="launcher-section-title">Последние тренировки</p><div class="launcher-history-cards">${recent.map(workout => launcherHistoryCard(workout, exerciseById)).join("")}</div></section>` : "";
       const drawStrength = () => {
         optionsEl.innerHTML = emptyStrength + templateBlockStrength + historyBlockStrength;
         optionsEl.scrollTop = 0;
@@ -1708,10 +1761,11 @@ const startBtn      = $("start-btn");
   function chooseType(type, { switching = false } = {}) {
     if (state() !== "split" && state() !== "selected") return;
     const userId = DATA.getCurrentUser();
-    const recent = DATA.getWorkoutHistory(userId)
+    const history = DATA.getWorkoutHistory(userId);
+    const recent = history
       .filter(item => type === "strength" ? item.type !== "run" : item.type === "run")
       .slice(0, 3);
-    const templates = type === "strength" ? DATA.getTemplates(userId) : [];
+    const templates = type === "strength" ? sortTemplatesByLastUse(DATA.getTemplates(userId), history) : [];
     haptic(24);
 
     if (!recent.length && !templates.length) {
@@ -1754,39 +1808,39 @@ const startBtn      = $("start-btn");
   strengthOrb.addEventListener("click", () => handleOrbClick("strength"));
   runOrb.addEventListener("click", () => handleOrbClick("run"));
   returnDots?.addEventListener("click", () => applyIdle());
-  selectedOrbHit.addEventListener("click", () => backToSplit());
   otherOrbHit.addEventListener("click", () => chooseType(selectedType() === "run" ? "strength" : "run", { switching: true }));
 
   launcher.addEventListener("pointerdown", event => {
-    if (event.target.closest?.("button")) event.preventDefault();
+    if (event.target.closest?.(".type-orb, .start-btn, .launcher-return-dots")) event.preventDefault();
   });
   launcher.addEventListener("focusin", pinStaticChrome);
   launcher.addEventListener("click", event => {
     if (event.target.closest?.("button")) return;
     if (state() === "split") applyIdle();
-    else if (state() === "selected") backToSplit();
   });
 
-  let touchY = 0, touchX = 0, touchTarget = null;
+  let touchY = 0, touchX = 0;
   launcher.addEventListener("touchstart", event => {
     const touch = event.touches[0]; if (!touch) return;
-    touchY = touch.clientY; touchX = touch.clientX; touchTarget = event.target;
+    touchY = touch.clientY; touchX = touch.clientX;
   }, { passive: true });
   launcher.addEventListener("touchend", event => {
     const touch = event.changedTouches[0];
     if (!touch || touch.clientY - touchY < 56 || Math.abs(touch.clientY - touchY) < Math.abs(touch.clientX - touchX)) return;
-    if (state() === "selected" && touchTarget?.closest?.(".launcher-options") && optionsEl.scrollTop > 0) return;
-    if (state() === "selected") backToSplit();
-    else if (state() === "split") applyIdle();
+    if (state() === "split") applyIdle();
   }, { passive: true });
 
   window.addEventListener("popstate", () => {
-    if (selectionHistoryArmed || state() === "selected") backToSplit({ fromPop: true });
+    if (state() !== "selected") { selectionHistoryArmed = false; return; }
+    try {
+      window.history.pushState({ ...(window.history.state || {}), trainLauncherSelection: true }, "");
+      selectionHistoryArmed = true;
+    } catch {}
   });
   window.addEventListener("resize", updateGeometry);
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape" || !screenMenu.classList.contains("active")) return;
-    if (state() === "selected") { event.preventDefault(); backToSplit(); }
+    if (state() === "selected") { event.preventDefault(); }
     else if (state() === "split") { event.preventDefault(); applyIdle(); }
   });
 
@@ -9191,8 +9245,12 @@ function tplAddBtnHtml() {
 
 function renderTemplatesList() {
   const userId  = DATA.getCurrentUser();
-  const list    = DATA.getTemplates(userId);
   const history = DATA.getWorkoutHistory(userId);
+  const list    = DATA.getTemplates(userId).slice().sort((a, b) => {
+    const aLast = templateUsage(a, history).lastTs || 0;
+    const bLast = templateUsage(b, history).lastTs || 0;
+    return bLast - aLast || (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
+  });
   const lib     = DATA.getVisibleExercises(userId);
 
   templatesScroll.classList.toggle("tpl-editing", _tplEditMode);
