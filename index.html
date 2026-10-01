@@ -3109,14 +3109,9 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 .tpl-group-manage svg { width:15px; height:15px; }
 .tpl-group-rename-form { margin:0 0 8px; }
 .tpl-group-empty { min-height:52px; padding:10px; border:1px dashed var(--border-strong); border-radius:16px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:12.5px; text-align:center; }
-.tpl-carousel { display:flex; align-items:flex-start; gap:10px; overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory; scrollbar-width:none; transition:height .2s ease; }
+.tpl-carousel { display:flex; align-items:flex-start; gap:10px; overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory; scrollbar-width:none; transition:height .2s ease; -webkit-overflow-scrolling:touch; }
 .tpl-carousel::-webkit-scrollbar, .tpl-card-tags::-webkit-scrollbar { display:none; }
-.tpl-carousel > .tpl-card-wrap { flex:0 0 100%; width:100%; scroll-snap-align:start; }
-.tpl-new-group {
-  width:100%; height:40px; margin:2px 0 6px; border:1px dashed var(--border-strong); border-radius:14px;
-  display:flex; align-items:center; justify-content:center; gap:7px; color:var(--text-tertiary); font-size:14px;
-}
-.tpl-new-group svg { width:17px; height:17px; }
+.tpl-carousel > .tpl-card-wrap { flex:0 0 100%; width:100%; scroll-snap-align:start; scroll-snap-stop:always; }
 .tpl-group-create { display:flex; align-items:center; gap:8px; width:100%; margin:2px 0 6px; }
 .tpl-group-create-input {
   flex:1; min-width:0; height:40px; padding:0 13px; border:1px solid #6f64d6; border-radius:14px;
