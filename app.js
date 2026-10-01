@@ -1333,6 +1333,173 @@ const startBtn      = $("start-btn");
 })();
 
 
+/* ── Общая карусель шаблонов ─────────────────────────────────────────────
+   Один контроллер используется и группами на экране «Шаблоны», и подборкой
+   после выбора типа тренировки. Разметка карточек у экранов разная, а жесты,
+   snap, точки, высота и закрытие раскрытой карточки — общие. */
+function templateCarouselItems(carousel) {
+  return carousel ? [...carousel.children] : [];
+}
+
+function templateCarouselTargets(carousel) {
+  const items = templateCarouselItems(carousel);
+  if (!items.length) return [];
+  const firstLeft = items[0].offsetLeft;
+  const maxLeft = Math.max(0, carousel.scrollWidth - carousel.clientWidth);
+  return items.map(item => Math.min(maxLeft, Math.max(0, item.offsetLeft - firstLeft)));
+}
+
+function templateCarouselIndex(carousel) {
+  const targets = templateCarouselTargets(carousel);
+  if (!targets.length) return 0;
+  return targets.reduce((best, target, index) => {
+    const distance = Math.abs(target - carousel.scrollLeft);
+    return distance < best.distance ? { index, distance } : best;
+  }, { index: 0, distance: Infinity }).index;
+}
+
+function setupTemplateCarousel(carousel, options = {}) {
+  if (!carousel) return null;
+  const dots = [...(options.dots || [])];
+  const state = {
+    fingerDown: false,
+    pointerActive: false,
+    gesture: null,
+    ignoreScroll: true,
+    snapTimer: 0,
+    settledIndex: 0,
+    settledLeft: 0,
+    width: carousel.clientWidth,
+  };
+
+  const updateIndex = index => {
+    const items = templateCarouselItems(carousel);
+    const safeIndex = Math.max(0, Math.min(index, Math.max(0, items.length - 1)));
+    dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === safeIndex));
+    options.onIndexChange?.(safeIndex, items[safeIndex] || null);
+    return safeIndex;
+  };
+
+  const syncHeight = () => {
+    const items = templateCarouselItems(carousel);
+    if (!items.length) { carousel.style.removeProperty("height"); return; }
+    const index = Math.max(0, Math.min(state.settledIndex, items.length - 1));
+    const height = Math.ceil(items[index].getBoundingClientRect().height);
+    if (height > 0) carousel.style.height = `${height}px`;
+  };
+
+  const beginGesture = () => {
+    if (state.gesture) return;
+    state.gesture = {
+      startIndex: state.settledIndex,
+      openId: options.getOpenId?.() || null,
+    };
+  };
+
+  const snap = (behavior = "smooth") => {
+    const items = templateCarouselItems(carousel);
+    const targets = templateCarouselTargets(carousel);
+    if (!items.length || !targets.length) return;
+    const index = updateIndex(templateCarouselIndex(carousel));
+    const targetLeft = targets[index];
+    if (Math.abs(carousel.scrollLeft - targetLeft) > 1) {
+      carousel.scrollTo({ left: targetLeft, behavior });
+      return;
+    }
+    const gesture = state.gesture;
+    if (gesture?.openId && gesture.startIndex !== index) {
+      options.onSlideChange?.({
+        fromIndex: gesture.startIndex,
+        toIndex: index,
+        openId: gesture.openId,
+        fromItem: items[gesture.startIndex] || null,
+        toItem: items[index] || null,
+      });
+    }
+    state.gesture = null;
+    state.settledIndex = index;
+    state.settledLeft = targetLeft;
+    options.onSettled?.(index, items[index] || null);
+    syncHeight();
+  };
+
+  const scheduleSnap = () => {
+    clearTimeout(state.snapTimer);
+    if (state.pointerActive || state.fingerDown) return;
+    state.snapTimer = setTimeout(() => snap(), options.snapDelay || 320);
+  };
+
+  const onTouchStart = () => {
+    state.fingerDown = true;
+    beginGesture();
+    clearTimeout(state.snapTimer);
+  };
+  const onTouchFinish = () => {
+    state.fingerDown = false;
+    scheduleSnap();
+  };
+  const onPointerDown = event => {
+    if (!event.isPrimary) return;
+    state.pointerActive = true;
+    beginGesture();
+    clearTimeout(state.snapTimer);
+  };
+  const onPointerFinish = () => {
+    state.pointerActive = false;
+    scheduleSnap();
+  };
+  const onScroll = () => {
+    if (state.ignoreScroll) return;
+    beginGesture();
+    updateIndex(templateCarouselIndex(carousel));
+    scheduleSnap();
+  };
+  const onScrollEnd = () => {
+    if (!state.pointerActive && !state.fingerDown) snap();
+  };
+
+  carousel.addEventListener("touchstart", onTouchStart, { passive: true });
+  carousel.addEventListener("touchend", onTouchFinish, { passive: true });
+  carousel.addEventListener("touchcancel", onTouchFinish, { passive: true });
+  carousel.addEventListener("pointerdown", onPointerDown, { passive: true });
+  carousel.addEventListener("pointerup", onPointerFinish, { passive: true });
+  carousel.addEventListener("pointercancel", onPointerFinish, { passive: true });
+  carousel.addEventListener("scroll", onScroll, { passive: true });
+  if ("onscrollend" in carousel) carousel.addEventListener("scrollend", onScrollEnd, { passive: true });
+
+  if (window.ResizeObserver) {
+    const observer = new ResizeObserver(() => {
+      if (!carousel.isConnected) { observer.disconnect(); return; }
+      const nextWidth = carousel.clientWidth;
+      if (Math.abs(nextWidth - state.width) > 1) {
+        state.width = nextWidth;
+        options.onWidthChange?.();
+        requestAnimationFrame(() => snap("auto"));
+      }
+      if (!state.gesture && !state.pointerActive && !state.fingerDown) syncHeight();
+    });
+    observer.observe(carousel);
+    templateCarouselItems(carousel).forEach(item => observer.observe(item));
+  }
+
+  const items = templateCarouselItems(carousel);
+  const initialIndex = Math.max(0, Math.min(options.initialIndex || 0, Math.max(0, items.length - 1)));
+  const initialTargets = templateCarouselTargets(carousel);
+  state.settledIndex = initialIndex;
+  state.settledLeft = initialTargets[initialIndex] || 0;
+  carousel.scrollLeft = state.settledLeft;
+  updateIndex(initialIndex);
+  syncHeight();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (carousel.isConnected) state.ignoreScroll = false;
+  }));
+
+  const controller = { snap, syncHeight, currentIndex: () => templateCarouselIndex(carousel) };
+  carousel._templateCarouselController = controller;
+  return controller;
+}
+
+
 /* ── Центральный launcher v2 ───────────────────────────────────────────── */
 (function initWorkoutLauncherV2() {
   const launcher = $("workout-launcher");
@@ -1690,23 +1857,7 @@ const startBtn      = $("start-btn");
     const templateCards = [...optionsEl.querySelectorAll('.launcher-detail-card--template')];
     const templatesMore = optionsEl.querySelector("[data-templates-more]");
     const templateDots = [...optionsEl.querySelectorAll("[data-template-carousel-dots] i")];
-    let dotsFrame = 0;
-    const syncTemplateDots = () => {
-      if (!templateCarousel || !templateDots.length) return;
-      const items = [...templateCarousel.children];
-      const firstLeft = items[0]?.offsetLeft || 0;
-      const viewportCenter = templateCarousel.scrollLeft + templateCarousel.clientWidth / 2;
-      const index = items.reduce((best, item, itemIndex) => {
-        const center = item.offsetLeft - firstLeft + item.offsetWidth / 2;
-        const distance = Math.abs(center - viewportCenter);
-        return distance < best.distance ? { index: itemIndex, distance } : best;
-      }, { index: 0, distance: Infinity }).index;
-      templateDots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === index));
-    };
-    templateCarousel?.addEventListener("scroll", () => {
-      cancelAnimationFrame(dotsFrame);
-      dotsFrame = requestAnimationFrame(syncTemplateDots);
-    }, { passive: true });
+    let templateCarouselController = null;
     const syncTemplateHeights = () => {
       if (!templateCarousel || !templateCards.length || templateCards.some(card => card.classList.contains("is-open"))) return;
       templateCards.forEach(card => { card.style.minHeight = ""; });
@@ -1716,28 +1867,31 @@ const startBtn      = $("start-btn");
         const height = Math.max(...templateCards.map(card => Math.ceil(card.getBoundingClientRect().height)));
         templateCards.forEach(card => { card.style.minHeight = `${height}px`; });
         if (templatesMore) templatesMore.style.height = `${height}px`;
+        templateCarouselController?.syncHeight();
       });
     };
     requestAnimationFrame(syncTemplateHeights);
-    if (templateCarousel && window.ResizeObserver) {
-      let carouselWidth = templateCarousel.clientWidth;
-      const observer = new ResizeObserver(() => {
-        if (!templateCarousel.isConnected) { observer.disconnect(); return; }
-        const nextWidth = templateCarousel.clientWidth;
-        if (Math.abs(nextWidth - carouselWidth) < 1) return;
-        carouselWidth = nextWidth;
-        syncTemplateHeights();
-        syncTemplateDots();
-      });
-      observer.observe(templateCarousel);
-    }
-    requestAnimationFrame(syncTemplateDots);
+    templateCarouselController = setupTemplateCarousel(templateCarousel, {
+      dots: templateDots,
+      getOpenId: () => templateCarousel?.querySelector('.launcher-detail-card--template.is-open')?.dataset.id || null,
+      onSlideChange: ({ openId }) => {
+        const card = [...(templateCarousel?.querySelectorAll('.launcher-detail-card--template.is-open') || [])]
+          .find(item => item.dataset.id === openId);
+        if (!card) return;
+        card.classList.remove("is-open");
+        card.setAttribute("aria-expanded", "false");
+        card.querySelector("[data-card-toggle]")?.setAttribute("aria-label", "Раскрыть шаблон");
+        setTimeout(syncTemplateHeights, 340);
+      },
+      onWidthChange: syncTemplateHeights,
+    });
     const toggle = card => {
       const open = !card.classList.contains("is-open");
       card.classList.toggle("is-open", open);
       card.setAttribute("aria-expanded", String(open));
       card.querySelector("[data-card-toggle]")?.setAttribute("aria-label", open ? "Скрыть содержимое" : card.dataset.launcherCard === "template" ? "Раскрыть шаблон" : "Раскрыть тренировку");
       if (!open && card.dataset.launcherCard === "template") setTimeout(syncTemplateHeights, 340);
+      if (card.dataset.launcherCard === "template") requestAnimationFrame(() => templateCarouselController?.syncHeight());
     };
     optionsEl.querySelectorAll("[data-launcher-card]").forEach(card => {
       card.addEventListener("click", event => { if (!event.target.closest("button")) toggle(card); });
@@ -1793,7 +1947,10 @@ const startBtn      = $("start-btn");
     return templates.slice().sort((a, b) => {
       const aLast = templateUsage(a, history).lastTs || 0;
       const bLast = templateUsage(b, history).lastTs || 0;
-      return bLast - aLast || (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
+      // Использованные всегда идут раньше неиспользованных и сортируются по
+      // последнему запуску. В оставшихся местах — именно дата создания, чтобы
+      // обычное редактирование старого шаблона не поднимало его в подборке.
+      return bLast - aLast || (b.createdAt || b.updatedAt || 0) - (a.createdAt || a.updatedAt || 0);
     });
   }
 
@@ -1847,10 +2004,10 @@ const startBtn      = $("start-btn");
     const featuredTemplates = templates.slice(0, 3);
     const emptyStart = `<button class="launcher-strength-empty" type="button" data-empty-start><span><b>${isRun ? "Пустая пробежка" : "Пустая тренировка"}</b><small>${isRun ? "Записать новый маршрут" : "Начать с чистого листа"}</small></span><i>+</i></button>`;
     const templateContent = featuredTemplates.length
-      ? `<div class="launcher-cards-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все<br>шаблоны</b><i>→</i></button></div>`
+      ? `<div class="launcher-cards-carousel template-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все<br>шаблоны</b><i>→</i></button></div>`
       : launcherEmptyState("Шаблонов пока нет", isRun ? "Соберите лёгкую, длинную или тяжёлую пробежку." : "Создайте первый и сохраните любимый план тренировки.", { action: "data-templates-empty", mark: "+" });
     const carouselDots = featuredTemplates.length
-      ? `<span class="launcher-carousel-dots" data-template-carousel-dots aria-hidden="true">${Array.from({ length: featuredTemplates.length + 1 }, (_, index) => `<i class="${index === 0 ? "active" : ""}"></i>`).join("")}</span>`
+      ? `<span class="launcher-carousel-dots template-carousel-dots" data-template-carousel-dots aria-hidden="true">${Array.from({ length: featuredTemplates.length + 1 }, (_, index) => `<i class="${index === 0 ? "active" : ""}"></i>`).join("")}</span>`
       : "";
     const templateBlock = `<section class="launcher-section launcher-section--templates"><div class="launcher-section-heading-row"><p class="launcher-section-title">Шаблоны</p>${carouselDots}</div>${templateContent}</section>`;
     const historyContent = recent.length
@@ -9499,76 +9656,13 @@ function closeTemplatesAddMenu() {
   if ($("templates-add-btn")) renderTemplatesHeader();
 }
 
-function tplCarouselIndex(carousel) {
-  const cards = [...carousel.children];
-  if (!cards.length) return 0;
-  const firstLeft = cards[0].offsetLeft;
-  return cards.reduce((best, card, index) => {
-    const distance = Math.abs((card.offsetLeft - firstLeft) - carousel.scrollLeft);
-    return distance < best.distance ? { index, distance } : best;
-  }, { index: 0, distance: Infinity }).index;
-}
-
 function rememberTemplateCarousels() {
   templatesScroll.querySelectorAll(".tpl-group[data-tpl-group]").forEach(section => {
     const carousel = section.querySelector(".tpl-carousel");
     if (!carousel?.children.length) return;
-    const card = carousel.children[tplCarouselIndex(carousel)];
+    const card = carousel.children[templateCarouselIndex(carousel)];
     if (card?.dataset.id) _tplCarouselTemplateByGroup.set(section.dataset.tplGroup, card.dataset.id);
   });
-}
-
-function updateTemplateCarouselDots(carousel, index) {
-  const dots = carousel.closest(".tpl-group")?.querySelectorAll(".tpl-group-dots i");
-  if (!dots?.length) return;
-  dots.forEach((dot, i) => dot.classList.toggle("active", i === index));
-}
-
-function syncTemplateCarouselHeight(carousel) {
-  const cards = [...carousel.children];
-  if (!cards.length) { carousel.style.removeProperty("height"); return; }
-  const firstLeft = cards[0].offsetLeft;
-  const positions = cards.map(card => card.offsetLeft - firstLeft);
-  const x = Math.max(0, carousel.scrollLeft);
-  let left = 0;
-  while (left < positions.length - 1 && positions[left + 1] <= x) left += 1;
-  const right = Math.min(left + 1, cards.length - 1);
-  const span = positions[right] - positions[left];
-  const progress = span > 0 ? Math.min(1, Math.max(0, (x - positions[left]) / span)) : 0;
-  const height = cards[left].offsetHeight + (cards[right].offsetHeight - cards[left].offsetHeight) * progress;
-  carousel.style.height = `${Math.ceil(height)}px`;
-}
-
-function snapTemplateCarousel(carousel, behavior = "smooth") {
-  const cards = [...carousel.children];
-  if (!cards.length) return;
-  const index = tplCarouselIndex(carousel);
-  const firstLeft = cards[0].offsetLeft;
-  const targetLeft = cards[index].offsetLeft - firstLeft;
-  const section = carousel.closest(".tpl-group[data-tpl-group]");
-  if (section && cards[index]?.dataset.id) _tplCarouselTemplateByGroup.set(section.dataset.tplGroup, cards[index].dataset.id);
-  updateTemplateCarouselDots(carousel, index);
-  if (Math.abs(carousel.scrollLeft - targetLeft) > 1) {
-    carousel.scrollTo({ left: targetLeft, behavior });
-    return;
-  }
-  const gesture = carousel._tplGesture;
-  if (gesture?.openId && gesture.startIndex !== index) {
-    collapseOpenTemplateAfterSwipe(carousel, gesture.openId);
-  }
-  carousel._tplGesture = null;
-  carousel._tplSettledLeft = targetLeft;
-  carousel._tplSettledIndex = index;
-  syncTemplateCarouselHeight(carousel);
-}
-
-function beginTemplateCarouselGesture(carousel) {
-  if (carousel._tplGesture) return;
-  const cards = [...carousel.children];
-  if (!cards.length) return;
-  const startIndex = Number.isInteger(carousel._tplSettledIndex) ? carousel._tplSettledIndex : tplCarouselIndex(carousel);
-  const openCard = [...carousel.querySelectorAll(".tpl-card.is-open")].find(card => card.dataset.id === _tplOpenId);
-  carousel._tplGesture = { startIndex, openId: openCard?.dataset.id || null };
 }
 
 function collapseOpenTemplateAfterSwipe(carousel, openId) {
@@ -9591,18 +9685,19 @@ function restoreTemplateCarousels() {
     const rememberedId = _tplCarouselTemplateByGroup.get(section.dataset.tplGroup);
     const cards = [...carousel.children];
     const index = Math.max(0, cards.findIndex(card => card.dataset.id === rememberedId));
-    const firstLeft = cards[0].offsetLeft;
-    const targetLeft = cards[index].offsetLeft - firstLeft;
-    carousel._tplIgnoreScroll = true;
-    carousel._tplSettledLeft = targetLeft;
-    carousel._tplSettledIndex = index;
-    carousel._tplGesture = null;
-    carousel.scrollLeft = targetLeft;
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (carousel.isConnected) carousel._tplIgnoreScroll = false;
-    }));
-    updateTemplateCarouselDots(carousel, index);
-    syncTemplateCarouselHeight(carousel);
+    setupTemplateCarousel(carousel, {
+      initialIndex: index,
+      dots: section.querySelectorAll(".template-carousel-dots i"),
+      getOpenId: () => {
+        const openCard = [...carousel.querySelectorAll(".tpl-card.is-open")]
+          .find(card => card.dataset.id === _tplOpenId);
+        return openCard?.dataset.id || null;
+      },
+      onIndexChange: (_nextIndex, card) => {
+        if (card?.dataset.id) _tplCarouselTemplateByGroup.set(section.dataset.tplGroup, card.dataset.id);
+      },
+      onSlideChange: ({ openId }) => collapseOpenTemplateAfterSwipe(carousel, openId),
+    });
   });
 }
 
@@ -9651,7 +9746,7 @@ function renderTemplatesList() {
       const rememberedId = _tplCarouselTemplateByGroup.get(key);
       const initialIndex = Math.max(0, items.findIndex(item => item.id === rememberedId));
       const groupTools = group ? `<button class="tpl-group-more${_tplGroupManageName === group || _tplGroupRenameName === group ? " open" : ""}" type="button" data-tpl-group-more data-group-name="${escHtml(group)}" aria-label="Действия с группой">${TPL_MORE_SVG}</button>` : "";
-      return `<section class="tpl-group" data-tpl-group="${escHtml(key)}"><div class="tpl-group-head"><span class="tpl-group-title">${escHtml(group || "Без группы")}</span>${items.length > 1 ? `<span class="tpl-group-dots">${items.map((_, i) => `<i class="${i === initialIndex ? "active" : ""}"></i>`).join("")}</span>` : ""}${groupTools}</div>${group ? tplGroupManageHtml(group) : ""}${items.length ? `<div class="tpl-carousel">${items.map(t => tplCardHtml(t, history, lib)).join("")}</div>` : `<div class="tpl-group-empty">Пока пусто · добавь шаблон через «В группу»</div>`}</section>`;
+      return `<section class="tpl-group" data-tpl-group="${escHtml(key)}"><div class="tpl-group-head"><span class="tpl-group-title">${escHtml(group || "Без группы")}</span>${items.length > 1 ? `<span class="tpl-group-dots template-carousel-dots">${items.map((_, i) => `<i class="${i === initialIndex ? "active" : ""}"></i>`).join("")}</span>` : ""}${groupTools}</div>${group ? tplGroupManageHtml(group) : ""}${items.length ? `<div class="tpl-carousel template-carousel">${items.map(t => tplCardHtml(t, history, lib)).join("")}</div>` : `<div class="tpl-group-empty">Пока пусто · добавь шаблон через «В группу»</div>`}</section>`;
     }).join("");
     cards = sections || `<div class="tpl-empty">Здесь пока пусто</div>`;
   }
@@ -9769,9 +9864,13 @@ function wireTemplateListControls() {
     const id = idFor(el);
     const action = el.dataset.tplAction;
     if (action === "group") {
+      // В режиме «По группам» карточка должна остаться раскрытой. Если групп
+      // ещё нет, не показываем бессодержательный промежуточный список — сразу
+      // открываем компактную форму создания первой группы внутри карточки.
+      _tplOpenId = id;
       _tplMoreId = null;
       _tplGroupPickerId = id;
-      _tplGroupCreateFor = null;
+      _tplGroupCreateFor = DATA.getTemplateGroups(userId).length ? null : id;
       renderTemplatesList();
     } else if (action === "copy") {
       const copy = DATA.duplicateTemplate(userId, id);
@@ -9849,52 +9948,6 @@ function wireTemplateListControls() {
   });
   on("[data-tpl-delete-archived]", el => deleteTemplateWithUndo(idFor(el)));
 
-  templatesScroll.querySelectorAll(".tpl-carousel").forEach(carousel => {
-    let pointerActive = false;
-    let fingerDown = false;
-    let snapTimer = null;
-    const scheduleSnap = () => {
-      clearTimeout(snapTimer);
-      if (pointerActive || fingerDown) return;
-      snapTimer = setTimeout(() => snapTemplateCarousel(carousel), 320);
-    };
-
-    carousel.addEventListener("touchstart", () => {
-      fingerDown = true;
-      beginTemplateCarouselGesture(carousel);
-      clearTimeout(snapTimer);
-    }, { passive: true });
-    const finishTouch = () => {
-      fingerDown = false;
-      scheduleSnap();
-    };
-    carousel.addEventListener("touchend", finishTouch, { passive: true });
-    carousel.addEventListener("touchcancel", finishTouch, { passive: true });
-    carousel.addEventListener("pointerdown", event => {
-      if (!event.isPrimary) return;
-      pointerActive = true;
-      beginTemplateCarouselGesture(carousel);
-      clearTimeout(snapTimer);
-    }, { passive: true });
-    const finishPointer = event => {
-      pointerActive = false;
-      if (event.type === "pointerup") scheduleSnap();
-    };
-    carousel.addEventListener("pointerup", finishPointer, { passive: true });
-    carousel.addEventListener("pointercancel", finishPointer, { passive: true });
-    carousel.addEventListener("scroll", () => {
-      if (!carousel._tplIgnoreScroll) beginTemplateCarouselGesture(carousel);
-      const index = tplCarouselIndex(carousel);
-      const section = carousel.closest(".tpl-group[data-tpl-group]");
-      const card = carousel.children[index];
-      if (section && card?.dataset.id) _tplCarouselTemplateByGroup.set(section.dataset.tplGroup, card.dataset.id);
-      updateTemplateCarouselDots(carousel, index);
-      scheduleSnap();
-    }, { passive: true });
-    if ("onscrollend" in carousel) carousel.addEventListener("scrollend", () => {
-      if (!pointerActive && !fingerDown) snapTemplateCarousel(carousel);
-    }, { passive: true });
-  });
 }
 
 function enterTplEditMode(id = _tplOpenId) {

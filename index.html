@@ -457,7 +457,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 .launcher-selection.is-switching .launcher-selection-heading { opacity:0; transform:translateY(2px); }
 .launcher-selection-heading h2 { margin:0; font-size:clamp(25px,7vw,31px); line-height:1.1; letter-spacing:-.035em; }
 .launcher-selection-heading p { margin:8px 0 0; color:#8b8b97; font-size:12px; line-height:1.4; }
-.launcher-options { width:100%; min-width:0; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; scrollbar-width:none; opacity:1; transition:opacity 220ms ease; }
+.launcher-options { width:100%; min-width:0; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; touch-action:auto; scrollbar-width:none; opacity:1; transition:opacity 220ms ease; }
 .launcher-options::-webkit-scrollbar { display:none; }
 .launcher-options.is-refreshing { opacity:0; }
 .launcher-section { margin-top:22px; }
@@ -514,14 +514,21 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 .launcher-selection--strength-cards .launcher-section-title { margin:0 4px 8px; letter-spacing:.14em; font-weight:600; }
 .launcher-section-heading-row { margin:0 4px 8px; display:flex; align-items:center; gap:10px; }
 .launcher-selection--strength-cards .launcher-section-heading-row .launcher-section-title { flex:1; margin:0; }
-.launcher-carousel-dots { display:flex; align-items:center; gap:4px; }
-.launcher-carousel-dots i { width:4px; height:4px; border-radius:4px; background:#3a3950; transition:width .18s ease,background .18s ease; }
-.launcher-carousel-dots i.active { width:14px; background:var(--selected-color); }
-.launcher-cards-carousel {
-  display:flex; width:100%; max-width:100%; min-width:0; align-items:flex-start; gap:10px; margin:0; padding:0;
-  overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; touch-action:pan-x pan-y; scroll-snap-type:x mandatory; scroll-padding-inline:0; scrollbar-width:none;
+.template-carousel-dots { display:flex; align-items:center; gap:4px; }
+.template-carousel-dots i { width:4px; height:4px; border-radius:4px; background:#3a3950; transition:width .18s ease,background .18s ease; }
+.template-carousel-dots i.active { width:14px; background:var(--template-carousel-accent,#9d93f0); }
+.launcher-carousel-dots { --template-carousel-accent:var(--selected-color); }
+.template-carousel {
+  display:flex; align-items:flex-start; gap:10px; overflow-x:auto; overflow-y:hidden;
+  overscroll-behavior-x:contain; touch-action:pan-x pan-y; scroll-snap-type:x mandatory;
+  scrollbar-width:none; transition:height .2s ease; -webkit-overflow-scrolling:touch;
 }
-.launcher-cards-carousel::-webkit-scrollbar { display:none; }
+.template-carousel::-webkit-scrollbar { display:none; }
+.template-carousel > * { scroll-snap-stop:always; }
+.launcher-cards-carousel {
+  width:100%; max-width:100%; min-width:0; margin:0; padding:0; scroll-padding-inline:0;
+}
+.launcher-cards-carousel > * { scroll-snap-align:start; }
 .launcher-cards-carousel::after { content:""; flex:0 0 1px; }
 .launcher-detail-card {
   width:100%; padding:14px 16px; border-radius:20px; background:#12111c; border:1px solid #26253a;
@@ -2279,6 +2286,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 .ex-cat-tabs {
   flex: 1; min-width: 0; display: flex; gap: 6px;
   overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  overscroll-behavior-x: contain; touch-action: pan-x;
 }
 .ex-cat-tabs::-webkit-scrollbar { display: none; }
 .ex-cat-tab {
@@ -2354,10 +2362,11 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 }
 
 .exercises-scroll {
-  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 14px 16px calc(32px + var(--safe-bottom));
   scrollbar-width: none;   /* #5: без ползунка */
 }
+#exercises-scroll { overscroll-behavior-y: contain; touch-action: pan-y; }
 .exercises-scroll::-webkit-scrollbar { display: none; }
 /* Когда видна плавающая «Готово» — увеличиваем нижний отступ ровно настолько,
    чтобы кнопка не перекрывала последние упражнения (высота пилюли + небольшой
@@ -3111,9 +3120,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 .tpl-group { margin-bottom:8px; }
 .tpl-group-head { min-height:28px; padding:0 3px 7px; display:flex; align-items:center; gap:8px; }
 .tpl-group-title { flex:1; color:var(--text-tertiary); font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; }
-.tpl-group-dots { display:flex; align-items:center; gap:4px; }
-.tpl-group-dots i { width:4px; height:4px; border-radius:4px; background:#3a3950; transition:width .18s ease, background .18s ease; }
-.tpl-group-dots i.active { width:14px; background:#9d93f0; }
+.tpl-group-dots { --template-carousel-accent:#9d93f0; }
 .tpl-group-more { width:28px; height:28px; flex:none; display:grid; place-items:center; border-radius:50%; color:#77758d; }
 .tpl-group-more:active,.tpl-group-more.open { color:#cbc7ed; background:#222132; }
 .tpl-group-more svg { width:16px; height:16px; }
@@ -3123,8 +3130,8 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 .tpl-group-manage svg { width:15px; height:15px; }
 .tpl-group-rename-form { margin:0 0 8px; }
 .tpl-group-empty { min-height:52px; padding:10px; border:1px dashed var(--border-strong); border-radius:16px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:12.5px; text-align:center; }
-.tpl-carousel { display:flex; align-items:flex-start; gap:10px; overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory; scrollbar-width:none; transition:height .2s ease; -webkit-overflow-scrolling:touch; }
-.tpl-carousel::-webkit-scrollbar, .tpl-card-tags::-webkit-scrollbar { display:none; }
+.tpl-carousel { width:100%; }
+.tpl-card-tags::-webkit-scrollbar { display:none; }
 .tpl-carousel > .tpl-card-wrap { flex:0 0 100%; width:100%; scroll-snap-align:start; scroll-snap-stop:always; }
 .tpl-group-create { display:flex; align-items:center; gap:8px; width:100%; margin:2px 0 6px; }
 .tpl-group-create-input {
