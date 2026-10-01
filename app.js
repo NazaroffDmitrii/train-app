@@ -9512,8 +9512,12 @@ function snapTemplateCarousel(carousel, behavior = "smooth") {
   const section = carousel.closest(".tpl-group[data-tpl-group]");
   if (section && cards[index]?.dataset.id) _tplCarouselTemplateByGroup.set(section.dataset.tplGroup, cards[index].dataset.id);
   updateTemplateCarouselDots(carousel, index);
-  if (Math.abs(carousel.scrollLeft - targetLeft) > 1) carousel.scrollTo({ left: targetLeft, behavior });
+  if (Math.abs(carousel.scrollLeft - targetLeft) > 1) {
+    carousel.scrollTo({ left: targetLeft, behavior });
+    return;
+  }
   syncTemplateCarouselHeight(carousel);
+  carousel.querySelectorAll(".tpl-card.is-swipe-closing").forEach(card => card.classList.remove("is-swipe-closing"));
 }
 
 function collapseOpenTemplateForSwipe(carousel) {
@@ -9524,11 +9528,10 @@ function collapseOpenTemplateForSwipe(carousel) {
   _tplMoreId = null;
   _tplGroupPickerId = null;
   _tplGroupCreateFor = null;
+  openCard.classList.add("is-swipe-closing");
   openCard.classList.remove("is-open");
   const chevron = openCard.querySelector(".tpl-card-chevron");
   if (chevron) chevron.setAttribute("aria-label", "Раскрыть");
-  requestAnimationFrame(() => syncTemplateCarouselHeight(carousel));
-  setTimeout(() => { if (carousel.isConnected) syncTemplateCarouselHeight(carousel); }, 320);
 }
 
 function restoreTemplateCarousels() {
@@ -9593,8 +9596,10 @@ function renderTemplatesList() {
       const items = list.filter(t => (t.group || null) === group);
       if (!items.length && (_tplFilter !== "all" || group === null)) return "";
       const key = group || "__none__";
+      const rememberedId = _tplCarouselTemplateByGroup.get(key);
+      const initialIndex = Math.max(0, items.findIndex(item => item.id === rememberedId));
       const groupTools = group ? `<button class="tpl-group-more${_tplGroupManageName === group || _tplGroupRenameName === group ? " open" : ""}" type="button" data-tpl-group-more data-group-name="${escHtml(group)}" aria-label="Действия с группой">${TPL_MORE_SVG}</button>` : "";
-      return `<section class="tpl-group" data-tpl-group="${escHtml(key)}"><div class="tpl-group-head"><span class="tpl-group-title">${escHtml(group || "Без группы")}</span>${items.length > 1 ? `<span class="tpl-group-dots">${items.map((_, i) => `<i class="${i === 0 ? "active" : ""}"></i>`).join("")}</span>` : ""}${groupTools}</div>${group ? tplGroupManageHtml(group) : ""}${items.length ? `<div class="tpl-carousel">${items.map(t => tplCardHtml(t, history, lib)).join("")}</div>` : `<div class="tpl-group-empty">Пока пусто · добавь шаблон через «В группу»</div>`}</section>`;
+      return `<section class="tpl-group" data-tpl-group="${escHtml(key)}"><div class="tpl-group-head"><span class="tpl-group-title">${escHtml(group || "Без группы")}</span>${items.length > 1 ? `<span class="tpl-group-dots">${items.map((_, i) => `<i class="${i === initialIndex ? "active" : ""}"></i>`).join("")}</span>` : ""}${groupTools}</div>${group ? tplGroupManageHtml(group) : ""}${items.length ? `<div class="tpl-carousel">${items.map(t => tplCardHtml(t, history, lib)).join("")}</div>` : `<div class="tpl-group-empty">Пока пусто · добавь шаблон через «В группу»</div>`}</section>`;
     }).join("");
     cards = sections || `<div class="tpl-empty">Здесь пока пусто</div>`;
   }
@@ -9788,13 +9793,24 @@ function wireTemplateListControls() {
   templatesScroll.querySelectorAll(".tpl-carousel").forEach(carousel => {
     let pointerStart = null;
     let pointerActive = false;
+    let fingerDown = false;
     let snapTimer = null;
     const scheduleSnap = () => {
       clearTimeout(snapTimer);
-      if (pointerActive) return;
-      snapTimer = setTimeout(() => snapTemplateCarousel(carousel), 140);
+      if (pointerActive || fingerDown) return;
+      snapTimer = setTimeout(() => snapTemplateCarousel(carousel), 320);
     };
 
+    carousel.addEventListener("touchstart", () => {
+      fingerDown = true;
+      clearTimeout(snapTimer);
+    }, { passive: true });
+    const finishTouch = () => {
+      fingerDown = false;
+      scheduleSnap();
+    };
+    carousel.addEventListener("touchend", finishTouch, { passive: true });
+    carousel.addEventListener("touchcancel", finishTouch, { passive: true });
     carousel.addEventListener("pointerdown", event => {
       if (!event.isPrimary) return;
       pointerActive = true;
@@ -9810,10 +9826,16 @@ function wireTemplateListControls() {
         collapseOpenTemplateForSwipe(carousel);
       }
     }, { passive: true });
-    const finishPointer = () => {
+    const finishPointer = event => {
+      const collapsed = !!pointerStart?.collapsed;
       pointerActive = false;
       pointerStart = null;
-      scheduleSnap();
+      const settledLeft = Number.isFinite(carousel._tplSettledLeft) ? carousel._tplSettledLeft : 0;
+      if (collapsed && Math.abs(carousel.scrollLeft - settledLeft) <= 1 && !fingerDown) {
+        snapTemplateCarousel(carousel, "auto");
+      } else if (event.type === "pointerup") {
+        scheduleSnap();
+      }
     };
     carousel.addEventListener("pointerup", finishPointer, { passive: true });
     carousel.addEventListener("pointercancel", finishPointer, { passive: true });
@@ -9827,10 +9849,11 @@ function wireTemplateListControls() {
       const card = carousel.children[index];
       if (section && card?.dataset.id) _tplCarouselTemplateByGroup.set(section.dataset.tplGroup, card.dataset.id);
       updateTemplateCarouselDots(carousel, index);
-      syncTemplateCarouselHeight(carousel);
       scheduleSnap();
     }, { passive: true });
-    if ("onscrollend" in carousel) carousel.addEventListener("scrollend", () => snapTemplateCarousel(carousel), { passive: true });
+    if ("onscrollend" in carousel) carousel.addEventListener("scrollend", () => {
+      if (!pointerActive && !fingerDown) snapTemplateCarousel(carousel);
+    }, { passive: true });
   });
 }
 
