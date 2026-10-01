@@ -1889,7 +1889,11 @@ function setupTemplateCarousel(carousel, options = {}) {
       if (card.dataset.launcherCard === "template") requestAnimationFrame(() => templateCarouselController?.syncHeight());
     };
     optionsEl.querySelectorAll("[data-launcher-card]").forEach(card => {
-      card.addEventListener("click", event => { if (!event.target.closest("button")) toggle(card); });
+      card.addEventListener("click", event => {
+        // Как на странице «Шаблоны»: лента групп — самостоятельный
+        // горизонтальный скролл и её свайп/тап не раскрывает карточку.
+        if (!event.target.closest("button, .launcher-card-tags")) toggle(card);
+      });
       card.addEventListener("keydown", event => {
         if ((event.key === "Enter" || event.key === " ") && event.target === card) { event.preventDefault(); toggle(card); }
       });

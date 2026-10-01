@@ -553,11 +553,8 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 .launcher-card-chevron:active { background:rgba(255,255,255,.06); }
 .launcher-card-chevron svg, .launcher-card-stats svg, .launcher-card-actions svg { width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .launcher-detail-card.is-open .launcher-card-chevron { transform:rotate(180deg); }
-.launcher-card-tags { display:flex; gap:6px; margin-top:10px; max-height:28px; opacity:1; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; transition:max-height 260ms cubic-bezier(.2,.7,.2,1), margin 260ms cubic-bezier(.2,.7,.2,1), opacity 160ms ease; }
+.launcher-card-tags { display:flex; gap:6px; max-width:100%; margin-top:10px; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; -webkit-overflow-scrolling:touch; -webkit-mask-image:linear-gradient(90deg,#000 92%,transparent); mask-image:linear-gradient(90deg,#000 92%,transparent); }
 .launcher-card-tags::-webkit-scrollbar { display:none; }
-.launcher-detail-card--template .launcher-card-tags,
-.launcher-detail-card--template .launcher-card-stats { pointer-events:none; }
-.launcher-detail-card--template .launcher-card-tags { overflow-x:hidden; }
 .launcher-card-tags span { flex:none; padding:4px 9px; border-radius:10px; background:#26224a; color:#b9b2ff; font-size:12px; white-space:nowrap; }
 .workout-launcher[data-selected="run"] .launcher-card-tags span { background:#15382f; color:#7aebc1; }
 .launcher-card-stats { display:flex; align-items:center; flex-wrap:wrap; gap:7px 14px; margin-top:12px; max-height:44px; opacity:1; overflow:hidden; color:#9c9bae; font-size:13px; transition:max-height 260ms cubic-bezier(.2,.7,.2,1), margin 260ms cubic-bezier(.2,.7,.2,1), opacity 160ms ease; }
@@ -566,7 +563,6 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 .launcher-card-expanded { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows 320ms cubic-bezier(.2,.72,.2,1), opacity 220ms ease; }
 .launcher-card-expanded-inner { min-height:0; overflow:hidden; }
 .launcher-detail-card.is-open .launcher-card-expanded { grid-template-rows:1fr; opacity:1; }
-.launcher-detail-card.is-open .launcher-card-tags, .launcher-detail-card.is-open .launcher-card-stats { max-height:0; margin-top:0; opacity:0; pointer-events:none; }
 .launcher-card-exercises { margin-top:10px; padding-top:6px; border-top:1px solid #26253a; }
 .launcher-card-exercise { display:flex; align-items:baseline; gap:10px; min-height:35px; padding:7px 0; border-bottom:1px solid #1d1c2c; }
 .launcher-card-exercise:last-child { border-bottom:0; }
