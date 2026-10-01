@@ -9223,6 +9223,10 @@ let _tplView = "list";
 let _tplFilterMenuOpen = false;
 let _tplArchiveOpen = false;
 let _tplArchiveCardId = null;
+let _tplGroupCreateFor = null;
+let _tplGroupManageName = null;
+let _tplGroupRenameName = null;
+const _tplCarouselTemplateByGroup = new Map();
 
 // Иконки карточек шаблона
 const TPL_PLAY_SVG  = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>`;
@@ -9301,6 +9305,9 @@ function initTemplatesScreen() {
   _tplEditMode = false;
   _tplMoreId = null;
   _tplGroupPickerId = null;
+  _tplGroupCreateFor = null;
+  _tplGroupManageName = null;
+  _tplGroupRenameName = null;
   closeTemplatesFilterMenu();
   const b = $("templates-done-btn"); if (b) b.classList.remove("visible");
   renderTemplatesList();
@@ -9333,7 +9340,15 @@ function tplGroupPickerHtml(t, groups) {
     const active = (t.group || null) === group;
     return `<button class="tpl-group-option${active ? " active" : ""}" type="button" data-tpl-group-value="${group === null ? "" : escHtml(group)}">${active ? "✓ " : ""}${escHtml(group || "Без группы")}</button>`;
   }).join("");
-  return `<div class="tpl-group-picker"><small>Перенести в группу</small><div class="tpl-group-options">${buttons}<button class="tpl-group-option new" type="button" data-tpl-new-group-for="${escHtml(t.id)}">+ Новая группа</button></div></div>`;
+  const create = _tplGroupCreateFor === t.id ? tplGroupCreateHtml(t.id) : "";
+  return `<div class="tpl-group-picker"><small>Перенести в группу</small><div class="tpl-group-options">${buttons}<button class="tpl-group-option new" type="button" data-tpl-new-group-for="${escHtml(t.id)}">+ Новая группа</button></div>${create}</div>`;
+}
+
+function tplGroupCreateHtml(templateId = null) {
+  return `<form class="tpl-group-create" data-tpl-group-create${templateId ? ` data-template-id="${escHtml(templateId)}"` : ""}>
+    <input class="tpl-group-create-input" name="groupName" type="text" maxlength="30" autocomplete="off" placeholder="Название группы" aria-label="Название группы">
+    <button class="tpl-group-create-submit" type="submit">Создать</button>
+  </form>`;
 }
 
 function tplMoreHtml(t, groups) {
@@ -9448,7 +9463,76 @@ function closeTemplatesFilterMenu() {
   if ($("templates-filter-btn")) renderTemplatesHeader();
 }
 
+function tplCarouselIndex(carousel) {
+  const cards = [...carousel.children];
+  if (!cards.length) return 0;
+  const firstLeft = cards[0].offsetLeft;
+  return cards.reduce((best, card, index) => {
+    const distance = Math.abs((card.offsetLeft - firstLeft) - carousel.scrollLeft);
+    return distance < best.distance ? { index, distance } : best;
+  }, { index: 0, distance: Infinity }).index;
+}
+
+function rememberTemplateCarousels() {
+  templatesScroll.querySelectorAll(".tpl-group[data-tpl-group]").forEach(section => {
+    const carousel = section.querySelector(".tpl-carousel");
+    if (!carousel?.children.length) return;
+    const card = carousel.children[tplCarouselIndex(carousel)];
+    if (card?.dataset.id) _tplCarouselTemplateByGroup.set(section.dataset.tplGroup, card.dataset.id);
+  });
+}
+
+function updateTemplateCarouselDots(carousel, index) {
+  const dots = carousel.closest(".tpl-group")?.querySelectorAll(".tpl-group-dots i");
+  if (!dots?.length) return;
+  dots.forEach((dot, i) => dot.classList.toggle("active", i === index));
+}
+
+function syncTemplateCarouselHeight(carousel) {
+  const cards = [...carousel.children];
+  if (!cards.length) { carousel.style.removeProperty("height"); return; }
+  const firstLeft = cards[0].offsetLeft;
+  const positions = cards.map(card => card.offsetLeft - firstLeft);
+  const x = Math.max(0, carousel.scrollLeft);
+  let left = 0;
+  while (left < positions.length - 1 && positions[left + 1] <= x) left += 1;
+  const right = Math.min(left + 1, cards.length - 1);
+  const span = positions[right] - positions[left];
+  const progress = span > 0 ? Math.min(1, Math.max(0, (x - positions[left]) / span)) : 0;
+  const height = cards[left].offsetHeight + (cards[right].offsetHeight - cards[left].offsetHeight) * progress;
+  carousel.style.height = `${Math.ceil(height)}px`;
+}
+
+function restoreTemplateCarousels() {
+  templatesScroll.querySelectorAll(".tpl-group[data-tpl-group]").forEach(section => {
+    const carousel = section.querySelector(".tpl-carousel");
+    if (!carousel?.children.length) return;
+    const rememberedId = _tplCarouselTemplateByGroup.get(section.dataset.tplGroup);
+    const cards = [...carousel.children];
+    const index = Math.max(0, cards.findIndex(card => card.dataset.id === rememberedId));
+    const firstLeft = cards[0].offsetLeft;
+    carousel.scrollLeft = cards[index].offsetLeft - firstLeft;
+    updateTemplateCarouselDots(carousel, index);
+    syncTemplateCarouselHeight(carousel);
+  });
+}
+
+function tplGroupManageHtml(group) {
+  if (_tplGroupRenameName === group) {
+    return `<form class="tpl-group-create tpl-group-rename-form" data-tpl-group-rename-form data-group-name="${escHtml(group)}">
+      <input class="tpl-group-create-input tpl-group-rename-input" name="groupName" type="text" maxlength="30" autocomplete="off" value="${escHtml(group)}" aria-label="Новое название группы">
+      <button class="tpl-group-create-submit" type="submit">Сохранить</button>
+    </form>`;
+  }
+  if (_tplGroupManageName !== group) return "";
+  return `<div class="tpl-group-manage">
+    <button type="button" data-tpl-group-rename data-group-name="${escHtml(group)}">${TPL_EDIT_SVG}Переименовать</button>
+    <button class="danger" type="button" data-tpl-group-delete data-group-name="${escHtml(group)}">${TPL_TRASH_SVG}Удалить группу</button>
+  </div>`;
+}
+
 function renderTemplatesList() {
+  rememberTemplateCarousels();
   const userId  = DATA.getCurrentUser();
   const history = DATA.getWorkoutHistory(userId);
   const all = DATA.getTemplates(userId).slice().sort((a, b) => {
@@ -9475,10 +9559,13 @@ function renderTemplatesList() {
       const items = list.filter(t => (t.group || null) === group);
       if (!items.length && (_tplFilter !== "all" || group === null)) return "";
       const key = group || "__none__";
-      return `<section class="tpl-group" data-tpl-group="${escHtml(key)}"><div class="tpl-group-head"><span class="tpl-group-title">${escHtml(group || "Без группы")}</span>${items.length > 1 ? `<span class="tpl-group-dots">${items.map((_, i) => `<i class="${i === 0 ? "active" : ""}"></i>`).join("")}</span>` : ""}</div>${items.length ? `<div class="tpl-carousel">${items.map(t => tplCardHtml(t, history, lib)).join("")}</div>` : `<div class="tpl-empty">Пока пусто · добавь шаблон через «В группу»</div>`}</section>`;
+      const groupTools = group ? `<button class="tpl-group-more${_tplGroupManageName === group || _tplGroupRenameName === group ? " open" : ""}" type="button" data-tpl-group-more data-group-name="${escHtml(group)}" aria-label="Действия с группой">${TPL_MORE_SVG}</button>` : "";
+      return `<section class="tpl-group" data-tpl-group="${escHtml(key)}"><div class="tpl-group-head"><span class="tpl-group-title">${escHtml(group || "Без группы")}</span>${items.length > 1 ? `<span class="tpl-group-dots">${items.map((_, i) => `<i class="${i === 0 ? "active" : ""}"></i>`).join("")}</span>` : ""}${groupTools}</div>${group ? tplGroupManageHtml(group) : ""}${items.length ? `<div class="tpl-carousel">${items.map(t => tplCardHtml(t, history, lib)).join("")}</div>` : `<div class="tpl-group-empty">Пока пусто · добавь шаблон через «В группу»</div>`}</section>`;
     }).join("");
     cards = sections || `<div class="tpl-empty">Здесь пока пусто</div>`;
-    cards += `<button class="tpl-new-group" type="button" data-tpl-new-group>${TPL_FOLDER_SVG}Новая группа</button>`;
+    cards += _tplGroupCreateFor === "__list__"
+      ? tplGroupCreateHtml()
+      : `<button class="tpl-new-group" type="button" data-tpl-new-group>${TPL_FOLDER_SVG}Новая группа</button>`;
   }
   const archive = `<button class="tpl-archive-toggle" type="button" data-tpl-archive-toggle>${TPL_ARCHIVE_SVG}<span>Архив</span><small>${archived.length}</small>${TPL_CHEVRON_SVG}</button>${_tplArchiveOpen ? `<div class="tpl-archive-list">${archived.length ? archived.map(t => tplArchiveHtml(t, history, lib)).join("") : `<div class="tpl-empty">В архиве ничего нет</div>`}</div>` : ""}`;
   const generate = _tplEditMode ? "" : `<button class="tpl-generate-btn" type="button" data-tpl-generate>${TPL_SPARKLES_SVG}Сгенерировать силовую тренировку</button>`;
@@ -9486,24 +9573,74 @@ function renderTemplatesList() {
 
   list.forEach(t => wireTplCard(t.id));
   wireTemplateListControls();
+  restoreTemplateCarousels();
+  const groupInput = templatesScroll.querySelector(".tpl-group-create-input");
+  if (groupInput) requestAnimationFrame(() => {
+    groupInput.focus({ preventScroll: true });
+    if (groupInput.classList.contains("tpl-group-rename-input")) groupInput.select();
+  });
 }
 
-function promptTemplateGroup(templateId = null) {
-  openNameModal({
-    title: "Новая группа",
-    placeholder: "Например, Сплит на 3 дня",
-    confirmLabel: "Создать",
-    onConfirm: name => {
+function createTemplateGroup(name, templateId = null) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return false;
+  const userId = DATA.getCurrentUser();
+  const groups = DATA.getTemplateGroups(userId);
+  const existing = groups.find(group => group.toLocaleLowerCase() === trimmed.toLocaleLowerCase());
+  const groupName = existing || trimmed;
+  if (!existing) DATA.saveTemplateGroups(userId, [...groups, groupName]);
+  if (templateId) {
+    DATA.updateTemplate(userId, templateId, { group: groupName });
+    SyncQueue.push("template:update", { templateId });
+  }
+  _tplMoreId = null;
+  _tplGroupPickerId = null;
+  _tplGroupCreateFor = null;
+  renderTemplatesList();
+  if (existing && !templateId) showToast("Такая группа уже есть");
+  return true;
+}
+
+function renameTemplateGroup(oldName, name) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return false;
+  const userId = DATA.getCurrentUser();
+  const groups = DATA.getTemplateGroups(userId);
+  const duplicate = groups.find(group => group !== oldName && group.toLocaleLowerCase() === trimmed.toLocaleLowerCase());
+  if (duplicate) { showToast("Такая группа уже есть"); return false; }
+  if (trimmed !== oldName) {
+    DATA.saveTemplateGroups(userId, groups.map(group => group === oldName ? trimmed : group));
+    DATA.getTemplates(userId).filter(template => template.group === oldName).forEach(template => {
+      DATA.updateTemplate(userId, template.id, { group: trimmed });
+      SyncQueue.push("template:update", { templateId: template.id });
+    });
+    const rememberedId = _tplCarouselTemplateByGroup.get(oldName);
+    if (rememberedId) _tplCarouselTemplateByGroup.set(trimmed, rememberedId);
+    _tplCarouselTemplateByGroup.delete(oldName);
+  }
+  _tplGroupManageName = null;
+  _tplGroupRenameName = null;
+  renderTemplatesList();
+  return true;
+}
+
+function deleteTemplateGroup(groupName) {
+  openConfirmModal({
+    title: "Удалить группу?",
+    message: `Шаблоны из группы «${groupName}» останутся и перейдут в «Без группы».`,
+    confirmLabel: "Удалить",
+    onConfirm: () => {
       const userId = DATA.getCurrentUser();
-      const groups = DATA.getTemplateGroups(userId);
-      if (!groups.includes(name)) DATA.saveTemplateGroups(userId, [...groups, name]);
-      if (templateId) {
-        DATA.updateTemplate(userId, templateId, { group: name });
-        SyncQueue.push("template:update", { templateId });
-      }
-      _tplMoreId = null;
-      _tplGroupPickerId = null;
+      DATA.saveTemplateGroups(userId, DATA.getTemplateGroups(userId).filter(group => group !== groupName));
+      DATA.getTemplates(userId).filter(template => template.group === groupName).forEach(template => {
+        DATA.updateTemplate(userId, template.id, { group: null });
+        SyncQueue.push("template:update", { templateId: template.id });
+      });
+      _tplCarouselTemplateByGroup.delete(groupName);
+      _tplGroupManageName = null;
+      _tplGroupRenameName = null;
       renderTemplatesList();
+      showToast("Группа удалена");
     },
   });
 }
@@ -9522,6 +9659,7 @@ function wireTemplateListControls() {
     _tplOpenId = _tplOpenId === id ? null : id;
     _tplMoreId = null;
     _tplGroupPickerId = null;
+    if (_tplGroupCreateFor !== "__list__") _tplGroupCreateFor = null;
     renderTemplatesList();
   });
   on("[data-tpl-start]", el => tplStartWorkout(idFor(el)));
@@ -9533,6 +9671,7 @@ function wireTemplateListControls() {
     const id = idFor(el);
     _tplMoreId = _tplMoreId === id ? null : id;
     _tplGroupPickerId = null;
+    if (_tplGroupCreateFor !== "__list__") _tplGroupCreateFor = null;
     renderTemplatesList();
   });
   on("[data-tpl-action]", el => {
@@ -9541,6 +9680,7 @@ function wireTemplateListControls() {
     if (action === "group") {
       _tplMoreId = null;
       _tplGroupPickerId = id;
+      _tplGroupCreateFor = null;
       renderTemplatesList();
     } else if (action === "copy") {
       const copy = DATA.duplicateTemplate(userId, id);
@@ -9565,10 +9705,44 @@ function wireTemplateListControls() {
     DATA.updateTemplate(userId, id, { group: el.dataset.tplGroupValue || null });
     SyncQueue.push("template:update", { templateId: id });
     _tplGroupPickerId = null;
+    _tplGroupCreateFor = null;
     renderTemplatesList();
   });
-  on("[data-tpl-new-group-for]", el => promptTemplateGroup(el.dataset.tplNewGroupFor));
-  on("[data-tpl-new-group]", () => promptTemplateGroup());
+  on("[data-tpl-new-group-for]", el => {
+    _tplGroupCreateFor = el.dataset.tplNewGroupFor;
+    renderTemplatesList();
+  });
+  on("[data-tpl-new-group]", () => {
+    _tplGroupCreateFor = "__list__";
+    _tplGroupManageName = null;
+    _tplGroupRenameName = null;
+    renderTemplatesList();
+  });
+  templatesScroll.querySelectorAll("[data-tpl-group-create]").forEach(form => form.addEventListener("submit", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const input = form.querySelector(".tpl-group-create-input");
+    if (!createTemplateGroup(input?.value, form.dataset.templateId || null)) input?.focus();
+  }));
+  on("[data-tpl-group-more]", el => {
+    const group = el.dataset.groupName;
+    _tplGroupManageName = _tplGroupManageName === group && !_tplGroupRenameName ? null : group;
+    _tplGroupRenameName = null;
+    _tplGroupCreateFor = null;
+    renderTemplatesList();
+  });
+  on("[data-tpl-group-rename]", el => {
+    _tplGroupManageName = el.dataset.groupName;
+    _tplGroupRenameName = el.dataset.groupName;
+    renderTemplatesList();
+  });
+  templatesScroll.querySelectorAll("[data-tpl-group-rename-form]").forEach(form => form.addEventListener("submit", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const input = form.querySelector(".tpl-group-rename-input");
+    if (!renameTemplateGroup(form.dataset.groupName, input?.value)) input?.focus();
+  }));
+  on("[data-tpl-group-delete]", el => deleteTemplateGroup(el.dataset.groupName));
   on("[data-tpl-generate]", () => { exitTplEditMode(); goToScreen("constructor"); });
   on("[data-tpl-archive-toggle]", () => { _tplArchiveOpen = !_tplArchiveOpen; renderTemplatesList(); });
   on("[data-tpl-archive-card]", el => {
@@ -9587,10 +9761,12 @@ function wireTemplateListControls() {
   on("[data-tpl-delete-archived]", el => deleteTemplateWithUndo(idFor(el)));
 
   templatesScroll.querySelectorAll(".tpl-carousel").forEach(carousel => carousel.addEventListener("scroll", () => {
-    const dots = carousel.closest(".tpl-group")?.querySelectorAll(".tpl-group-dots i");
-    if (!dots?.length) return;
-    const index = Math.round(carousel.scrollLeft / Math.max(1, carousel.clientWidth + 10));
-    dots.forEach((dot, i) => dot.classList.toggle("active", i === index));
+    const index = tplCarouselIndex(carousel);
+    const section = carousel.closest(".tpl-group[data-tpl-group]");
+    const card = carousel.children[index];
+    if (section && card?.dataset.id) _tplCarouselTemplateByGroup.set(section.dataset.tplGroup, card.dataset.id);
+    updateTemplateCarouselDots(carousel, index);
+    syncTemplateCarouselHeight(carousel);
   }, { passive: true }));
 }
 
@@ -9623,12 +9799,18 @@ $("templates-filter-menu").addEventListener("click", event => event.stopPropagat
 document.querySelectorAll("[data-template-filter]").forEach(item => item.addEventListener("click", () => {
   _tplFilter = item.dataset.templateFilter;
   _tplOpenId = null;
+  _tplGroupCreateFor = null;
+  _tplGroupManageName = null;
+  _tplGroupRenameName = null;
   closeTemplatesFilterMenu();
   renderTemplatesList();
 }));
 document.querySelectorAll("[data-template-view]").forEach(item => item.addEventListener("click", () => {
   _tplView = item.dataset.templateView;
   _tplOpenId = null;
+  _tplGroupCreateFor = null;
+  _tplGroupManageName = null;
+  _tplGroupRenameName = null;
   closeTemplatesFilterMenu();
   renderTemplatesList();
 }));
