@@ -512,6 +512,11 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 .launcher-empty-state-copy small { display:block; margin-top:6px; color:#9291a2; font-size:13px; line-height:1.4; }
 .launcher-selection--strength-cards .launcher-section { margin-top:18px; }
 .launcher-selection--strength-cards .launcher-section-title { margin:0 4px 8px; letter-spacing:.14em; font-weight:600; }
+.launcher-section-heading-row { margin:0 4px 8px; display:flex; align-items:center; gap:10px; }
+.launcher-selection--strength-cards .launcher-section-heading-row .launcher-section-title { flex:1; margin:0; }
+.launcher-carousel-dots { display:flex; align-items:center; gap:4px; }
+.launcher-carousel-dots i { width:4px; height:4px; border-radius:4px; background:#3a3950; transition:width .18s ease,background .18s ease; }
+.launcher-carousel-dots i.active { width:14px; background:var(--selected-color); }
 .launcher-cards-carousel {
   display:flex; width:100%; max-width:100%; min-width:0; align-items:flex-start; gap:10px; margin:0; padding:0;
   overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; touch-action:pan-x pan-y; scroll-snap-type:x mandatory; scroll-padding-inline:0; scrollbar-width:none;
@@ -3073,7 +3078,16 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   color:#fff; background:var(--accent); box-shadow:0 6px 18px rgba(124,108,230,.2);
 }
 .tpl-header-add:active { transform:scale(.94); }
+.tpl-header-add.open { box-shadow:0 0 0 3px rgba(124,108,230,.16),0 6px 18px rgba(124,108,230,.2); }
 .tpl-header-add svg { width:18px; height:18px; }
+.tpl-add-menu {
+  position:absolute; top:44px; right:0; width:132px; padding:5px; z-index:22;
+  border:1px solid var(--border-strong); border-radius:13px; background:#15151f;
+  box-shadow:0 16px 36px rgba(0,0,0,.38);
+}
+.tpl-add-menu[hidden] { display:none; }
+.tpl-add-menu-item { width:100%; min-height:36px; padding:0 10px; border-radius:9px; color:var(--text-secondary); font-size:13.5px; text-align:left; }
+.tpl-add-menu-item:active { color:var(--text-primary); background:#222130; }
 .tpl-filter-menu {
   position:absolute; top:44px; right:0; width:208px; padding:6px 0; z-index:20;
   border:1px solid var(--border-strong); border-radius:15px; background:#15151f;
@@ -3258,10 +3272,13 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 .tpl-run-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .tpl-run-field { display:flex; flex-direction:column; gap:5px; color:#789889; font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
 .tpl-run-input { width:100%; height:38px; padding:0 10px; border:1px solid #285143; border-radius:11px; background:rgba(7,18,15,.55); color:#e4f5ed; font-size:14px; }
-.tpl-archive-toggle { width:100%; min-height:44px; margin-top:5px; padding:0 12px; border:1px dashed var(--border-strong); border-radius:14px; display:flex; align-items:center; gap:9px; color:var(--text-tertiary); font-size:14px; text-align:left; }
+.tpl-archive { margin-top:5px; border:1px dashed var(--border-strong); border-radius:14px; overflow:hidden; }
+.tpl-archive-toggle { width:100%; min-height:44px; padding:0 12px; display:flex; align-items:center; gap:9px; color:var(--text-tertiary); font-size:14px; text-align:left; }
 .tpl-archive-toggle span:first-of-type { flex:1; }
 .tpl-archive-toggle svg { width:18px; height:18px; }
-.tpl-archive-list { display:flex; flex-direction:column; gap:8px; }
+.tpl-archive-toggle > svg:last-child { transition:transform .18s ease; }
+.tpl-archive.is-open .tpl-archive-toggle > svg:last-child { transform:rotate(180deg); }
+.tpl-archive-list { display:flex; flex-direction:column; gap:8px; padding:0 10px 10px; }
 .tpl-archive-card { padding:13px 14px; border:1px solid #2c2945; border-radius:18px; color:#e5e3ef; }
 .tpl-archive-card--strength { background:linear-gradient(225deg,#26224a 0%,#12111c 55%); border-color:#2c2945; }
 .tpl-archive-card--run { background:linear-gradient(225deg,#17342c 0%,#111b19 55%); border-color:#23433a; }
@@ -3713,6 +3730,10 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
           <button class="tpl-header-add" id="templates-add-btn" type="button" aria-label="Добавить шаблон">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
+          <div class="tpl-add-menu" id="templates-add-menu" hidden>
+            <button class="tpl-add-menu-item" type="button" data-template-add="template">Шаблон</button>
+            <button class="tpl-add-menu-item" type="button" data-template-add="group">Группу</button>
+          </div>
           <div class="tpl-filter-menu" id="templates-filter-menu" hidden>
             <div class="tpl-menu-label">ПОКАЗАТЬ</div>
             <button class="tpl-menu-item" type="button" data-template-filter="all"><span class="tpl-menu-check"></span>Все</button>

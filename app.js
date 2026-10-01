@@ -1689,6 +1689,24 @@ const startBtn      = $("start-btn");
     const templateCarousel = optionsEl.querySelector("[data-templates-carousel]");
     const templateCards = [...optionsEl.querySelectorAll('.launcher-detail-card--template')];
     const templatesMore = optionsEl.querySelector("[data-templates-more]");
+    const templateDots = [...optionsEl.querySelectorAll("[data-template-carousel-dots] i")];
+    let dotsFrame = 0;
+    const syncTemplateDots = () => {
+      if (!templateCarousel || !templateDots.length) return;
+      const items = [...templateCarousel.children];
+      const firstLeft = items[0]?.offsetLeft || 0;
+      const viewportCenter = templateCarousel.scrollLeft + templateCarousel.clientWidth / 2;
+      const index = items.reduce((best, item, itemIndex) => {
+        const center = item.offsetLeft - firstLeft + item.offsetWidth / 2;
+        const distance = Math.abs(center - viewportCenter);
+        return distance < best.distance ? { index: itemIndex, distance } : best;
+      }, { index: 0, distance: Infinity }).index;
+      templateDots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === index));
+    };
+    templateCarousel?.addEventListener("scroll", () => {
+      cancelAnimationFrame(dotsFrame);
+      dotsFrame = requestAnimationFrame(syncTemplateDots);
+    }, { passive: true });
     const syncTemplateHeights = () => {
       if (!templateCarousel || !templateCards.length || templateCards.some(card => card.classList.contains("is-open"))) return;
       templateCards.forEach(card => { card.style.minHeight = ""; });
@@ -1709,9 +1727,11 @@ const startBtn      = $("start-btn");
         if (Math.abs(nextWidth - carouselWidth) < 1) return;
         carouselWidth = nextWidth;
         syncTemplateHeights();
+        syncTemplateDots();
       });
       observer.observe(templateCarousel);
     }
+    requestAnimationFrame(syncTemplateDots);
     const toggle = card => {
       const open = !card.classList.contains("is-open");
       card.classList.toggle("is-open", open);
@@ -1829,7 +1849,10 @@ const startBtn      = $("start-btn");
     const templateContent = featuredTemplates.length
       ? `<div class="launcher-cards-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все<br>шаблоны</b><i>→</i></button></div>`
       : launcherEmptyState("Шаблонов пока нет", isRun ? "Соберите лёгкую, длинную или тяжёлую пробежку." : "Создайте первый и сохраните любимый план тренировки.", { action: "data-templates-empty", mark: "+" });
-    const templateBlock = `<section class="launcher-section launcher-section--templates"><p class="launcher-section-title">Шаблоны</p>${templateContent}</section>`;
+    const carouselDots = featuredTemplates.length
+      ? `<span class="launcher-carousel-dots" data-template-carousel-dots aria-hidden="true">${Array.from({ length: featuredTemplates.length + 1 }, (_, index) => `<i class="${index === 0 ? "active" : ""}"></i>`).join("")}</span>`
+      : "";
+    const templateBlock = `<section class="launcher-section launcher-section--templates"><div class="launcher-section-heading-row"><p class="launcher-section-title">Шаблоны</p>${carouselDots}</div>${templateContent}</section>`;
     const historyContent = recent.length
       ? `<div class="launcher-history-cards">${recent.map(workout => isRun ? launcherRunHistoryCard(workout) : launcherHistoryCard(workout, exerciseById)).join("")}</div>`
       : launcherEmptyState(isRun ? "Пробежек пока нет" : "Тренировок пока нет", isRun ? "Первый километр начинается с одного шага — самое время выйти на старт." : "Начните первую — и здесь появится ваша история прогресса.", { mark: "→" });
@@ -9221,9 +9244,11 @@ let _tplGroupPickerId = null;
 let _tplFilter = "all";
 let _tplView = "list";
 let _tplFilterMenuOpen = false;
+let _tplAddMenuOpen = false;
 let _tplArchiveOpen = false;
 let _tplArchiveCardId = null;
 let _tplGroupCreateFor = null;
+let _tplHeaderGroupCreateOpen = false;
 let _tplGroupManageName = null;
 let _tplGroupRenameName = null;
 const _tplCarouselTemplateByGroup = new Map();
@@ -9306,9 +9331,11 @@ function initTemplatesScreen() {
   _tplMoreId = null;
   _tplGroupPickerId = null;
   _tplGroupCreateFor = null;
+  _tplHeaderGroupCreateOpen = false;
   _tplGroupManageName = null;
   _tplGroupRenameName = null;
   closeTemplatesFilterMenu();
+  closeTemplatesAddMenu();
   const b = $("templates-done-btn"); if (b) b.classList.remove("visible");
   renderTemplatesList();
 }
@@ -9446,6 +9473,10 @@ function renderTemplatesHeader() {
   button.classList.toggle("open", _tplFilterMenuOpen);
   button.setAttribute("aria-expanded", String(_tplFilterMenuOpen));
   $("templates-filter-menu").hidden = !_tplFilterMenuOpen;
+  const addButton = $("templates-add-btn");
+  addButton.classList.toggle("open", _tplAddMenuOpen);
+  addButton.setAttribute("aria-expanded", String(_tplAddMenuOpen));
+  $("templates-add-menu").hidden = !_tplAddMenuOpen;
   document.querySelectorAll("[data-template-filter]").forEach(item => {
     const active = item.dataset.templateFilter === _tplFilter;
     item.classList.toggle("active", active);
@@ -9461,6 +9492,11 @@ function renderTemplatesHeader() {
 function closeTemplatesFilterMenu() {
   _tplFilterMenuOpen = false;
   if ($("templates-filter-btn")) renderTemplatesHeader();
+}
+
+function closeTemplatesAddMenu() {
+  _tplAddMenuOpen = false;
+  if ($("templates-add-btn")) renderTemplatesHeader();
 }
 
 function tplCarouselIndex(carousel) {
@@ -9619,9 +9655,11 @@ function renderTemplatesList() {
     }).join("");
     cards = sections || `<div class="tpl-empty">Здесь пока пусто</div>`;
   }
-  const archive = `<button class="tpl-archive-toggle" type="button" data-tpl-archive-toggle>${TPL_ARCHIVE_SVG}<span>Архив</span><small>${archived.length}</small>${TPL_CHEVRON_SVG}</button>${_tplArchiveOpen ? `<div class="tpl-archive-list">${archived.length ? archived.map(t => tplArchiveHtml(t, history, lib)).join("") : `<div class="tpl-empty">В архиве ничего нет</div>`}</div>` : ""}`;
+  const archiveOpen = _tplArchiveOpen && archived.length > 0;
+  const archive = `<div class="tpl-archive${archiveOpen ? " is-open" : ""}"><button class="tpl-archive-toggle" type="button" data-tpl-archive-toggle data-archive-count="${archived.length}" aria-expanded="${archiveOpen}">${TPL_ARCHIVE_SVG}<span>Архив</span><small>${archived.length}</small>${TPL_CHEVRON_SVG}</button>${archiveOpen ? `<div class="tpl-archive-list">${archived.map(t => tplArchiveHtml(t, history, lib)).join("")}</div>` : ""}</div>`;
   const generate = _tplEditMode ? "" : `<button class="tpl-generate-btn" type="button" data-tpl-generate>${TPL_SPARKLES_SVG}Сгенерировать силовую тренировку</button>`;
-  templatesScroll.innerHTML = `<div class="tpl-list">${generate}${cards}${_tplEditMode ? "" : archive}</div>`;
+  const createGroup = !_tplEditMode && _tplHeaderGroupCreateOpen ? tplGroupCreateHtml() : "";
+  templatesScroll.innerHTML = `<div class="tpl-list">${generate}${createGroup}${cards}${_tplEditMode ? "" : archive}</div>`;
 
   list.forEach(t => wireTplCard(t.id));
   wireTemplateListControls();
@@ -9648,6 +9686,7 @@ function createTemplateGroup(name, templateId = null) {
   _tplMoreId = null;
   _tplGroupPickerId = null;
   _tplGroupCreateFor = null;
+  _tplHeaderGroupCreateOpen = false;
   renderTemplatesList();
   if (existing && !templateId) showToast("Такая группа уже есть");
   return true;
@@ -9790,7 +9829,11 @@ function wireTemplateListControls() {
   }));
   on("[data-tpl-group-delete]", el => deleteTemplateGroup(el.dataset.groupName));
   on("[data-tpl-generate]", () => { exitTplEditMode(); goToScreen("constructor"); });
-  on("[data-tpl-archive-toggle]", () => { _tplArchiveOpen = !_tplArchiveOpen; renderTemplatesList(); });
+  on("[data-tpl-archive-toggle]", el => {
+    if (!Number(el.dataset.archiveCount)) return;
+    _tplArchiveOpen = !_tplArchiveOpen;
+    renderTemplatesList();
+  });
   on("[data-tpl-archive-card]", el => {
     const id = idFor(el);
     _tplArchiveCardId = _tplArchiveCardId === id ? null : id;
@@ -9876,6 +9919,7 @@ $("templates-done-btn").addEventListener("click", exitTplEditMode);
 $("constructor-back-btn").addEventListener("click", () => goToScreen("templates"));
 $("templates-filter-btn").addEventListener("click", event => {
   event.stopPropagation();
+  _tplAddMenuOpen = false;
   _tplFilterMenuOpen = !_tplFilterMenuOpen;
   renderTemplatesHeader();
 });
@@ -9898,13 +9942,30 @@ document.querySelectorAll("[data-template-view]").forEach(item => item.addEventL
   closeTemplatesFilterMenu();
   renderTemplatesList();
 }));
-$("templates-add-btn").addEventListener("click", () => {
+$("templates-add-btn").addEventListener("click", event => {
+  event.stopPropagation();
+  _tplFilterMenuOpen = false;
+  _tplAddMenuOpen = !_tplAddMenuOpen;
+  renderTemplatesHeader();
+});
+$("templates-add-menu").addEventListener("click", event => event.stopPropagation());
+document.querySelector('[data-template-add="template"]').addEventListener("click", () => {
+  closeTemplatesAddMenu();
+  _tplHeaderGroupCreateOpen = false;
   _typeModalPurpose = "template";
   $("type-modal-title").textContent = "Какой шаблон?";
   openModal(typeModalBackdrop);
 });
+document.querySelector('[data-template-add="group"]').addEventListener("click", () => {
+  _tplAddMenuOpen = false;
+  _tplFilter = "all";
+  _tplView = "groups";
+  _tplHeaderGroupCreateOpen = true;
+  renderTemplatesList();
+});
 document.addEventListener("click", event => {
   if (_tplFilterMenuOpen && !event.target.closest(".tpl-header-actions")) closeTemplatesFilterMenu();
+  if (_tplAddMenuOpen && !event.target.closest(".tpl-header-actions")) closeTemplatesAddMenu();
 });
 
 /* — Создание нового шаблона: сразу открываем режим правки, чтобы добавить состав — */
