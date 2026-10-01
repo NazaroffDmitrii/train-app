@@ -640,7 +640,13 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
      rgba(206,196,255,1)    332deg,
      rgba(124,108,230,0)    360deg);
   animation: start-neon-spin 3.4s linear infinite;
+  animation-play-state: paused;
+  will-change: transform;
 }
+.screen-menu.active .start-neon-ring,
+.screen-menu.active .start-neon-glow { animation-play-state: running; }
+.start-btn.neon-restart .start-neon-ring,
+.start-btn.neon-restart .start-neon-glow { animation: none; }
 /* Маска «кольцо»: заполненный градиент минус его же внутренняя часть → остаётся
    только окантовка толщиной padding. */
 .start-neon-ring {

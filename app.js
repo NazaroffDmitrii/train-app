@@ -1273,6 +1273,16 @@ const startBtn      = $("start-btn");
     requestAnimationFrame(breatheIdle);
   }
 
+  // WebKit иногда оставляет mask+conic-gradient анимацию замороженной после
+  // возврата родителя из opacity:0. Коротко пересоздаём animation timeline,
+  // когда главное меню снова становится видимым.
+  function restartNeonAnimation() {
+    if (!screenMenu.classList.contains("active")) return;
+    startBtn.classList.add("neon-restart");
+    void startBtn.offsetWidth;
+    startBtn.classList.remove("neon-restart");
+  }
+
   // Обновление таймера на кнопке. Раньше крутился на requestAnimationFrame
   // (60 Гц) с полной пересборкой innerHTML каждый кадр — ради текста, который
   // меняется раз в секунду. Теперь лёгкий setInterval(500мс) и DOM трогаем
@@ -1330,6 +1340,7 @@ const startBtn      = $("start-btn");
 
   // Экспортируем updateStartBtn в глобальный скоуп чтобы refreshMenu мог вызвать
   window.updateStartBtn = updateStartBtn;
+  window.restartStartNeonAnimation = restartNeonAnimation;
 })();
 
 
@@ -1367,6 +1378,9 @@ function setupTemplateCarousel(carousel, options = {}) {
     gesture: null,
     ignoreScroll: true,
     snapTimer: 0,
+    interactionStartLeft: 0,
+    interactionMoved: false,
+    suppressClickUntil: 0,
     settledIndex: 0,
     settledLeft: 0,
     width: carousel.clientWidth,
@@ -1434,23 +1448,36 @@ function setupTemplateCarousel(carousel, options = {}) {
 
   const onTouchStart = () => {
     state.fingerDown = true;
+    state.interactionStartLeft = carousel.scrollLeft;
+    state.interactionMoved = false;
     clearTimeout(state.snapTimer);
   };
   const onTouchFinish = () => {
+    if (state.interactionMoved || Math.abs(carousel.scrollLeft - state.interactionStartLeft) > 6) {
+      state.suppressClickUntil = Date.now() + 550;
+    }
     state.fingerDown = false;
     scheduleSnap();
   };
   const onPointerDown = event => {
     if (!event.isPrimary) return;
     state.pointerActive = true;
+    state.interactionStartLeft = carousel.scrollLeft;
+    state.interactionMoved = false;
     clearTimeout(state.snapTimer);
   };
   const onPointerFinish = () => {
+    if (state.interactionMoved || Math.abs(carousel.scrollLeft - state.interactionStartLeft) > 6) {
+      state.suppressClickUntil = Date.now() + 550;
+    }
     state.pointerActive = false;
     scheduleSnap();
   };
   const onScroll = () => {
     if (state.ignoreScroll) return;
+    if ((state.pointerActive || state.fingerDown) && Math.abs(carousel.scrollLeft - state.interactionStartLeft) > 6) {
+      state.interactionMoved = true;
+    }
     beginGesture();
     updateIndex(templateCarouselIndex(carousel));
     scheduleSnap();
@@ -1466,6 +1493,12 @@ function setupTemplateCarousel(carousel, options = {}) {
   carousel.addEventListener("pointerup", onPointerFinish, { passive: true });
   carousel.addEventListener("pointercancel", onPointerFinish, { passive: true });
   carousel.addEventListener("scroll", onScroll, { passive: true });
+  carousel.addEventListener("click", event => {
+    if (event.isTrusted && Date.now() < state.suppressClickUntil) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
   if ("onscrollend" in carousel) carousel.addEventListener("scrollend", onScrollEnd, { passive: true });
 
   if (window.ResizeObserver) {
@@ -1632,6 +1665,9 @@ function setupTemplateCarousel(carousel, options = {}) {
     setControls("idle");
     pinStaticChrome();
     startBtn.setAttribute("aria-label", DATA.getActiveWorkout(DATA.getCurrentUser()) ? "Вернуться к тренировке" : "Выбрать тип тренировки");
+    // После edge-swipe оболочка экрана очищает временный transform в ближайшем
+    // кадре. Перезапускаем неон кадром позже, уже на видимом слое.
+    requestAnimationFrame(() => requestAnimationFrame(() => window.restartStartNeonAnimation?.()));
   }
 
   function applySplit({ animate = true } = {}) {
@@ -2090,6 +2126,11 @@ function setupTemplateCarousel(carousel, options = {}) {
   setControls("idle");
   updateGeometry();
   window.resetWorkoutLauncher = leaveLauncher;
+  window.backWorkoutLauncher = () => {
+    if (state() === "idle") return false;
+    applyIdle();
+    return true;
+  };
 })();
 const sheet         = $("history-sheet");
 const sheetDragArea = $("sheet-drag-area");
@@ -2478,7 +2519,7 @@ function goToScreen(name, opts = {}) {
   // сначала правильно (до перехода), потом ещё раз отсюда (уже на экране,
   // с новой вспышкой «Загрузка…» поверх). Теперь каждый вызывающий код сам
   // явно вызывает renderProfiles() — см. вызовы этой функции в auth-ui.js.
-  if (name === "menu")     { refreshMenu(); }
+  if (name === "menu")     { refreshMenu(); requestAnimationFrame(() => requestAnimationFrame(() => window.restartStartNeonAnimation?.())); }
   if (name === "workout")  { initWorkoutScreen(opts); }
   if (name === "run")      { initRunScreen(opts); }
   if (name === "exercises") { if (opts.keepFilter) renderExercisesList(exercisesSearch.value); else initExercisesScreen(); }
@@ -10482,6 +10523,7 @@ if ("serviceWorker" in navigator) {
    ========================================================================== */
 (function setupEdgeSwipeBack() {
   const BACK = {
+    "screen-menu":            "__launcher__",
     "screen-workout":         "workout-back-btn",
     "screen-run":             "run-back-btn",
     "screen-exercises":       "exercises-back-btn",
@@ -10500,6 +10542,10 @@ if ("serviceWorker" in navigator) {
   let suppressClickUntil = 0;
 
   function activeScreen() {
+    if (screenMenu?.classList.contains("active")) {
+      const launcher = document.getElementById("workout-launcher");
+      return launcher && launcher.dataset.state !== "idle" ? screenMenu : null;
+    }
     for (const id in BACK) {
       const el = document.getElementById(id);
       if (el && el.classList.contains("active")) return el;
@@ -10551,7 +10597,8 @@ if ("serviceWorker" in navigator) {
       el.style.transform = `translateX(${w}px)`;
       el.style.opacity = "0";
       setTimeout(() => {
-        const btn = document.getElementById(id); if (btn) btn.click();  // вернуться
+        if (id === "__launcher__") window.backWorkoutLauncher?.();
+        else { const btn = document.getElementById(id); if (btn) btn.click(); }
         requestAnimationFrame(() => { el.style.transition = ""; el.style.transform = ""; el.style.opacity = ""; el.style.willChange = ""; });
       }, 180);
     } else {
