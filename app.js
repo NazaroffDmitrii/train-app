@@ -1375,7 +1375,10 @@ function setupTemplateCarousel(carousel, options = {}) {
   const updateIndex = index => {
     const items = templateCarouselItems(carousel);
     const safeIndex = Math.max(0, Math.min(index, Math.max(0, items.length - 1)));
-    dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === safeIndex));
+    // В launcher после шаблонов есть служебная плитка «Все шаблоны». Она
+    // остаётся доступной свайпом, но отдельной точкой не считается.
+    const activeDotIndex = dots.length ? Math.min(safeIndex, dots.length - 1) : -1;
+    dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === activeDotIndex));
     options.onIndexChange?.(safeIndex, items[safeIndex] || null);
     return safeIndex;
   };
@@ -1431,7 +1434,6 @@ function setupTemplateCarousel(carousel, options = {}) {
 
   const onTouchStart = () => {
     state.fingerDown = true;
-    beginGesture();
     clearTimeout(state.snapTimer);
   };
   const onTouchFinish = () => {
@@ -1441,7 +1443,6 @@ function setupTemplateCarousel(carousel, options = {}) {
   const onPointerDown = event => {
     if (!event.isPrimary) return;
     state.pointerActive = true;
-    beginGesture();
     clearTimeout(state.snapTimer);
   };
   const onPointerFinish = () => {
@@ -1476,7 +1477,11 @@ function setupTemplateCarousel(carousel, options = {}) {
         options.onWidthChange?.();
         requestAnimationFrame(() => snap("auto"));
       }
-      if (!state.gesture && !state.pointerActive && !state.fingerDown) syncHeight();
+      // ResizeObserver fires on every frame of the card's expand/collapse
+      // transition. Keep the carousel height in lockstep even while the tap's
+      // pointer is still down; horizontal scrolling itself does not resize a
+      // card, so this does not make a swipe collapse early.
+      syncHeight();
     });
     observer.observe(carousel);
     templateCarouselItems(carousel).forEach(item => observer.observe(item));
@@ -1530,7 +1535,6 @@ function setupTemplateCarousel(carousel, options = {}) {
   let launchTimer = 0;
   let selectionRenderTimer = 0;
   let selectionHeadingTimer = 0;
-  let selectionHistoryArmed = false;
   let selectedChoice = { kind: "empty", id: null, name: "пустую" };
 
   const state = () => launcher.dataset.state || "idle";
@@ -1648,17 +1652,9 @@ function setupTemplateCarousel(carousel, options = {}) {
     hapticTimer = setTimeout(() => haptic(10), reduceMotion.matches ? 80 : 390);
   }
 
-  function disarmSelectionHistory() {
-    if (!selectionHistoryArmed) return;
-    selectionHistoryArmed = false;
-    window.history.back();
-  }
-
-  function backToSplit({ fromPop = false } = {}) {
+  function backToSplit() {
     if (state() !== "selected") return;
     applySplit();
-    if (fromPop) selectionHistoryArmed = false;
-    else disarmSelectionHistory();
   }
 
   function leaveLauncher() {
@@ -1671,7 +1667,6 @@ function setupTemplateCarousel(carousel, options = {}) {
     delete launcher.dataset.selected;
     setGlow();
     setControls("idle");
-    disarmSelectionHistory();
   }
 
   function startNew(type) {
@@ -2007,7 +2002,7 @@ function setupTemplateCarousel(carousel, options = {}) {
       ? `<div class="launcher-cards-carousel template-carousel" data-templates-carousel>${featuredTemplates.map(template => launcherTemplateCard(template, exerciseById, history)).join("")}<button class="launcher-templates-more" type="button" data-templates-more><b>Все<br>шаблоны</b><i>→</i></button></div>`
       : launcherEmptyState("Шаблонов пока нет", isRun ? "Соберите лёгкую, длинную или тяжёлую пробежку." : "Создайте первый и сохраните любимый план тренировки.", { action: "data-templates-empty", mark: "+" });
     const carouselDots = featuredTemplates.length
-      ? `<span class="launcher-carousel-dots template-carousel-dots" data-template-carousel-dots aria-hidden="true">${Array.from({ length: featuredTemplates.length + 1 }, (_, index) => `<i class="${index === 0 ? "active" : ""}"></i>`).join("")}</span>`
+      ? `<span class="launcher-carousel-dots template-carousel-dots" data-template-carousel-dots aria-hidden="true">${Array.from({ length: featuredTemplates.length }, (_, index) => `<i class="${index === 0 ? "active" : ""}"></i>`).join("")}</span>`
       : "";
     const templateBlock = `<section class="launcher-section launcher-section--templates"><div class="launcher-section-heading-row"><p class="launcher-section-title">Шаблоны</p>${carouselDots}</div>${templateContent}</section>`;
     const historyContent = recent.length
@@ -2043,12 +2038,6 @@ function setupTemplateCarousel(carousel, options = {}) {
     pinStaticChrome();
     requestAnimationFrame(updateGeometry);
 
-    if (!selectionHistoryArmed) {
-      try {
-        window.history.pushState({ ...(window.history.state || {}), trainLauncherSelection: true }, "");
-        selectionHistoryArmed = true;
-      } catch {}
-    }
   }
 
   startBtn.addEventListener("click", () => {
@@ -2087,13 +2076,6 @@ function setupTemplateCarousel(carousel, options = {}) {
     if (state() === "split") applyIdle();
   }, { passive: true });
 
-  window.addEventListener("popstate", () => {
-    if (state() !== "selected") { selectionHistoryArmed = false; return; }
-    try {
-      window.history.pushState({ ...(window.history.state || {}), trainLauncherSelection: true }, "");
-      selectionHistoryArmed = true;
-    } catch {}
-  });
   window.addEventListener("resize", updateGeometry);
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape" || !screenMenu.classList.contains("active")) return;
@@ -2429,6 +2411,27 @@ window.addEventListener("pagehide", () => { SyncQueue.flush(); });
    Screen switching
    ========================================================================== */
 const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), muscleDetail: $("screen-muscle-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), constructor: $("screen-constructor") };
+const _screenBackStack = [];
+
+function activeScreenName() {
+  return Object.keys(SCREENS).find(name => SCREENS[name]?.classList.contains("active")) || null;
+}
+
+function consumePreviousScreen(fallback = "menu") {
+  const current = activeScreenName();
+  while (_screenBackStack.length) {
+    const candidate = _screenBackStack.pop();
+    if (candidate !== current && SCREENS[candidate]) return candidate;
+  }
+  return current && current !== "menu" ? fallback : null;
+}
+
+function goBackScreen(fallback = "menu", opts = {}) {
+  const target = consumePreviousScreen(fallback);
+  if (!target) return false;
+  goToScreen(target, { ...opts, navigation: "back" });
+  return true;
+}
 
 function goToScreen(name, opts = {}) {
   // Формы редактирования никогда не должны быть местом, куда можно "вернуться
@@ -2436,6 +2439,16 @@ function goToScreen(name, opts = {}) {
   // Сворачивание приложения само по себе форму не закрывает.
   closeStaleExerciseForms();
   if (name !== "menu" && window.resetWorkoutLauncher) window.resetWorkoutLauncher();
+
+  const fromName = activeScreenName();
+  const navigation = opts.navigation || ((name === "menu" || name === "profile") ? "reset" : "push");
+  if (fromName && fromName !== name) {
+    if (navigation === "push" && _screenBackStack[_screenBackStack.length - 1] !== fromName) {
+      _screenBackStack.push(fromName);
+    } else if (navigation === "reset") {
+      _screenBackStack.length = 0;
+    }
+  }
 
   // opts.instant — переключить БЕЗ кроссфейд-анимации (0.32s). Нужно, когда
   // переключение происходит под перекрывающей шторкой: иначе, сняв шторку, мы
@@ -2880,7 +2893,7 @@ function renderHistoryScreen() {
 
 // Шторка сохраняет своё (развёрнутое) состояние сама — клик по «назад» больше
 // не схлопывает её (см. document click-обработчик в setupSheetDrag).
-$("history-back-btn").addEventListener("click", () => goToScreen("menu"));
+$("history-back-btn").addEventListener("click", () => goBackScreen("menu"));
 
 
 /* ==========================================================================
@@ -3558,7 +3571,8 @@ function commitWorkoutEdit() {
   _workout = null;
   exitExEditMode();
   stopWorkoutTimer();
-  saveEditedWorkout(edited, userId);
+  consumePreviousScreen("detail");
+  saveEditedWorkout(edited, userId, { navigation: "back" });
 }
 
 // Уйти из редактора истории без сохранения — черновик просто отбрасываем
@@ -3569,7 +3583,8 @@ function cancelWorkoutEdit() {
   _workout = null;
   exitExEditMode();
   stopWorkoutTimer();
-  openDetailScreen(original, _detailReturnScreen);
+  consumePreviousScreen("detail");
+  openDetailScreen(original, _detailReturnScreen, null, { navigation: "back" });
 }
 
 /* — Таймер на timestamp (спецификация 6.1) —
@@ -3770,7 +3785,7 @@ $("workout-back-btn").addEventListener("click", () => {
   endRest(true);      // зачесть текущий отдых, прежде чем уйти с экрана
   saveWorkoutState();
   stopWorkoutTimer(); // секундомер на кнопке меню сам покажет время активной тренировки
-  goToScreen("menu");
+  goBackScreen("menu");
 });
 $("workout-name-input").addEventListener("input", () => saveWorkoutState());
 
@@ -5511,7 +5526,7 @@ function initRunScreen({ resume = false } = {}) {
 
 $("run-back-btn").addEventListener("click", () => {
   saveRunState();
-  goToScreen("menu");
+  goBackScreen("menu");
 });
 
 function saveRunState() {
@@ -5637,7 +5652,7 @@ function initExercisesScreen() {
   renderExercisesList("");
 }
 
-$("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goToScreen("menu"); });
+$("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goBackScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
 // Шестерёнка → шторка «Справочник»; открывается на вкладке «Группы» (первой).
 $("ex-cat-manage-btn").addEventListener("click", () => openReferenceSheet("groups"));
@@ -6733,7 +6748,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   goToScreen("exerciseDetail");
 }
 
-$("exd-back-btn").addEventListener("click", () => goToScreen(_exdReturnScreen, { keepFilter: true }));
+$("exd-back-btn").addEventListener("click", () => goBackScreen(_exdReturnScreen, { keepFilter: true }));
 
 // Единое поведение шторки (bottom-sheet): закрытие ТОЛЬКО перетаскиванием
 // верхней зоны (dragZone — обычно ручка+шапка), а не из любой точки — иначе
@@ -6943,8 +6958,10 @@ $("msd-edit-cancel").addEventListener("click", () => openMuscleDetailScreen(_msd
 // раскрытой группой и скроллом, — чтобы «назад» вернул ровно туда, откуда пришли
 // (см. сценарий п.5).
 $("msd-back-btn").addEventListener("click", () => {
-  if (typeof _msdReturnScreen === "function") _msdReturnScreen();
-  else goToScreen(_msdReturnScreen);
+  if (typeof _msdReturnScreen === "function") {
+    consumePreviousScreen("exercises");
+    _msdReturnScreen();
+  } else goBackScreen(_msdReturnScreen);
 });
 
 // Шторка-справочник, открытая в данный момент (для скрытия/показа при заходе в
@@ -6961,9 +6978,9 @@ function hideRefSheet() { if (_refSheetEl) { _refSheetEl.style.display = "none";
 function refSheetBackReturn() {
   if (_refSheetEl && document.body.contains(_refSheetEl)) {
     _refSheetEl.style.display = "";
-    goToScreen("exercises", { instant: true });  // под шторкой — без кроссфейда
+    goToScreen("exercises", { instant: true, navigation: "back" });  // под шторкой — без кроссфейда
   } else {
-    goToScreen("exercises");
+    goToScreen("exercises", { navigation: "back" });
   }
 }
 
@@ -8504,7 +8521,7 @@ $("exd-edit-cancel").addEventListener("click", () => openExerciseDetail(_detailE
    Screen: detail view (просмотр тренировки из истории)
    ========================================================================== */
 let _detailReturnScreen = "menu";
-function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = null) {
+function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = null, screenOptions = {}) {
   _detailReturnScreen = returnScreen;
   const isRun = workout.type === "run";
 
@@ -8684,7 +8701,7 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
     });
   }
 
-  goToScreen("detail");
+  goToScreen("detail", screenOptions);
 
   // Спайны суперсетов в детали — после раскладки экрана; повтор в след. кадре на
   // случай неточного первого замера до осадки шрифтов/лейаута (см. layoutSupersetSpines).
@@ -8775,7 +8792,7 @@ function openDetailEditMode(workout) {
   $("de-cancel").addEventListener("click", () => openDetailScreen(workout, _detailReturnScreen));
 }
 
-function saveEditedWorkout(workout, userId) {
+function saveEditedWorkout(workout, userId, screenOptions = {}) {
   DATA.updateWorkout(userId, workout); // сначала записываем правку в историю
   // Если история полная — пересчитываем рекорды (правка веса вниз тоже должна
   // опускать рекорд). Иначе только повышаем (updateRecords), чтобы не занизить.
@@ -8783,11 +8800,11 @@ function saveEditedWorkout(workout, userId) {
   SyncQueue.push("workout:edit", { workoutId: workout.id });
   SyncQueue.push("user:update", {}); // рекорды могли измениться
   renderHistory(userId);
-  openDetailScreen(workout, _detailReturnScreen);
+  openDetailScreen(workout, _detailReturnScreen, null, screenOptions);
   showToast("Тренировка сохранена");
 }
 
-$("detail-back-btn").addEventListener("click", () => goToScreen(_detailReturnScreen));
+$("detail-back-btn").addEventListener("click", () => goBackScreen(_detailReturnScreen));
 
 /* ==========================================================================
    Screen 6: Stats (раздел 9.2 спецификации)
@@ -9274,7 +9291,7 @@ function openStatsExPicker(exWithHist, allEx, userId) {
   sheet.addEventListener("touchcancel", onSheetEnd);
 }
 
-$("stats-back-btn").addEventListener("click", () => goToScreen("menu"));
+$("stats-back-btn").addEventListener("click", () => goBackScreen("menu"));
 
 function openStatChartScreen(exerciseId) {
   const userId = DATA.getCurrentUser();
@@ -9312,7 +9329,7 @@ function openStatChartScreen(exerciseId) {
   goToScreen("statChart");
 }
 
-$("stat-chart-back-btn").addEventListener("click", () => goToScreen("stats"));
+$("stat-chart-back-btn").addEventListener("click", () => goBackScreen("stats"));
 
 function pluralWorkouts(n) {
   const mod10 = n % 10, mod100 = n % 100;
@@ -9967,9 +9984,9 @@ function exitTplEditMode() {
   const b = $("templates-done-btn"); if (b) b.classList.remove("visible");
 }
 
-$("templates-back-btn").addEventListener("click", () => { exitTplEditMode(); goToScreen("menu"); });
+$("templates-back-btn").addEventListener("click", () => { exitTplEditMode(); goBackScreen("menu"); });
 $("templates-done-btn").addEventListener("click", exitTplEditMode);
-$("constructor-back-btn").addEventListener("click", () => goToScreen("templates"));
+$("constructor-back-btn").addEventListener("click", () => goBackScreen("templates"));
 $("templates-filter-btn").addEventListener("click", event => {
   event.stopPropagation();
   _tplAddMenuOpen = false;
@@ -10468,6 +10485,7 @@ if ("serviceWorker" in navigator) {
     "screen-stats":           "stats-back-btn",
     "screen-stat-chart":      "stat-chart-back-btn",
     "screen-templates":       "templates-back-btn",
+    "screen-constructor":     "constructor-back-btn",
     "screen-detail":          "detail-back-btn",
     "screen-exercise-detail": "exd-back-btn",
     "screen-muscle-detail":   "msd-back-btn",
@@ -10475,6 +10493,7 @@ if ("serviceWorker" in navigator) {
   const EDGE = 26;          // зона старта у левого края, px
   const THRESHOLD = 0.32;   // доля ширины для срабатывания
   let screen = null, backId = null, startX = 0, startY = 0, dx = 0, active = false, decided = false, horiz = false;
+  let suppressClickUntil = 0;
 
   function activeScreen() {
     for (const id in BACK) {
@@ -10518,6 +10537,9 @@ if ("serviceWorker" in navigator) {
     if (!active) return;
     active = false;
     if (!horiz || !screen) { snapBack(); return; }
+    // Даже короткий горизонтальный жест не должен заканчиваться случайным
+    // тапом по кнопке/карточке у левого края.
+    if (dx > 8) suppressClickUntil = Date.now() + 500;
     const w = window.innerWidth || 400;
     if (dx > w * THRESHOLD) {
       const el = screen, id = backId; screen = null;
@@ -10561,6 +10583,12 @@ if ("serviceWorker" in navigator) {
     down(e.clientX, e.clientY);
     if (active) { window.addEventListener("mousemove", onMM); window.addEventListener("mouseup", onMU); }
   });
+  document.addEventListener("click", e => {
+    if (e.isTrusted && Date.now() < suppressClickUntil) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
 })();
 
 // Справочник Атласа обновился из облака (Bridge.hydrate подменил ATLAS) —

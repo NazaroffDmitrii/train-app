@@ -527,6 +527,9 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 .template-carousel > * { scroll-snap-stop:always; }
 .launcher-cards-carousel {
   width:100%; max-width:100%; min-width:0; margin:0; padding:0; scroll-padding-inline:0;
+  /* Карточка уже сама плавно меняет высоту. Вторая transition у контейнера
+     заставляла нижние секции догонять её с задержкой. */
+  transition:none;
 }
 .launcher-cards-carousel > * { scroll-snap-align:start; }
 .launcher-cards-carousel::after { content:""; flex:0 0 1px; }
@@ -552,6 +555,9 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 .launcher-detail-card.is-open .launcher-card-chevron { transform:rotate(180deg); }
 .launcher-card-tags { display:flex; gap:6px; margin-top:10px; max-height:28px; opacity:1; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; transition:max-height 260ms cubic-bezier(.2,.7,.2,1), margin 260ms cubic-bezier(.2,.7,.2,1), opacity 160ms ease; }
 .launcher-card-tags::-webkit-scrollbar { display:none; }
+.launcher-detail-card--template .launcher-card-tags,
+.launcher-detail-card--template .launcher-card-stats { pointer-events:none; }
+.launcher-detail-card--template .launcher-card-tags { overflow-x:hidden; }
 .launcher-card-tags span { flex:none; padding:4px 9px; border-radius:10px; background:#26224a; color:#b9b2ff; font-size:12px; white-space:nowrap; }
 .workout-launcher[data-selected="run"] .launcher-card-tags span { background:#15382f; color:#7aebc1; }
 .launcher-card-stats { display:flex; align-items:center; flex-wrap:wrap; gap:7px 14px; margin-top:12px; max-height:44px; opacity:1; overflow:hidden; color:#9c9bae; font-size:13px; transition:max-height 260ms cubic-bezier(.2,.7,.2,1), margin 260ms cubic-bezier(.2,.7,.2,1), opacity 160ms ease; }
