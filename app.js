@@ -9516,19 +9516,33 @@ function snapTemplateCarousel(carousel, behavior = "smooth") {
     carousel.scrollTo({ left: targetLeft, behavior });
     return;
   }
+  const gesture = carousel._tplGesture;
+  if (gesture?.openId && gesture.startIndex !== index) {
+    collapseOpenTemplateAfterSwipe(carousel, gesture.openId);
+  }
+  carousel._tplGesture = null;
+  carousel._tplSettledLeft = targetLeft;
+  carousel._tplSettledIndex = index;
   syncTemplateCarouselHeight(carousel);
-  carousel.querySelectorAll(".tpl-card.is-swipe-closing").forEach(card => card.classList.remove("is-swipe-closing"));
 }
 
-function collapseOpenTemplateForSwipe(carousel) {
-  if (_tplEditMode || !_tplOpenId) return;
+function beginTemplateCarouselGesture(carousel) {
+  if (carousel._tplGesture) return;
+  const cards = [...carousel.children];
+  if (!cards.length) return;
+  const startIndex = Number.isInteger(carousel._tplSettledIndex) ? carousel._tplSettledIndex : tplCarouselIndex(carousel);
   const openCard = [...carousel.querySelectorAll(".tpl-card.is-open")].find(card => card.dataset.id === _tplOpenId);
+  carousel._tplGesture = { startIndex, openId: openCard?.dataset.id || null };
+}
+
+function collapseOpenTemplateAfterSwipe(carousel, openId) {
+  if (_tplEditMode || !openId || _tplOpenId !== openId) return;
+  const openCard = [...carousel.querySelectorAll(".tpl-card.is-open")].find(card => card.dataset.id === openId);
   if (!openCard) return;
   _tplOpenId = null;
   _tplMoreId = null;
   _tplGroupPickerId = null;
   _tplGroupCreateFor = null;
-  openCard.classList.add("is-swipe-closing");
   openCard.classList.remove("is-open");
   const chevron = openCard.querySelector(".tpl-card-chevron");
   if (chevron) chevron.setAttribute("aria-label", "Раскрыть");
@@ -9545,6 +9559,8 @@ function restoreTemplateCarousels() {
     const targetLeft = cards[index].offsetLeft - firstLeft;
     carousel._tplIgnoreScroll = true;
     carousel._tplSettledLeft = targetLeft;
+    carousel._tplSettledIndex = index;
+    carousel._tplGesture = null;
     carousel.scrollLeft = targetLeft;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (carousel.isConnected) carousel._tplIgnoreScroll = false;
@@ -9791,7 +9807,6 @@ function wireTemplateListControls() {
   on("[data-tpl-delete-archived]", el => deleteTemplateWithUndo(idFor(el)));
 
   templatesScroll.querySelectorAll(".tpl-carousel").forEach(carousel => {
-    let pointerStart = null;
     let pointerActive = false;
     let fingerDown = false;
     let snapTimer = null;
@@ -9803,6 +9818,7 @@ function wireTemplateListControls() {
 
     carousel.addEventListener("touchstart", () => {
       fingerDown = true;
+      beginTemplateCarouselGesture(carousel);
       clearTimeout(snapTimer);
     }, { passive: true });
     const finishTouch = () => {
@@ -9814,36 +9830,17 @@ function wireTemplateListControls() {
     carousel.addEventListener("pointerdown", event => {
       if (!event.isPrimary) return;
       pointerActive = true;
-      pointerStart = { x: event.clientX, y: event.clientY, collapsed: false };
+      beginTemplateCarouselGesture(carousel);
       clearTimeout(snapTimer);
     }, { passive: true });
-    carousel.addEventListener("pointermove", event => {
-      if (!pointerStart || pointerStart.collapsed || !event.isPrimary) return;
-      const dx = event.clientX - pointerStart.x;
-      const dy = event.clientY - pointerStart.y;
-      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.15) {
-        pointerStart.collapsed = true;
-        collapseOpenTemplateForSwipe(carousel);
-      }
-    }, { passive: true });
     const finishPointer = event => {
-      const collapsed = !!pointerStart?.collapsed;
       pointerActive = false;
-      pointerStart = null;
-      const settledLeft = Number.isFinite(carousel._tplSettledLeft) ? carousel._tplSettledLeft : 0;
-      if (collapsed && Math.abs(carousel.scrollLeft - settledLeft) <= 1 && !fingerDown) {
-        snapTemplateCarousel(carousel, "auto");
-      } else if (event.type === "pointerup") {
-        scheduleSnap();
-      }
+      if (event.type === "pointerup") scheduleSnap();
     };
     carousel.addEventListener("pointerup", finishPointer, { passive: true });
     carousel.addEventListener("pointercancel", finishPointer, { passive: true });
     carousel.addEventListener("scroll", () => {
-      const settledLeft = Number.isFinite(carousel._tplSettledLeft) ? carousel._tplSettledLeft : 0;
-      if (!carousel._tplIgnoreScroll && Math.abs(carousel.scrollLeft - settledLeft) > 6) {
-        collapseOpenTemplateForSwipe(carousel);
-      }
+      if (!carousel._tplIgnoreScroll) beginTemplateCarouselGesture(carousel);
       const index = tplCarouselIndex(carousel);
       const section = carousel.closest(".tpl-group[data-tpl-group]");
       const card = carousel.children[index];
