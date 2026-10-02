@@ -2486,6 +2486,10 @@ function goToScreen(name, opts = {}) {
   if (name !== "menu" && window.resetWorkoutLauncher) window.resetWorkoutLauncher();
 
   const fromName = activeScreenName();
+  if (typeof _constructorCatalog !== "undefined" && _constructorCatalog && !["exercises", "exerciseDetail", "muscleDetail"].includes(name)) {
+    _constructorCatalog = null;
+    syncConstructorCatalogUI();
+  }
   const navigation = opts.navigation || ((name === "menu" || name === "profile") ? "reset" : "push");
   if (fromName && fromName !== name) {
     if (navigation === "push" && _screenBackStack[_screenBackStack.length - 1] !== fromName) {
@@ -2522,11 +2526,11 @@ function goToScreen(name, opts = {}) {
   if (name === "menu")     { refreshMenu(); requestAnimationFrame(() => requestAnimationFrame(() => window.restartStartNeonAnimation?.())); }
   if (name === "workout")  { initWorkoutScreen(opts); }
   if (name === "run")      { initRunScreen(opts); }
-  if (name === "exercises") { if (opts.keepFilter) renderExercisesList(exercisesSearch.value); else initExercisesScreen(); }
+  if (name === "exercises") { if (opts.keepFilter) { renderExercisesList(exercisesSearch.value); if (_constructorCatalog) exercisesScroll.scrollTop = _constructorCatalog.scrollTop || 0; } else initExercisesScreen(); }
   if (name === "history")  { initHistoryScreen(); }
   if (name === "stats")    { initStatsScreen(); }
   if (name === "templates") { initTemplatesScreen(); }
-  if (name === "constructor" && window.CONSTRUCTOR) { CONSTRUCTOR.init(); }
+  if (name === "constructor" && window.CONSTRUCTOR) { CONSTRUCTOR.init({ resume: !!opts.resumeConstructor }); }
 }
 
 // Гигиена на каждый вход в профиль — и при явном выборе на экране профилей,
@@ -5658,6 +5662,32 @@ const exerciseFormName  = $("exercise-form-name");
 const exerciseFormTypeGroup = $("exercise-form-type-group");
 const exerciseFormCatGroup  = $("exercise-form-cat-group");
 
+// Режим выбора для конструктора использует тот же каталог, фильтры и группы.
+let _constructorCatalog = null;
+function syncConstructorCatalogUI() {
+  const active = !!_constructorCatalog;
+  $("screen-exercises").classList.toggle("constructor-catalog", active);
+  $("exercises-add-btn").hidden = active;
+  $("ex-cat-manage-btn").hidden = active;
+  $("constructor-catalog-footer").hidden = !active;
+}
+function openConstructorExerciseCatalog(options) {
+  _constructorCatalog = { ...options, owner: Auth.userId(), profile: DATA.getCurrentUser(), scrollTop: 0 };
+  goToScreen("exercises");
+}
+function closeConstructorExerciseCatalog() {
+  if (!_constructorCatalog) return;
+  // Снимаем запись каталога из истории навигации и возвращаем текущий план.
+  consumePreviousScreen("constructor");
+  goToScreen("constructor", { navigation: "back", resumeConstructor: true });
+}
+function constructorCatalogAddHtml(ex) {
+  if (!_constructorCatalog) return "";
+  const selected = _constructorCatalog.isSelected(ex.id);
+  return `<button type="button" class="constructor-catalog-add${selected ? ' selected' : ''}" data-constructor-add="${escHtml(ex.id)}" aria-label="${selected ? 'Добавлено' : 'Добавить'}: ${escHtml(ex.name)}" ${selected ? 'disabled' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${selected ? '<path d="m5 12 4 4L19 6"/>' : '<path d="M12 5v14M5 12h14"/>'}</svg></button>`;
+}
+$("constructor-catalog-done").addEventListener("click", closeConstructorExerciseCatalog);
+
 let _editingExerciseId = null; // null = создание нового; иначе id редактируемого личного упражнения
 let _exercisesCatFilter = "all";
 let _exercisesShowHidden = false;
@@ -5697,7 +5727,7 @@ function initExercisesScreen() {
   renderExercisesList("");
 }
 
-$("exercises-back-btn").addEventListener("click", () => { exitExListEditMode(); goBackScreen("menu"); });
+$("exercises-back-btn").addEventListener("click", () => { if (_constructorCatalog) { closeConstructorExerciseCatalog(); return; } exitExListEditMode(); goBackScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
 // Шестерёнка → шторка «Справочник»; открывается на вкладке «Группы» (первой).
 $("ex-cat-manage-btn").addEventListener("click", () => openReferenceSheet("groups"));
@@ -5734,7 +5764,7 @@ function memberRowHtml(ex, cat) {
         <span class="ex-row-body">
           <span class="ex-row-name">${escHtml(ex.name)}</span>
         </span>
-        <span class="ex-row-chevron">${SVG_CHEVRON}</span>
+        <span class="ex-row-chevron">${SVG_CHEVRON}</span>${constructorCatalogAddHtml(ex)}
       </div>
     </div>`;
 }
@@ -5879,7 +5909,9 @@ function renderCatTabs(userId, presentCats) {
 function renderExercisesList(query) {
   const userId  = DATA.getCurrentUser();
   const q       = query.trim().toLowerCase();
-  const allExs  = DATA.getVisibleExercises(userId); // seeded + personal, единый список
+  if (_constructorCatalog && (_constructorCatalog.owner !== Auth.userId() || _constructorCatalog.profile !== userId)) _constructorCatalog = null;
+  syncConstructorCatalogUI();
+  const allExs = DATA.getVisibleExercises(userId).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id)); // seeded + personal, единый список
 
   renderCatTabs(userId, Array.from(new Set(allExs.map(e => e.cat))));
 
@@ -5906,7 +5938,7 @@ function renderExercisesList(query) {
   const customOrder = DATA.getExerciseOrder(userId);
 
   // Пустые категории показываем только на вкладке "Все" и без поиска (для drag-to-category)
-  const emptyCats = (!isFiltered && !q) ? catOrder.filter(c => !groups.has(c)) : [];
+  const emptyCats = (!_constructorCatalog && !isFiltered && !q) ? catOrder.filter(c => !groups.has(c)) : [];
   const allOrderedCats = [...orderedCats, ...emptyCats];
 
   if (_exListEditMode) exercisesScroll.classList.add("ex-list-editing");
@@ -5948,7 +5980,7 @@ function renderExercisesList(query) {
             <span class="ex-row-body">
               <span class="ex-row-name">${escHtml(item.ex.name)}</span>
             </span>
-            <span class="ex-row-chevron">${SVG_CHEVRON}</span>
+            <span class="ex-row-chevron">${SVG_CHEVRON}</span>${constructorCatalogAddHtml(item.ex)}
           </div>
         </div>`;
       const expanded = _exGroupExpanded.has(item.id);
@@ -5988,6 +6020,7 @@ function renderExercisesList(query) {
       // В режиме правки строка только переставляется; имя меняется свайпом
       // вправо → форма (как у мышц/движений). Инлайн-переименование убрано.
       if (_exListEditMode) return;
+      if (_constructorCatalog) _constructorCatalog.scrollTop = exercisesScroll.scrollTop;
       openExerciseDetail(row.dataset.id);
     });
   });
@@ -6003,6 +6036,20 @@ function renderExercisesList(query) {
       renderExercisesList(exercisesSearch.value);
     });
   });
+
+  if (_constructorCatalog) {
+    exercisesScroll.querySelectorAll('[data-constructor-add]').forEach(button => button.addEventListener('click', event => {
+      event.stopPropagation();
+      const context = _constructorCatalog;
+      if (!context || context.owner !== Auth.userId() || context.profile !== DATA.getCurrentUser()) return;
+      if (context.onSelect(button.dataset.constructorAdd)) {
+        const scrollTop = exercisesScroll.scrollTop;
+        renderExercisesList(exercisesSearch.value);
+        exercisesScroll.scrollTop = scrollTop;
+      }
+    }));
+    return; // В режиме выбора жесты редактирования библиотеки не нужны.
+  }
 
   // Свайп (изменить/удалить) — на все обёртки упражнений, включая вложенные
   // варианты внутри раскрытой группы: это обычные упражнения, ничем не хуже.

@@ -15,12 +15,12 @@
 
   /* ── Константы метода (гл. 6.1 учебника) ─────────────────────────────────── */
   const READINESS = {
-    "низкая":  { target: 2, range: "1–2", rpe: "4–6",  character: "локальные" },
-    "средняя": { target: 4, range: "2–4", rpe: "7–8",  character: "региональные" },
-    "высокая": { target: 5, range: "4–6", rpe: "9–10", character: "глобальные" },
+    "низкая":  { effective: 3, target: 2, range: "1–2", rpe: "4–6",  character: "локальные" },
+    "средняя": { effective: 6, target: 4, range: "2–4", rpe: "7–8",  character: "региональные" },
+    "высокая": { effective: 9, target: 5, range: "4–6", rpe: "9–10", character: "глобальные" },
   };
   const OVERLOAD_OK = ["Разгибание в ТБС (ягодичные)", "Разгибание позвоночника"];
-  const VOL_WARN = 20, VOL_MAX = 22, OVERTRAIN_FRAC = 9;
+  const VOL_WARN = 20, VOL_MAX = 22, VOL_ALERT = 26, OVERTRAIN_FRAC = 9;
   const ERECTOR = "Мышца, выпрямляющая позвоночник";
   const CHAR = { "локальные": "loc", "региональные": "reg", "глобальные": "glob" };
   const CHAR_W = {
@@ -401,6 +401,8 @@
   };
   const ICONS = {
     spark: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/><path d="M20 2v4m-2-2h4"/>',
+    circleCheck: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+    bulb: '<path d="M9 18h6m-5 3h4M8.5 15.5a6 6 0 1 1 7 0c-.9.7-1.5 1.2-1.5 2.5h-4c0-1.3-.6-1.8-1.5-2.5Z"/>',
     plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>',
     close: '<path d="m6 6 12 12M18 6 6 18"/>', check: '<path d="m5 12 4 4L19 6"/>',
     star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/>',
@@ -411,7 +413,7 @@
     bed: '<path d="M3 18V6m0 8h18v7m-18-3h18M7 14V9h10a4 4 0 0 1 4 4v1M3 21v-3"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/>',
     up: '<path d="m6 15 6-6 6 6"/>', down: '<path d="m6 9 6 6 6-6"/>',
-    refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 6a8 8 0 0 1 14 6M4 12a8 8 0 0 0 14 6"/>',
+    refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/>',
     swap: '<path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/>',
     lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/>',
     unlock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7.5-2m-3.5 10v2"/>',
@@ -423,28 +425,34 @@
   const movementHint = c => c.group || "";
   const available = e => equipAllowed(e) && !exBaseCats(e).some(n => workout.restrictions.includes(n));
 
+  function volumeStatus(value) {
+    if (value <= VOL_MAX) return { icon: 'circleCheck', text: 'Объём в норме', severe: false };
+    if (value <= VOL_ALERT) return { icon: 'bulb', text: 'Чуть выше рекомендации, но это не критично', severe: false };
+    return { icon: 'bulb', text: 'Больше рекомендованного: восстановиться будет сложнее', severe: true };
+  }
+  function normalizeReps(value) { return Math.max(1, Math.min(30, repsToNum(value))); }
   function ring(value, size = 60) {
     const r = size / 2 - 5, circumference = 2 * Math.PI * r;
-    const max = Math.max(VOL_MAX, value), normal = Math.min(value, VOL_MAX) / max;
-    return `<svg class="sg-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${value} из ${VOL_MAX} подходов"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#ffffff14" stroke-width="6"/><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#8b7cf6" stroke-width="6" stroke-dasharray="${normal*circumference} ${circumference}" transform="rotate(-90 ${size/2} ${size/2})"/>${value > VOL_MAX ? `<circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#fb7185" stroke-width="6" stroke-dasharray="${(1-normal)*circumference} ${circumference}" stroke-dashoffset="${-normal*circumference}" transform="rotate(-90 ${size/2} ${size/2})"/>` : ""}<text x="50%" y="50%" dy=".35em" text-anchor="middle" fill="currentColor" font-size="${size > 70 ? 28 : 17}">${value}</text></svg>`;
+    const max = Math.max(VOL_MAX, value), normal = value <= VOL_ALERT ? Math.min(1, value / VOL_MAX) : VOL_MAX / max;
+    return `<svg class="sg-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${value} ${plural(value)}"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#ffffff14" stroke-width="6"/><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#8b7cf6" stroke-width="6" stroke-dasharray="${normal*circumference} ${circumference}" transform="rotate(-90 ${size/2} ${size/2})"/>${value > VOL_ALERT ? `<circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#fb7185" stroke-width="6" stroke-dasharray="${(1-normal)*circumference} ${circumference}" stroke-dashoffset="${-normal*circumference}" transform="rotate(-90 ${size/2} ${size/2})"/>` : ""}<text x="50%" y="50%" dy=".35em" text-anchor="middle" fill="currentColor" font-size="${size > 70 ? 28 : 17}">${value}</text></svg>`;
   }
   function choiceChips(kind, summary = false) {
     const values = kind === "priority" ? workout.priority : workout.restrictions;
-    return values.map(n => `<button type="button" class="sg-chip ${kind}" ${summary ? 'data-parameters' : `data-remove="${kind}" data-name="${esc(n)}"`} aria-label="${summary ? 'Изменить' : 'Убрать'}: ${esc(n)}">${icon(kind === "priority" ? "star" : "ban")}<span>${esc(n)}</span>${summary ? "" : icon("close")}</button>`).join("") + (summary ? "" : `<button type="button" class="sg-chip ghost" data-sheet="${kind}">${icon("plus")}Выбрать из списка</button>`);
+    return values.map(n => `<button type="button" class="sg-chip ${kind}" ${summary ? 'data-parameters' : `data-remove="${kind}" data-name="${esc(n)}"`} aria-label="${summary ? 'Изменить' : 'Убрать'}: ${esc(n)}">${icon(kind === "priority" ? "star" : "ban")}<span>${esc(n)}</span>${summary ? "" : icon("close")}</button>`).join("") + (summary ? "" : `<button type="button" class="sg-chip ghost sg-choice-add" data-sheet="${kind}">${icon("plus")}Из списка</button>`);
   }
   function parameterHtml() {
     const levels = Object.keys(READINESS), details = READY_DETAILS[workout.readiness];
     const total = baseCats().filter(c => !workout.restrictions.includes(c.name)).reduce((s,c) => s + targetFor(c.name), 0);
     const perDay = Math.ceil(total / workout.splitDays), suggestion = Math.min(4, Math.ceil(total / VOL_MAX));
+    const status = volumeStatus(perDay);
     const ticks = Math.min(48, perDay), color = perDay <= VOL_MAX ? "var(--sg-green)" : "var(--sg-yellow)";
-    const stepper = (field, label, value, min, max) => `<div><label class="sg-label" for="sg-${field}">${label}</label><div class="sg-stepper"><button type="button" data-step="${field}" data-delta="-1" aria-label="Уменьшить: ${label}" ${+value <= min ? 'disabled' : ''}>${icon("minus")}</button><input id="sg-${field}" data-number="${field}" aria-label="${label}" inputmode="numeric" ${field === "target" ? `type="number" min="${min}" max="${max}"` : 'type="text"'} value="${esc(value)}"><button type="button" data-step="${field}" data-delta="1" aria-label="Увеличить: ${label}" ${+value >= max ? 'disabled' : ''}>${icon("plus")}</button></div></div>`;
+    const stepper = (field, label, value, min, max) => `<div><label class="sg-label" for="sg-${field}">${label}</label><div class="sg-stepper"><button type="button" data-step="${field}" data-delta="-1" aria-label="Уменьшить: ${label}" ${+value <= min ? 'disabled' : ''}>${icon("minus")}</button><input id="sg-${field}" data-number="${field}" aria-label="${label}" inputmode="numeric" type="number" min="${min}" max="${max}" step="1" value="${esc(value)}"><button type="button" data-step="${field}" data-delta="1" aria-label="Увеличить: ${label}" ${+value >= max ? 'disabled' : ''}>${icon("plus")}</button></div></div>`;
     return `<div class="sg-card"><div class="sg-label">Готовность</div><div class="sg-levels">${levels.map((n,i) => `<button type="button" data-readiness="${n}" aria-pressed="${n === workout.readiness}" class="${n === workout.readiness ? 'selected' : ''}"><span class="sg-bars" aria-hidden="true">${[0,1,2].map(j => `<i class="${j <= i ? 'lit' : ''}"></i>`).join("")}</span>${n[0].toUpperCase()+n.slice(1)}</button>`).join("")}</div><div class="sg-details">${details.map((d,i) => `<div>${icon(["clock","calendar","heart","bed"][i])}<span>${d}</span></div>`).join("")}</div></div>
-      <div class="sg-card"><div class="sg-two">${stepper("target", "Подходов", workout.target, 1, 10)}${stepper("reps", "Повторов", workout.reps, 1, 30)}</div><p class="sg-note">${icon("info")}<span>Ориентир на движение для выбранной готовности: ${esc(READINESS[workout.readiness].range)} подхода</span></p></div>
+      <div class="sg-card sg-prescription"><div class="sg-two">${stepper("target", "Подходов", workout.target, 1, 10)}${stepper("reps", "Повторов", workout.reps, 1, 30)}</div><p class="sg-note">${icon("info")}<span>Для выбранной готовности эффективно до ${READINESS[workout.readiness].effective} подходов на мышечную группу</span></p></div>
       <div class="sg-card"><div class="sg-label"><span>Дней в сплите</span><span>${workout.splitDays === 1 ? 'Fullbody' : workout.splitDays + ' тренировки'}</span></div><div class="sg-days-select">${[1,2,3,4].map(n => `<button type="button" data-split="${n}" class="${n === workout.splitDays ? 'selected' : ''}" aria-pressed="${n === workout.splitDays}">${n}</button>`).join("")}</div></div>
       <div class="sg-card"><div class="sg-label"><span>Приоритет</span><span>+${workout.priorityBonus} подхода</span></div><div class="sg-chips">${choiceChips("priority")}</div></div>
       <div class="sg-card"><div class="sg-label"><span>Ограничения</span><span>исключаем из плана</span></div><div class="sg-chips">${choiceChips("restrictions")}</div></div>
-      <div class="sg-card"><div class="sg-row sg-between"><div class="sg-row"><b class="sg-big" style="color:${color}">${perDay}</b><span class="sg-muted">${plural(perDay)}<br>на тренировку</span></div><span class="sg-muted">ориентир — до ${VOL_MAX}</span></div><div class="sg-ticks" aria-hidden="true">${Array.from({length:Math.max(26,ticks)},(_,i) => `<i style="${i < ticks ? 'background:'+(i < VOL_MAX ? '#a99cff' : '#f5c542') : ''}"></i>`).join("")}</div><div class="sg-volume-note" style="color:${color}">${icon(perDay <= VOL_MAX ? "check" : "info")}<span>${perDay <= VOL_MAX ? 'Объём в пределах ориентира' : perDay <= 24 ? 'Чуть выше ориентира' : 'Больше ориентира: восстановиться будет сложнее'}</span>${perDay > 24 && suggestion !== workout.splitDays ? `<button type="button" class="sg-link" data-split="${suggestion}">Разделить на ${suggestion} дн.</button>` : ''}</div><p class="sg-muted sg-estimate">Предварительная оценка. Упражнение может покрывать несколько движений, поэтому итоговый объём изменится.</p></div>
-      <details class="sg-card sg-equipment"><summary>Доступное оборудование <span class="sg-muted">${EQUIP_TAGS.length - workout.equipOff.length} из ${EQUIP_TAGS.length}</span></summary><div class="sg-chips">${EQUIP_TAGS.map(n => `<button type="button" class="sg-chip ${workout.equipOff.includes(n) ? 'ghost' : 'priority'}" data-equip="${esc(n)}" aria-pressed="${!workout.equipOff.includes(n)}">${icon(workout.equipOff.includes(n) ? 'plus' : 'check')}${esc(n)}</button>`).join("")}</div></details>`;
+      <div class="sg-card"><div class="sg-row sg-between sg-volume-heading"><div class="sg-row"><b class="sg-big" style="color:${color}">${perDay}</b><span class="sg-muted">${plural(perDay)}<br>на тренировку</span></div><span class="sg-muted sg-volume-guide">рекомендуем до ${VOL_MAX}</span></div><div class="sg-ticks" aria-hidden="true">${Array.from({length:Math.max(26,ticks)},(_,i) => `<i style="${i < ticks ? 'background:'+(i < VOL_MAX ? '#a99cff' : '#f5c542') : ''}"></i>`).join("")}</div><div class="sg-volume-note" style="color:${color}">${icon(status.icon)}<span>${status.text}</span>${status.severe && suggestion !== workout.splitDays ? `<button type="button" class="sg-action-button" data-split="${suggestion}">Разделить на ${suggestion} дн.</button>` : ''}</div></div>`;
   }
   function coverageRows() {
     const cov = microCoverage();
@@ -471,27 +479,27 @@
   }
   function volumeHtml() {
     const multi = workout.days.length > 1, value = dayVolume(activeDay());
-    if (multi) return `<div class="sg-card sg-day-tabs">${workout.days.map((d,i) => `<button type="button" class="sg-day-tab ${workout.active === i ? 'selected' : ''}" data-day="${i}" aria-pressed="${workout.active === i}">${ring(dayVolume(d),52)}<span>День ${i+1}<small>${dayVolume(d)} ${plural(dayVolume(d))}</small></span></button>`).join('')}<button type="button" class="sg-link" data-resplit="1">Вернуть<br>в одну</button></div>${value > VOL_MAX ? `<div class="sg-muted sg-day-warning">${icon('info')} В этом дне ${value} ${plural(value)}, ориентир — ${VOL_MAX}.</div>` : ''}`;
+    if (multi) return `<div class="sg-card sg-day-tabs">${workout.days.map((d,i) => `<button type="button" class="sg-day-tab ${workout.active === i ? 'selected' : ''}" data-day="${i}" aria-pressed="${workout.active === i}">${ring(dayVolume(d),52)}<span>День ${i+1}<small>${dayVolume(d)} ${plural(dayVolume(d))}</small></span></button>`).join('')}<button type="button" class="sg-action-button sg-merge" data-resplit="1">Вернуть в одну</button></div>${value > VOL_ALERT ? `<div class="sg-muted sg-day-warning">${icon('bulb')} Больше рекомендованного: восстановиться будет сложнее.</div>` : ''}`;
     const split = Math.min(4, Math.max(2, Math.ceil(value / VOL_MAX)));
-    if (value > VOL_MAX && !_keepVolume) return `<div class="sg-card sg-overload"><div class="sg-row">${ring(value,92)}<div><b>${value} ${plural(value)} — многовато для одного дня</b><p>Для восстановления ориентируйся на ${VOL_MAX} подхода за тренировку.</p></div></div><div class="sg-row sg-advice-actions"><button type="button" class="sg-primary" data-resplit="${split}">Разделить на ${split} дня</button><button type="button" class="sg-link" data-keep-volume>Оставить как есть</button></div></div>`;
-    return `<div class="sg-card sg-row sg-between"><div class="sg-row">${ring(value)}<div>Одна тренировка<small class="sg-muted sg-block">${value} ${plural(value)}, ориентир — ${VOL_MAX}</small></div></div>${value > VOL_MAX ? `<button type="button" class="sg-link" data-resplit="${split}">Разделить</button>` : ''}</div>`;
+    if (value > VOL_ALERT && !_keepVolume) return `<div class="sg-card sg-overload"><div class="sg-row">${ring(value,92)}<div><b>${value} ${plural(value)} — многовато для одного дня</b><p>Для восстановления ориентируйся на ${VOL_MAX} подхода за тренировку.</p></div></div><div class="sg-row sg-advice-actions"><button type="button" class="sg-primary" data-resplit="${split}">Разделить на ${split} дня</button><button type="button" class="sg-link" data-keep-volume>Оставить как есть</button></div></div>`;
+    return `<div class="sg-card sg-row sg-between"><div class="sg-row">${ring(value)}<div>Одна тренировка<small class="sg-muted sg-block">${value} ${plural(value)}</small></div></div>${value > VOL_ALERT ? `<button type="button" class="sg-action-button" data-resplit="${split}">Разделить</button>` : ''}</div>`;
   }
   function itemHtml(it,di,i) {
     const e = exById(it.exId), groups = e ? [...new Set(exBaseCats(e).map(n => categories.find(c => c.name === n)?.group).filter(Boolean))] : [];
-    return `<div class="wk-item-wrap" data-di="${di}" data-i="${i}"><div class="wk-item-del">${WK_TRASH}Удалить</div><div class="wk-item sg-exercise"><div class="sg-grow"><div class="sg-exercise-name">${esc(e?.name || 'Упражнение недоступно')}</div><div class="sg-exercise-meta">${groups.map(n => `<span class="sg-tag">${esc(n)}</span>`).join('')}<span class="sg-tag">${it.sets} × ${esc(it.reps)}</span></div><div class="sg-movements">${e ? exBaseCats(e).map(n => `<span>${icon('target')}${esc(n)}</span>`).join('') : ''}</div>${_cEdit && workout.days.length > 1 ? `<div class="wk-item-days">${workout.days.map((d,dj) => `<button class="wk-item-day${dj === di ? ' cur' : ''}" data-moveto="${dj}" data-di="${di}" data-i="${i}">День ${dj+1}</button>`).join('')}</div>` : ''}</div><div class="sg-exercise-actions"><button type="button" class="sg-icon-button ${it.locked ? 'selected' : ''}" data-lock="${i}" aria-pressed="${!!it.locked}" aria-label="${it.locked ? 'Открепить' : 'Закрепить'} упражнение">${icon(it.locked ? 'lock' : 'unlock')}</button><button type="button" class="sg-icon-button" data-replace="${i}" aria-label="Заменить упражнение" ${it.locked ? 'disabled' : ''}>${icon('swap')}</button></div></div></div>`;
+    return `<div class="wk-item-wrap" data-di="${di}" data-i="${i}"><div class="wk-item-del">${WK_TRASH}Удалить</div><div class="wk-item sg-exercise"><div class="sg-grow"><div class="sg-exercise-name">${esc(e?.name || 'Упражнение недоступно')}</div><div class="sg-exercise-meta">${groups.map(n => `<span class="sg-tag">${esc(n)}</span>`).join('')}</div><div class="sg-movements">${e ? exBaseCats(e).map(n => `<span>${icon('target')}${esc(n)}</span>`).join('') : ''}</div>${_cEdit && workout.days.length > 1 ? `<div class="wk-item-days">${workout.days.map((d,dj) => `<button class="wk-item-day${dj === di ? ' cur' : ''}" data-moveto="${dj}" data-di="${di}" data-i="${i}">День ${dj+1}</button>`).join('')}</div>` : ''}</div><div class="sg-exercise-actions"><button type="button" class="sg-icon-button ${it.locked ? 'selected' : ''}" data-lock="${i}" aria-pressed="${!!it.locked}" aria-label="${it.locked ? 'Открепить' : 'Закрепить'} упражнение">${icon(it.locked ? 'lock' : 'unlock')}</button><button type="button" class="sg-icon-button" data-replace="${i}" aria-label="Заменить упражнение" ${it.locked ? 'disabled' : ''}>${icon('swap')}</button></div></div></div>`;
   }
   function render() {
     const el = $('constructor-scroll'); if (!el) return;
     const root = $('screen-constructor')?.closest('.app');
     if (root) root.scrollTop = 0;
     const result = _step === 'result';
-    $('constructor-title').textContent = result ? 'Готовый план' : 'Параметры';
+    $('constructor-title').textContent = result ? 'Готовая тренировка' : 'Параметры';
     $('constructor-subtitle').hidden = result;
     $('constructor-step').innerHTML = `<span>Шаг ${result ? 2 : 1} из 2</span><i class="selected"></i><i class="${result ? 'selected' : ''}"></i>`;
     if (!result) el.innerHTML = parameterHtml();
     else {
-      const items = activeDay().items, notes = warnings();
-      el.innerHTML = `<div class="sg-summary">${choiceChips('priority',true)}${choiceChips('restrictions',true)}</div>${volumeHtml()}${coverageHtml()}<div class="sg-row sg-between sg-exercises-heading"><span>${workout.days.length > 1 ? 'День '+(workout.active+1) : 'Упражнения'} <small class="sg-muted">· ${items.length}</small></span><button type="button" class="sg-chip ghost" data-sheet="add">${icon('plus')}Добавить</button></div><div class="sg-card sg-plan wk-plan${_cEdit ? ' wk-editing' : ''}" data-di="${workout.active}">${items.length ? items.map((it,i) => itemHtml(it,workout.active,i)).join('') : '<p class="sg-muted sg-empty">День пуст. Добавь упражнение из базы или дополни день.</p>'}</div>${notes.length ? `<details class="sg-card sg-notes"><summary>Замечания к плану <span class="sg-muted">${notes.length}</span></summary>${notes.map(w => `<p>${esc(w.m)}</p>`).join('')}</details>` : ''}`;
+      const items = activeDay().items;
+      el.innerHTML = `<div class="sg-summary">${choiceChips('priority',true)}${choiceChips('restrictions',true)}</div>${volumeHtml()}${coverageHtml()}<div class="sg-row sg-between sg-exercises-heading"><span>${workout.days.length > 1 ? 'День '+(workout.active+1) : 'Упражнения'} ${workout.days.length > 1 ? '' : `<small class="sg-muted">· ${items.length}</small>`}</span><button type="button" class="sg-chip ghost" data-sheet="add">${icon('plus')}Добавить</button></div><div class="sg-card sg-plan wk-plan${_cEdit ? ' wk-editing' : ''}" data-di="${workout.active}">${items.length ? items.map((it,i) => itemHtml(it,workout.active,i)).join('') : '<p class="sg-muted sg-empty">День пуст. Добавь упражнение из базы или дополни день.</p>'}</div>`;
     }
     $('constructor-footer').innerHTML = _cEdit ? '<button type="button" class="sg-primary" id="wk-edit-done">Готово</button>' : result ? `<button type="button" class="sg-primary" id="wk-save" ${!workout.days.some(d => d.items.length) ? 'disabled' : ''}>Сохранить ${workout.days.filter(d => d.items.length).length > 1 ? 'шаблоны' : 'шаблон'}</button><button type="button" class="sg-refresh" id="wk-generate" aria-label="Сгенерировать заново, сохранив закреплённые упражнения">${icon('refresh')}</button>` : `<button type="button" class="sg-primary" id="wk-generate">${icon('spark')}Сгенерировать</button>`;
     wire(); persist();
@@ -511,7 +519,15 @@
   function openSheet(kind, index) {
     const dlg = document.createElement('dialog'); dlg.className = 'sg sg-sheet';
     const source = document.activeElement;
-    const close = () => dlg.close();
+    let closing = false;
+    const close = after => {
+      if (closing) return; closing = true;
+      const finish = () => { dlg.close(); if (typeof after === 'function') after(); };
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { finish(); return; }
+      dlg.style.transition = 'transform .22s ease'; dlg.style.transform = 'translateY(100%)';
+      setTimeout(finish, 220);
+    };
+    dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
     dlg.addEventListener('close', () => { dlg.remove(); if (source?.isConnected) source.focus({preventScroll:true}); });
     dlg.addEventListener('click', e => { if (e.target === dlg) { const r = dlg.getBoundingClientRect(); if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right) close(); } });
     function draw() {
@@ -531,23 +547,24 @@
         const options = exercises.filter(x => x.id !== e.id && !used.has(x.id) && available(x) && exBaseCats(x).some(n => exBaseCats(e).includes(n))).sort((a,b) => Number(exSig(b) === exSig(e))-Number(exSig(a) === exSig(e)) || a.name.localeCompare(b.name,'ru'));
         content = `<p class="sg-sheet-name">${esc(e.name)}</p><p class="sg-muted">Похожие по покрытию движений</p>${options.map(x => `<button type="button" class="sg-alt" data-alternative="${esc(x.id)}"><span>${esc(x.name)}</span><small class="sg-badge ${exSig(x) === exSig(e) ? '' : 'different'}">${exSig(x) === exSig(e) ? 'Аналог' : 'Другое покрытие'}</small></button>`).join('') || '<p class="sg-empty sg-muted">Нет доступных замен с учётом ограничений и оборудования.</p>'}`;
       }
-      dlg.innerHTML = `<div class="sg-grab"></div><div class="sg-row sg-between"><h2 id="sg-sheet-title">${title}</h2><button type="button" class="sg-icon-button" data-close aria-label="Закрыть">${icon('close')}</button></div>${content}`;
+      dlg.innerHTML = `<div class="sg-sheet-drag"><div class="sg-grab"></div><h2 id="sg-sheet-title">${title}</h2></div><div class="sg-sheet-body">${content}</div>`;
+      window.wireSheetDragClose(dlg, dlg.querySelector('.sg-sheet-drag'), close);
       dlg.setAttribute('aria-labelledby','sg-sheet-title');
       dlg.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
-      dlg.querySelectorAll('[data-choice]').forEach(b => b.onclick = () => { const y = dlg.scrollTop, name = b.dataset.choice; toggleChoice(kind,name); render(); draw(); dlg.scrollTop = y; [...dlg.querySelectorAll('[data-choice]')].find(n => n.dataset.choice === name)?.focus({preventScroll:true}); });
-      dlg.querySelector('[data-add-manual]')?.addEventListener('click', () => { close(); openExercisePicker(); });
-      dlg.querySelector('[data-fill]')?.addEventListener('click', () => { close(); fillDay(); });
-      dlg.querySelector('[data-clear]')?.addEventListener('click', () => { close(); activeDay().items = []; render(); });
-      dlg.querySelectorAll('[data-alternative]').forEach(b => b.onclick = () => { activeDay().items[index].exId = b.dataset.alternative; close(); render(); });
+      dlg.querySelectorAll('[data-choice]').forEach(b => b.onclick = () => { const y = dlg.querySelector('.sg-sheet-body').scrollTop, name = b.dataset.choice; toggleChoice(kind,name); render(); draw(); dlg.querySelector('.sg-sheet-body').scrollTop = y; [...dlg.querySelectorAll('[data-choice]')].find(n => n.dataset.choice === name)?.focus({preventScroll:true}); });
+      dlg.querySelector('[data-add-manual]')?.addEventListener('click', () => close(openExercisePicker));
+      dlg.querySelector('[data-fill]')?.addEventListener('click', () => close(fillDay));
+      dlg.querySelector('[data-clear]')?.addEventListener('click', () => close(() => { activeDay().items = []; render(); }));
+      dlg.querySelectorAll('[data-alternative]').forEach(b => b.onclick = () => close(() => { activeDay().items[index].exId = b.dataset.alternative; render(); }));
     }
-    document.body.appendChild(dlg); draw(); if (dlg.isConnected) dlg.showModal();
+    document.body.appendChild(dlg); draw(); if (dlg.isConnected) { dlg.showModal(); if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) dlg.animate([{transform:'translateY(100%)'},{transform:'translateY(0)'}],{duration:220,easing:'ease-out'}); }
   }
   function wire() {
     const el = $('constructor-scroll');
     const on = (sel,fn) => el.querySelectorAll(sel).forEach(n => n.addEventListener('click', () => fn(n)));
     on('[data-readiness]', n => { workout.readiness = n.dataset.readiness; render(); });
     on('[data-split]', n => { workout.splitDays = +n.dataset.split; render(); });
-    on('[data-equip]', n => { const i = workout.equipOff.indexOf(n.dataset.equip); if (i < 0) workout.equipOff.push(n.dataset.equip); else workout.equipOff.splice(i,1); render(); el.querySelector('.sg-equipment').open = true; });
+
     on('[data-remove]', n => { toggleChoice(n.dataset.remove,n.dataset.name); render(); });
     on('[data-sheet]', n => openSheet(n.dataset.sheet));
     on('[data-parameters]', setParameters);
@@ -562,7 +579,11 @@
     on('[data-replace]', n => openSheet('replace',+n.dataset.replace));
     on('[data-moveto]', n => moveToDay(n.dataset.di,+n.dataset.i,+n.dataset.moveto));
     on('[data-step]', n => { const field = n.dataset.step; workout[field] = Math.max(1,Math.min(field === 'target' ? 10 : 30,repsToNum(workout[field]) + +n.dataset.delta)); render(); });
-    el.querySelectorAll('[data-number]').forEach(n => n.addEventListener('change', () => { const field = n.dataset.number; workout[field] = field === 'target' ? Math.max(1,Math.min(10,+n.value || 1)) : /^\d{1,2}\s*[-–]\s*\d{1,2}$/.test(n.value) ? n.value : String(Math.max(1,Math.min(30,+n.value || 10))); render(); }));
+    el.querySelectorAll('[data-number]').forEach(n => n.addEventListener('change', () => {
+      const field = n.dataset.number;
+      workout[field] = field === 'target' ? Math.max(1, Math.min(10, Math.round(+n.value) || 1)) : normalizeReps(n.value);
+      render();
+    }));
     el.querySelectorAll('.wk-item-wrap').forEach(w => { wireItemSwipe(w); wireItemGesture(w); });
     $('wk-edit-done')?.addEventListener('click',exitCEdit);
     $('wk-generate')?.addEventListener('click',generate);
@@ -702,40 +723,21 @@
     render();
   }
 
-  // Ручной выбор упражнения в план активного дня (модалка с поиском по базе).
+  // Общий каталог сохраняет фильтры/группы и открывает детали по названию.
   function openExercisePicker() {
     if (!exercises.length) { showToast("В базе нет упражнений"); return; }
-    const bd = document.createElement("div");
-    bd.className = "modal-backdrop open ref-form-backdrop";
-    bd.style.zIndex = "60";
-    bd.innerHTML = `
-      <div class="modal modal-form modal-scroll wk-picker">
-        <h2 class="modal-title">Добавить упражнение</h2>
-        <input class="ex-form-input" id="wk-pick-search" type="text" placeholder="Поиск по названию…" autocomplete="off">
-        <div class="wk-pick-list" id="wk-pick-list"></div>
-        <div class="modal-form-actions"><button class="btn-chip" data-act="cancel">Закрыть</button></div>
-      </div>`;
-    document.body.appendChild(bd);
-    const close = () => bd.remove();
-    bd.addEventListener("click", e => { if (e.target === bd) close(); });
-    bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
-    const listEl = $("wk-pick-list"), inp = $("wk-pick-search");
-    const renderList = () => {
-      const q = inp.value.trim().toLowerCase();
-      const pool = exercises.filter(e => available(e) && (!q || (e.name || "").toLowerCase().includes(q)))
-        .sort((a, b) => (a.name || "").localeCompare(b.name || "", "ru")).slice(0, 300);
-      listEl.innerHTML = pool.length
-        ? pool.map(e => { const mv = exBaseCats(e).join(" · "); return `<button class="wk-pick-item" data-id="${esc(e.id)}"><span class="wk-pick-name">${esc(e.name)}</span>${mv ? `<span class="wk-pick-mv">${esc(mv)}</span>` : ""}</button>`; }).join("")
-        : `<p class="wk-hint" style="text-align:center;padding:20px">Ничего не найдено</p>`;
-      listEl.querySelectorAll(".wk-pick-item").forEach(b => b.addEventListener("click", () => {
-        const e = exById(b.dataset.id); if (!e) return;
-        activeDay().items.push({ exId: e.id, sets: setsForEx(e), reps: workout.reps || "8–12", rpe: READINESS[workout.readiness].rpe });
-        close(); render(); showToast("Упражнение добавлено");
-      }));
-    };
-    renderList();
-    inp.addEventListener("input", renderList);
-    setTimeout(() => inp.focus(), 60);
+    const day = activeDay(), context = { ...draftContext };
+    window.openConstructorExerciseCatalog({
+      canSelect: id => { const e = exById(id); return !!e && available(e); },
+      isSelected: id => day.items.some(it => it.exId === id),
+      onSelect: id => {
+        if (context.owner !== Auth.userId() || context.profile !== DATA.getCurrentUser()) return false;
+        const e = exById(id);
+        if (!e || !available(e) || day.items.some(it => it.exId === id)) return false;
+        day.items.push({ exId: e.id, sets: setsForEx(e), reps: normalizeReps(workout.reps), rpe: READINESS[workout.readiness].rpe });
+        persist(); return true;
+      },
+    });
   }
 
   /* ── Публичный API ───────────────────────────────────────────────────────── */
@@ -744,16 +746,21 @@
       if (_step === 'result') { setParameters(); return true; }
       return false;
     },
-    init() {
+    init({ resume = false } = {}) {
+      if (resume && workout && draftContext?.owner === Auth.userId() && draftContext?.profile === DATA.getCurrentUser()) {
+        loadData(); _step = 'result'; render(); return;
+      }
       draftContext={owner:Auth.userId(),profile:DATA.getCurrentUser()};
       loadData();
       workout = loadWorkout();
       workout.readiness = READINESS[workout.readiness] ? workout.readiness : "средняя";
       workout.target = Math.max(1, Math.min(10, +workout.target || 4));
       workout.splitDays = Math.max(1, Math.min(4, +workout.splitDays || 1));
+      workout.reps = normalizeReps(workout.reps);
+      workout.equipOff = [];
       workout.priority = workout.priority.filter(n => !workout.restrictions.includes(n));
       if (workout.active === "all") workout.active = 0;
-      _step = workout.days.some(d => d.items.length) ? 'result' : 'parameters';
+      _step = 'parameters';
       _cEdit = false; _keepVolume = false;
       render();
     },
