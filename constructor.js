@@ -55,6 +55,7 @@
   /* ── Данные (адаптер: база «Атлас» → форма генератора) ───────────────────── */
   let exercises = [], categories = [], muscles = [], workout = null, draftContext=null;
   let _cEdit = false;   // режим правки плана (покачивание + перетаскивание), как в упражнениях
+  let _step = "parameters", _coverageLevel = 1, _selectedMovement = 0, _keepVolume = false;
   let _cDrag = null;    // активное перетаскивание карточки
 
   function loadData() {
@@ -78,7 +79,7 @@
 
   function defaultWorkout() {
     return {
-      readiness: "средняя", target: READINESS["средняя"].target, reps: "8–12",
+      readiness: "средняя", target: READINESS["средняя"].target, reps: "10",
       priority: [], priorityBonus: 2, restrictions: [], settingsOpen: true,
       splitDays: 1, equipOff: [], pins: {},
       days: [{ name: "Тренировка 1", items: [] }], active: 0,
@@ -185,7 +186,13 @@
   function generateInto(movements) {
     const set = new Set(movements);
     const pool = exercises.filter(e => { const bc = exBaseCats(e); return bc.length && bc.every(c => set.has(c)) && equipAllowed(e); });
-    const uncovered = new Set(movements), usedIds = new Set(), chosen = [], load = {};
+    const preserved = workout.days.flatMap(d => d.items).filter(it => it.locked && exById(it.exId) && equipAllowed(exById(it.exId)) && exBaseCats(exById(it.exId)).every(c => set.has(c)));
+    const uncovered = new Set(movements), usedIds = new Set(), chosen = preserved.map(it => ({ ...it })), load = {};
+    chosen.forEach(it => {
+      const e = exById(it.exId); usedIds.add(it.exId);
+      exBaseCats(e).forEach(c => uncovered.delete(c));
+      loadKeys(e).forEach(x => { load[x.key] = (load[x.key] || 0) + it.sets * x.w; });
+    });
     if (workout.readiness !== "низкая") {
       const K = (workout.readiness === "высокая" ? 2 : 1) * Math.max(1, +workout.splitDays || 1);
       let seeded = 0, sg = 0;
@@ -263,7 +270,10 @@
       days.forEach(d => d.items.sort((a, b) => { const ea = exById(a.exId), eb = exById(b.exId); return (rank[CHAR[exCharacter(ea)]] - rank[CHAR[exCharacter(eb)]]) || (exBaseCats(eb).length - exBaseCats(ea).length); }));
       workout.days = days.map(d => ({ name: d.name, items: d.items }));
     }
-    workout.active = 0; render();
+    workout.active = 0; _step = "result"; _keepVolume = false;
+    const rows = coverageRows();
+    _selectedMovement = (rows.find(r => r.bad) || rows.find(r => r.priority && !r.excluded) || rows[0])?.i || 0;
+    render(); $("constructor-scroll").scrollTop = 0;
   }
   function fillDay() {
     if (!exercises.length) { showToast("В базе нет упражнений"); return; }
@@ -310,7 +320,6 @@
     day.items.sort((a, b) => { const ea = exById(a.exId), eb = exById(b.exId); return (rank[CHAR[exCharacter(ea)]] - rank[CHAR[exCharacter(eb)]]) || (exBaseCats(eb).length - exBaseCats(ea).length); });
     render();
   }
-  function regenItem(di, i) { const d = workout.days[+di]; if (!d) return; const it = d.items[i]; const e = exById(it.exId); if (!e) return; const alts = alternatives(e); if (!alts.length) { showToast("Нет других вариантов"); return; } it.exId = randPick(alts).id; render(); }
   function removeItem(di, i) { const d = workout.days[+di]; if (!d) return; d.items.splice(i, 1); render(); }
   // Перенос упражнения в другой день (кнопкой-выбором дня в карточке).
   function moveToDay(di, i, target) { const src = workout.days[+di], dst = workout.days[+target]; if (!src || !dst || +di === +target) return; const it = src.items.splice(i, 1)[0]; if (it) dst.items.push(it); render(); showToast("Перенесено в «" + dst.name + "»"); }
@@ -330,13 +339,8 @@
       if (noEx.length) warns.push({ t: "note", m: "Причина: в базе нет упражнений на — " + noEx.join(", ") + "." });
       if (blocked.length) warns.push({ t: "note", m: "Причина: " + blocked.join(", ") + " закрываются только через ограниченные движения — ослабь ограничения." });
     }
-    const closed = base.filter(c => (cov[c.name] || 0) > 0);
-    if (closed.length) {
-      const min = Math.min(...closed.map(c => cov[c.name]));
-      const exempt = c => OVERLOAD_OK.includes(c.name) || workout.priority.includes(c.name);
-      const over = closed.filter(c => !exempt(c) && cov[c.name] - min > 1).map(c => c.name + " (" + cov[c.name] + ")");
-      if (over.length) warns.push({ t: "warn", m: "Перекос по подходам" + sfx + " (разница >1 от минимума " + min + "): " + over.join(", ") + "." });
-    }
+    const imbalances = coverageRows().filter(r => r.bad && r.value > 0);
+    if (imbalances.length) warns.push({ t: "warn", m: "Отклонения от ориентира" + sfx + ": " + imbalances.map(r => r.name + " (" + r.value + "/" + r.target + ")").join(", ") + "." });
     if (multi) {
       const over = [], high = [];
       workout.days.forEach(d => { const v = dayVolume(d); if (v > VOL_MAX) over.push("«" + d.name + "» " + v); else if (v > VOL_WARN) high.push("«" + d.name + "» " + v); });
@@ -389,225 +393,180 @@
     goToScreen("templates");
   }
 
-  /* ── Render (мобильный UI в #constructor-scroll) ─────────────────────────── */
-  function segHtml(name, options, cur, handler) {
-    return `<div class="wk-seg">${options.map(o => {
-      const val = Array.isArray(o) ? o[0] : o, lbl = Array.isArray(o) ? o[1] : o;
-      return `<button class="wk-seg-btn${String(cur) === String(val) ? " active" : ""}" data-${name}="${esc(val)}">${esc(lbl)}</button>`;
-    }).join("")}</div>`;
-  }
-  function chipsHtml(cls, list, activeSet, attr) {
-    return `<div class="wk-chips">${list.map(n =>
-      `<button class="wk-chip ${cls}${activeSet.has(n) ? " active" : ""}" data-${attr}="${esc(n)}">${esc(n)}</button>`).join("")}</div>`;
-  }
-  // Выпадающий выбор (как в форме мышц): выбранное — чипами с ✕, снизу — раскрытие
-  // вниз со списком оставшихся. Открытый список запоминается в workout.uiOpen,
-  // чтобы переживать полный re-render. data-<attr> на чипе и опции переиспользует
-  // тот же тумблер, что и раньше (клик по чипу снимает, по опции — добавляет).
-  function ddHtml(kind, options, selectedNames, attr, placeholder, chipMod) {
-    const openK = workout.uiOpen === kind;
-    const chips = selectedNames.length ? `<div class="wk-dd-chips">${selectedNames.map(n =>
-      `<span class="wk-dd-chip${chipMod ? " " + chipMod : ""}" data-${attr}="${esc(n)}">${esc(n)}<span class="wk-dd-x">×</span></span>`).join("")}</div>` : "";
-    const rest = options.filter(o => !selectedNames.includes(o));
-    const trigger = `<button class="wk-dd-trigger${openK ? " open" : ""}" data-ddtoggle="${kind}"><span>${esc(placeholder)}</span><span class="wk-dd-caret">⌄</span></button>`;
-    const panel = openK ? `<div class="wk-dd-panel">${
-      rest.length ? rest.map(o => `<button class="wk-dd-opt" data-${attr}="${esc(o)}">${esc(o)}</button>`).join("")
-                  : `<div class="wk-dd-empty">Все добавлены</div>`
-    }</div>` : "";
-    return `<div class="wk-dd">${chips}${trigger}${panel}</div>`;
-  }
+  /* ── Генератор: параметры → готовый план ───────────────────────────────── */
+  const READY_DETAILS = {
+    "низкая": ["Стаж меньше 3 месяцев", "Меньше 2 занятий в неделю", "Значительные ограничения по состоянию", "Нет условий для полного восстановления"],
+    "средняя": ["Стаж 3–6 месяцев", "2–3 занятия в неделю", "Незначительные ограничения по состоянию", "Ограниченное восстановление после нагрузок"],
+    "высокая": ["Стаж больше 6 месяцев", "3 и более занятий в неделю", "Нет ограничений по состоянию", "Есть все условия для восстановления"],
+  };
+  const ICONS = {
+    spark: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/><path d="M20 2v4m-2-2h4"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>',
+    close: '<path d="m6 6 12 12M18 6 6 18"/>', check: '<path d="m5 12 4 4L19 6"/>',
+    star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/>',
+    ban: '<circle cx="12" cy="12" r="9"/><path d="m6 6 12 12"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18m-13 4h2m4 0h2"/>',
+    heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
+    bed: '<path d="M3 18V6m0 8h18v7m-18-3h18M7 14V9h10a4 4 0 0 1 4 4v1M3 21v-3"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/>',
+    up: '<path d="m6 15 6-6 6 6"/>', down: '<path d="m6 9 6 6 6-6"/>',
+    refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 6a8 8 0 0 1 14 6M4 12a8 8 0 0 0 14 6"/>',
+    swap: '<path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/>',
+    lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/>',
+    unlock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7.5-2m-3.5 10v2"/>',
+    target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>',
+    list: '<path d="M9 5h11M9 12h11M9 19h11M4 5h.1M4 12h.1M4 19h.1"/>',
+  };
+  const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ICONS.info}</svg>`;
+  const plural = n => n % 10 === 1 && n % 100 !== 11 ? "подход" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "подхода" : "подходов";
+  const movementHint = c => c.group || "";
+  const available = e => equipAllowed(e) && !exBaseCats(e).some(n => workout.restrictions.includes(n));
 
+  function ring(value, size = 60) {
+    const r = size / 2 - 5, circumference = 2 * Math.PI * r;
+    const max = Math.max(VOL_MAX, value), normal = Math.min(value, VOL_MAX) / max;
+    return `<svg class="sg-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${value} из ${VOL_MAX} подходов"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#ffffff14" stroke-width="6"/><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#8b7cf6" stroke-width="6" stroke-dasharray="${normal*circumference} ${circumference}" transform="rotate(-90 ${size/2} ${size/2})"/>${value > VOL_MAX ? `<circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#fb7185" stroke-width="6" stroke-dasharray="${(1-normal)*circumference} ${circumference}" stroke-dashoffset="${-normal*circumference}" transform="rotate(-90 ${size/2} ${size/2})"/>` : ""}<text x="50%" y="50%" dy=".35em" text-anchor="middle" fill="currentColor" font-size="${size > 70 ? 28 : 17}">${value}</text></svg>`;
+  }
+  function choiceChips(kind, summary = false) {
+    const values = kind === "priority" ? workout.priority : workout.restrictions;
+    return values.map(n => `<button type="button" class="sg-chip ${kind}" ${summary ? 'data-parameters' : `data-remove="${kind}" data-name="${esc(n)}"`} aria-label="${summary ? 'Изменить' : 'Убрать'}: ${esc(n)}">${icon(kind === "priority" ? "star" : "ban")}<span>${esc(n)}</span>${summary ? "" : icon("close")}</button>`).join("") + (summary ? "" : `<button type="button" class="sg-chip ghost" data-sheet="${kind}">${icon("plus")}Выбрать из списка</button>`);
+  }
+  function parameterHtml() {
+    const levels = Object.keys(READINESS), details = READY_DETAILS[workout.readiness];
+    const total = baseCats().filter(c => !workout.restrictions.includes(c.name)).reduce((s,c) => s + targetFor(c.name), 0);
+    const perDay = Math.ceil(total / workout.splitDays), suggestion = Math.min(4, Math.ceil(total / VOL_MAX));
+    const ticks = Math.min(48, perDay), color = perDay <= VOL_MAX ? "var(--sg-green)" : "var(--sg-yellow)";
+    const stepper = (field, label, value, min, max) => `<div><label class="sg-label" for="sg-${field}">${label}</label><div class="sg-stepper"><button type="button" data-step="${field}" data-delta="-1" aria-label="Уменьшить: ${label}" ${+value <= min ? 'disabled' : ''}>${icon("minus")}</button><input id="sg-${field}" data-number="${field}" aria-label="${label}" inputmode="numeric" ${field === "target" ? `type="number" min="${min}" max="${max}"` : 'type="text"'} value="${esc(value)}"><button type="button" data-step="${field}" data-delta="1" aria-label="Увеличить: ${label}" ${+value >= max ? 'disabled' : ''}>${icon("plus")}</button></div></div>`;
+    return `<div class="sg-card"><div class="sg-label">Готовность</div><div class="sg-levels">${levels.map((n,i) => `<button type="button" data-readiness="${n}" aria-pressed="${n === workout.readiness}" class="${n === workout.readiness ? 'selected' : ''}"><span class="sg-bars" aria-hidden="true">${[0,1,2].map(j => `<i class="${j <= i ? 'lit' : ''}"></i>`).join("")}</span>${n[0].toUpperCase()+n.slice(1)}</button>`).join("")}</div><div class="sg-details">${details.map((d,i) => `<div>${icon(["clock","calendar","heart","bed"][i])}<span>${d}</span></div>`).join("")}</div></div>
+      <div class="sg-card"><div class="sg-two">${stepper("target", "Подходов", workout.target, 1, 10)}${stepper("reps", "Повторов", workout.reps, 1, 30)}</div><p class="sg-note">${icon("info")}<span>Ориентир на движение для выбранной готовности: ${esc(READINESS[workout.readiness].range)} подхода</span></p></div>
+      <div class="sg-card"><div class="sg-label"><span>Дней в сплите</span><span>${workout.splitDays === 1 ? 'Fullbody' : workout.splitDays + ' тренировки'}</span></div><div class="sg-days-select">${[1,2,3,4].map(n => `<button type="button" data-split="${n}" class="${n === workout.splitDays ? 'selected' : ''}" aria-pressed="${n === workout.splitDays}">${n}</button>`).join("")}</div></div>
+      <div class="sg-card"><div class="sg-label"><span>Приоритет</span><span>+${workout.priorityBonus} подхода</span></div><div class="sg-chips">${choiceChips("priority")}</div></div>
+      <div class="sg-card"><div class="sg-label"><span>Ограничения</span><span>исключаем из плана</span></div><div class="sg-chips">${choiceChips("restrictions")}</div></div>
+      <div class="sg-card"><div class="sg-row sg-between"><div class="sg-row"><b class="sg-big" style="color:${color}">${perDay}</b><span class="sg-muted">${plural(perDay)}<br>на тренировку</span></div><span class="sg-muted">ориентир — до ${VOL_MAX}</span></div><div class="sg-ticks" aria-hidden="true">${Array.from({length:Math.max(26,ticks)},(_,i) => `<i style="${i < ticks ? 'background:'+(i < VOL_MAX ? '#a99cff' : '#f5c542') : ''}"></i>`).join("")}</div><div class="sg-volume-note" style="color:${color}">${icon(perDay <= VOL_MAX ? "check" : "info")}<span>${perDay <= VOL_MAX ? 'Объём в пределах ориентира' : perDay <= 24 ? 'Чуть выше ориентира' : 'Больше ориентира: восстановиться будет сложнее'}</span>${perDay > 24 && suggestion !== workout.splitDays ? `<button type="button" class="sg-link" data-split="${suggestion}">Разделить на ${suggestion} дн.</button>` : ''}</div><p class="sg-muted sg-estimate">Предварительная оценка. Упражнение может покрывать несколько движений, поэтому итоговый объём изменится.</p></div>
+      <details class="sg-card sg-equipment"><summary>Доступное оборудование <span class="sg-muted">${EQUIP_TAGS.length - workout.equipOff.length} из ${EQUIP_TAGS.length}</span></summary><div class="sg-chips">${EQUIP_TAGS.map(n => `<button type="button" class="sg-chip ${workout.equipOff.includes(n) ? 'ghost' : 'priority'}" data-equip="${esc(n)}" aria-pressed="${!workout.equipOff.includes(n)}">${icon(workout.equipOff.includes(n) ? 'plus' : 'check')}${esc(n)}</button>`).join("")}</div></details>`;
+  }
+  function coverageRows() {
+    const cov = microCoverage();
+    return baseCats().map((c,i) => {
+      const excluded = workout.restrictions.includes(c.name), priority = workout.priority.includes(c.name);
+      const value = cov[c.name] || 0, target = targetFor(c.name), delta = value-target;
+      const relaxed = OVERLOAD_OK.includes(c.name) || /зад бедра/.test(c.name);
+      const bad = !excluded && (value === 0 || delta < -1 || delta > (relaxed ? 2 : 1));
+      return { ...c, i, value, target, excluded, priority, bad, color: excluded ? '#53536a' : bad ? delta < 0 ? '#fb7185' : '#f5c542' : priority ? '#a99cff' : '#4ade9b', status: excluded ? 'исключено из плана' : bad ? `на ${Math.abs(delta)} ${delta < 0 ? 'меньше' : 'больше'} ориентира` : priority ? `приоритет, ориентир +${workout.priorityBonus}` : 'в пределах ориентира' };
+    });
+  }
+  function coverageHtml() {
+    const rows = coverageRows(), active = rows.filter(r => !r.excluded), bad = rows.filter(r => r.bad), covered = active.filter(r => r.value > 0).length;
+    const summary = bad.length ? `Обрати внимание: ${bad[0].name} — ${bad[0].status}${bad.length > 1 ? ', и ещё '+(bad.length-1) : ''}` : `${covered} из ${active.length} движений в норме`;
+    if (!_coverageLevel) return `<div class="sg-card"><button type="button" class="sg-coverage-summary" data-coverage="1">${icon(bad.length ? "info" : "check")}<span><small class="sg-muted">Покрытие${workout.days.length > 1 ? ' за весь сплит' : ''}</small><br>${esc(summary)}</span>${icon("down")}</button></div>`;
+    const selected = rows[_selectedMovement] || rows[0];
+    if (!selected) return '';
+    const max = Math.max(workout.target + 4, ...rows.map(r => Math.max(r.value,r.target))), count = rows.length;
+    const point = (i, radius) => { const a = (-90+i*360/count)*Math.PI/180; return [150+radius*Math.cos(a),138+radius*Math.sin(a)]; };
+    const points = rows.map(r => point(r.i,r.excluded ? 6 : r.value/max*96).join(',')).join(' ');
+    const targetPoints = rows.map(r => point(r.i,r.excluded ? 6 : r.target/max*96).join(',')).join(' ');
+    const radar = `<svg class="sg-radar" viewBox="0 0 300 276" role="group" aria-label="Баланс по ${count} движениям"><circle cx="150" cy="138" r="96"/><circle cx="150" cy="138" r="48"/>${rows.map(r => {const [x,y] = point(r.i,96); return `<path d="M150 138L${x} ${y}"/>`;}).join('')}<polygon class="sg-radar-target" points="${targetPoints}"/><polygon class="sg-radar-area" points="${points}"/>${rows.map(r => {const [x,y] = point(r.i,r.excluded ? 6 : r.value/max*96), [lx,ly] = point(r.i,115); return `<circle cx="${x}" cy="${y}" r="${selected.i === r.i ? 6 : 4.5}" style="fill:${r.color};stroke:${selected.i === r.i ? '#fff' : '#0b0b14'}"/><g tabindex="0" role="button" aria-label="${esc(r.name)}: ${r.excluded ? 'исключено' : r.value+' подходов'}" aria-pressed="${selected.i === r.i}" data-movement="${r.i}"><circle cx="${lx}" cy="${ly}" r="12" style="fill:${selected.i === r.i ? '#7b6ee6' : '#ffffff0a'};stroke:none"/><text x="${lx}" y="${ly}" dy=".35em" text-anchor="middle" fill="${selected.i === r.i ? '#fff' : '#8b8ba3'}">${r.i+1}</text></g>`;}).join('')}</svg>`;
+    return `<div class="sg-card"><div class="sg-row sg-between"><div class="sg-row"><b class="sg-big">${covered}</b><span class="sg-muted">из ${active.length} движений<br>${workout.days.length > 1 ? 'за весь сплит' : 'в плане'}</span></div><div class="sg-row"><span class="sg-status ${bad.length ? 'warn' : ''}">${bad.length ? 'перекос: '+bad.length : 'баланс в норме'}</span><button type="button" class="sg-icon-button" data-coverage="0" aria-label="Свернуть покрытие">${icon("up")}</button></div></div>${radar}<div class="sg-caption"><span class="sg-number selected">${selected.i+1}</span><div><div>${esc(selected.name)}</div><small style="color:${selected.color}">${esc(selected.status)}</small></div><b style="color:${selected.color}">${selected.excluded ? '–' : selected.value}</b></div><div class="sg-legend">${[['#4ade9b','в норме'],['#a99cff','приоритет'],['#f5c542','больше'],['#fb7185','меньше']].map(([color,label]) => `<span><i style="background:${color}"></i>${label}</span>`).join('')}<span><i class="dashed"></i>ориентир</span></div><p class="sg-muted sg-radar-help">Нажми на номер, чтобы посмотреть движение.</p>${_coverageLevel === 2 ? rows.map(r => `<div class="sg-coverage-row ${r.excluded ? 'excluded' : ''}"><span class="sg-number">${r.i+1}</span><div class="sg-grow">${esc(r.name)}<small style="color:${r.color}">${esc(r.status)}</small></div>${r.excluded ? icon('ban') : `<span class="sg-pills" aria-hidden="true">${Array.from({length: Math.min(24,Math.max(r.target,r.value))},(_,i) => `<i style="${i < r.value ? 'background:'+r.color : 'border:1px solid '+r.color}"></i>`).join('')}</span><span class="sg-muted">${r.value}/${r.target}</span>`}</div>`).join('') : ''}<button type="button" class="sg-more" data-coverage="${_coverageLevel === 2 ? 1 : 2}">${_coverageLevel === 2 ? 'Свернуть список' : 'Показать списком'}${icon(_coverageLevel === 2 ? 'up' : 'down')}</button></div>`;
+  }
+  function volumeHtml() {
+    const multi = workout.days.length > 1, value = dayVolume(activeDay());
+    if (multi) return `<div class="sg-card sg-day-tabs">${workout.days.map((d,i) => `<button type="button" class="sg-day-tab ${workout.active === i ? 'selected' : ''}" data-day="${i}" aria-pressed="${workout.active === i}">${ring(dayVolume(d),52)}<span>День ${i+1}<small>${dayVolume(d)} ${plural(dayVolume(d))}</small></span></button>`).join('')}<button type="button" class="sg-link" data-resplit="1">Вернуть<br>в одну</button></div>${value > VOL_MAX ? `<div class="sg-muted sg-day-warning">${icon('info')} В этом дне ${value} ${plural(value)}, ориентир — ${VOL_MAX}.</div>` : ''}`;
+    const split = Math.min(4, Math.max(2, Math.ceil(value / VOL_MAX)));
+    if (value > VOL_MAX && !_keepVolume) return `<div class="sg-card sg-overload"><div class="sg-row">${ring(value,92)}<div><b>${value} ${plural(value)} — многовато для одного дня</b><p>Для восстановления ориентируйся на ${VOL_MAX} подхода за тренировку.</p></div></div><div class="sg-row sg-advice-actions"><button type="button" class="sg-primary" data-resplit="${split}">Разделить на ${split} дня</button><button type="button" class="sg-link" data-keep-volume>Оставить как есть</button></div></div>`;
+    return `<div class="sg-card sg-row sg-between"><div class="sg-row">${ring(value)}<div>Одна тренировка<small class="sg-muted sg-block">${value} ${plural(value)}, ориентир — ${VOL_MAX}</small></div></div>${value > VOL_MAX ? `<button type="button" class="sg-link" data-resplit="${split}">Разделить</button>` : ''}</div>`;
+  }
+  function itemHtml(it,di,i) {
+    const e = exById(it.exId), groups = e ? [...new Set(exBaseCats(e).map(n => categories.find(c => c.name === n)?.group).filter(Boolean))] : [];
+    return `<div class="wk-item-wrap" data-di="${di}" data-i="${i}"><div class="wk-item-del">${WK_TRASH}Удалить</div><div class="wk-item sg-exercise"><div class="sg-grow"><div class="sg-exercise-name">${esc(e?.name || 'Упражнение недоступно')}</div><div class="sg-exercise-meta">${groups.map(n => `<span class="sg-tag">${esc(n)}</span>`).join('')}<span class="sg-tag">${it.sets} × ${esc(it.reps)}</span></div><div class="sg-movements">${e ? exBaseCats(e).map(n => `<span>${icon('target')}${esc(n)}</span>`).join('') : ''}</div>${_cEdit && workout.days.length > 1 ? `<div class="wk-item-days">${workout.days.map((d,dj) => `<button class="wk-item-day${dj === di ? ' cur' : ''}" data-moveto="${dj}" data-di="${di}" data-i="${i}">День ${dj+1}</button>`).join('')}</div>` : ''}</div><div class="sg-exercise-actions"><button type="button" class="sg-icon-button ${it.locked ? 'selected' : ''}" data-lock="${i}" aria-pressed="${!!it.locked}" aria-label="${it.locked ? 'Открепить' : 'Закрепить'} упражнение">${icon(it.locked ? 'lock' : 'unlock')}</button><button type="button" class="sg-icon-button" data-replace="${i}" aria-label="Заменить упражнение" ${it.locked ? 'disabled' : ''}>${icon('swap')}</button></div></div></div>`;
+  }
   function render() {
-    const el = $("constructor-scroll");
-    if (!el) return;
-    const rd = READINESS[workout.readiness];
-    const multi = workout.days.length > 1;
-    const open = workout.settingsOpen !== false;
-
-    // — Настройки —
-    const prioritySet = new Set(workout.priority), restrictSet = new Set(workout.restrictions), equipOffSet = new Set(workout.equipOff);
-    const baseNames = baseCats().map(c => c.name);
-    const settings = `
-      <div class="wk-card">
-        <button class="wk-set-toggle" id="wk-set-toggle">
-          <span>Параметры</span>
-          <span class="wk-set-chev">${open ? "▴" : "▾"}</span>
-        </button>
-        ${open ? `
-        <div class="wk-set-body">
-          <div class="wk-field">
-            <span class="wk-label">Готовность</span>
-            ${segHtml("readiness", ["низкая", "средняя", "высокая"], workout.readiness)}
-            <p class="wk-hint">Характер: ${esc(rd.character)} · усилие ${esc(rd.rpe)} (RPE)</p>
-          </div>
-          <div class="wk-field wk-row">
-            <div><span class="wk-label">Подходов / движение</span>
-              <input class="wk-num" id="wk-target" type="number" min="0" value="${workout.target}"></div>
-            <div><span class="wk-label">Повторы</span>
-              <input class="wk-num wk-num-wide" id="wk-reps" type="text" value="${esc(workout.reps)}"></div>
-          </div>
-          <div class="wk-field">
-            <span class="wk-label">Дней в сплите</span>
-            ${segHtml("split", [[1, "1 день"], [2, "2 дня"], [3, "3 дня"], [4, "4 дня"]], workout.splitDays)}
-            <p class="wk-hint">${workout.splitDays > 1 ? "Баланс считается за всю неделю; дни — срезы." : "Fullbody — все движения за одно занятие."}</p>
-          </div>
-          <div class="wk-field">
-            <span class="wk-label">Доступное оборудование</span>
-            ${ddHtml("equip", EQUIP_TAGS, EQUIP_TAGS.filter(t => !equipOffSet.has(t)), "equip", "＋ добавить оборудование")}
-            <p class="wk-hint">В списке — доступное; чего нет в зале, убери крестиком.</p>
-          </div>
-          <div class="wk-field">
-            <span class="wk-label">Приоритет (+${workout.priorityBonus} подх.)</span>
-            ${ddHtml("prio", baseNames, [...prioritySet], "prio", "＋ добавить движение в приоритет")}
-          </div>
-          <div class="wk-field">
-            <span class="wk-label">Ограничения (не грузить)</span>
-            ${ddHtml("restr", baseNames, [...restrictSet], "restr", "＋ добавить ограничение", "warn")}
-          </div>
-        </div>` : `<p class="wk-set-sum">Готовность: <b>${esc(workout.readiness)}</b> · цель ${workout.target} · дней: ${workout.days.length}</p>`}
-      </div>
-      <button class="wk-generate" id="wk-generate">⟳ Сгенерировать план</button>`;
-
-    const isAll = workout.active === "all";
-    const rank = { "глобальные": "Г", "региональные": "Р", "локальные": "Л" };
-
-    // — Вкладки дней + «Целая» (при многодневном сплите) —
-    let daysHtml = "";
-    if (multi) {
-      daysHtml = `<div class="wk-days">${workout.days.map((d, i) => `
-        <button class="wk-day${!isAll && i === workout.active ? " active" : ""}${dayVolume(d) > VOL_MAX ? " over" : ""}" data-day="${i}">
-          <span class="wk-day-name">${esc(d.name)}</span><span class="wk-day-vol">${dayVolume(d)}п</span>
-        </button>`).join("")}
-        <button class="wk-day wk-day-all${isAll ? " active" : ""}" data-day="all">
-          <span class="wk-day-name">Целая</span><span class="wk-day-vol">${totalVolume()}п</span>
-        </button></div>`;
+    const el = $('constructor-scroll'); if (!el) return;
+    const root = $('screen-constructor')?.closest('.app');
+    if (root) root.scrollTop = 0;
+    const result = _step === 'result';
+    $('constructor-title').textContent = result ? 'Готовый план' : 'Параметры';
+    $('constructor-subtitle').hidden = result;
+    $('constructor-step').innerHTML = `<span>Шаг ${result ? 2 : 1} из 2</span><i class="selected"></i><i class="${result ? 'selected' : ''}"></i>`;
+    if (!result) el.innerHTML = parameterHtml();
+    else {
+      const items = activeDay().items, notes = warnings();
+      el.innerHTML = `<div class="sg-summary">${choiceChips('priority',true)}${choiceChips('restrictions',true)}</div>${volumeHtml()}${coverageHtml()}<div class="sg-row sg-between sg-exercises-heading"><span>${workout.days.length > 1 ? 'День '+(workout.active+1) : 'Упражнения'} <small class="sg-muted">· ${items.length}</small></span><button type="button" class="sg-chip ghost" data-sheet="add">${icon('plus')}Добавить</button></div><div class="sg-card sg-plan wk-plan${_cEdit ? ' wk-editing' : ''}" data-di="${workout.active}">${items.length ? items.map((it,i) => itemHtml(it,workout.active,i)).join('') : '<p class="sg-muted sg-empty">День пуст. Добавь упражнение из базы или дополни день.</p>'}</div>${notes.length ? `<details class="sg-card sg-notes"><summary>Замечания к плану <span class="sg-muted">${notes.length}</span></summary>${notes.map(w => `<p>${esc(w.m)}</p>`).join('')}</details>` : ''}`;
     }
-
-    // — Покрытие: карточка по набору движений —
-    const covCard = (title, cov, total) => {
-      const covered = baseCats().map(c => c.name).filter(n => (cov[n] || 0) > 0);
-      return `<div class="wk-card">
-        <div class="wk-card-head">${esc(title)} <span class="wk-vol-badge${total > VOL_MAX ? " over" : total > VOL_WARN ? " high" : ""}">${total} подх.</span></div>
-        ${covered.length ? `<div class="wk-chips">${covered.map(n => `<span class="wk-cov-chip">${esc(n)} <b>${cov[n]}</b></span>`).join("")}</div>` : `<p class="wk-hint">Движения не покрыты — сгенерируй или добавь упражнения.</p>`}
-      </div>`;
-    };
-    let covHtml = "";
-    if (isAll) covHtml = covCard("Общее покрытие за микроцикл", microCoverage(), totalVolume());
-    else if (multi) covHtml = covCard("День «" + activeDay().name + "»", coverage(), dayVolume(activeDay())) + covCard("Общее за микроцикл", microCoverage(), totalVolume());
-    else covHtml = covCard("Покрытие", coverage(), dayVolume(activeDay()));
-
-    // — Замечания стопкой: одно за раз, счётчик «i / N», листается стрелками/свайпом —
-    const warns = warnings();
-    let warnHtml;
-    if (!warns.length) {
-      warnHtml = `<div class="wk-ok">✓ ${multi ? "Микроцикл сбалансирован." : "Движения закрыты, объём в норме."}</div>`;
-    } else {
-      if (workout.warnIdx == null || workout.warnIdx >= warns.length) workout.warnIdx = warns.length - 1;
-      if (workout.warnIdx < 0) workout.warnIdx = 0;
-      const wi = workout.warnIdx, w = warns[wi];
-      const dots = warns.map((_, i) => `<span class="wk-warn-dot${i === wi ? " on" : ""}"></span>`).join("");
-      warnHtml = `<div class="wk-card wk-warns-card">
-        <div class="wk-card-head">Замечания <span class="wk-warns-count">${wi + 1} / ${warns.length}</span></div>
-        <div class="wk-warn-stack" id="wk-warn-stack"><div class="wk-warn ${w.t}">${esc(w.m)}</div></div>
-        ${warns.length > 1 ? `<div class="wk-warn-nav">
-          <button class="wk-warn-arrow" data-warnnav="-1"${wi === 0 ? " disabled" : ""}>‹</button>
-          <div class="wk-warn-dots">${dots}</div>
-          <button class="wk-warn-arrow" data-warnnav="1"${wi === warns.length - 1 ? " disabled" : ""}>›</button>
-        </div>` : ""}
-      </div>`;
-    }
-
-    // — Карточка упражнения плана: свайп влево = удалить, удержание = перетащить,
-    //   ⟳ = другой вариант, ряд дней (много-день) = быстрый перенос —
-    const itemHtml = (it, di, i) => {
-      const e = exById(it.exId);
-      const nm = e ? e.name : "Упражнение недоступно";
-      const mv = e ? exBaseCats(e).join(" · ") : "";
-      const ch = e ? rank[exCharacter(e)] : "";
-      const dayChips = multi ? `<div class="wk-item-days">${workout.days.map((d, dj) =>
-        `<button class="wk-item-day${dj === di ? " cur" : ""}" data-moveto="${dj}" data-di="${di}" data-i="${i}">${esc(d.name)}</button>`).join("")}</div>` : "";
-      return `<div class="wk-item-wrap" data-di="${di}" data-i="${i}">
-        <div class="wk-item-del">${WK_TRASH}Удалить</div>
-        <div class="wk-item">
-          <div class="wk-item-top">
-            <span class="wk-item-lvl">${ch}</span>
-            <span class="wk-item-name">${esc(nm)}</span>
-            <span class="wk-item-sets">${it.sets}×${esc(it.reps || "")}</span>
-            <button class="wk-item-regen" data-regen data-di="${di}" data-i="${i}" title="Другой вариант">⟳</button>
-          </div>
-          ${mv ? `<div class="wk-item-mv">${esc(mv)}</div>` : ""}
-          ${dayChips}
-        </div>
-      </div>`;
-    };
-
-    // — План: активный день, либо «Целая» плоским списком с заголовками-днями
-    //   (как группы категорий в списке упражнений — перетаскивание в другой день
-    //   переносит туда). В режиме правки карточки покачиваются. —
-    const emptyMsg = `<p class="wk-empty">План пуст. Настрой параметры и нажми «Сгенерировать» или добавь упражнение вручную.</p>`;
-    const editCls = _cEdit ? " wk-editing" : "";
-    let planHtml;
-    if (isAll) {
-      const secs = workout.days.map((d, di) => {
-        const head = `<div class="wk-day-sec-head" data-di="${di}">${esc(d.name)} <span class="wk-day-sec-vol">${dayVolume(d)}п</span></div>`;
-        const items = d.items.length ? d.items.map((it, i) => itemHtml(it, di, i)).join("") : `<div class="wk-sec-empty" data-di="${di}">Пусто${_cEdit ? " — перетащи сюда" : ""}</div>`;
-        return head + items;
-      }).join("");
-      planHtml = `<div class="wk-plan wk-plan-flat${editCls}">${secs}</div>`;
-    } else {
-      const items = activeDay().items;
-      planHtml = items.length
-        ? `<div class="wk-plan${editCls}" data-di="${workout.active}">${items.map((it, i) => itemHtml(it, workout.active, i)).join("")}</div>`
-        : emptyMsg;
-    }
-    const hasAny = workout.days.some(d => d.items.length);
-    const doneBtn = _cEdit ? `<button class="wk-edit-done" id="wk-edit-done">Готово</button>` : "";
-
-    // Ручное добавление — доступно всегда (план можно собрать и без генерации).
-    const addManual = `<button class="wk-add-manual" id="wk-add">＋ Добавить упражнение вручную</button>`;
-    const actions = hasAny || multi ? `
-      <div class="wk-actions">
-        <button class="wk-act primary wk-act-full" id="wk-save">Сохранить как шаблон${multi ? "ы" : ""}</button>
-        <div class="wk-actions-row">
-          <button class="wk-act" id="wk-fill">＋ Дополнить ${isAll ? "дни" : "день"}</button>
-          <button class="wk-act wk-act-clear" id="wk-clear">Очистить ${isAll ? "всё" : "день"}</button>
-        </div>
-      </div>` : "";
-
-    el.innerHTML = settings + daysHtml + (hasAny ? covHtml + warnHtml : "") + planHtml + addManual + actions + doneBtn;
-    wire();
-    persist();
+    $('constructor-footer').innerHTML = _cEdit ? '<button type="button" class="sg-primary" id="wk-edit-done">Готово</button>' : result ? `<button type="button" class="sg-primary" id="wk-save" ${!workout.days.some(d => d.items.length) ? 'disabled' : ''}>Сохранить ${workout.days.filter(d => d.items.length).length > 1 ? 'шаблоны' : 'шаблон'}</button><button type="button" class="sg-refresh" id="wk-generate" aria-label="Сгенерировать заново, сохранив закреплённые упражнения">${icon('refresh')}</button>` : `<button type="button" class="sg-primary" id="wk-generate">${icon('spark')}Сгенерировать</button>`;
+    wire(); persist();
   }
-
+  function setParameters() { _step = 'parameters'; _cEdit = false; render(); $('constructor-scroll').scrollTop = 0; }
+  function resplit(n) {
+    const all = workout.days.flatMap(d => d.items);
+    const days = Array.from({length:n},(_,i) => ({ name: n === 1 ? 'Тренировка 1' : DAY_LETTERS[i], items: [] }));
+    all.slice().sort((a,b) => b.sets-a.sets).forEach(it => { const day = days.reduce((a,b) => dayVolume(a) <= dayVolume(b) ? a : b); day.items.push(it); });
+    workout.days = days; workout.splitDays = n; workout.active = 0; _keepVolume = false; render();
+  }
+  function toggleChoice(kind,name) {
+    if (kind === 'priority' && workout.restrictions.includes(name)) return;
+    const arr = workout[kind], i = arr.indexOf(name); if (i < 0) arr.push(name); else arr.splice(i,1);
+    if (kind === 'restrictions' && i < 0) workout.priority = workout.priority.filter(n => n !== name);
+  }
+  function openSheet(kind, index) {
+    const dlg = document.createElement('dialog'); dlg.className = 'sg sg-sheet';
+    const source = document.activeElement;
+    const close = () => dlg.close();
+    dlg.addEventListener('close', () => { dlg.remove(); if (source?.isConnected) source.focus({preventScroll:true}); });
+    dlg.addEventListener('click', e => { if (e.target === dlg) { const r = dlg.getBoundingClientRect(); if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right) close(); } });
+    function draw() {
+      const choosing = kind === 'priority' || kind === 'restrictions';
+      let content = '', title = '';
+      if (choosing) {
+        title = kind === 'priority' ? 'Приоритет' : 'Ограничения';
+        content = `<p class="sg-muted">${kind === 'priority' ? 'Добавим +'+workout.priorityBonus+' подхода на выбранные движения' : 'Выбранные движения исключим из плана'}</p>${baseCats().map(c => `<button type="button" class="sg-choice" data-choice="${esc(c.name)}" aria-pressed="${workout[kind].includes(c.name)}" ${kind === 'priority' && workout.restrictions.includes(c.name) ? 'disabled' : ''}><span class="sg-checkbox ${workout[kind].includes(c.name) ? kind : ''}">${workout[kind].includes(c.name) ? icon('check') : ''}</span><span>${esc(c.name)}<small class="sg-muted sg-block">${esc(movementHint(c))}</small></span></button>`).join('')}<button type="button" class="sg-primary sg-sheet-done" data-close>Готово</button>`;
+      } else if (kind === 'add') {
+        title = 'Добавить в план';
+        content = `<button class="sg-alt" data-add-manual>${icon('list')}Выбрать из базы упражнений</button><button class="sg-alt" data-fill>${icon('spark')}<span>Дополнить день<small class="sg-muted sg-block">Подберём недостающие движения</small></span></button><button class="sg-alt sg-danger" data-clear>${WK_TRASH}Очистить день</button>`;
+      } else {
+        title = 'Заменить упражнение';
+        const item = activeDay().items[index], e = exById(item?.exId);
+        if (!e || item.locked) return close();
+        const used = new Set(activeDay().items.map(it => it.exId));
+        const options = exercises.filter(x => x.id !== e.id && !used.has(x.id) && available(x) && exBaseCats(x).some(n => exBaseCats(e).includes(n))).sort((a,b) => Number(exSig(b) === exSig(e))-Number(exSig(a) === exSig(e)) || a.name.localeCompare(b.name,'ru'));
+        content = `<p class="sg-sheet-name">${esc(e.name)}</p><p class="sg-muted">Похожие по покрытию движений</p>${options.map(x => `<button type="button" class="sg-alt" data-alternative="${esc(x.id)}"><span>${esc(x.name)}</span><small class="sg-badge ${exSig(x) === exSig(e) ? '' : 'different'}">${exSig(x) === exSig(e) ? 'Аналог' : 'Другое покрытие'}</small></button>`).join('') || '<p class="sg-empty sg-muted">Нет доступных замен с учётом ограничений и оборудования.</p>'}`;
+      }
+      dlg.innerHTML = `<div class="sg-grab"></div><div class="sg-row sg-between"><h2 id="sg-sheet-title">${title}</h2><button type="button" class="sg-icon-button" data-close aria-label="Закрыть">${icon('close')}</button></div>${content}`;
+      dlg.setAttribute('aria-labelledby','sg-sheet-title');
+      dlg.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
+      dlg.querySelectorAll('[data-choice]').forEach(b => b.onclick = () => { const y = dlg.scrollTop, name = b.dataset.choice; toggleChoice(kind,name); render(); draw(); dlg.scrollTop = y; [...dlg.querySelectorAll('[data-choice]')].find(n => n.dataset.choice === name)?.focus({preventScroll:true}); });
+      dlg.querySelector('[data-add-manual]')?.addEventListener('click', () => { close(); openExercisePicker(); });
+      dlg.querySelector('[data-fill]')?.addEventListener('click', () => { close(); fillDay(); });
+      dlg.querySelector('[data-clear]')?.addEventListener('click', () => { close(); activeDay().items = []; render(); });
+      dlg.querySelectorAll('[data-alternative]').forEach(b => b.onclick = () => { activeDay().items[index].exId = b.dataset.alternative; close(); render(); });
+    }
+    document.body.appendChild(dlg); draw(); if (dlg.isConnected) dlg.showModal();
+  }
   function wire() {
-    const el = $("constructor-scroll");
-    const on = (sel, ev, fn) => el.querySelectorAll(sel).forEach(n => n.addEventListener(ev, () => fn(n)));
-
-    $("wk-set-toggle") && $("wk-set-toggle").addEventListener("click", () => { workout.settingsOpen = !(workout.settingsOpen !== false); render(); });
-    on("[data-readiness]", "click", n => { workout.readiness = n.dataset.readiness; workout.target = READINESS[workout.readiness].target; render(); });
-    on("[data-split]", "click", n => { workout.splitDays = Math.max(1, Math.min(6, +n.dataset.split || 1)); render(); });
-    on("[data-ddtoggle]", "click", n => { const k = n.dataset.ddtoggle; workout.uiOpen = workout.uiOpen === k ? null : k; render(); });
-    on("[data-equip]", "click", n => { const t = n.dataset.equip; const i = workout.equipOff.indexOf(t); if (i >= 0) workout.equipOff.splice(i, 1); else workout.equipOff.push(t); workout.uiOpen = null; render(); });
-    on("[data-prio]", "click", n => { const t = n.dataset.prio; const i = workout.priority.indexOf(t); if (i >= 0) workout.priority.splice(i, 1); else workout.priority.push(t); workout.uiOpen = null; render(); });
-    on("[data-restr]", "click", n => { const t = n.dataset.restr; const i = workout.restrictions.indexOf(t); if (i >= 0) workout.restrictions.splice(i, 1); else workout.restrictions.push(t); workout.uiOpen = null; render(); });
-    on("[data-day]", "click", n => { workout.active = n.dataset.day === "all" ? "all" : +n.dataset.day; render(); });
-    on("[data-regen]", "click", n => regenItem(n.dataset.di, +n.dataset.i));
-    on("[data-moveto]", "click", n => moveToDay(n.dataset.di, +n.dataset.i, +n.dataset.moveto));
-    on("[data-warnnav]", "click", n => { workout.warnIdx = (workout.warnIdx || 0) + (+n.dataset.warnnav); render(); });
-    // Свайп влево = удалить; долгое удержание = режим правки → перетаскивание
-    // (как в списке упражнений).
-    el.querySelectorAll(".wk-item-wrap").forEach(wrap => { wireItemSwipe(wrap); wireItemGesture(wrap); });
-    $("wk-edit-done") && $("wk-edit-done").addEventListener("click", exitCEdit);
-    // Свайп по стопке замечаний — листать вперёд/назад.
-    const warnStack = $("wk-warn-stack"); if (warnStack) wireWarnSwipe(warnStack);
-
-    const tgt = $("wk-target"); if (tgt) tgt.addEventListener("change", () => { workout.target = Math.max(0, +tgt.value || 0); persist(); });
-    const reps = $("wk-reps"); if (reps) reps.addEventListener("change", () => { workout.reps = reps.value; persist(); });
-    $("wk-generate") && $("wk-generate").addEventListener("click", generate);
-    $("wk-fill") && $("wk-fill").addEventListener("click", fillDay);
-    $("wk-clear") && $("wk-clear").addEventListener("click", () => { if (workout.active === "all") workout.days.forEach(d => d.items = []); else activeDay().items = []; render(); });
-    $("wk-save") && $("wk-save").addEventListener("click", saveAsTemplates);
-    $("wk-add") && $("wk-add").addEventListener("click", openExercisePicker);
+    const el = $('constructor-scroll');
+    const on = (sel,fn) => el.querySelectorAll(sel).forEach(n => n.addEventListener('click', () => fn(n)));
+    on('[data-readiness]', n => { workout.readiness = n.dataset.readiness; render(); });
+    on('[data-split]', n => { workout.splitDays = +n.dataset.split; render(); });
+    on('[data-equip]', n => { const i = workout.equipOff.indexOf(n.dataset.equip); if (i < 0) workout.equipOff.push(n.dataset.equip); else workout.equipOff.splice(i,1); render(); el.querySelector('.sg-equipment').open = true; });
+    on('[data-remove]', n => { toggleChoice(n.dataset.remove,n.dataset.name); render(); });
+    on('[data-sheet]', n => openSheet(n.dataset.sheet));
+    on('[data-parameters]', setParameters);
+    on('[data-day]', n => { workout.active = +n.dataset.day; render(); });
+    on('[data-resplit]', n => resplit(+n.dataset.resplit));
+    on('[data-keep-volume]', () => { _keepVolume = true; render(); });
+    on('[data-coverage]', n => { _coverageLevel = +n.dataset.coverage; render(); });
+    const selectMovement = n => { _selectedMovement = +n.dataset.movement; render(); };
+    on('[data-movement]', selectMovement);
+    el.querySelectorAll('[data-movement]').forEach(n => n.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const index = n.dataset.movement; selectMovement(n); el.querySelector(`[data-movement="${index}"]`)?.focus({preventScroll:true}); } }));
+    on('[data-lock]', n => { const it = activeDay().items[+n.dataset.lock]; it.locked = !it.locked; render(); });
+    on('[data-replace]', n => openSheet('replace',+n.dataset.replace));
+    on('[data-moveto]', n => moveToDay(n.dataset.di,+n.dataset.i,+n.dataset.moveto));
+    on('[data-step]', n => { const field = n.dataset.step; workout[field] = Math.max(1,Math.min(field === 'target' ? 10 : 30,repsToNum(workout[field]) + +n.dataset.delta)); render(); });
+    el.querySelectorAll('[data-number]').forEach(n => n.addEventListener('change', () => { const field = n.dataset.number; workout[field] = field === 'target' ? Math.max(1,Math.min(10,+n.value || 1)) : /^\d{1,2}\s*[-–]\s*\d{1,2}$/.test(n.value) ? n.value : String(Math.max(1,Math.min(30,+n.value || 10))); render(); }));
+    el.querySelectorAll('.wk-item-wrap').forEach(w => { wireItemSwipe(w); wireItemGesture(w); });
+    $('wk-edit-done')?.addEventListener('click',exitCEdit);
+    $('wk-generate')?.addEventListener('click',generate);
+    $('wk-save')?.addEventListener('click',saveAsTemplates);
   }
 
   // Свайп влево по карточке плана → удалить (порог 80px).
@@ -743,27 +702,6 @@
     render();
   }
 
-  // Свайп по стопке замечаний → предыдущее/следующее.
-  function wireWarnSwipe(stack) {
-    let sx = 0, sy = 0, active = false, decided = false, horiz = false;
-    stack.addEventListener("pointerdown", e => { sx = e.clientX; sy = e.clientY; active = true; decided = false; horiz = false; });
-    stack.addEventListener("pointermove", e => {
-      if (!active) return;
-      const mx = e.clientX - sx, my = e.clientY - sy;
-      if (!decided) { if (Math.abs(mx) < 10 && Math.abs(my) < 10) return; decided = true; horiz = Math.abs(mx) > Math.abs(my); if (!horiz) active = false; }
-    });
-    const end = e => {
-      if (!active || !horiz) { active = false; return; }
-      active = false;
-      const mx = e.clientX - sx;
-      if (Math.abs(mx) < 40) return;
-      workout.warnIdx = (workout.warnIdx || 0) + (mx < 0 ? 1 : -1);
-      render();
-    };
-    stack.addEventListener("pointerup", end);
-    stack.addEventListener("pointercancel", () => { active = false; });
-  }
-
   // Ручной выбор упражнения в план активного дня (модалка с поиском по базе).
   function openExercisePicker() {
     if (!exercises.length) { showToast("В базе нет упражнений"); return; }
@@ -784,7 +722,7 @@
     const listEl = $("wk-pick-list"), inp = $("wk-pick-search");
     const renderList = () => {
       const q = inp.value.trim().toLowerCase();
-      const pool = exercises.filter(e => !q || (e.name || "").toLowerCase().includes(q))
+      const pool = exercises.filter(e => available(e) && (!q || (e.name || "").toLowerCase().includes(q)))
         .sort((a, b) => (a.name || "").localeCompare(b.name || "", "ru")).slice(0, 300);
       listEl.innerHTML = pool.length
         ? pool.map(e => { const mv = exBaseCats(e).join(" · "); return `<button class="wk-pick-item" data-id="${esc(e.id)}"><span class="wk-pick-name">${esc(e.name)}</span>${mv ? `<span class="wk-pick-mv">${esc(mv)}</span>` : ""}</button>`; }).join("")
@@ -802,10 +740,21 @@
 
   /* ── Публичный API ───────────────────────────────────────────────────────── */
   window.CONSTRUCTOR = {
+    back() {
+      if (_step === 'result') { setParameters(); return true; }
+      return false;
+    },
     init() {
       draftContext={owner:Auth.userId(),profile:DATA.getCurrentUser()};
       loadData();
       workout = loadWorkout();
+      workout.readiness = READINESS[workout.readiness] ? workout.readiness : "средняя";
+      workout.target = Math.max(1, Math.min(10, +workout.target || 4));
+      workout.splitDays = Math.max(1, Math.min(4, +workout.splitDays || 1));
+      workout.priority = workout.priority.filter(n => !workout.restrictions.includes(n));
+      if (workout.active === "all") workout.active = 0;
+      _step = workout.days.some(d => d.items.length) ? 'result' : 'parameters';
+      _cEdit = false; _keepVolume = false;
       render();
     },
   };

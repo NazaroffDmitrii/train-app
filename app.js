@@ -9814,7 +9814,7 @@ function renderTemplatesList() {
   }
   const archiveOpen = _tplArchiveOpen && archived.length > 0;
   const archive = `<div class="tpl-archive${archiveOpen ? " is-open" : ""}"><button class="tpl-archive-toggle" type="button" data-tpl-archive-toggle data-archive-count="${archived.length}" aria-expanded="${archiveOpen}">${TPL_ARCHIVE_SVG}<span>Архив</span><small>${archived.length}</small>${TPL_CHEVRON_SVG}</button>${archiveOpen ? `<div class="tpl-archive-list">${archived.map(t => tplArchiveHtml(t, history, lib)).join("")}</div>` : ""}</div>`;
-  const generate = _tplEditMode ? "" : `<button class="tpl-generate-btn" type="button" data-tpl-generate>${TPL_SPARKLES_SVG}Сгенерировать силовую тренировку</button>`;
+  const generate = _tplEditMode ? "" : `<button class="tpl-generate-btn" type="button" data-tpl-generate><span class="tpl-generate-icon">${TPL_SPARKLES_SVG}</span><span class="tpl-generate-copy"><b>Собрать тренировку</b><small>Подберу упражнения под твой уровень, учитывая приоритеты и ограничения</small></span></button>`;
   const createGroup = !_tplEditMode && _tplHeaderGroupCreateOpen ? tplGroupCreateHtml() : "";
   templatesScroll.innerHTML = `<div class="tpl-list">${generate}${createGroup}${cards}${_tplEditMode ? "" : archive}</div>`;
 
@@ -10031,7 +10031,7 @@ function exitTplEditMode() {
 
 $("templates-back-btn").addEventListener("click", () => { exitTplEditMode(); goBackScreen("menu"); });
 $("templates-done-btn").addEventListener("click", exitTplEditMode);
-$("constructor-back-btn").addEventListener("click", () => goBackScreen("templates"));
+$("constructor-back-btn").addEventListener("click", () => { if (!window.CONSTRUCTOR?.back()) goBackScreen("templates"); });
 $("templates-filter-btn").addEventListener("click", event => {
   event.stopPropagation();
   _tplAddMenuOpen = false;
@@ -10557,7 +10557,7 @@ if ("serviceWorker" in navigator) {
     if (typeof _tplDrag !== "undefined" && _tplDrag) return true; // тащим упражнение в шаблоне
     // Спрятанная (display:none) шторка-справочник — та, из которой мы ушли в
     // карточку мышцы, — НЕ должна блокировать свайп-назад: она видимо закрыта.
-    const sheets = document.querySelectorAll(".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open");
+    const sheets = document.querySelectorAll(".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open, .sg-sheet[open]");
     for (const s of sheets) { if (s.style.display !== "none") return true; }
     return false;
   }
