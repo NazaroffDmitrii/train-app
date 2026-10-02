@@ -2486,6 +2486,7 @@ function goToScreen(name, opts = {}) {
   if (name !== "menu" && window.resetWorkoutLauncher) window.resetWorkoutLauncher();
 
   const fromName = activeScreenName();
+  window.CONSTRUCTOR?.onNavigate(name, !!_constructorCatalog && name === "exercises");
   if (typeof _constructorCatalog !== "undefined" && _constructorCatalog && !["exercises", "exerciseDetail", "muscleDetail"].includes(name)) {
     _constructorCatalog = null;
     syncConstructorCatalogUI();
@@ -6840,7 +6841,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   goToScreen("exerciseDetail");
 }
 
-$("exd-back-btn").addEventListener("click", () => goBackScreen(_exdReturnScreen, { keepFilter: true }));
+$("exd-back-btn").addEventListener("click", () => goBackScreen(_exdReturnScreen, { keepFilter: true, resumeConstructor: _exdReturnScreen === "constructor" }));
 
 // Единое поведение шторки (bottom-sheet): закрытие ТОЛЬКО перетаскиванием
 // верхней зоны (dragZone — обычно ручка+шапка), а не из любой точки — иначе
