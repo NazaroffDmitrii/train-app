@@ -55,8 +55,9 @@
   /* ── Данные (адаптер: база «Атлас» → форма генератора) ───────────────────── */
   let exercises = [], categories = [], muscles = [], workout = null, draftContext=null;
   let _cEdit = false;   // режим правки плана (покачивание + перетаскивание), как в упражнениях
-  let _step = "parameters", _coverageLevel = 1, _selectedMovement = 0, _keepVolume = false;
+  let _step = "parameters", _coverageLevel = 1, _selectedMovement = null, _keepVolume = false;
   let _movementExpanded = null;
+  let _viewDay = null, _expandedItem = null, _warningIndex = 0;
   let _hasPlan = false, _resultSnapshot = null, _sessionActive = false, _sessionRevision = 0;
   let _cDrag = null;    // активное перетаскивание карточки
 
@@ -68,6 +69,7 @@
     exercises = DATA.getVisibleExercises(uid).filter(e => e.type !== "run" && !DATA.isHidden(uid, e.id)).map(e => ({
       id: e.id,
       name: e.name,
+      group: e.cat || "",
       equipment: e.atlas?.equipment || "",
       level: LEVEL_RU[e.atlas?.level] || "",
       categories: e.atlas?.categories || [],
@@ -276,8 +278,7 @@
       workout.days = days.map(d => ({ name: d.name, items: d.items }));
     }
     workout.active = 0; workout.manual = false; workout.splitFromSingle = false; _sessionActive = true; _hasPlan = true; _step = "result"; _keepVolume = false;
-    const rows = coverageRows();
-    _selectedMovement = (rows.find(r => r.bad) || rows.find(r => r.priority && !r.excluded) || rows[0])?.i || 0;
+    _selectedMovement = null; _expandedItem = null; _viewDay = null; _coverageLevel = 1; _warningIndex = 0;
     render(); $("constructor-scroll").scrollTop = 0;
   }
   function fillDay() {
@@ -327,7 +328,7 @@
   }
   function removeItem(di, i) { const d = workout.days[+di]; if (!d) return; d.items.splice(i, 1); render(); }
   // Перенос упражнения в другой день (кнопкой-выбором дня в карточке).
-  function moveToDay(di, i, target) { const src = workout.days[+di], dst = workout.days[+target]; if (!src || !dst || +di === +target) return; const it = src.items.splice(i, 1)[0]; if (it) dst.items.push(it); render(); showToast("Перенесено в «" + dst.name + "»"); }
+  function moveToDay(di, i, target) { const src = workout.days[+di], dst = workout.days[+target]; if (!src || !dst || +di === +target) return; const it = src.items.splice(i, 1)[0]; if (it) dst.items.push(it); render(); showToast("Перенесено в день " + (+target+1)); }
 
   /* ── Предупреждения ──────────────────────────────────────────────────────── */
   function warnings() {
@@ -527,19 +528,88 @@
     const active = rows.filter(r => !r.excluded), pending = active.filter(r => r.value === 0);
     return `<div class="sg-card sg-manual-coverage"><div class="sg-label">Движения в плане · весь сплит</div><div class="sg-manual-count">Покрыто ${active.length-pending.length} из ${active.length}</div><p class="sg-muted">${!active.length ? 'Выбери движения в параметрах, чтобы видеть покрытие' : pending.length ? 'Добавь упражнение на нужное движение' : 'Все выбранные движения есть в плане'}</p><div class="sg-chips">${pending.slice(0,3).map(r => `<button type="button" class="sg-chip ghost" data-find-movement="${esc(r.name)}">${icon('plus')}${esc(r.name)}</button>`).join('')}</div>${_coverageLevel === 2 ? coverageListHtml(rows) : ''}<button type="button" class="sg-more" data-coverage="${_coverageLevel === 2 ? 1 : 2}">${_coverageLevel === 2 ? 'Свернуть движения' : 'Все движения и подходы'}${icon(_coverageLevel === 2 ? 'up' : 'down')}</button></div>`;
   }
+  // Presentation state is separate from the saved workout and generation parameters.
+  const DAY_COLORS = ['#b9aeff','#7dd3fc','#5eead4','#f0abfc','#a5b4fc','#fda4af'];
+  const dayStyle = di => `--day-color:${DAY_COLORS[di % DAY_COLORS.length]};--day-tint:${DAY_COLORS[di % DAY_COLORS.length]}3a;--day-line:${DAY_COLORS[di % DAY_COLORS.length]}33`;
+  const itemAt = (di,i) => workout.days[di]?.items[i];
+  const itemLocation = item => { for (let di=0;di<workout.days.length;di++) { const i=workout.days[di].items.indexOf(item); if(i>=0)return {di,i}; } return null; };
+  function resultContext() {
+    const owner = draftContext?.owner, profile = draftContext?.profile, revision = _sessionRevision;
+    return () => _sessionActive && revision === _sessionRevision && owner === Auth.userId() && profile === DATA.getCurrentUser();
+  }
+  function additionDay() {
+    if (_viewDay !== null && workout.days[_viewDay]) return _viewDay;
+    return workout.days.reduce((best,d,i) => dayVolume(d)<dayVolume(workout.days[best]) ? i : best,0);
+  }
+  function candidateExercises(item, mode='analog', query='', movement) {
+    const e = item && exById(item.exId), source = e?.categories || [];
+    const used = new Set(workout.days.flatMap(d=>d.items.map(it=>it.exId)));
+    const q = query.trim().toLocaleLowerCase('ru');
+    return exercises.filter(x => !used.has(x.id) && available(x) &&
+      (movement ? x.categories.includes(movement) : mode === 'analog' ? x.categories.some(n=>source.includes(n)) : !x.categories.some(n=>source.includes(n))) &&
+      (!q || [x.name,x.group,...x.categories].join(' ').toLocaleLowerCase('ru').includes(q)))
+      .sort((a,b)=>Number(exSig(b)===exSig(e||{categories:[]}))-Number(exSig(a)===exSig(e||{categories:[]})) || a.name.localeCompare(b.name,'ru'));
+  }
+  function replacePlanItem(item,id) {
+    const e = exById(id);
+    if (!itemLocation(item) || item.locked || !e || !available(e) || workout.days.some(d=>d.items.some(it=>it.exId===id))) return false;
+    item.exId=id; render(); return true;
+  }
+  function addMovementExercise(name,id) {
+    const e=exById(id);
+    if (!e || !available(e) || !e.categories.includes(name) || workout.days.some(d=>d.items.some(it=>it.exId===id))) return false;
+    workout.days[additionDay()].items.push({exId:id,sets:setsForEx(e),reps:normalizeReps(workout.reps),rpe:READINESS[workout.readiness].rpe});
+    render(); return true;
+  }
+  function resultStepper(it,di,i,small=false) {
+    const name=esc(exById(it.exId)?.name || 'упражнение');
+    return `<div class="rp-stepper ${small?'compact':''}"><button type="button" data-rp-sets="${di}:${i}" data-value="${+it.sets-1}" aria-label="Уменьшить подходы: ${name}" ${it.sets<=1?'disabled':''}>−</button><span><b>${it.sets}</b><small>подх.</small></span><button type="button" class="plus" data-rp-sets="${di}:${i}" data-value="${+it.sets+1}" aria-label="Увеличить подходы: ${name}" ${it.sets>=30?'disabled':''}>+</button></div>`;
+  }
+  function resultDayChips(di,i,small=false) {
+    return `<div class="rp-day-chips ${small||workout.days.length>3?'compact':''}" aria-label="Тренировочный день">${workout.days.map((d,j)=>`<button type="button" style="${dayStyle(j)}" class="${di===j?'current':''}" data-moveto="${j}" data-di="${di}" data-i="${i}" aria-pressed="${di===j}">${small||workout.days.length>3?'Д':'День '}${j+1}</button>`).join('')}</div>`;
+  }
+  function resultActions(it,di,i,small=false) {
+    return `<button type="button" class="${it.locked?'on':''}" data-rp-lock="${di}:${i}" aria-pressed="${!!it.locked}" aria-label="${it.locked?'Открепить':'Закрепить'} упражнение">${icon('lock')}${small?'':it.locked?'Закреплено':'Закрепить'}</button><button type="button" data-rp-replace="${di}:${i}" aria-label="Заменить упражнение" ${it.locked?'disabled':''}>${icon('swap')}${small?'':'Заменить'}</button>`;
+  }
+  function resultItemHtml(it,di,i,small=false) {
+    const e=exById(it.exId), open=_expandedItem===it, cats=e?.categories||[], rows=coverageRows();
+    const group=e?.group || categories.find(c=>cats.includes(c.name))?.group || 'Своё упражнение';
+    const title=`<button type="button" class="rp-name" data-exercise-detail="${esc(it.exId)}" title="Открыть подробности: ${esc(e?.name)}">${esc(e?.name||'Упражнение недоступно')}</button>${it.locked?`<span class="rp-locked">${icon('lock')}</span>`:''}`;
+    const toggle=`<button type="button" class="rp-expand" data-rp-expand="${di}:${i}" aria-expanded="${open}" aria-label="${open?'Свернуть':'Настроить'}: ${esc(e?.name)}">${icon(open?'up':'down')}</button>`;
+    const header=`<div class="rp-item-head" data-rp-header="${di}:${i}"><div class="rp-item-copy"><div class="rp-title">${title}</div>${small?`<div class="rp-day-label">День ${di+1}</div>`:`<div class="rp-tags"><span>${esc(group)}</span>${cats.length?`<span class="movement">${icon('target')}<span>${esc(cats[0])}${workout.priority.includes(cats[0])?' ★':''}</span></span>`:''}${cats.length>1?`<span>+${cats.length-1}${cats.slice(1).some(n=>workout.priority.includes(n))?' ★':''}</span>`:''}</div>`}</div>${small?resultStepper(it,di,i,true):`<span class="rp-set-count"><b>${it.sets}</b><small>подх.</small></span>`}${toggle}</div>`;
+    const panel=!open?'':small?`<div class="rp-mini-panel">${resultDayChips(di,i,true)}${resultActions(it,di,i,true)}</div>`:`<div class="rp-item-panel"><div class="rp-prescription"><div class="rp-tick-wrap"><div class="rp-caption">Подходы</div><div class="rp-set-ticks" role="group" aria-label="Количество подходов">${Array.from({length:Math.max(8,Math.min(10,+it.sets))},(_,n)=>`<button type="button" class="${n<it.sets?'filled':''}" data-rp-sets="${di}:${i}" data-value="${n+1}" aria-label="${n+1} ${plural(n+1)}" aria-pressed="${n+1===+it.sets}"></button>`).join('')}</div></div>${resultStepper(it,di,i)}</div><div><div class="rp-caption">Тренировочный день</div>${resultDayChips(di,i)}</div><div class="rp-item-movements">${cats.map(n=>{const r=rows.find(x=>x.name===n),c=categories.find(x=>x.name===n);return `<div><span class="rp-number">${r?r.i+1:icon('target')}</span><span>${esc(n)}${workout.priority.includes(n)?'<em> ★</em>':''}<small>${esc(c?.group||'')}</small></span></div>`;}).join('')||'<span class="sg-muted">У упражнения не указаны движения</span>'}</div><div class="rp-actions">${resultActions(it,di,i)}</div>${_cEdit?`<button type="button" class="sg-danger rp-remove" data-rp-remove="${di}:${i}">${WK_TRASH}Удалить упражнение</button>`:''}</div>`;
+    const card=`<div class="${small?'rp-mini':'wk-item rp-item'}" style="${dayStyle(di)}">${header}${panel}</div>`;
+    return small?card:`<div class="wk-item-wrap" data-di="${di}" data-i="${i}"><div class="wk-item-del">${WK_TRASH}Удалить</div>${card}</div>`;
+  }
+  function movementTreeHtml(r) {
+    if(r.excluded)return '<div class="rp-tree sg-muted">Движение исключено из плана</div>';
+    return `<div class="rp-tree">${workout.days.map((d,di)=>d.items.map((it,i)=>exById(it.exId)?.categories.includes(r.name)?resultItemHtml(it,di,i,true):'').join('')).join('')}<button type="button" class="rp-add" data-rp-add-movement="${esc(r.name)}">+ Добавить упражнение</button></div>`;
+  }
+  function movementRowHtml(r) {
+    return `<button type="button" class="rp-movement-row ${r.excluded?'excluded':''}" data-movement="${r.i}" aria-expanded="${_selectedMovement===r.i}"><span class="rp-number ${_selectedMovement===r.i?'on':''}">${r.i+1}</span><span class="rp-movement-name">${esc(r.name)}${r.priority?'<em> ★</em>':''}<small>${r.excluded?'исключено из плана':esc(movementHint(r))}</small></span><span class="rp-value">${r.excluded?icon('ban'):`<b style="color:${r.color}">${r.value}</b>/${r.target}`}</span></button>`;
+  }
   function coverageHtml() {
-    const rows = coverageRows(), active = rows.filter(r => !r.excluded), bad = rows.filter(r => r.bad), covered = active.filter(r => r.value > 0).length;
-    if (workout.manual) return manualCoverageHtml(rows);
-    const summary = bad.length ? `Обрати внимание: ${bad[0].name} — ${bad[0].status}${bad.length > 1 ? ', и ещё '+(bad.length-1) : ''}` : `${covered} из ${active.length} движений в норме`;
-    if (!_coverageLevel) return `<div class="sg-card"><button type="button" class="sg-coverage-summary" data-coverage="1">${icon(bad.length ? "info" : "check")}<span><small class="sg-muted">Покрытие${workout.days.length > 1 ? ' за весь сплит' : ''}</small><br>${esc(summary)}</span>${icon("down")}</button></div>`;
-    const selected = rows[_selectedMovement] || rows[0];
-    if (!selected) return '';
-    const max = Math.max(workout.target + 4, ...rows.map(r => Math.max(r.value,r.target))), count = rows.length;
-    const point = (i, radius) => { const a = (-90+i*360/count)*Math.PI/180; return [150+radius*Math.cos(a),138+radius*Math.sin(a)]; };
-    const points = rows.map(r => point(r.i,r.excluded ? 6 : r.value/max*96).join(',')).join(' ');
-    const targetPoints = rows.map(r => point(r.i,r.excluded ? 6 : r.target/max*96).join(',')).join(' ');
-    const radar = `<svg class="sg-radar" viewBox="0 0 300 276" role="group" aria-label="Баланс по ${count} движениям"><circle cx="150" cy="138" r="96"/><circle cx="150" cy="138" r="48"/>${rows.map(r => {const [x,y] = point(r.i,96); return `<path d="M150 138L${x} ${y}"/>`;}).join('')}<polygon class="sg-radar-target" points="${targetPoints}"/><polygon class="sg-radar-area" points="${points}"/>${rows.map(r => {const [x,y] = point(r.i,r.excluded ? 6 : r.value/max*96), [lx,ly] = point(r.i,115); return `<circle cx="${x}" cy="${y}" r="${selected.i === r.i ? 6 : 4.5}" style="fill:${r.color};stroke:${selected.i === r.i ? '#fff' : '#0b0b14'}"/><g tabindex="0" role="button" aria-label="${esc(r.name)}: ${r.excluded ? 'исключено' : r.value+' подходов'}" aria-pressed="${selected.i === r.i}" data-movement="${r.i}"><circle cx="${lx}" cy="${ly}" r="12" style="fill:${selected.i === r.i ? '#7b6ee6' : '#ffffff0a'};stroke:none"/><text x="${lx}" y="${ly}" dy=".35em" text-anchor="middle" fill="${selected.i === r.i ? '#fff' : '#8b8ba3'}">${r.i+1}</text></g>`;}).join('')}</svg>`;
-    return `<div class="sg-card"><div class="sg-row sg-between"><div class="sg-row"><b class="sg-big">${covered}</b><span class="sg-muted">из ${active.length} движений<br>${workout.days.length > 1 ? 'за весь сплит' : 'в плане'}</span></div><div class="sg-row"><span class="sg-status ${bad.length ? 'warn' : ''}">${bad.length ? 'перекос: '+bad.length : 'баланс в норме'}</span><button type="button" class="sg-icon-button" data-coverage="0" aria-label="Свернуть покрытие">${icon("up")}</button></div></div>${radar}<div class="sg-caption"><span class="sg-number selected">${selected.i+1}</span><div><div>${esc(selected.name)}</div></div><b style="color:${selected.color}">${selected.excluded ? '–' : selected.value+'/'+selected.target}</b></div><div class="sg-legend">${[['#4ade9b','в норме'],['#a99cff','приоритет'],['#f5c542','больше'],['#fb7185','меньше']].map(([color,label]) => `<span><i style="background:${color}"></i>${label}</span>`).join('')}<span><i class="dashed"></i>ориентир</span></div><p class="sg-muted sg-radar-help">Нажми на номер, чтобы посмотреть движение.</p>${_coverageLevel === 2 ? coverageListHtml(rows) : ''}<button type="button" class="sg-more" data-coverage="${_coverageLevel === 2 ? 1 : 2}">${_coverageLevel === 2 ? 'Свернуть список' : 'Показать списком'}${icon(_coverageLevel === 2 ? 'up' : 'down')}</button></div>`;
+    const rows=coverageRows(),active=rows.filter(r=>!r.excluded),bad=rows.filter(r=>r.bad),covered=active.filter(r=>r.value>0).length;
+    _warningIndex=Math.min(_warningIndex,Math.max(0,bad.length-1));
+    if(!_coverageLevel) {
+      const r=bad[_warningIndex],severity=x=>Math.abs(x.value-x.target)>=3?'#fb7185':'#f5c542',color=r?severity(r):'#4ade9b';
+      return `<div class="sg-card rp-warning" style="--warning:${color}" data-rp-warning tabindex="0" role="button" aria-label="Развернуть покрытие движений"><span class="rp-warning-icon">${icon(r?'bulb':'check')}</span><div class="rp-warning-copy">${r?`<div class="rp-warning-top"><span>Обрати внимание</span><span class="rp-dots">${bad.map((x,i)=>`<button type="button" style="--warning:${severity(x)}" class="${i===_warningIndex?'on':''}" data-rp-warning-index="${i}" aria-label="Замечание ${i+1}: ${esc(x.name)}" aria-pressed="${i===_warningIndex}"></button>`).join('')}</span></div><div class="rp-warning-title"><span>${esc(r.name)}</span><span class="rp-value"><b style="color:${r.color}">${r.value}</b>/${r.target}</span></div>`:`<span>${active.length?'Всё сбалансировано: '+covered+' из '+active.length+' движений в норме':'Выбери движения в параметрах'}</span>`}</div>${icon('down')}</div>`;
+    }
+    const point=(i,r)=>{const a=i*2*Math.PI/Math.max(1,rows.length)-Math.PI/2;return [160+Math.cos(a)*r,150+Math.sin(a)*r];};
+    const points=rows.map(r=>point(r.i,r.excluded?0:Math.min(105,r.value/Math.max(1,r.target)*75)).join(',')).join(' ');
+    const radar=`<svg class="rp-radar sg-radar" viewBox="0 0 320 300" role="group" aria-label="Покрытие движений за весь план"><polygon points="${points}" fill="#7b6ee64d" stroke="#b9aeff"/><circle cx="160" cy="150" r="75" style="fill:none;stroke:#7b6ee699;stroke-dasharray:4 4"/>${rows.map(r=>{const [x,y]=point(r.i,110),[vx,vy]=point(r.i,r.excluded?0:Math.min(105,r.value/Math.max(1,r.target)*75)),[lx,ly]=point(r.i,132),on=_selectedMovement===r.i;return `<path d="M160 150L${x} ${y}"/>${r.priority&&!r.excluded?`<text x="${vx}" y="${vy+5}" text-anchor="middle" style="font-size:${on?18:14}px;fill:${on?'#fff':'#b9aeff'}">★</text>`:`<circle cx="${vx}" cy="${vy}" r="${on?6:4}" style="fill:${r.color};stroke:${on?'#fff':'none'}"/>`}<g data-movement="${r.i}" tabindex="0" role="button" aria-label="${esc(r.name)}: ${r.excluded?'исключено':r.value+' из '+r.target+' подходов'}" aria-pressed="${on}"><circle cx="${lx}" cy="${ly}" r="14" fill="${on?'#7b6ee6':'#1c1c2b'}" stroke="${on||r.priority?'#b9aeff':r.color}" stroke-opacity="${on||r.priority?1:.5}" ${r.excluded?'stroke-dasharray="3 2"':''}/><text x="${lx}" y="${ly+4}" text-anchor="middle" fill="${r.excluded?'#8b8ba3':'#f4f4f8'}">${r.i+1}</text></g>`;}).join('')}</svg>`;
+    const selected=rows[_selectedMovement], more=`<button type="button" class="rp-more" data-coverage="${_coverageLevel===2?1:2}">${_coverageLevel===2?'Скрыть список':'Показать списком'}${icon(_coverageLevel===2?'up':'down')}</button>`;
+    return `<div class="sg-card rp-coverage"><div class="rp-coverage-heading"><div><b>${covered}</b> <span>из ${active.length} движений в плане</span></div><span class="rp-balance ${bad.length?'warn':''}">${bad.length?'перекос: '+bad.length:'баланс в норме'}</span><button type="button" class="rp-collapse" data-coverage="0" aria-label="Свернуть покрытие">${icon('up')}</button></div>${rows.length?radar:'<p class="sg-muted">Выбери движения в параметрах, чтобы видеть покрытие.</p>'}<div class="rp-legend">${[['#4ade9b','●','норма'],['#b9aeff','★','приоритет'],['#f5c542','●','больше'],['#fb7185','●','меньше'],['#6b6b80','⊘','исключено']].map(([c,s,l])=>`<span><b style="color:${c}">${s}</b> ${l}</span>`).join('')}</div>${_coverageLevel===1?(selected?movementRowHtml(selected)+movementTreeHtml(selected):'<p class="rp-hint">Нажми на номер движения, чтобы увидеть его упражнения</p>'):''}${more}${_coverageLevel===2?`<div class="rp-movement-list">${rows.map(r=>movementRowHtml(r)+(_selectedMovement===r.i?movementTreeHtml(r):'')).join('')}</div>${more}`:''}</div>`;
+  }
+  function dayTabsHtml() {
+    const cell=(di,label,value)=>`<button type="button" data-rp-day="${di===null?'all':di}" class="${_viewDay===di?'on':''}" style="${di===null?'--day-color:#4a4a62':dayStyle(di)}" aria-pressed="${_viewDay===di}"><span>${label}</span><small>${value}${workout.days.length<4?' подх.':''}</small><i></i></button>`;
+    return `<div class="sg-card rp-days"><div>${cell(null,'Все',totalVolume())}${workout.days.map((d,i)=>cell(i,(workout.days.length<4?'День ':'Д')+(i+1),dayVolume(d))).join('')}</div>${workout.days.length>=4?'<p class="rp-caption">Подходов по дням</p>':''}</div>`;
+  }
+  function resultHtml() {
+    if(_viewDay!==null&&!workout.days[_viewDay])_viewDay=null;
+    const visible=workout.days.map((d,di)=>({d,di})).filter(({di})=>_viewDay===null||_viewDay===di),count=visible.reduce((s,{d})=>s+d.items.length,0);
+    const splitNotice=workout.days.length===1&&totalVolume()>VOL_ALERT?`<div class="rp-split-note">${icon('bulb')}<span>${totalVolume()} подходов за день</span><button type="button" data-resplit="${Math.min(4,Math.ceil(totalVolume()/VOL_MAX))}">Разделить на ${Math.min(4,Math.ceil(totalVolume()/VOL_MAX))} дн.</button></div>`:workout.splitFromSingle?'<div class="rp-split-note"><span>План разделён по дням</span><button type="button" data-resplit="1">Вернуть в одну</button></div>':'';
+    return `${coverageHtml()}${dayTabsHtml()}${splitNotice}<div class="rp-exercises-heading"><b>Упражнения · ${count}</b><button type="button" class="rp-add" data-rp-add>+ Добавить</button></div><div class="rp-groups">${visible.map(({d,di})=>`<section class="rp-day-card" style="${dayStyle(di)}"><div class="rp-day-heading"><b>${di+1}</b><span>День ${di+1}</span><small>${dayVolume(d)} подх. · ${d.items.length} упр.</small></div><div class="wk-plan rp-plan ${_cEdit?'wk-editing':''}" data-di="${di}">${d.items.map((it,i)=>resultItemHtml(it,di,i)).join('')||'<p class="sg-empty sg-muted">Нет упражнений. Добавь из базы или выбери движение на радаре.</p>'}</div></section>`).join('')}</div>`;
   }
   function volumeHtml() {
     const multi = workout.days.length > 1, value = dayVolume(activeDay());
@@ -548,56 +618,51 @@
     if (value > VOL_ALERT && !_keepVolume) return `<div class="sg-card sg-overload"><div class="sg-row">${ring(value,92)}<div><b>${value} ${plural(value)} — многовато для одного дня</b><p>Для восстановления ориентируйся на ${VOL_MAX} подхода за тренировку.</p></div></div><div class="sg-row sg-advice-actions"><button type="button" class="sg-primary" data-resplit="${split}">Разделить на ${split} дня</button><button type="button" class="sg-link" data-keep-volume>Оставить как есть</button></div></div>`;
     return `<div class="sg-card sg-row sg-between"><div class="sg-row">${ring(value)}<div>Одна тренировка<small class="sg-muted sg-block">${value} ${plural(value)}</small></div></div>${value > VOL_ALERT ? `<button type="button" class="sg-action-button" data-resplit="${split}">Разделить</button>` : ''}</div>`;
   }
-  function dayTabsHtml() {
-    const rows = coverageRows().filter(r => !r.excluded), covered = rows.filter(r => r.value > 0).length;
-    return `<div class="sg-plan-nav">${workout.manual ? `<div class="sg-manual-progress"><span>Покрыто движений</span><b>${covered}/${rows.length}</b><progress max="${Math.max(1,rows.length)}" value="${covered}"></progress></div>` : ''}${workout.days.length > 1 ? `<div class="sg-day-tabs">${workout.days.map((d,i) => `<button type="button" class="sg-day-tab ${workout.active === i ? 'selected' : ''}" data-day="${i}" aria-pressed="${workout.active === i}"><span>День ${i+1}<small>${dayVolume(d)} ${plural(dayVolume(d))}</small></span></button>`).join('')}</div>` : ''}</div>`;
-  }
-  function updateItemSets(index, value) {
-    const item = activeDay().items[index]; if (!item) return;
+  function updateItemSets(index, value, di = workout.active) {
+    const item = workout.days[di]?.items[index]; if (!item) return;
     item.sets = Math.max(1, Math.min(30, Math.round(Number(value)) || 1));
     render();
   }
-  function itemHtml(it,di,i) {
-    const e = exById(it.exId), groups = e ? [...new Set(exBaseCats(e).map(n => categories.find(c => c.name === n)?.group).filter(Boolean))] : [];
-    return `<div class="wk-item-wrap" data-di="${di}" data-i="${i}"><div class="wk-item-del">${WK_TRASH}Удалить</div><div class="wk-item sg-exercise"><div class="sg-grow"><button type="button" class="sg-exercise-name" data-exercise-detail="${esc(it.exId)}">${esc(e?.name || 'Упражнение недоступно')}</button><div class="sg-exercise-meta">${groups.map(n => `<span class="sg-tag">${esc(n)}</span>`).join('')}</div><div class="sg-movements">${e ? exGoalCats(e).map(n => `<span>${icon('target')}${esc(n)}</span>`).join('') : ''}</div><div class="sg-item-prescription"><span>Подходы</span><div class="sg-item-stepper"><button type="button" data-item-step="${i}" data-delta="-1" aria-label="Уменьшить подходы: ${esc(e?.name)}" ${it.sets <= 1 ? 'disabled' : ''}>${icon('minus')}</button><input type="number" min="1" max="30" inputmode="numeric" value="${it.sets}" data-item-sets="${i}" aria-label="Подходы: ${esc(e?.name)}"><button type="button" data-item-step="${i}" data-delta="1" aria-label="Увеличить подходы: ${esc(e?.name)}" ${it.sets >= 30 ? 'disabled' : ''}>${icon('plus')}</button></div></div>${_cEdit && workout.days.length > 1 ? `<div class="wk-item-days">${workout.days.map((d,dj) => `<button class="wk-item-day${dj === di ? ' cur' : ''}" data-moveto="${dj}" data-di="${di}" data-i="${i}">День ${dj+1}</button>`).join('')}</div>` : ''}</div><div class="sg-exercise-actions"><button type="button" class="sg-icon-button ${it.locked ? 'selected' : ''}" data-lock="${i}" aria-pressed="${!!it.locked}" aria-label="${it.locked ? 'Открепить' : 'Закрепить'} упражнение">${icon(it.locked ? 'lock' : 'unlock')}</button><button type="button" class="sg-icon-button" data-replace="${i}" aria-label="Заменить упражнение" ${it.locked ? 'disabled' : ''}>${icon('swap')}</button></div></div></div>`;
-  }
   function render() {
     const el = $('constructor-scroll'); if (!el) return;
+    const scroll = el.scrollTop;
+    const focused = document.activeElement;
+    const focusData = focused && focused.matches(':focus-visible') && el.contains(focused) ? [...focused.attributes].filter(a=>a.name.startsWith('data-')).map(a=>[a.name,a.value]) : [];
     const root = $('screen-constructor')?.closest('.app');
     if (root) root.scrollTop = 0;
     const result = _step === 'result';
     $('screen-constructor').classList.toggle('sg-parameters', !result);
+    $('screen-constructor').classList.toggle('sg-result', result);
     $('constructor-title').textContent = result ? (workout.manual ? 'Сборка плана' : 'Готовый план') : 'Параметры';
     $('constructor-step').setAttribute('aria-label', `Шаг ${result ? 2 : 1} из 2`);
-    $('constructor-step').innerHTML = `<span>${result ? 'Шаг 2 из 2' : '1/2'}</span><div class="sg-step-track"><i class="selected"></i><i class="${result ? 'selected' : ''}"></i></div>`;
+    $('constructor-step').innerHTML = `<span>${result ? '2/2' : '1/2'}</span><div class="sg-step-track"><i class="selected"></i><i class="${result ? 'selected' : ''}"></i></div>`;
     if (!result) el.innerHTML = parameterHtml();
-    else {
-      const items = activeDay().items;
-      el.innerHTML = `<div class="sg-summary">${choiceChips('priority',true)}${choiceChips('restrictions',true)}</div>${volumeHtml()}${coverageHtml()}${dayTabsHtml()}${workout.days.length > 1 && dayVolume(activeDay()) > VOL_ALERT ? `<div class="sg-day-warning sg-muted">${icon('bulb')}Больше рекомендованного: восстановиться будет сложнее</div>` : ''}<div class="sg-row sg-between sg-exercises-heading"><span>${workout.days.length > 1 ? 'День '+(workout.active+1) : 'Упражнения'} ${workout.days.length > 1 ? '' : `<small class="sg-muted">· ${items.length}</small>`}</span><button type="button" class="sg-chip ghost" data-sheet="add">${icon('plus')}Добавить</button></div><div class="sg-card sg-plan wk-plan${_cEdit ? ' wk-editing' : ''}" data-di="${workout.active}">${items.length ? items.map((it,i) => itemHtml(it,workout.active,i)).join('') : '<p class="sg-muted sg-empty">День пуст. Добавь упражнение из базы или дополни день.</p>'}</div>`;
-    }
+    else el.innerHTML = resultHtml();
     $('constructor-footer').classList.toggle('sg-footer-parameters', !result && !_cEdit);
     $('constructor-footer').innerHTML = _cEdit ? '<button type="button" class="sg-primary" id="wk-edit-done">Готово</button>' : result ? `<button type="button" class="sg-primary" id="wk-save" ${!workout.days.some(d => d.items.length) ? 'disabled' : ''}>Сохранить ${workout.days.filter(d => d.items.length).length > 1 ? 'шаблоны' : 'шаблон'}</button>${workout.manual ? '' : `<button type="button" class="sg-refresh" id="wk-generate" aria-label="Сгенерировать заново, сохранив закреплённые упражнения">${icon('refresh')}</button>`}` : parameterFooterHtml();
-    wire(); persist();
+    wire(); persist(); el.scrollTop = scroll;
+    if(focusData.length) [...el.querySelectorAll('button,[tabindex]')].find(n=>focusData.every(([k,v])=>n.getAttribute(k)===v))?.focus({preventScroll:true});
   }
   function setParameters() { if (_hasPlan) _resultSnapshot = JSON.parse(JSON.stringify(workout)); _step = 'parameters'; _cEdit = false; render(); $('constructor-scroll').scrollTop = 0; }
   function resumePlan() {
     if (!_hasPlan || !_resultSnapshot) return;
-    workout = JSON.parse(JSON.stringify(_resultSnapshot)); _step = 'result'; render();
+    workout = JSON.parse(JSON.stringify(_resultSnapshot)); _expandedItem = null; _step = 'result'; render();
     $('constructor-scroll').scrollTop = 0;
   }
   function startManual() {
     workout.days = Array.from({length:workout.splitDays},(_,i) => ({name: DAY_LETTERS[i], items:[]}));
+    _viewDay = null; _expandedItem = null; _selectedMovement = null; _warningIndex = 0;
     workout.active = 0; workout.manual = true; workout.splitFromSingle = false;
     _sessionActive = true; _hasPlan = true; _step = 'result'; _coverageLevel = 1; render(); $('constructor-scroll').scrollTop = 0;
   }
-  function endSession() { _movementExpanded = null; _sessionRevision++; _hasPlan = false; _resultSnapshot = null; _sessionActive = false; }
+  function endSession() { _viewDay = null; _expandedItem = null; _selectedMovement = null; _warningIndex = 0; _movementExpanded = null; _sessionRevision++; _hasPlan = false; _resultSnapshot = null; _sessionActive = false; }
   function resplit(n) {
     if (workout.days.length === 1 && n > 1) workout.splitFromSingle = true;
     if (n === 1) workout.splitFromSingle = false;
     const all = workout.days.flatMap(d => d.items);
     const days = Array.from({length:n},(_,i) => ({ name: n === 1 ? 'Тренировка 1' : DAY_LETTERS[i], items: [] }));
     all.slice().sort((a,b) => b.sets-a.sets).forEach(it => { const day = days.reduce((a,b) => dayVolume(a) <= dayVolume(b) ? a : b); day.items.push(it); });
-    workout.days = days; workout.splitDays = n; workout.active = 0; _keepVolume = false; render();
+    workout.days = days; _viewDay = null; workout.splitDays = n; workout.active = 0; _keepVolume = false; render();
   }
   function toggleChoice(kind,name) {
     if (kind === 'movements') { const names = workout.movements; const i = names.indexOf(name); if (i < 0) names.push(name); else { names.splice(i,1); workout.priority = workout.priority.filter(n => n !== name); } return; }
@@ -608,7 +673,11 @@
   function openSheet(kind, index) {
     const dlg = document.createElement('dialog'); dlg.className = 'sg sg-sheet';
     const source = document.activeElement;
-    let closing = false, movementTab = 'base';
+    let closing = false, movementTab = 'base', replacementTab = 'analog', query = '';
+    const validContext = resultContext();
+    const replacing = kind === 'replace' ? (typeof index === 'object' ? itemAt(index.di,index.i) : activeDay().items[index]) : null;
+    const selectingExercise = kind === 'replace' || kind === 'movement-add';
+    dlg.classList.toggle('rp-selection-sheet',selectingExercise);
     dlg.classList.toggle('sg-movement-sheet', kind === 'movements');
     const fitMovementSheet = () => {
       if (kind !== 'movements') return;
@@ -634,17 +703,17 @@
         title = kind === 'movements' ? 'Движения в плане' : kind === 'priority' ? 'Приоритет' : 'Ограничения';
         content = `<p class="sg-muted">${kind === 'movements' ? 'Выбери цели плана. Для полного исключения движения используй ограничения.' : kind === 'priority' ? 'Добавим +'+workout.priorityBonus+' подхода на выбранные движения' : 'Выбранные движения исключим из плана'}</p>${(kind === 'priority' ? goalCats() : categories).map(c => `<button type="button" class="sg-choice" data-choice="${esc(c.name)}" aria-pressed="${workout[kind].includes(c.name)}" ${kind === 'priority' && workout.restrictions.includes(c.name) ? 'disabled' : ''}><span class="sg-checkbox ${workout[kind].includes(c.name) ? kind === 'restrictions' ? kind : 'priority' : ''}">${workout[kind].includes(c.name) ? icon('check') : ''}</span><span>${esc(c.name)}<small class="sg-muted sg-block">${esc(kind === 'movements' ? (c.type === 'База' ? 'Базовое' : 'Дополнительное')+' · '+movementHint(c) : movementHint(c))}</small></span></button>`).join('')}<button type="button" class="sg-primary sg-sheet-done" data-close>Готово</button>`;
       } else if (kind === 'add') {
-        title = 'Добавить в план';
+        title = 'Добавить в день '+(Number(workout.active)+1);
         content = `<button class="sg-alt" data-add-manual>${icon('list')}Выбрать из базы упражнений</button><button class="sg-alt" data-fill>${icon('spark')}<span>Дополнить день<small class="sg-muted sg-block">Подберём недостающие движения</small></span></button><button class="sg-alt sg-danger" data-clear>${WK_TRASH}Очистить день</button>`;
-      } else {
-        title = 'Заменить упражнение';
-        const item = activeDay().items[index], e = exById(item?.exId);
-        if (!e || item.locked) return close();
-        const used = new Set(activeDay().items.map(it => it.exId));
-        const options = exercises.filter(x => x.id !== e.id && !used.has(x.id) && available(x) && exGoalCats(x).some(n => exGoalCats(e).includes(n))).sort((a,b) => Number(exSig(b) === exSig(e))-Number(exSig(a) === exSig(e)) || a.name.localeCompare(b.name,'ru'));
-        content = `<p class="sg-sheet-name">${esc(e.name)}</p><p class="sg-muted">Похожие по покрытию движений</p>${options.map(x => `<button type="button" class="sg-alt" data-alternative="${esc(x.id)}"><span>${esc(x.name)}</span><small class="sg-badge ${exSig(x) === exSig(e) ? '' : 'different'}">${exSig(x) === exSig(e) ? 'Аналог' : 'Другое покрытие'}</small></button>`).join('') || '<p class="sg-empty sg-muted">Нет доступных замен с учётом ограничений и оборудования.</p>'}`;
+      } else if (selectingExercise) {
+        if (kind === 'replace' && (!replacing || replacing.locked || !exById(replacing.exId))) return close();
+        title = kind === 'replace' ? 'Заменить: '+exById(replacing.exId).name : 'Добавить упражнение';
+        const analogs = candidateExercises(replacing,'analog');
+        content = kind === 'replace' ? `<div class="rp-replace-tabs" role="group" aria-label="Варианты замены"><button type="button" data-replacement-tab="analog" class="${replacementTab === 'analog'?'on':''}" aria-pressed="${replacementTab === 'analog'}">Аналоги · ${analogs.length}</button><button type="button" data-replacement-tab="other" class="${replacementTab === 'other'?'on':''}" aria-pressed="${replacementTab === 'other'}">Любое упражнение</button></div>${replacementTab === 'other'?`<p class="rp-caption">Упражнения без этого движения: покрытие плана изменится</p><input type="search" class="rp-search" placeholder="Поиск по названию или группе" aria-label="Поиск замены" value="${esc(query)}">`:''}` : `<p class="sg-muted">${esc(index)}</p>`;
+        content += '<div class="rp-candidates"></div>';
       }
-      dlg.innerHTML = `<div class="sg-sheet-drag"><div class="sg-grab"></div><div class="sg-sheet-heading"><h2 id="sg-sheet-title" ${kind === 'movements' ? 'tabindex="-1" autofocus' : ''}>${title}</h2>${kind === 'movements' && movementTab === 'base' ? '<button type="button" class="sg-all-base" data-all-base>Все основные</button>' : ''}</div></div><div class="sg-sheet-body">${content}</div>`;
+
+      dlg.innerHTML = `<div class="sg-sheet-drag"><div class="sg-grab"></div><div class="sg-sheet-heading"><h2 id="sg-sheet-title" ${kind === 'movements' || selectingExercise ? 'tabindex="-1" autofocus' : ''}>${esc(title)}</h2>${kind === 'movements' && movementTab === 'base' ? '<button type="button" class="sg-all-base" data-all-base>Все основные</button>' : ''}</div></div><div class="sg-sheet-body">${content}</div>`;
       window.wireSheetDragClose(dlg, dlg.querySelector('.sg-sheet-drag'), close);
       dlg.setAttribute('aria-labelledby','sg-sheet-title');
       dlg.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
@@ -662,13 +731,48 @@
       dlg.querySelector('[data-add-manual]')?.addEventListener('click', () => close(openExercisePicker));
       dlg.querySelector('[data-fill]')?.addEventListener('click', () => close(fillDay));
       dlg.querySelector('[data-clear]')?.addEventListener('click', () => close(() => { activeDay().items = []; render(); }));
-      dlg.querySelectorAll('[data-alternative]').forEach(b => b.onclick = () => close(() => { activeDay().items[index].exId = b.dataset.alternative; render(); }));
+      const drawCandidates = () => {
+        if(!selectingExercise)return;
+        const candidates=candidateExercises(replacing,replacementTab,query,kind === 'movement-add'?index:null);
+        dlg.querySelector('.rp-candidates').innerHTML=candidates.map(x=>{
+          const extra=x.categories.filter(n=>!exById(replacing?.exId)?.categories.includes(n));
+          const label=kind === 'movement-add'?'Добавить':replacementTab === 'other'?'Другое покрытие':extra.length?'+ '+(categories.find(c=>c.name===extra[0])?.group||extra[0]):'Аналог';
+          return `<div class="rp-candidate"><button type="button" class="rp-candidate-choice" data-candidate="${esc(x.id)}"><span>${esc(x.name)}<small>${esc([x.group,...x.categories].filter(Boolean).join(' · '))}</small></span><span class="rp-candidate-tag">${esc(label)}</span></button><button type="button" class="rp-candidate-info" data-candidate-detail="${esc(x.id)}" aria-label="Подробнее: ${esc(x.name)}">${icon('info')}</button></div>`;
+        }).join('') || '<p class="sg-empty sg-muted">Нет доступных упражнений с учётом ограничений и уже добавленных в план.</p>';
+        dlg.querySelectorAll('[data-candidate]').forEach(b=>b.onclick=()=>close(()=>{if(!validContext())return;if(kind === 'replace')replacePlanItem(replacing,b.dataset.candidate);else addMovementExercise(index,b.dataset.candidate);}));
+        dlg.querySelectorAll('[data-candidate-detail]').forEach(b=>b.onclick=()=>close(()=>{if(validContext())window.openExerciseDetail(b.dataset.candidateDetail,'constructor');}));
+      };
+      dlg.querySelectorAll('[data-replacement-tab]').forEach(b=>b.onclick=()=>{replacementTab=b.dataset.replacementTab;draw();dlg.querySelector('[data-replacement-tab="'+replacementTab+'"]').focus({preventScroll:true});});
+      dlg.querySelector('.rp-search')?.addEventListener('input',e=>{query=e.target.value;drawCandidates();});
+      drawCandidates();
     }
-    document.body.appendChild(dlg); draw(); fitMovementSheet(); if (dlg.isConnected) { dlg.showModal(); if (kind === 'movements') dlg.querySelector('#sg-sheet-title').focus({preventScroll:true}); if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) dlg.animate([{transform:'translateY(100%)'},{transform:'translateY(0)'}],{duration:220,easing:'ease-out'}); }
+    document.body.appendChild(dlg); draw(); fitMovementSheet(); if (dlg.isConnected) { dlg.showModal(); if (kind === 'movements' || selectingExercise) dlg.querySelector('#sg-sheet-title').focus({preventScroll:true}); if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) dlg.animate([{transform:'translateY(100%)'},{transform:'translateY(0)'}],{duration:220,easing:'ease-out'}); }
   }
   function wire() {
     const el = $('constructor-scroll');
     const on = (sel,fn) => el.querySelectorAll(sel).forEach(n => n.addEventListener('click', () => fn(n)));
+    on('[data-rp-day]', n => { _viewDay = n.dataset.rpDay === 'all' ? null : +n.dataset.rpDay; if(_viewDay!==null)workout.active=_viewDay; render(); });
+    on('[data-rp-add]', () => { workout.active=additionDay(); openSheet('add'); });
+    on('[data-rp-add-movement]', n => openSheet('movement-add',n.dataset.rpAddMovement));
+    const locate=n=>n.split(':').map(Number);
+    on('[data-rp-sets]', n => { const [di,i]=locate(n.dataset.rpSets); updateItemSets(i,n.dataset.value,di); });
+    const expand=(key)=>{const [di,i]=locate(key),item=itemAt(di,i);_expandedItem=_expandedItem===item?null:item;render();};
+    on('[data-rp-expand]', n => expand(n.dataset.rpExpand));
+    el.querySelectorAll('[data-rp-header]').forEach(n=>n.addEventListener('click',e=>{if(!e.target.closest('button,input'))expand(n.dataset.rpHeader);}));
+    on('[data-rp-lock]', n => {const [di,i]=locate(n.dataset.rpLock),item=itemAt(di,i);if(item){item.locked=!item.locked;render();}});
+    on('[data-rp-replace]', n => {const [di,i]=locate(n.dataset.rpReplace);openSheet('replace',{di,i});});
+    on('[data-rp-remove]', n => {const [di,i]=locate(n.dataset.rpRemove);removeItem(di,i);});
+    on('[data-rp-warning-index]', n => {_warningIndex=+n.dataset.rpWarningIndex;render();});
+    const warning=el.querySelector('[data-rp-warning]');
+    if(warning) {
+      let sx=0,sy=0,swiped=false;
+      const openWarning=()=>{_selectedMovement=coverageRows().filter(r=>r.bad)[_warningIndex]?.i??null;_coverageLevel=1;render();};
+      warning.addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY;swiped=false;});
+      warning.addEventListener('pointerup',e=>{const dx=e.clientX-sx,dy=e.clientY-sy,n=coverageRows().filter(r=>r.bad).length;if(Math.abs(dx)>40&&Math.abs(dx)>Math.abs(dy)&&n>1){swiped=true;_warningIndex=(_warningIndex+(dx<0?1:n-1))%n;render();}});
+      warning.addEventListener('click',e=>{if(!swiped&&!e.target.closest('button'))openWarning();});
+      warning.addEventListener('keydown',e=>{if(e.target!==warning)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();openWarning();}else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const n=coverageRows().filter(r=>r.bad).length;if(n){_warningIndex=(_warningIndex+(e.key==='ArrowRight'?1:n-1))%n;render();el.querySelector('[data-rp-warning]')?.focus({preventScroll:true});}}});
+    }
+
     on('[data-readiness]', n => { workout.readiness = n.dataset.readiness; render(); });
     on('[data-split]', n => { workout.splitDays = +n.dataset.split; render(); });
 
@@ -685,10 +789,10 @@
     on('[data-day]', n => { workout.active = +n.dataset.day; render(); });
     on('[data-resplit]', n => resplit(+n.dataset.resplit));
     on('[data-keep-volume]', () => { _keepVolume = true; render(); });
-    on('[data-coverage]', n => { _coverageLevel = +n.dataset.coverage; render(); });
-    const selectMovement = n => { _selectedMovement = +n.dataset.movement; render(); };
+    on('[data-coverage]', n => { if(+n.dataset.coverage===0){const i=coverageRows().filter(r=>r.bad).findIndex(r=>r.i===_selectedMovement);if(i>=0)_warningIndex=i;_selectedMovement=null;} _coverageLevel = +n.dataset.coverage; render(); });
+    const selectMovement = n => { _selectedMovement = _selectedMovement === +n.dataset.movement ? null : +n.dataset.movement; _expandedItem = null; render(); };
     on('[data-movement]', selectMovement);
-    el.querySelectorAll('[data-movement]').forEach(n => n.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const index = n.dataset.movement; selectMovement(n); el.querySelector(`[data-movement="${index}"]`)?.focus({preventScroll:true}); } }));
+    el.querySelectorAll('g[data-movement]').forEach(n => n.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const index = n.dataset.movement; selectMovement(n); el.querySelector(`[data-movement="${index}"]`)?.focus({preventScroll:true}); } }));
     on('[data-lock]', n => { const it = activeDay().items[+n.dataset.lock]; it.locked = !it.locked; render(); });
     on('[data-replace]', n => openSheet('replace',+n.dataset.replace));
     on('[data-moveto]', n => moveToDay(n.dataset.di,+n.dataset.i,+n.dataset.moveto));
