@@ -400,10 +400,11 @@
   }
 
   /* ── Генератор: параметры → готовый план ───────────────────────────────── */
+  const READY_LABELS = ['Тренировочный стаж', 'Занятий в неделю', 'Ограничения по здоровью', 'Условия для восстановления'];
   const READY_DETAILS = {
-    "низкая": ["Стаж тренировок меньше 3 месяцев", "Меньше 2 занятий в неделю", "Значительные ограничения, связанные с физическим состоянием", "Нет условий для полного восстановления после нагрузок"],
-    "средняя": ["Стаж тренировок 3–6 месяцев", "2–3 занятия в неделю", "Незначительные ограничения, связанные с физическим состоянием", "Ограниченное восстановление после нагрузок"],
-    "высокая": ["Стаж тренировок больше 6 месяцев", "3 и более занятий в неделю", "Нет ограничений, связанных с физическим состоянием", "Есть все условия для восстановления после нагрузок"],
+    "низкая": ['< 3 мес.', 'Меньше 2', 'Значительные', 'Отсутствуют'],
+    "средняя": ['3–6 мес.', '2–3', 'Незначительные', 'Есть ограничения'],
+    "высокая": ['> 6 мес.', '3 и более', 'Отсутствуют', 'Есть все условия'],
   };
   const ICONS = {
     spark: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/><path d="M20 2v4m-2-2h4"/>',
@@ -461,8 +462,8 @@
   function movementCardHtml() {
     const selected = goalCats(), baseCount = selected.filter(c => c.type === 'База').length;
     const optionCount = selected.filter(c => c.type !== 'База' && !workout.restrictions.includes(c.name)).length;
-    const baseText = baseCount === baseCats().length ? 'База' : `${baseCount} основных`;
-    const optionText = optionCount ? ` + ${optionCount} ${optionCount === 1 ? 'опция' : optionCount < 5 ? 'опции' : 'опций'}` : '';
+    const baseText = baseCount === baseCats().length ? 'Основные' : `${baseCount} основных`;
+    const optionText = optionCount ? ` + ${optionCount} ${optionCount === 1 ? 'дополнительное' : 'дополнительных'}` : '';
     const priority = workout.priority.filter(n => selected.some(c => c.name === n) && !workout.restrictions.includes(n));
     const kind = _movementExpanded, values = kind === 'priority' ? priority : workout.restrictions;
     const expanded = kind ? `<div class="sg-movement-expanded" id="sg-movement-expanded"><div class="sg-label">${kind === 'priority' ? `Приоритет · +${workout.priorityBonus} подхода` : 'Исключаем из плана'}</div><div class="sg-chips">${values.length ? values.map(n => `<button type="button" class="sg-chip ${kind}" data-remove="${kind}" data-name="${esc(n)}" aria-label="${kind === 'priority' ? 'Убрать приоритет' : 'Снять исключение'}: ${esc(n)}">${icon(kind === 'priority' ? 'star' : 'ban')}<span>${esc(n)}</span>${icon('close')}</button>`).join('') : `<span class="sg-muted">${kind === 'priority' ? 'Приоритеты не выбраны' : 'Нет исключённых движений'}</span>`}</div></div>` : '';
@@ -490,7 +491,7 @@
   }
   function movementSheetHtml(tab) {
     const main = tab === 'base', rows = categories.filter(c => (c.type === 'База') === main);
-    return `<div class="sg-movement-tabs" role="tablist" aria-label="Тип движений"><button type="button" role="tab" aria-selected="${main}" data-movement-tab="base" class="${main ? 'selected' : ''}">Основные</button><button type="button" role="tab" aria-selected="${!main}" data-movement-tab="optional" class="${!main ? 'selected' : ''}">Дополнительные</button></div><p class="sg-movement-help">${main ? `База плана, рекомендуем оставить все. ★ — приоритет (+${workout.priorityBonus} подхода), ⊘ — исключить из плана.` : `По желанию: добавляй, если хочешь сделать больше акцента. ★ — приоритет, +${workout.priorityBonus} подхода.`}</p><div class="sg-movement-list" role="tabpanel" aria-label="${main ? 'Основные' : 'Дополнительные'} движения">${rows.map(c => {
+    return `<div class="sg-movement-tabs" role="tablist" aria-label="Тип движений"><button type="button" role="tab" aria-selected="${main}" data-movement-tab="base" class="${main ? 'selected' : ''}">Основные</button><button type="button" role="tab" aria-selected="${!main}" data-movement-tab="optional" class="${!main ? 'selected' : ''}">Дополнительные</button></div><p class="sg-movement-help"><span>${main ? 'База плана, рекомендуем оставить все.' : 'Можно добавить по желанию.'}</span><span>★ — приоритет (+${workout.priorityBonus} подхода)${main ? ', ⊘ — исключить из плана.' : '.'}</span></p><div class="sg-movement-list" role="tabpanel" aria-label="${main ? 'Основные' : 'Дополнительные'} движения">${rows.map(c => {
       const excluded = workout.restrictions.includes(c.name), on = workout.movements.includes(c.name) && !excluded, priority = on && workout.priority.includes(c.name);
       return `<div class="sg-movement-option ${excluded ? 'excluded' : !on ? 'inactive' : ''}"><button type="button" class="sg-movement-select-row" data-movement-action="select" data-name="${esc(c.name)}" aria-pressed="${on}" aria-label="Включить в план: ${esc(c.name)}"><span class="sg-checkbox ${on ? 'priority' : ''}">${on ? icon('check') : ''}</span><span>${esc(c.name)}<small>${esc(movementHint(c))}</small></span></button><div class="sg-movement-tools">${main ? `<button type="button" data-movement-action="exclude" data-name="${esc(c.name)}" class="${excluded ? 'excluded' : ''}" aria-pressed="${excluded}" aria-label="Исключить: ${esc(c.name)}">${icon('ban')}</button>` : ''}<button type="button" data-movement-action="priority" data-name="${esc(c.name)}" class="${priority ? 'priority' : ''}" aria-pressed="${priority}" aria-label="Приоритет: ${esc(c.name)}">${icon('star')}</button></div></div>`;
     }).join('')}</div><div class="sg-movement-done"><button type="button" class="sg-primary" data-close>Готово</button></div>`;
@@ -502,7 +503,7 @@
     const status = volumeStatus(perDay);
     const ticks = Math.min(48, perDay), color = perDay <= VOL_MAX ? "var(--sg-green)" : "var(--sg-yellow)";
     const stepper = (field, label, value, min, max) => `<div><label class="sg-label" for="sg-${field}">${label}</label><div class="sg-stepper"><button type="button" data-step="${field}" data-delta="-1" aria-label="Уменьшить: ${label}" ${+value <= min ? 'disabled' : ''}>${icon("minus")}</button><input id="sg-${field}" data-number="${field}" aria-label="${label}" inputmode="numeric" type="number" min="${min}" max="${max}" step="1" value="${esc(value)}"><button type="button" data-step="${field}" data-delta="1" aria-label="Увеличить: ${label}" ${+value >= max ? 'disabled' : ''}>${icon("plus")}</button></div></div>`;
-    return `<div class="sg-card"><div class="sg-label">Готовность</div><div class="sg-levels">${levels.map((n,i) => `<button type="button" data-readiness="${n}" aria-pressed="${n === workout.readiness}" class="${n === workout.readiness ? 'selected' : ''}"><span class="sg-bars" aria-hidden="true">${[0,1,2].map(j => `<i class="${j <= i ? 'lit' : ''}"></i>`).join("")}</span>${n[0].toUpperCase()+n.slice(1)}</button>`).join("")}</div><div class="sg-details">${details.map((d,i) => `<div>${icon(["clock","calendar","heart","bed"][i])}<span>${d}</span></div>`).join("")}</div></div>
+    return `<div class="sg-card"><div class="sg-label">Готовность</div><div class="sg-levels">${levels.map((n,i) => `<button type="button" data-readiness="${n}" aria-pressed="${n === workout.readiness}" class="${n === workout.readiness ? 'selected' : ''}"><span class="sg-bars" aria-hidden="true">${[0,1,2].map(j => `<i class="${j <= i ? 'lit' : ''}"></i>`).join("")}</span>${n[0].toUpperCase()+n.slice(1)}</button>`).join("")}</div><div class="sg-details">${details.map((d,i) => `<div class="sg-readiness-tile"><span class="sg-readiness-icon">${icon(["clock","calendar","heart","bed"][i])}</span><div class="sg-readiness-copy"><span>${READY_LABELS[i]}</span><b>${esc(d)}</b></div></div>`).join("")}</div></div>
       <div class="sg-card sg-prescription"><div class="sg-two">${stepper("target", "Подходов", workout.target, 1, 10)}${stepper("reps", "Повторов", workout.reps, 1, 30)}</div><p class="sg-note">${icon("info")}<span>Для твоей готовности эффективно до ${READINESS[workout.readiness].effective} подходов на мышечную группу</span></p></div>
       <div class="sg-card"><div class="sg-label"><span>Дней в сплите</span><span>${workout.splitDays === 1 ? 'Fullbody' : workout.splitDays + ' тренировки'}</span></div><div class="sg-days-select">${[1,2,3,4].map(n => `<button type="button" data-split="${n}" class="${n === workout.splitDays ? 'selected' : ''}" aria-pressed="${n === workout.splitDays}">${n}</button>`).join("")}</div></div>
       ${movementCardHtml()}
@@ -609,6 +610,12 @@
     const source = document.activeElement;
     let closing = false, movementTab = 'base';
     dlg.classList.toggle('sg-movement-sheet', kind === 'movements');
+    const fitMovementSheet = () => {
+      if (kind !== 'movements') return;
+      const header = $('screen-constructor')?.querySelector('.sg-header');
+      if (header) dlg.style.setProperty('--sg-sheet-top', Math.ceil(header.getBoundingClientRect().bottom + 8)+'px');
+    };
+    if (kind === 'movements') window.addEventListener('resize', fitMovementSheet);
     const close = after => {
       if (closing) return; closing = true;
       const finish = () => { dlg.close(); if (typeof after === 'function') after(); };
@@ -617,7 +624,7 @@
       setTimeout(finish, 220);
     };
     dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
-    dlg.addEventListener('close', () => { dlg.remove(); if (source?.isConnected) source.focus({preventScroll:true}); });
+    dlg.addEventListener('close', () => { window.removeEventListener('resize', fitMovementSheet); dlg.remove(); if (source?.isConnected) source.focus({preventScroll:true}); });
     dlg.addEventListener('click', e => { if (e.target === dlg) { const r = dlg.getBoundingClientRect(); if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right) close(); } });
     function draw() {
       const choosing = kind === 'priority' || kind === 'restrictions';
@@ -637,7 +644,7 @@
         const options = exercises.filter(x => x.id !== e.id && !used.has(x.id) && available(x) && exGoalCats(x).some(n => exGoalCats(e).includes(n))).sort((a,b) => Number(exSig(b) === exSig(e))-Number(exSig(a) === exSig(e)) || a.name.localeCompare(b.name,'ru'));
         content = `<p class="sg-sheet-name">${esc(e.name)}</p><p class="sg-muted">Похожие по покрытию движений</p>${options.map(x => `<button type="button" class="sg-alt" data-alternative="${esc(x.id)}"><span>${esc(x.name)}</span><small class="sg-badge ${exSig(x) === exSig(e) ? '' : 'different'}">${exSig(x) === exSig(e) ? 'Аналог' : 'Другое покрытие'}</small></button>`).join('') || '<p class="sg-empty sg-muted">Нет доступных замен с учётом ограничений и оборудования.</p>'}`;
       }
-      dlg.innerHTML = `<div class="sg-sheet-drag"><div class="sg-grab"></div><div class="sg-sheet-heading"><h2 id="sg-sheet-title">${title}</h2>${kind === 'movements' && movementTab === 'base' ? '<button type="button" class="sg-all-base" data-all-base>Все основные</button>' : ''}</div></div><div class="sg-sheet-body">${content}</div>`;
+      dlg.innerHTML = `<div class="sg-sheet-drag"><div class="sg-grab"></div><div class="sg-sheet-heading"><h2 id="sg-sheet-title" ${kind === 'movements' ? 'tabindex="-1" autofocus' : ''}>${title}</h2>${kind === 'movements' && movementTab === 'base' ? '<button type="button" class="sg-all-base" data-all-base>Все основные</button>' : ''}</div></div><div class="sg-sheet-body">${content}</div>`;
       window.wireSheetDragClose(dlg, dlg.querySelector('.sg-sheet-drag'), close);
       dlg.setAttribute('aria-labelledby','sg-sheet-title');
       dlg.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
@@ -657,7 +664,7 @@
       dlg.querySelector('[data-clear]')?.addEventListener('click', () => close(() => { activeDay().items = []; render(); }));
       dlg.querySelectorAll('[data-alternative]').forEach(b => b.onclick = () => close(() => { activeDay().items[index].exId = b.dataset.alternative; render(); }));
     }
-    document.body.appendChild(dlg); draw(); if (dlg.isConnected) { dlg.showModal(); if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) dlg.animate([{transform:'translateY(100%)'},{transform:'translateY(0)'}],{duration:220,easing:'ease-out'}); }
+    document.body.appendChild(dlg); draw(); fitMovementSheet(); if (dlg.isConnected) { dlg.showModal(); if (kind === 'movements') dlg.querySelector('#sg-sheet-title').focus({preventScroll:true}); if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) dlg.animate([{transform:'translateY(100%)'},{transform:'translateY(0)'}],{duration:220,easing:'ease-out'}); }
   }
   function wire() {
     const el = $('constructor-scroll');
