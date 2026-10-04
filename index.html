@@ -3659,6 +3659,40 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 .rp-candidate-tag { flex:none; max-width:95px; border-radius:10px; background:#1d1a3a; color:var(--sg-light); padding:4px 8px; font-size:11px; text-align:center; }.sg .rp-candidate-info { flex:none; width:28px; height:34px; color:var(--sg-muted); padding:0; display:grid; place-items:center; }
 @media(max-width:360px) { .sg-result .sg-card { padding:13px; }.sg-result .rp-days { padding:8px; }.rp-coverage-heading { gap:5px; }.rp-coverage-heading > div > span { font-size:11px; }.rp-balance { font-size:10px; padding:4px 6px; }.rp-legend { font-size:9px; gap:4px; }.rp-prescription { gap:8px; }.sg .rp-stepper button { width:32px; }.rp-stepper > span { min-width:34px; }.rp-plan { padding:10px 8px 2px; }.rp-plan .wk-item.rp-item { padding:0 9px; }.rp-mini { padding:0 7px; }.rp-mini .rp-item-head { gap:3px; }.sg .rp-stepper.compact button { width:26px; }.rp-mini .rp-name { font-size:12px; }.rp-mini-panel { gap:4px; }.sg .rp-mini-panel > button { width:28px; }.rp-days > div { gap:4px; }.sg .rp-days button { padding-inline:3px; font-size:12px; } }
 
+ .settings-chevron,.profile-chevron { color:#b9aeff; }
+.settings-chevron svg,.profile-chevron svg,.wd-ex-nav-btn svg { width:17px; height:17px; stroke-width:1.7; }
+/* Общая навигация и уточнения конструктора. */
+button.btn-chip[id$="back-btn"],#settings-back { width:38px; height:38px; min-width:38px; padding:0; flex:none; display:grid; place-items:center; border-radius:50%; color:#b9aeff; background:#14141f; border:1px solid rgba(255,255,255,.07); }
+#settings-back[hidden] { display:none; }
+button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px; stroke-width:1.7; }
+.tpl-card-chevron,.launcher-card-chevron,.rp-collapse { color:#b9aeff; background:#14141f; border:1px solid rgba(255,255,255,.07); border-radius:50%; }
+.ex-row-chevron,.ref-card-chevron { color:#b9aeff; }.ex-row-chevron svg,.ref-card-chevron svg,.tpl-card-chevron svg,.launcher-card-chevron svg { stroke-width:1.7; }
+.sg-parameters .sg-heading h1,.sg-result .sg-heading h1 { font-family:inherit; font-size:22px; font-weight:700; letter-spacing:-.02em; }
+.sg-parameters .sg-readiness-card { border-radius:28px; padding:16px; }
+.sg-readiness-card > .sg-label { align-items:baseline; margin:2px 4px 12px; font-size:14px; }
+.sg-readiness-card > .sg-label b { color:var(--sg-light); font-size:12px; font-weight:500; text-align:right; }
+.sg-parameters .sg-readiness-card .sg-levels { background:#0d0d16; border-radius:20px; padding:5px; gap:0; }
+.sg-parameters .sg-readiness-card .sg-levels button { padding:11px 0 10px; border-radius:16px; font-size:14px; gap:5px; }
+.sg-readiness-card .sg-bars { height:20px; gap:3px; }.sg-readiness-card .sg-bars i { width:6px; border-radius:3px; }.sg-readiness-card .sg-bars i:nth-child(1) { height:8px; }.sg-readiness-card .sg-bars i:nth-child(2) { height:13px; }.sg-readiness-card .sg-bars i:nth-child(3) { height:19px; }
+.sg-parameters .sg-readiness-card .sg-details { gap:10px; margin-top:12px; }
+.sg-parameters .sg-readiness-card .sg-readiness-tile { height:92px; display:flex; flex-direction:column; align-items:stretch; justify-content:space-between; gap:4px; border-radius:18px; padding:12px; }
+.sg-readiness-label { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--sg-muted); white-space:nowrap; }
+.sg-parameters .sg-details .sg-readiness-label svg { width:16px; height:16px; color:var(--sg-light); float:none; margin:0; }
+.sg-readiness-tile > b { font-size:clamp(12px,3.65vw,16px); font-weight:600; line-height:1.25; white-space:nowrap; }
+.sg-readiness-meter { display:flex; gap:3px; }.sg-readiness-meter i { flex:1; height:3px; border-radius:2px; background:#2e2e44; }.sg-readiness-meter .lit { background:var(--sg-light); }
+.sg .rp-mini .rp-stepper.compact { background:transparent; border-radius:0; padding:0; gap:0; }
+.sg .rp-mini .rp-stepper.compact button { background:transparent; box-shadow:none; color:var(--sg-light); width:28px; height:38px; font-size:24px; }
+.sg .rp-mini .rp-stepper.compact > span { min-width:32px; }.sg .rp-mini .rp-stepper.compact b { font-size:22px; font-weight:600; }.sg .rp-mini .rp-stepper.compact small { font-size:11px; }
+.rp-day-heading { position:static; }
+.constructor-catalog-context { flex:none; padding:0 max(16px,calc((100% - 640px)/2)); }
+.constructor-catalog-context[hidden] { display:none; }.constructor-catalog-context p { font-size:13px; color:var(--text-tertiary); margin:0 0 12px; }
+.constructor-catalog-modes { display:flex; gap:4px; padding:4px; border-radius:16px; background:#1c1c2b; margin-bottom:12px; }.constructor-catalog-modes button { flex:1; padding:10px 4px; border-radius:12px; color:#8b8ba3; font-size:13px; }.constructor-catalog-modes .selected { background:#7b6ee6; color:#fff; }
+.constructor-catalog .constructor-catalog-add { order:-1; width:26px; height:26px; border-radius:50%; margin:0 10px 0 0; border:1.5px solid #55526b; background:transparent; color:#fff; }
+.constructor-catalog .constructor-catalog-add.selected { background:#7b6ee6; border-color:#7b6ee6; opacity:1; }.constructor-catalog .constructor-catalog-add svg { width:17px; height:17px; }
+.constructor-catalog-footer button:disabled { opacity:.35; }
+.template-carousel { user-select:none; -webkit-user-select:none; }.template-carousel.is-dragging { scroll-snap-type:none; cursor:grabbing; scroll-behavior:auto; }
+@media(max-width:360px) { .sg-parameters .sg-readiness-card { padding:13px; }.sg-parameters .sg-readiness-card .sg-readiness-tile { padding:11px 9px; }.sg-readiness-label { font-size:10.5px; gap:5px; }.sg-readiness-card > .sg-label { font-size:13px; margin-inline:0; }.sg-readiness-card > .sg-label b { font-size:10.5px; }.sg .rp-mini .rp-stepper.compact button { width:23px; }.sg .rp-mini .rp-stepper.compact > span { min-width:28px; } }
+
 @media (min-width:681px) { #constructor-scroll,.sg-header,.sg-footer { padding-inline:max(16px,calc((100% - 640px)/2)); } }
 @media (prefers-reduced-motion:reduce) { .sg-sheet { transition:none; } }
 </style>
@@ -3984,6 +4018,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
         <div class="exercises-header-title">Упражнения</div>
       </div>
     </div>
+    <div id="constructor-catalog-context" class="constructor-catalog-context" hidden></div>
     <div class="exercises-search-wrap">
       <input class="exercises-search" id="exercises-search" placeholder="Поиск упражнения…" type="text">
       <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
@@ -4201,7 +4236,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   <div class="modal-backdrop" id="settings-modal-backdrop">
     <div class="modal settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="settings-modal-header">
-        <button class="modal-close-icon" id="settings-back" type="button" aria-label="Назад в настройки" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button>
+        <button class="modal-close-icon" id="settings-back" type="button" aria-label="Назад в настройки" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>
         <h2 class="modal-title" id="settings-title">Настройки</h2>
         <button class="modal-close-icon" id="settings-close-top" type="button" aria-label="Закрыть настройки">×</button>
       </div>
@@ -4221,14 +4256,14 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
       </div>
       <h3 class="settings-section-title">Данные</h3>
       <div class="settings-list">
-        <button class="settings-list-row" id="transfer-settings-btn" type="button"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h15l-4-4M18 16H3l4 4"/></svg></span><span>Импорт и экспорт</span><span class="settings-chevron" aria-hidden="true">›</span></button>
-        <button class="settings-list-row" id="recovery-settings-btn" type="button"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/></svg></span><span>Восстановление данных</span><span class="settings-chevron" aria-hidden="true">›</span></button>
+        <button class="settings-list-row" id="transfer-settings-btn" type="button"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h15l-4-4M18 16H3l4 4"/></svg></span><span>Импорт и экспорт</span><span class="settings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span></button>
+        <button class="settings-list-row" id="recovery-settings-btn" type="button"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/></svg></span><span>Восстановление данных</span><span class="settings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span></button>
       </div>
       <h3 class="settings-section-title">Аккаунт</h3>
       <div class="settings-list">
-        <button class="settings-list-row" id="personal-data-btn" type="button"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a5 5 0 0 0-5-5h-4a5 5 0 0 0-5 5v2"/><circle cx="12" cy="6" r="4"/></svg></span><span>Личные данные</span><span class="settings-chevron" aria-hidden="true">›</span></button>
-        <button class="settings-list-row" id="switch-user-btn" type="button"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h10l-4-4M14 18H4l4 4M20 6l-4 4M4 18l4-4"/></svg></span><span>Сменить профиль</span><span class="settings-chevron" aria-hidden="true">›</span></button>
-        <button class="settings-list-row" id="enter-invite-btn" type="button" style="display:none"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4zM9 12h6M12 9v6"/></svg></span><span>Ввести код приглашения</span><span class="settings-chevron" aria-hidden="true">›</span></button>
+        <button class="settings-list-row" id="personal-data-btn" type="button"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a5 5 0 0 0-5-5h-4a5 5 0 0 0-5 5v2"/><circle cx="12" cy="6" r="4"/></svg></span><span>Личные данные</span><span class="settings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span></button>
+        <button class="settings-list-row" id="switch-user-btn" type="button"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h10l-4-4M14 18H4l4 4M20 6l-4 4M4 18l4-4"/></svg></span><span>Сменить профиль</span><span class="settings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span></button>
+        <button class="settings-list-row" id="enter-invite-btn" type="button" style="display:none"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4zM9 12h6M12 9v6"/></svg></span><span>Ввести код приглашения</span><span class="settings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span></button>
         <button class="settings-list-row" id="auth-signout-btn" type="button"><span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></span><span>Выйти из аккаунта</span></button>
       </div>
       <div class="settings-footer">
@@ -4240,10 +4275,10 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   <!-- ===== Настройки: импорт и экспорт ===== -->
   <section class="settings-page" id="transfer-modal-backdrop" data-settings-page="Импорт и экспорт" hidden inert>
       <button class="settings-subitem" id="import-data-btn" type="button">
-        <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 11v6M9 14l3 3 3-3"/></svg></span><span class="settings-item-text"><strong>Импорт</strong><small>Загрузить данные из файла</small></span><span class="settings-chevron" aria-hidden="true">›</span>
+        <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 11v6M9 14l3 3 3-3"/></svg></span><span class="settings-item-text"><strong>Импорт</strong><small>Загрузить данные из файла</small></span><span class="settings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span>
       </button>
       <button class="settings-subitem" id="export-data-btn" type="button">
-        <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 17v-6M9 14l3-3 3 3"/></svg></span><span class="settings-item-text"><strong>Экспорт</strong><small>Сохранить данные в файл</small></span><span class="settings-chevron" aria-hidden="true">›</span>
+        <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M12 17v-6M9 14l3-3 3 3"/></svg></span><span class="settings-item-text"><strong>Экспорт</strong><small>Сохранить данные в файл</small></span><span class="settings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span>
       </button>
       <input type="file" id="import-data-input" accept="application/json,.json" hidden>
   </section>
@@ -4255,7 +4290,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
         <span class="modal-option-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="14" height="14" rx="2"/><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>
         </span>
-        <span class="settings-item-text"><strong>Копии истории тренировок</strong><small>Автоматически сохранённые копии</small></span><span class="settings-chevron" aria-hidden="true">›</span>
+        <span class="settings-item-text"><strong>Копии истории тренировок</strong><small>Автоматически сохранённые копии</small></span><span class="settings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span>
       </button>
       <button class="settings-subitem" id="recently-deleted-btn" type="button">
         <span class="modal-option-icon" aria-hidden="true">
@@ -4263,7 +4298,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
             <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/>
           </svg>
         </span>
-        <span class="settings-item-text"><strong>Недавно удалённые</strong><small>Можно вернуть удалённое</small></span><span class="settings-chevron" aria-hidden="true">›</span>
+        <span class="settings-item-text"><strong>Недавно удалённые</strong><small>Можно вернуть удалённое</small></span><span class="settings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span>
       </button>
       <p class="settings-warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7M12 6v2"/></svg><span>Копии хранятся только на этом устройстве. Очистка данных сайта может их удалить.</span></p>
   </section>

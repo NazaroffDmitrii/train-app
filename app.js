@@ -1375,6 +1375,7 @@ function setupTemplateCarousel(carousel, options = {}) {
   const state = {
     fingerDown: false,
     pointerActive: false,
+    mouseDrag: null,
     gesture: null,
     ignoreScroll: true,
     snapTimer: 0,
@@ -1462,11 +1463,30 @@ function setupTemplateCarousel(carousel, options = {}) {
   const onPointerDown = event => {
     if (!event.isPrimary) return;
     state.pointerActive = true;
+    state.mouseDrag = event.pointerType === 'mouse' && event.button === 0 && !event.target.closest('.launcher-card-tags,.tpl-tags')
+      ? {x:event.clientX,y:event.clientY,left:carousel.scrollLeft,engaged:false,id:event.pointerId} : null;
     state.interactionStartLeft = carousel.scrollLeft;
     state.interactionMoved = false;
     clearTimeout(state.snapTimer);
   };
+  const onPointerMove = event => {
+    const drag=state.mouseDrag;if(!drag)return;
+    const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
+    if(!drag.engaged) {
+      if(Math.max(Math.abs(dx),Math.abs(dy))<8)return;
+      if(Math.abs(dy)>Math.abs(dx)){state.mouseDrag=null;return;}
+      drag.engaged=true;beginGesture();carousel.classList.add('is-dragging');
+      carousel.setPointerCapture?.(event.pointerId);
+    }
+    if(event.cancelable)event.preventDefault();
+    state.interactionMoved=true;carousel.scrollLeft=drag.left-dx;
+  };
   const onPointerFinish = () => {
+    const drag=state.mouseDrag;state.mouseDrag=null;
+    if(drag?.engaged) {
+      carousel.classList.remove('is-dragging');
+      if(carousel.hasPointerCapture?.(drag.id))carousel.releasePointerCapture(drag.id);
+    }
     if (state.interactionMoved || Math.abs(carousel.scrollLeft - state.interactionStartLeft) > 6) {
       state.suppressClickUntil = Date.now() + 550;
     }
@@ -1490,6 +1510,7 @@ function setupTemplateCarousel(carousel, options = {}) {
   carousel.addEventListener("touchend", onTouchFinish, { passive: true });
   carousel.addEventListener("touchcancel", onTouchFinish, { passive: true });
   carousel.addEventListener("pointerdown", onPointerDown, { passive: true });
+  carousel.addEventListener("pointermove", onPointerMove, { passive: false });
   carousel.addEventListener("pointerup", onPointerFinish, { passive: true });
   carousel.addEventListener("pointercancel", onPointerFinish, { passive: true });
   carousel.addEventListener("scroll", onScroll, { passive: true });
@@ -5666,28 +5687,43 @@ const exerciseFormCatGroup  = $("exercise-form-cat-group");
 // Режим выбора для конструктора использует тот же каталог, фильтры и группы.
 let _constructorCatalog = null;
 function syncConstructorCatalogUI() {
-  const active = !!_constructorCatalog;
-  $("screen-exercises").classList.toggle("constructor-catalog", active);
-  $("exercises-add-btn").hidden = active;
-  $("ex-cat-manage-btn").hidden = active;
-  $("constructor-catalog-footer").hidden = !active;
+  const active = !!_constructorCatalog, context = _constructorCatalog;
+  const screen=$('screen-exercises');
+  screen.classList.toggle('constructor-catalog',active);
+  screen.classList.toggle('constructor-replacement',!!context?.single);
+  screen.querySelector('.exercises-header-title').textContent=context?.title || 'Упражнения';
+  $('exercises-add-btn').hidden=active;
+  $('ex-cat-manage-btn').hidden=active;
+  $('constructor-catalog-footer').hidden=!active;
+  const controls=$('constructor-catalog-context');controls.hidden=!context?.modes;
+  if(context?.modes) {
+    controls.innerHTML=`<p>${escHtml(context.subtitle || '')}</p><div class="constructor-catalog-modes">${context.modes.map(m=>`<button type="button" data-catalog-mode="${escHtml(m.id)}" aria-pressed="${context.filterMode===m.id}" class="${context.filterMode===m.id?'selected':''}">${escHtml(m.label)}</button>`).join('')}</div>`;
+    controls.querySelectorAll('[data-catalog-mode]').forEach(b=>b.onclick=()=>{context.filterMode=b.dataset.catalogMode;_exercisesCatFilter='all';renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=0;});
+  } else controls.innerHTML='';
+  $('constructor-catalog-footer').querySelector('span').textContent=context?.single?'Выбери упражнение кружком слева. Название открывает подробности.':'Нажми на название для подробностей, на кружок для добавления';
+  const done=$('constructor-catalog-done');done.textContent=context?.single?'Заменить упражнение':'Готово';
+  done.disabled=!!context?.single && (!context.selectedId || context.selectedId===context.initialSelectedId);
 }
 function openConstructorExerciseCatalog(options) {
-  _constructorCatalog = { ...options, owner: Auth.userId(), profile: DATA.getCurrentUser(), scrollTop: 0 };
-  goToScreen("exercises");
+  _constructorCatalog = { ...options, filterMode:options.modes?.[0]?.id, selectedId:options.initialSelectedId || null, owner: Auth.userId(), profile: DATA.getCurrentUser(), scrollTop: 0 };
+  goToScreen('exercises');
 }
 function closeConstructorExerciseCatalog() {
   if (!_constructorCatalog) return;
-  // Снимаем запись каталога из истории навигации и возвращаем текущий план.
-  consumePreviousScreen("constructor");
-  goToScreen("constructor", { navigation: "back", resumeConstructor: true });
+  consumePreviousScreen('constructor');
+  goToScreen('constructor', { navigation:'back', resumeConstructor:true });
 }
 function constructorCatalogAddHtml(ex) {
-  if (!_constructorCatalog) return "";
-  const selected = _constructorCatalog.isSelected(ex.id);
-  return `<button type="button" class="constructor-catalog-add${selected ? ' selected' : ''}" data-constructor-add="${escHtml(ex.id)}" aria-label="${selected ? 'Добавлено' : 'Добавить'}: ${escHtml(ex.name)}" ${selected ? 'disabled' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${selected ? '<path d="m5 12 4 4L19 6"/>' : '<path d="M12 5v14M5 12h14"/>'}</svg></button>`;
+  if (!_constructorCatalog) return '';
+  const selected=_constructorCatalog.single ? _constructorCatalog.selectedId===ex.id : _constructorCatalog.isSelected(ex.id);
+  return `<button type="button" class="constructor-catalog-add${selected?' selected':''}" data-constructor-add="${escHtml(ex.id)}" aria-pressed="${selected}" aria-label="${selected?'Выбрано':_constructorCatalog.single?'Выбрать':'Добавить'}: ${escHtml(ex.name)}" ${selected&&!_constructorCatalog.single?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${selected?'<path d="m5 12 4 4L19 6"/>':''}</svg></button>`;
 }
-$("constructor-catalog-done").addEventListener("click", closeConstructorExerciseCatalog);
+$('constructor-catalog-done').addEventListener('click',()=>{
+  const c=_constructorCatalog;
+  if(!c || c.owner!==Auth.userId() || c.profile!==DATA.getCurrentUser())return;
+  if(c.single && (!c.selectedId || !c.onConfirm(c.selectedId)))return;
+  closeConstructorExerciseCatalog();
+});
 
 let _editingExerciseId = null; // null = создание нового; иначе id редактируемого личного упражнения
 let _exercisesCatFilter = "all";
@@ -5883,7 +5919,7 @@ function renderMovementsTab(container, query, opts) {
 
 function renderCatTabs(userId, presentCats) {
   const tabsEl = $("ex-cat-tabs");
-  const cats = Array.from(new Set([...DATA.getAllCategories(userId), ...presentCats]));
+  const cats = Array.from(new Set([...DATA.getAllCategories(userId), ...presentCats])).filter(c => !_constructorCatalog || presentCats.includes(c));
   const tabs = ["all", ...cats];
   tabsEl.innerHTML = tabs.map(c => {
     const active = _exercisesCatFilter === c ? " active" : "";
@@ -5912,7 +5948,7 @@ function renderExercisesList(query) {
   const q       = query.trim().toLowerCase();
   if (_constructorCatalog && (_constructorCatalog.owner !== Auth.userId() || _constructorCatalog.profile !== userId)) _constructorCatalog = null;
   syncConstructorCatalogUI();
-  const allExs = DATA.getVisibleExercises(userId).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id)); // seeded + personal, единый список
+  const allExs = DATA.getVisibleExercises(userId).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id,_constructorCatalog.filterMode)); // seeded + personal, единый список
 
   renderCatTabs(userId, Array.from(new Set(allExs.map(e => e.cat))));
 
@@ -5972,6 +6008,7 @@ function renderExercisesList(query) {
       return displayName(a).localeCompare(displayName(b), "ru");
     });
     itemsByCat.set(cat, items);
+    if (_constructorCatalog && !items.length) return "";
     const rows = items.map(item => {
       if (item.kind !== "group") return `
         <div class="ex-row-wrap" data-id="${escHtml(item.ex.id)}" data-cat="${escHtml(cat)}">
@@ -6006,7 +6043,7 @@ function renderExercisesList(query) {
       <div class="ex-group${isEmpty ? " ex-group-empty" : ""}" data-cat="${escHtml(cat)}">
         <span class="ex-group-dot" style="background:${escHtml(color)}"></span>
         <span class="ex-group-name">${escHtml(cat)}</span>
-        ${!isEmpty ? `<span class="ex-group-count">${catExs.length}</span>` : ""}
+        ${!isEmpty ? `<span class="ex-group-count">${_constructorCatalog ? items.reduce((n,it)=>n+(it.kind === "group" ? it.members.length : 1),0) : catExs.length}</span>` : ""}
       </div>`;
     return header + rows;
   }).join("");
@@ -6043,7 +6080,10 @@ function renderExercisesList(query) {
       event.stopPropagation();
       const context = _constructorCatalog;
       if (!context || context.owner !== Auth.userId() || context.profile !== DATA.getCurrentUser()) return;
-      if (context.onSelect(button.dataset.constructorAdd)) {
+      if(context.single) {
+        context.selectedId=button.dataset.constructorAdd;
+        const y=exercisesScroll.scrollTop;renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=y;
+      } else if (context.onSelect(button.dataset.constructorAdd)) {
         const scrollTop = exercisesScroll.scrollTop;
         renderExercisesList(exercisesSearch.value);
         exercisesScroll.scrollTop = scrollTop;

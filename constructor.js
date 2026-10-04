@@ -378,14 +378,14 @@
 
   /* ── Экспорт готового плана в шаблоны приложения ─────────────────────────── */
   function repsToNum(reps) { const m = String(reps || "").match(/\d+/); return m ? +m[0] : 10; }
-  function saveAsTemplates() {
+  function saveAsTemplates(baseName = "Тренировка") {
     const uid = DATA.getCurrentUser();
     const filled = workout.days.filter(d => d.items.length);
     if (!filled.length) { showToast("План пуст — добавь упражнения"); return; }
     const single = filled.length === 1;
     let n = 0;
     filled.forEach(d => {
-      const name = single ? "Тренировка (конструктор)" : "День " + d.name;
+      const name = workout.days.length === 1 ? baseName : baseName + " День " + (workout.days.indexOf(d)+1);
       const tpl = DATA.createBlankTemplate(uid, name);
       const exList = d.items.map(it => ({
         exerciseId: it.exId,
@@ -397,15 +397,26 @@
     });
     endSession();
     showToast(single ? "Шаблон сохранён" : n + " шаблона сохранено");
-    goToScreen("templates");
+    window.consumePreviousScreen?.("templates");
+    goToScreen("templates", { navigation:"back" });
+  }
+
+  function requestSaveTemplates() {
+    if (!workout.days.some(d=>d.items.length)) { showToast('План пуст — добавь упражнения'); return; }
+    const valid = resultContext();
+    window.openNameModal({
+      title: workout.days.length > 1 ? 'Название серии шаблонов' : 'Название шаблона',
+      placeholder: 'Например, Силовая программа', initialValue: '', confirmLabel: 'Сохранить',
+      onConfirm: name => { if(valid() && name.trim()) saveAsTemplates(name.trim()); },
+    });
   }
 
   /* ── Генератор: параметры → готовый план ───────────────────────────────── */
-  const READY_LABELS = ['Тренировочный стаж', 'Занятий в неделю', 'Ограничения по здоровью', 'Условия для восстановления'];
+  const READY_LABELS = ['Стаж', 'Занятий в неделю', 'Ограничения', 'Восстановление'];
   const READY_DETAILS = {
-    "низкая": ['< 3 мес.', 'Меньше 2', 'Значительные', 'Отсутствуют'],
-    "средняя": ['3–6 мес.', '2–3', 'Незначительные', 'Есть ограничения'],
-    "высокая": ['> 6 мес.', '3 и более', 'Отсутствуют', 'Есть все условия'],
+    "низкая": ['< 3 мес.', '< 2', 'Значительные', 'Отсутствует'],
+    "средняя": ['3–6 мес.', '2–3', 'Незначительные', 'Частичное'],
+    "высокая": ['> 6 мес.', '≥ 4', 'Отсутствуют', 'Полное'],
   };
   const ICONS = {
     spark: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/><path d="M20 2v4m-2-2h4"/>',
@@ -504,7 +515,7 @@
     const status = volumeStatus(perDay);
     const ticks = Math.min(48, perDay), color = perDay <= VOL_MAX ? "var(--sg-green)" : "var(--sg-yellow)";
     const stepper = (field, label, value, min, max) => `<div><label class="sg-label" for="sg-${field}">${label}</label><div class="sg-stepper"><button type="button" data-step="${field}" data-delta="-1" aria-label="Уменьшить: ${label}" ${+value <= min ? 'disabled' : ''}>${icon("minus")}</button><input id="sg-${field}" data-number="${field}" aria-label="${label}" inputmode="numeric" type="number" min="${min}" max="${max}" step="1" value="${esc(value)}"><button type="button" data-step="${field}" data-delta="1" aria-label="Увеличить: ${label}" ${+value >= max ? 'disabled' : ''}>${icon("plus")}</button></div></div>`;
-    return `<div class="sg-card"><div class="sg-label">Готовность</div><div class="sg-levels">${levels.map((n,i) => `<button type="button" data-readiness="${n}" aria-pressed="${n === workout.readiness}" class="${n === workout.readiness ? 'selected' : ''}"><span class="sg-bars" aria-hidden="true">${[0,1,2].map(j => `<i class="${j <= i ? 'lit' : ''}"></i>`).join("")}</span>${n[0].toUpperCase()+n.slice(1)}</button>`).join("")}</div><div class="sg-details">${details.map((d,i) => `<div class="sg-readiness-tile"><span class="sg-readiness-icon">${icon(["clock","calendar","heart","bed"][i])}</span><div class="sg-readiness-copy"><span>${READY_LABELS[i]}</span><b>${esc(d)}</b></div></div>`).join("")}</div></div>
+    return `<div class="sg-card sg-readiness-card"><div class="sg-label"><span>Готовность</span><b>${["Начинаем бережно","Рабочий режим","Можно прогрессировать"][levels.indexOf(workout.readiness)]}</b></div><div class="sg-levels">${levels.map((n,i) => `<button type="button" data-readiness="${n}" aria-pressed="${n === workout.readiness}" class="${n === workout.readiness ? 'selected' : ''}"><span class="sg-bars" aria-hidden="true">${[0,1,2].map(j => `<i class="${j <= i ? 'lit' : ''}"></i>`).join("")}</span>${n[0].toUpperCase()+n.slice(1)}</button>`).join("")}</div><div class="sg-details">${details.map((d,i) => `<div class="sg-readiness-tile"><div class="sg-readiness-label">${icon(["clock","calendar","heart","bed"][i])}<span>${READY_LABELS[i]}</span></div><b>${esc(d)}</b><div class="sg-readiness-meter" aria-hidden="true">${[0,1,2].map(j=>`<i class="${j<=levels.indexOf(workout.readiness)?'lit':''}"></i>`).join('')}</div></div>`).join("")}</div></div>
       <div class="sg-card sg-prescription"><div class="sg-two">${stepper("target", "Подходов", workout.target, 1, 10)}${stepper("reps", "Повторов", workout.reps, 1, 30)}</div><p class="sg-note">${icon("info")}<span>Для твоей готовности эффективно до ${READINESS[workout.readiness].effective} подходов на мышечную группу</span></p></div>
       <div class="sg-card"><div class="sg-label"><span>Дней в сплите</span><span>${workout.splitDays === 1 ? 'Fullbody' : workout.splitDays + ' тренировки'}</span></div><div class="sg-days-select">${[1,2,3,4].map(n => `<button type="button" data-split="${n}" class="${n === workout.splitDays ? 'selected' : ''}" aria-pressed="${n === workout.splitDays}">${n}</button>`).join("")}</div></div>
       ${movementCardHtml()}
@@ -514,10 +525,10 @@
     const cov = microCoverage();
     return goalCats().map((c,i) => {
       const excluded = workout.restrictions.includes(c.name), priority = workout.priority.includes(c.name);
-      const value = cov[c.name] || 0, target = targetFor(c.name), delta = value-target;
+      const value = cov[c.name] || 0, target = +workout.target || 0, effectiveTarget = targetFor(c.name), delta = value-effectiveTarget;
       const relaxed = OVERLOAD_OK.includes(c.name) || /зад бедра/.test(c.name);
       const bad = !excluded && (value === 0 || delta < -1 || delta > (relaxed ? 2 : 1));
-      return { ...c, i, value, target, excluded, priority, bad, color: excluded ? '#53536a' : bad ? delta < 0 ? '#fb7185' : '#f5c542' : priority ? '#a99cff' : '#4ade9b', status: excluded ? 'исключено из плана' : bad ? `на ${Math.abs(delta)} ${delta < 0 ? 'меньше' : 'больше'} ориентира` : priority ? `приоритет, ориентир +${workout.priorityBonus}` : 'в пределах ориентира' };
+      return { ...c, i, value, target, effectiveTarget, excluded, priority, bad, color: excluded ? '#53536a' : bad ? delta < 0 ? '#fb7185' : '#f5c542' : priority ? '#a99cff' : '#4ade9b', status: excluded ? 'исключено из плана' : bad ? `на ${Math.abs(delta)} ${delta < 0 ? 'меньше' : 'больше'} ориентира` : priority ? `приоритет, ориентир +${workout.priorityBonus}` : 'в пределах ориентира' };
     });
   }
   function coverageListHtml(rows) {
@@ -592,8 +603,8 @@
     const rows=coverageRows(),active=rows.filter(r=>!r.excluded),bad=rows.filter(r=>r.bad),covered=active.filter(r=>r.value>0).length;
     _warningIndex=Math.min(_warningIndex,Math.max(0,bad.length-1));
     if(!_coverageLevel) {
-      const r=bad[_warningIndex],severity=x=>Math.abs(x.value-x.target)>=3?'#fb7185':'#f5c542',color=r?severity(r):'#4ade9b';
-      return `<div class="sg-card rp-warning" style="--warning:${color}" data-rp-warning tabindex="0" role="button" aria-label="Развернуть покрытие движений"><span class="rp-warning-icon">${icon(r?'bulb':'check')}</span><div class="rp-warning-copy">${r?`<div class="rp-warning-top"><span>Обрати внимание</span><span class="rp-dots">${bad.map((x,i)=>`<button type="button" style="--warning:${severity(x)}" class="${i===_warningIndex?'on':''}" data-rp-warning-index="${i}" aria-label="Замечание ${i+1}: ${esc(x.name)}" aria-pressed="${i===_warningIndex}"></button>`).join('')}</span></div><div class="rp-warning-title"><span>${esc(r.name)}</span><span class="rp-value"><b style="color:${r.color}">${r.value}</b>/${r.target}</span></div>`:`<span>${active.length?'Всё сбалансировано: '+covered+' из '+active.length+' движений в норме':'Выбери движения в параметрах'}</span>`}</div>${icon('down')}</div>`;
+      const r=bad[_warningIndex],severity=x=>Math.abs(x.value-x.effectiveTarget)>=3?'#fb7185':'#f5c542',color=r?severity(r):'#4ade9b';
+      return `<div class="sg-card rp-warning" style="--warning:${color}" data-rp-warning tabindex="0" role="button" aria-label="Развернуть покрытие движений"><span class="rp-warning-icon">${icon(r?'bulb':'check')}</span><div class="rp-warning-copy">${r?`<div class="rp-warning-top"><span>Обрати внимание</span><span class="rp-dots">${(bad.length>1?bad:[]).map((x,i)=>`<button type="button" style="--warning:${severity(x)}" class="${i===_warningIndex?'on':''}" data-rp-warning-index="${i}" aria-label="Замечание ${i+1}: ${esc(x.name)}" aria-pressed="${i===_warningIndex}"></button>`).join('')}</span></div><div class="rp-warning-title"><span>${esc(r.name)}</span><span class="rp-value"><b style="color:${r.color}">${r.value}</b>/${r.target}</span></div>`:`<span>${active.length?'Всё сбалансировано: '+covered+' из '+active.length+' движений в норме':'Выбери движения в параметрах'}</span>`}</div>${icon('down')}</div>`;
     }
     const point=(i,r)=>{const a=i*2*Math.PI/Math.max(1,rows.length)-Math.PI/2;return [160+Math.cos(a)*r,150+Math.sin(a)*r];};
     const points=rows.map(r=>point(r.i,r.excluded?0:Math.min(105,r.value/Math.max(1,r.target)*75)).join(',')).join(' ');
@@ -633,7 +644,7 @@
     const result = _step === 'result';
     $('screen-constructor').classList.toggle('sg-parameters', !result);
     $('screen-constructor').classList.toggle('sg-result', result);
-    $('constructor-title').textContent = result ? (workout.manual ? 'Сборка плана' : 'Готовый план') : 'Параметры';
+    $('constructor-title').textContent = result ? 'План' : 'Параметры';
     $('constructor-step').setAttribute('aria-label', `Шаг ${result ? 2 : 1} из 2`);
     $('constructor-step').innerHTML = `<span>${result ? '2/2' : '1/2'}</span><div class="sg-step-track"><i class="selected"></i><i class="${result ? 'selected' : ''}"></i></div>`;
     if (!result) el.innerHTML = parameterHtml();
@@ -670,13 +681,29 @@
     const arr = workout[kind], i = arr.indexOf(name); if (i < 0) arr.push(name); else arr.splice(i,1);
     if (kind === 'restrictions' && i < 0) workout.priority = workout.priority.filter(n => n !== name);
   }
+  function openReplacementCatalog(item) {
+    const original=exById(item?.exId), valid=resultContext();
+    if(!original || item.locked)return;
+    const canSelect=(id,mode='analog')=>{
+      const e=exById(id);
+      return !!e && available(e) && (id===item.exId || !workout.days.some(d=>d.items.some(it=>it.exId===id))) &&
+        (mode==='any' || e.categories.some(n=>original.categories.includes(n)));
+    };
+    window.openConstructorExerciseCatalog({
+      single:true, initialSelectedId:item.exId, title:'Замена упражнения', subtitle:original.name,
+      modes:[{id:'analog',label:'Аналоги · '+exercises.filter(e=>e.id!==item.exId && canSelect(e.id)).length},{id:'any',label:'Любое упражнение'}],
+      canSelect, isSelected:id=>id===item.exId,
+      onConfirm:id=>valid() && replacePlanItem(item,id),
+    });
+  }
+
   function openSheet(kind, index) {
+    if(kind === 'replace') { openReplacementCatalog(typeof index === 'object' ? itemAt(index.di,index.i) : activeDay().items[index]); return; }
     const dlg = document.createElement('dialog'); dlg.className = 'sg sg-sheet';
     const source = document.activeElement;
-    let closing = false, movementTab = 'base', replacementTab = 'analog', query = '';
+    let closing = false, movementTab = 'base';
     const validContext = resultContext();
-    const replacing = kind === 'replace' ? (typeof index === 'object' ? itemAt(index.di,index.i) : activeDay().items[index]) : null;
-    const selectingExercise = kind === 'replace' || kind === 'movement-add';
+    const selectingExercise = kind === 'movement-add';
     dlg.classList.toggle('rp-selection-sheet',selectingExercise);
     dlg.classList.toggle('sg-movement-sheet', kind === 'movements');
     const fitMovementSheet = () => {
@@ -706,14 +733,11 @@
         title = 'Добавить в день '+(Number(workout.active)+1);
         content = `<button class="sg-alt" data-add-manual>${icon('list')}Выбрать из базы упражнений</button><button class="sg-alt" data-fill>${icon('spark')}<span>Дополнить день<small class="sg-muted sg-block">Подберём недостающие движения</small></span></button><button class="sg-alt sg-danger" data-clear>${WK_TRASH}Очистить день</button>`;
       } else if (selectingExercise) {
-        if (kind === 'replace' && (!replacing || replacing.locked || !exById(replacing.exId))) return close();
-        title = kind === 'replace' ? 'Заменить: '+exById(replacing.exId).name : 'Добавить упражнение';
-        const analogs = candidateExercises(replacing,'analog');
-        content = kind === 'replace' ? `<div class="rp-replace-tabs" role="group" aria-label="Варианты замены"><button type="button" data-replacement-tab="analog" class="${replacementTab === 'analog'?'on':''}" aria-pressed="${replacementTab === 'analog'}">Аналоги · ${analogs.length}</button><button type="button" data-replacement-tab="other" class="${replacementTab === 'other'?'on':''}" aria-pressed="${replacementTab === 'other'}">Любое упражнение</button></div>${replacementTab === 'other'?`<p class="rp-caption">Упражнения без этого движения: покрытие плана изменится</p><input type="search" class="rp-search" placeholder="Поиск по названию или группе" aria-label="Поиск замены" value="${esc(query)}">`:''}` : `<p class="sg-muted">${esc(index)}</p>`;
-        content += '<div class="rp-candidates"></div>';
+        title = 'Добавить упражнение';
+        content = `<p class="sg-muted">${esc(index)}</p><div class="rp-candidates"></div>`;
       }
 
-      dlg.innerHTML = `<div class="sg-sheet-drag"><div class="sg-grab"></div><div class="sg-sheet-heading"><h2 id="sg-sheet-title" ${kind === 'movements' || selectingExercise ? 'tabindex="-1" autofocus' : ''}>${esc(title)}</h2>${kind === 'movements' && movementTab === 'base' ? '<button type="button" class="sg-all-base" data-all-base>Все основные</button>' : ''}</div></div><div class="sg-sheet-body">${content}</div>`;
+      dlg.innerHTML = `<div class="sg-sheet-drag"><div class="sg-grab"></div><div class="sg-sheet-heading"><h2 id="sg-sheet-title" tabindex="-1" autofocus>${esc(title)}</h2>${kind === 'movements' && movementTab === 'base' ? '<button type="button" class="sg-all-base" data-all-base>Все основные</button>' : ''}</div></div><div class="sg-sheet-body">${content}</div>`;
       window.wireSheetDragClose(dlg, dlg.querySelector('.sg-sheet-drag'), close);
       dlg.setAttribute('aria-labelledby','sg-sheet-title');
       dlg.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
@@ -733,20 +757,16 @@
       dlg.querySelector('[data-clear]')?.addEventListener('click', () => close(() => { activeDay().items = []; render(); }));
       const drawCandidates = () => {
         if(!selectingExercise)return;
-        const candidates=candidateExercises(replacing,replacementTab,query,kind === 'movement-add'?index:null);
+        const candidates=candidateExercises(null,'analog','',index);
         dlg.querySelector('.rp-candidates').innerHTML=candidates.map(x=>{
-          const extra=x.categories.filter(n=>!exById(replacing?.exId)?.categories.includes(n));
-          const label=kind === 'movement-add'?'Добавить':replacementTab === 'other'?'Другое покрытие':extra.length?'+ '+(categories.find(c=>c.name===extra[0])?.group||extra[0]):'Аналог';
-          return `<div class="rp-candidate"><button type="button" class="rp-candidate-choice" data-candidate="${esc(x.id)}"><span>${esc(x.name)}<small>${esc([x.group,...x.categories].filter(Boolean).join(' · '))}</small></span><span class="rp-candidate-tag">${esc(label)}</span></button><button type="button" class="rp-candidate-info" data-candidate-detail="${esc(x.id)}" aria-label="Подробнее: ${esc(x.name)}">${icon('info')}</button></div>`;
+          return `<div class="rp-candidate"><button type="button" class="rp-candidate-choice" data-candidate="${esc(x.id)}"><span>${esc(x.name)}<small>${esc([x.group,...x.categories].filter(Boolean).join(' · '))}</small></span><span class="rp-candidate-tag">Добавить</span></button><button type="button" class="rp-candidate-info" data-candidate-detail="${esc(x.id)}" aria-label="Подробнее: ${esc(x.name)}">${icon('info')}</button></div>`;
         }).join('') || '<p class="sg-empty sg-muted">Нет доступных упражнений с учётом ограничений и уже добавленных в план.</p>';
-        dlg.querySelectorAll('[data-candidate]').forEach(b=>b.onclick=()=>close(()=>{if(!validContext())return;if(kind === 'replace')replacePlanItem(replacing,b.dataset.candidate);else addMovementExercise(index,b.dataset.candidate);}));
+        dlg.querySelectorAll('[data-candidate]').forEach(b=>b.onclick=()=>close(()=>{if(!validContext())return;addMovementExercise(index,b.dataset.candidate);}));
         dlg.querySelectorAll('[data-candidate-detail]').forEach(b=>b.onclick=()=>close(()=>{if(validContext())window.openExerciseDetail(b.dataset.candidateDetail,'constructor');}));
       };
-      dlg.querySelectorAll('[data-replacement-tab]').forEach(b=>b.onclick=()=>{replacementTab=b.dataset.replacementTab;draw();dlg.querySelector('[data-replacement-tab="'+replacementTab+'"]').focus({preventScroll:true});});
-      dlg.querySelector('.rp-search')?.addEventListener('input',e=>{query=e.target.value;drawCandidates();});
       drawCandidates();
     }
-    document.body.appendChild(dlg); draw(); fitMovementSheet(); if (dlg.isConnected) { dlg.showModal(); if (kind === 'movements' || selectingExercise) dlg.querySelector('#sg-sheet-title').focus({preventScroll:true}); if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) dlg.animate([{transform:'translateY(100%)'},{transform:'translateY(0)'}],{duration:220,easing:'ease-out'}); }
+    document.body.appendChild(dlg); draw(); fitMovementSheet(); if (dlg.isConnected) { dlg.showModal(); dlg.querySelector('#sg-sheet-title').focus({preventScroll:true}); if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) dlg.animate([{transform:'translateY(100%)'},{transform:'translateY(0)'}],{duration:220,easing:'ease-out'}); }
   }
   function wire() {
     const el = $('constructor-scroll');
@@ -805,7 +825,7 @@
     el.querySelectorAll('.wk-item-wrap').forEach(w => { wireItemSwipe(w); wireItemGesture(w); });
     $('wk-edit-done')?.addEventListener('click',exitCEdit);
     $('wk-generate')?.addEventListener('click',generate);
-    $('wk-save')?.addEventListener('click',saveAsTemplates);
+    $('wk-save')?.addEventListener('click',requestSaveTemplates);
   }
 
   // Свайп влево по карточке плана → удалить (порог 80px).
