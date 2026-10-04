@@ -6083,7 +6083,7 @@ function renderExercisesList(query) {
       if(context.single) {
         context.selectedId=button.dataset.constructorAdd;
         const y=exercisesScroll.scrollTop;renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=y;
-      } else if (context.onSelect(button.dataset.constructorAdd)) {
+      } else if (context.onSelect(button.dataset.constructorAdd,context.filterMode)) {
         const scrollTop = exercisesScroll.scrollTop;
         renderExercisesList(exercisesSearch.value);
         exercisesScroll.scrollTop = scrollTop;
