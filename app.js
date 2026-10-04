@@ -5686,20 +5686,57 @@ const exerciseFormCatGroup  = $("exercise-form-cat-group");
 
 // Режим выбора для конструктора использует тот же каталог, фильтры и группы.
 let _constructorCatalog = null;
+function setupConstructorCatalogDrag(scroll) {
+  let drag = null, suppressClickUntil = 0;
+  scroll.addEventListener('pointerdown', event => {
+    if (!_constructorCatalog || event.pointerType !== 'mouse' || event.button !== 0 || event.isPrimary === false) return;
+    drag = {id:event.pointerId,x:event.clientX,y:event.clientY,top:scroll.scrollTop,engaged:false};
+  });
+  scroll.addEventListener('pointermove', event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
+    if (!drag.engaged) {
+      if (Math.max(Math.abs(dx),Math.abs(dy)) < 8) return;
+      if (Math.abs(dx) > Math.abs(dy)) { drag=null; return; }
+      drag.engaged=true;
+      scroll.classList.add('catalog-dragging');
+      scroll.setPointerCapture?.(event.pointerId);
+    }
+    if (event.cancelable) event.preventDefault();
+    scroll.scrollTop=drag.top-dy;
+  }, {passive:false});
+  const finish = event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const previous=drag;drag=null;
+    if (!previous.engaged) return;
+    suppressClickUntil=Date.now()+400;
+    scroll.classList.remove('catalog-dragging');
+    if (scroll.hasPointerCapture?.(previous.id)) scroll.releasePointerCapture(previous.id);
+  };
+  scroll.addEventListener('pointerup',finish);
+  scroll.addEventListener('pointercancel',finish);
+  scroll.addEventListener('lostpointercapture',finish);
+  scroll.addEventListener('pointerleave',()=>{if(drag && !drag.engaged)drag=null;});
+  scroll.addEventListener('click',event=>{
+    if(Date.now()<suppressClickUntil){event.preventDefault();event.stopImmediatePropagation();}
+  },true);
+}
+setupConstructorCatalogDrag(exercisesScroll);
 function syncConstructorCatalogUI() {
   const active = !!_constructorCatalog, context = _constructorCatalog;
   const screen=$('screen-exercises');
   screen.classList.toggle('constructor-catalog',active);
   screen.classList.toggle('constructor-replacement',!!context?.single);
-  screen.querySelector('.exercises-header-title').textContent=context?.title || 'Упражнения';
+  screen.querySelector('.exercises-header-title').textContent=(context?.single ? context.subtitle : context?.title) || 'Упражнения';
   $('exercises-add-btn').hidden=active;
   $('ex-cat-manage-btn').hidden=active;
   $('constructor-catalog-footer').hidden=!active;
-  const controls=$('constructor-catalog-context');controls.hidden=!context?.modes && !context?.subtitle;
+  const subtitle=context?.single ? '' : context?.subtitle;
+  const controls=$('constructor-catalog-context');controls.hidden=!context?.modes && !subtitle;
   if(context?.modes) {
-    controls.innerHTML=`<p>${escHtml(context.subtitle || '')}</p><div class="constructor-catalog-modes">${context.modes.map(m=>`<button type="button" data-catalog-mode="${escHtml(m.id)}" aria-pressed="${context.filterMode===m.id}" class="${context.filterMode===m.id?'selected':''}">${escHtml(m.label)}</button>`).join('')}</div>`;
+    controls.innerHTML=`${subtitle?`<p>${escHtml(subtitle)}</p>`:''}<div class="constructor-catalog-modes">${context.modes.map(m=>`<button type="button" data-catalog-mode="${escHtml(m.id)}" aria-pressed="${context.filterMode===m.id}" class="${context.filterMode===m.id?'selected':''}">${escHtml(m.label)}</button>`).join('')}</div>`;
     controls.querySelectorAll('[data-catalog-mode]').forEach(b=>b.onclick=()=>{context.filterMode=b.dataset.catalogMode;_exercisesCatFilter='all';renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=0;});
-  } else controls.innerHTML=context?.subtitle?`<p>${escHtml(context.subtitle)}</p>`:'';
+  } else controls.innerHTML=subtitle?`<p>${escHtml(subtitle)}</p>`:'';
   $('constructor-catalog-footer').querySelector('span').textContent=context?.single?'Выбери упражнение кружком слева. Название открывает подробности.':'Нажми на название для подробностей, на кружок для добавления';
   const done=$('constructor-catalog-done');done.textContent=context?.single?'Заменить упражнение':'Готово';
   done.disabled=!!context?.single && (!context.selectedId || context.selectedId===context.initialSelectedId);
