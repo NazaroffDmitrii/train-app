@@ -5695,11 +5695,11 @@ function syncConstructorCatalogUI() {
   $('exercises-add-btn').hidden=active;
   $('ex-cat-manage-btn').hidden=active;
   $('constructor-catalog-footer').hidden=!active;
-  const controls=$('constructor-catalog-context');controls.hidden=!context?.modes;
+  const controls=$('constructor-catalog-context');controls.hidden=!context?.modes && !context?.subtitle;
   if(context?.modes) {
     controls.innerHTML=`<p>${escHtml(context.subtitle || '')}</p><div class="constructor-catalog-modes">${context.modes.map(m=>`<button type="button" data-catalog-mode="${escHtml(m.id)}" aria-pressed="${context.filterMode===m.id}" class="${context.filterMode===m.id?'selected':''}">${escHtml(m.label)}</button>`).join('')}</div>`;
     controls.querySelectorAll('[data-catalog-mode]').forEach(b=>b.onclick=()=>{context.filterMode=b.dataset.catalogMode;_exercisesCatFilter='all';renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=0;});
-  } else controls.innerHTML='';
+  } else controls.innerHTML=context?.subtitle?`<p>${escHtml(context.subtitle)}</p>`:'';
   $('constructor-catalog-footer').querySelector('span').textContent=context?.single?'Выбери упражнение кружком слева. Название открывает подробности.':'Нажми на название для подробностей, на кружок для добавления';
   const done=$('constructor-catalog-done');done.textContent=context?.single?'Заменить упражнение':'Готово';
   done.disabled=!!context?.single && (!context.selectedId || context.selectedId===context.initialSelectedId);

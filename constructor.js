@@ -613,8 +613,9 @@
     return `<div class="sg-card rp-coverage"><div class="rp-coverage-heading"><div><b>${covered}</b> <span>из ${active.length} движений в плане</span></div><span class="rp-balance ${bad.length?'warn':''}">${bad.length?'перекос: '+bad.length:'баланс в норме'}</span><button type="button" class="rp-collapse" data-coverage="0" aria-label="Свернуть покрытие">${icon('up')}</button></div>${rows.length?radar:'<p class="sg-muted">Выбери движения в параметрах, чтобы видеть покрытие.</p>'}<div class="rp-legend">${[['#4ade9b','●','норма'],['#b9aeff','★','приоритет'],['#f5c542','●','больше'],['#fb7185','●','меньше'],['#6b6b80','⊘','исключено']].map(([c,s,l])=>`<span><b style="color:${c}">${s}</b> ${l}</span>`).join('')}</div>${_coverageLevel===1?(selected?movementRowHtml(selected)+movementTreeHtml(selected):'<p class="rp-hint">Нажми на номер движения, чтобы увидеть его упражнения</p>'):''}${more}${_coverageLevel===2?`<div class="rp-movement-list">${rows.map(r=>movementRowHtml(r)+(_selectedMovement===r.i?movementTreeHtml(r):'')).join('')}</div>${more}`:''}</div>`;
   }
   function dayTabsHtml() {
-    const cell=(di,label,value)=>`<button type="button" data-rp-day="${di===null?'all':di}" class="${_viewDay===di?'on':''}" style="${di===null?'--day-color:#4a4a62':dayStyle(di)}" aria-pressed="${_viewDay===di}"><span>${label}</span><small>${value}${workout.days.length<4?' подх.':''}</small><i></i></button>`;
-    return `<div class="sg-card rp-days"><div>${cell(null,'Все',totalVolume())}${workout.days.map((d,i)=>cell(i,(workout.days.length<4?'День ':'Д')+(i+1),dayVolume(d))).join('')}</div>${workout.days.length>=4?'<p class="rp-caption">Подходов по дням</p>':''}</div>`;
+    const selected=di=>_viewDay===di || (workout.days.length===1 && di===0);
+    const cell=(di,label,value)=>`<button type="button" data-rp-day="${di===null?'all':di}" class="${selected(di)?'on':''}" style="${di===null?'--day-color:#4a4a62':dayStyle(di)}" aria-pressed="${selected(di)}"><span>${label}</span><small>${value}${workout.days.length<4?' подх.':''}</small><i></i></button>`;
+    return `<div class="sg-card rp-days"><div>${workout.days.length>1?cell(null,'Все',totalVolume()):''}${workout.days.map((d,i)=>cell(i,(workout.days.length<4?'День ':'Д')+(i+1),dayVolume(d))).join('')}</div>${workout.days.length>=4?'<p class="rp-caption">Подходов по дням</p>':''}</div>`;
   }
   function resultHtml() {
     if(_viewDay!==null&&!workout.days[_viewDay])_viewDay=null;
@@ -702,9 +703,6 @@
     const dlg = document.createElement('dialog'); dlg.className = 'sg sg-sheet';
     const source = document.activeElement;
     let closing = false, movementTab = 'base';
-    const validContext = resultContext();
-    const selectingExercise = kind === 'movement-add';
-    dlg.classList.toggle('rp-selection-sheet',selectingExercise);
     dlg.classList.toggle('sg-movement-sheet', kind === 'movements');
     const fitMovementSheet = () => {
       if (kind !== 'movements') return;
@@ -732,9 +730,6 @@
       } else if (kind === 'add') {
         title = 'Добавить в день '+(Number(workout.active)+1);
         content = `<button class="sg-alt" data-add-manual>${icon('list')}Выбрать из базы упражнений</button><button class="sg-alt" data-fill>${icon('spark')}<span>Дополнить день<small class="sg-muted sg-block">Подберём недостающие движения</small></span></button><button class="sg-alt sg-danger" data-clear>${WK_TRASH}Очистить день</button>`;
-      } else if (selectingExercise) {
-        title = 'Добавить упражнение';
-        content = `<p class="sg-muted">${esc(index)}</p><div class="rp-candidates"></div>`;
       }
 
       dlg.innerHTML = `<div class="sg-sheet-drag"><div class="sg-grab"></div><div class="sg-sheet-heading"><h2 id="sg-sheet-title" tabindex="-1" autofocus>${esc(title)}</h2>${kind === 'movements' && movementTab === 'base' ? '<button type="button" class="sg-all-base" data-all-base>Все основные</button>' : ''}</div></div><div class="sg-sheet-body">${content}</div>`;
@@ -755,16 +750,6 @@
       dlg.querySelector('[data-add-manual]')?.addEventListener('click', () => close(openExercisePicker));
       dlg.querySelector('[data-fill]')?.addEventListener('click', () => close(fillDay));
       dlg.querySelector('[data-clear]')?.addEventListener('click', () => close(() => { activeDay().items = []; render(); }));
-      const drawCandidates = () => {
-        if(!selectingExercise)return;
-        const candidates=candidateExercises(null,'analog','',index);
-        dlg.querySelector('.rp-candidates').innerHTML=candidates.map(x=>{
-          return `<div class="rp-candidate"><button type="button" class="rp-candidate-choice" data-candidate="${esc(x.id)}"><span>${esc(x.name)}<small>${esc([x.group,...x.categories].filter(Boolean).join(' · '))}</small></span><span class="rp-candidate-tag">Добавить</span></button><button type="button" class="rp-candidate-info" data-candidate-detail="${esc(x.id)}" aria-label="Подробнее: ${esc(x.name)}">${icon('info')}</button></div>`;
-        }).join('') || '<p class="sg-empty sg-muted">Нет доступных упражнений с учётом ограничений и уже добавленных в план.</p>';
-        dlg.querySelectorAll('[data-candidate]').forEach(b=>b.onclick=()=>close(()=>{if(!validContext())return;addMovementExercise(index,b.dataset.candidate);}));
-        dlg.querySelectorAll('[data-candidate-detail]').forEach(b=>b.onclick=()=>close(()=>{if(validContext())window.openExerciseDetail(b.dataset.candidateDetail,'constructor');}));
-      };
-      drawCandidates();
     }
     document.body.appendChild(dlg); draw(); fitMovementSheet(); if (dlg.isConnected) { dlg.showModal(); dlg.querySelector('#sg-sheet-title').focus({preventScroll:true}); if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) dlg.animate([{transform:'translateY(100%)'},{transform:'translateY(0)'}],{duration:220,easing:'ease-out'}); }
   }
@@ -773,7 +758,7 @@
     const on = (sel,fn) => el.querySelectorAll(sel).forEach(n => n.addEventListener('click', () => fn(n)));
     on('[data-rp-day]', n => { _viewDay = n.dataset.rpDay === 'all' ? null : +n.dataset.rpDay; if(_viewDay!==null)workout.active=_viewDay; render(); });
     on('[data-rp-add]', () => { workout.active=additionDay(); openSheet('add'); });
-    on('[data-rp-add-movement]', n => openSheet('movement-add',n.dataset.rpAddMovement));
+    on('[data-rp-add-movement]', n => openExercisePicker(n.dataset.rpAddMovement));
     const locate=n=>n.split(':').map(Number);
     on('[data-rp-sets]', n => { const [di,i]=locate(n.dataset.rpSets); updateItemSets(i,n.dataset.value,di); });
     const expand=(key)=>{const [di,i]=locate(key),item=itemAt(di,i);_expandedItem=_expandedItem===item?null:item;render();};
@@ -964,6 +949,16 @@
   // Общий каталог сохраняет фильтры/группы и открывает детали по названию.
   function openExercisePicker(movement) {
     if (!exercises.length) { showToast("В базе нет упражнений"); return; }
+    if (movement) {
+      const valid = resultContext();
+      window.openConstructorExerciseCatalog({
+        title: 'Добавить упражнение', subtitle: movement,
+        canSelect: id => { const e = exById(id); return !!e && available(e) && e.categories.includes(movement); },
+        isSelected: id => workout.days.some(d => d.items.some(it => it.exId === id)),
+        onSelect: id => valid() && addMovementExercise(movement, id),
+      });
+      return;
+    }
     const day = activeDay(), context = { ...draftContext }, sessionRevision = _sessionRevision;
     window.openConstructorExerciseCatalog({
       canSelect: id => { const e = exById(id); return !!e && available(e) && (!movement || e.categories.includes(movement)); },
