@@ -3698,6 +3698,118 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 
 @media (min-width:681px) { #constructor-scroll,.sg-header,.sg-footer { padding-inline:max(16px,calc((100% - 640px)/2)); } }
 @media (prefers-reduced-motion:reduce) { .sg-sheet { transition:none; } }
+/* Exercise library — prototype v9. Flat list structure preserves drag ordering. */
+#screen-exercises { --library-top:#1a1830; --library-bottom:#0d0c18; background:linear-gradient(180deg,var(--library-top),var(--library-bottom) 80%); }
+#screen-exercises.library-catalog { --library-top:#112230; --library-bottom:#0a1219; }
+#screen-exercises .exercises-header { background:#0a0911; border:0; padding:calc(var(--safe-top) + 16px) 12px 14px; }
+#screen-exercises .exercises-header-title { font-size:22px; font-weight:500; letter-spacing:-.02em; }
+#screen-exercises #exercises-back-btn, #screen-exercises #ex-cat-manage-btn { width:38px; height:38px; min-width:38px; padding:0; border-radius:50%; background:transparent; border:1px solid #ffffff1a; color:#a99cf5; display:flex; align-items:center; justify-content:center; }
+#screen-exercises #exercises-back-btn svg, #screen-exercises #ex-cat-manage-btn svg { width:18px; height:18px; }
+.exercise-library-tabs { flex:none; display:flex; background:#0a0911; }
+.exercise-library-tabs button { flex:1; height:50px; position:relative; color:#918aa9; font-size:16px; font-weight:500; }
+.exercise-library-tabs button.active { background:var(--library-top); color:#fff; border-radius:16px 16px 0 0; }
+.exercise-library-tabs button.active:first-child:after { content:""; position:absolute; right:-14px; bottom:0; width:14px; height:14px; background:radial-gradient(circle at 100% 0,transparent 14px,var(--library-top) 14.5px); pointer-events:none; }
+.exercise-library-tabs button.active:last-child:before { content:""; position:absolute; left:-14px; bottom:0; width:14px; height:14px; background:radial-gradient(circle at 0 0,transparent 14px,var(--library-top) 14.5px); pointer-events:none; }
+#screen-exercises .exercises-search-wrap { padding:14px 12px 0; gap:8px; }
+#screen-exercises .exercises-search { height:42px; padding:0 13px 0 36px; border:1px solid transparent; background:#00000040 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b8b9c' stroke-width='1.7'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m16 16 4 4'/%3E%3C/svg%3E") 12px center/17px no-repeat; font-size:14px; border-radius:14px; }
+#screen-exercises .exercises-search:focus { border-color:#a99cf580; }
+.exercise-filter-btn, #screen-exercises .exercises-add-btn { width:42px; height:42px; flex:none; border-radius:14px; display:flex; align-items:center; justify-content:center; background:#ffffff12; color:#b8b8cc; }
+.exercise-filter-btn svg { width:18px; height:18px; }
+.exercise-filter-btn.active { background:#ffffff26; color:#fff; }
+#screen-exercises .exercises-add-btn { background:#6f60c8; color:#fff; }
+#screen-exercises .ex-cat-tabs-wrap { padding:10px 12px; }
+#screen-exercises .ex-cat-tab, .exercise-movement-tabs button { padding:6px 12px; border:0; border-radius:12px; background:#ffffff0d; color:#a8a8bc; font-size:12.5px; font-weight:400; }
+#screen-exercises .ex-cat-tab.active, .exercise-movement-tabs button.active { background:#ffffff24; color:#fff; }
+.exercise-movement-tabs { display:flex; flex:none; gap:6px; padding:0 12px 10px; overflow-x:auto; scrollbar-width:none; }
+.exercise-movement-tabs button { flex:none; max-width:230px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#screen-exercises .ex-cat-tabs-wrap[hidden], #screen-exercises [hidden] { display:none!important; }
+#screen-exercises .exercises-scroll { padding:0 12px calc(28px + var(--safe-bottom)); }
+#exercises-scroll > .ex-group { margin:12px 0 0; padding:12px 16px 10px; border-radius:20px 20px 0 0; background:linear-gradient(125deg,color-mix(in srgb,var(--cat-color) 12%,#0e0e16),#0e0e16); border:1px solid #ffffff0c; border-bottom:0; }
+#exercises-scroll > .ex-group:first-child { margin-top:0; }
+#exercises-scroll .ex-group-name { color:#a8a8bc; font-size:12.5px; font-weight:400; text-transform:none; letter-spacing:0; }
+#exercises-scroll .ex-group-dot, #exercises-scroll .ex-group-count { display:none; }
+#exercises-scroll > .ex-row-wrap { margin:0; padding:0 10px 6px; border-radius:0; border:1px solid #ffffff0c; border-top:0; border-bottom:0; background:linear-gradient(125deg,color-mix(in srgb,var(--cat-color) 6%,#0e0e16),#0e0e16); }
+#exercises-scroll > .ex-row-wrap:has(+ .ex-group), #exercises-scroll > .ex-row-wrap:last-child { border-radius:0 0 20px 20px; padding-bottom:10px; border-bottom:1px solid #ffffff0c; }
+#exercises-scroll .ex-row { border:1px solid #ffffff0f; border-radius:14px; padding:12px 13px; background:#ffffff0a; gap:8px; }
+#exercises-scroll .ex-row-name { display:block; font-size:15px; font-weight:500; line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.exercise-moves { display:flex; align-items:center; gap:5px; margin-top:7px; min-width:0; }
+.exercise-move { min-width:0; display:flex; align-items:center; gap:5px; padding:3px 9px; border-radius:9px; background:color-mix(in srgb,var(--cat-color,#a99cf5) 14%,transparent); color:color-mix(in srgb,var(--cat-color,#a99cf5) 50%,#eee); font-size:11.5px; line-height:1.4; }
+.exercise-move svg { width:13px; height:13px; flex:none; }
+.exercise-move > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.exercise-more { flex:none; border:1px solid #ffffff24; border-radius:9px; font-size:11.5px; color:#9a9aae; padding:2px 7px; }
+.exercise-ago { flex:none; white-space:nowrap; font-size:11px; color:#9292a6; }
+.exercise-ago:empty { display:none; }
+#exercises-scroll .ex-row-chevron { width:16px; height:16px; color:#65657a; }
+#exercises-scroll .ex-row-group-badge { padding:0; background:none; color:#80809a; }
+#exercises-scroll .ex-row-group-badge svg { width:17px; height:17px; }
+#exercises-scroll .ex-row-chevron-group { transform:rotate(90deg); }
+#exercises-scroll .expanded .ex-row-chevron-group { transform:rotate(-90deg); }
+#exercises-scroll .ex-row-wrap-group.expanded { box-shadow:none; }
+#exercises-scroll .expanded > .ex-row-group { background:color-mix(in srgb,var(--cat-color) 11%,#0e0e16); border-color:color-mix(in srgb,var(--cat-color) 25%,transparent); border-bottom:0; border-radius:14px 14px 0 0; }
+#exercises-scroll .expanded > .ex-row-group-members { margin:0; padding:0 12px 10px; background:color-mix(in srgb,var(--cat-color) 6%,#0e0e16); border:1px solid color-mix(in srgb,var(--cat-color) 25%,transparent); border-top:0; border-radius:0 0 14px 14px; }
+.exercise-variants-label { color:#a0a0b4; font-size:12px; padding:10px 2px 6px; }
+#exercises-scroll .ex-row-wrap-nested { margin:0 0 5px; border-radius:12px; }
+#exercises-scroll .ex-row-wrap-nested .ex-row { min-height:42px; padding:7px 9px; border:0; background:#ffffff0a; border-radius:12px; }
+#exercises-scroll .ex-row-wrap-nested .ex-row-name { font-size:14px; white-space:normal; }
+.exercise-moves.expanded { display:flex; flex-direction:column; align-items:stretch; }
+.exercise-moves.expanded .exercise-move { padding:0; background:none; font-size:12px; }
+.exercise-moves.expanded .exercise-move > span { white-space:normal; }
+.exercise-library-add { width:32px; height:32px; border-radius:50%; flex:none; border:1px solid color-mix(in srgb,var(--cat-color,#a99cf5) 55%,transparent); color:color-mix(in srgb,var(--cat-color,#a99cf5) 50%,#fff); display:flex; align-items:center; justify-content:center; }
+.exercise-library-add svg { width:17px; height:17px; }
+.exercise-library-add.added { color:#5fb892; border-color:#2a4a3c; }
+.library-catalog .ex-row:not(.ex-row-group) > .ex-row-chevron { display:none; }
+#exercises-scroll.ex-list-editing > .ex-row-wrap { padding:0; margin-bottom:6px; border:0; border-radius:14px; }
+#exercises-scroll.ex-list-editing .exercise-moves, #exercises-scroll.ex-list-editing .exercise-ago { display:none; }
+#screen-exercises button:focus-visible { outline:2px solid #a99cf5; outline-offset:2px; }
+/* Detail: movement banner, metadata tiles, and separate reading cards. */
+#screen-exercise-detail { background:linear-gradient(180deg,color-mix(in srgb,var(--cat-color,#a99cf5) 20%,#11111b),#0d0c18 60%); }
+#screen-exercise-detail .detail-screen-header { padding:calc(var(--safe-top) + 16px) 12px 14px; background:transparent; border:0; gap:12px; align-items:center; }
+#screen-exercise-detail .detail-screen-title { font-size:20px; line-height:1.25; font-weight:600; }
+#screen-exercise-detail .detail-screen-meta { margin-top:5px; }
+.exd-source { display:inline-block; color:#c9c9de; background:#0003; border:1px solid #ffffff20; padding:3px 9px; border-radius:8px; font-size:11px; }
+#screen-exercise-detail .detail-screen-body { padding:0 12px calc(24px + var(--safe-bottom)); }
+.exd-movement-banner { border-radius:16px; padding:11px 13px; background:#0000003d; }
+.exd-movement-banner .exercise-moves { margin:0; gap:7px; }
+.exd-movement-banner .exercise-move { color:#d4d4e4; font-size:13px; }
+.exd-tiles { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin:8px 0 10px; }
+.exd-tile { min-width:0; padding:9px 10px; background:#ffffff12; border-radius:14px; }
+.exd-tile small { display:block; font-size:11px; color:#b0b0c4; margin-bottom:4px; }
+.exd-tile b { font-size:12px; font-weight:500; color:#eeeef5; line-height:1.35; display:block; overflow-wrap:anywhere; }
+.exd-tile .exd-cat-dot { background:var(--cat-color); width:8px; height:8px; margin-right:5px; }
+.exd-card { padding:13px; margin-top:10px; border-radius:18px; border:1px solid #ffffff12; background:linear-gradient(180deg,color-mix(in srgb,var(--cat-color) 7%,transparent),#ffffff08); }
+#exd-body .exd-card > .exd-section-label:first-child { margin-top:0; }
+#exd-body .exd-section-label { font-size:13.5px; color:#e4e4f0; text-transform:none; letter-spacing:0; font-weight:500; margin:14px 0 10px; }
+#exd-body .exd-muscle-role { display:flex; align-items:flex-start; gap:10px; margin-bottom:9px; }
+#exd-body .exd-muscle-role-name { font-size:11.5px; color:#a2a2b6; width:96px; flex:none; font-weight:400; padding-top:5px; }
+#exd-body .exd-chip { font-size:12px; font-weight:400; background:color-mix(in srgb,var(--cat-color) 14%,transparent); color:#c8c8dc; border:0; padding:5px 10px; }
+#exd-body .exd-chip.primary { background:color-mix(in srgb,var(--cat-color) 30%,transparent); color:#fff; }
+#exd-body .exd-chip.stab { background:transparent; border:1px solid #ffffff24; }
+#exd-body .exd-metachip { font-size:11px; font-weight:400; color:#bcbcd0; background:#ffffff08; border:0; }
+#exd-body .exd-step { gap:10px; margin-bottom:9px; }
+#exd-body .exd-step:last-child, #exd-body .exd-mistake:last-child { margin-bottom:0; }
+#exd-body .exd-step-num { width:20px; height:20px; font-size:11px; font-weight:400; color:#fff; background:color-mix(in srgb,var(--cat-color) 25%,transparent); }
+#exd-body .exd-step-text, #exd-body .exd-note, #exd-body .exd-mistake { font-size:13px; line-height:1.55; color:#c8c8d8; }
+#exd-body .exd-warn, #exd-body .exd-tip { margin:0; padding:0; border:0; background:none; font-size:13px; }
+.exd-library-button { width:100%; padding:13px; margin-top:14px; font-size:14px; color:#fff; background:color-mix(in srgb,var(--cat-color) 26%,transparent); border:1px solid color-mix(in srgb,var(--cat-color) 50%,transparent); border-radius:14px; }
+#cat-manager-backdrop .bottom-sheet { background:linear-gradient(180deg,#1a1830,#0d0c18); }
+#cat-manager-backdrop .ref-card, #cat-manager-backdrop .cat-item { border-radius:14px; }
+@media (max-width:360px) { .exercise-ago { max-width:58px; overflow:hidden; text-overflow:ellipsis; } #exercises-scroll .ex-row { padding:11px 10px; } #exd-body .exd-muscle-role { flex-direction:column; gap:4px; } #exd-body .exd-muscle-role-name { width:auto; } }
+
+#exd-body .exd-section-label { display:flex; align-items:center; gap:9px; }
+.exd-section-icon { width:26px; height:26px; border-radius:9px; background:color-mix(in srgb,var(--cat-color) 22%,transparent); color:color-mix(in srgb,var(--cat-color) 50%,white); display:inline-flex; align-items:center; justify-content:center; flex:none; }
+.exd-section-icon svg { width:16px; height:16px; }
+.app:has(#screen-exercises.active), .app:has(#screen-exercise-detail.active) { overflow:clip; }
+@media (min-width:481px) {
+  #screen-exercises .exercises-header,
+  #screen-exercises .exercises-search-wrap,
+  #screen-exercises .ex-cat-tabs-wrap,
+  #screen-exercises .exercise-movement-tabs,
+  #screen-exercises .exercise-library-tabs,
+  #screen-exercises .exercises-scroll,
+  #screen-exercise-detail .detail-screen-header,
+  #screen-exercise-detail .detail-screen-body { padding-inline:max(12px,calc((100% - 640px) / 2)); }
+}
+#exercises-scroll > .ex-group-empty { border-radius:20px; border-bottom:1px solid #ffffff0c; padding-bottom:12px; }
 </style>
 </head>
 <body>
@@ -4015,25 +4127,32 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   <section id="screen-exercises" class="screen screen-exercises slide-right">
     <div class="exercises-header">
       <div class="exercises-header-top">
-        <button class="btn-chip" id="exercises-back-btn">
+        <button class="btn-chip" id="exercises-back-btn" aria-label="Назад">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
         </button>
         <div class="exercises-header-title">Упражнения</div>
+      <button class="ex-cat-manage-btn" id="ex-cat-manage-btn" title="Справочники" aria-label="Справочники">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+      </button>
       </div>
+    </div>
+    <div class="exercise-library-tabs" id="exercise-library-tabs" role="tablist" aria-label="Упражнения">
+      <button type="button" role="tab" aria-selected="true" class="active" data-library="mine">Мои</button>
+      <button type="button" role="tab" aria-selected="false" data-library="catalog">Каталог</button>
     </div>
     <div id="constructor-catalog-context" class="constructor-catalog-context" hidden></div>
     <div class="exercises-search-wrap">
-      <input class="exercises-search" id="exercises-search" placeholder="Поиск упражнения…" type="text">
+      <input class="exercises-search" id="exercises-search" placeholder="Поиск" aria-label="Поиск упражнения" type="search">
+      <button type="button" class="exercise-filter-btn" id="exercise-filter-btn" aria-label="Фильтры: группы" title="Фильтры: группы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
       <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
     <div class="ex-cat-tabs-wrap">
       <div class="ex-cat-tabs" id="ex-cat-tabs"></div>
-      <button class="ex-cat-manage-btn" id="ex-cat-manage-btn" title="Категории">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-      </button>
+
     </div>
+    <div class="exercise-movement-tabs" id="exercise-movement-tabs" hidden></div>
     <div class="exercises-scroll" id="exercises-scroll"></div>
     <button class="exercises-float-done" id="exercises-done-btn">Готово</button>
   <div id="constructor-catalog-footer" class="constructor-catalog-footer" hidden><span>Нажми на название для подробностей, на + для добавления</span><button type="button" id="constructor-catalog-done">Готово</button></div>

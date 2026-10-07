@@ -5764,6 +5764,78 @@ $('constructor-catalog-done').addEventListener('click',()=>{
 
 let _editingExerciseId = null; // null = создание нового; иначе id редактируемого личного упражнения
 let _exercisesCatFilter = "all";
+let _exerciseLibrary = "mine";
+let _exerciseFilterMode = 0;
+let _exerciseMovementFilter = new Set();
+let _exerciseLastDates = new Map();
+const SVG_EX_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/></svg>';
+function exerciseMovements(ex) { return ex.atlas?.categories || []; }
+function exerciseMovementHtml(ex, expanded = false) {
+  const moves = exerciseMovements(ex);
+  if (!moves.length) return '';
+  return `<span class="exercise-moves${expanded ? ' expanded' : ''}">${(expanded ? moves : moves.slice(0, 1)).map(m => `<span class="exercise-move" title="${escHtml(m)}">${SVG_EX_TARGET}<span>${escHtml(m)}</span></span>`).join('')}${!expanded && moves.length > 1 ? `<span class="exercise-more">+${moves.length - 1}</span>` : ''}</span>`;
+}
+function exerciseAgo(id) {
+  const ts = _exerciseLastDates.get(id);
+  if (!ts) return '';
+  const days = Math.max(0, Math.floor((Date.now() - ts) / 86400000));
+  return days === 0 ? 'Сегодня' : days === 1 ? 'Вчера' : days < 30 ? `${days} дн. назад` : new Date(ts).toLocaleDateString('ru-RU', {day:'numeric', month:'short'});
+}
+function exerciseLibraryButton(ex) {
+  if (_constructorCatalog || _exerciseLibrary !== 'catalog') return '';
+  const added = !DATA.isHidden(DATA.getCurrentUser(), ex.id);
+  return `<button type="button" class="exercise-library-add${added ? ' added' : ''}" data-library-add="${escHtml(ex.id)}" aria-pressed="${added}" aria-label="${added ? 'Убрать из моих' : 'Добавить в мои'}: ${escHtml(ex.name)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="${added ? 'm5 12 4 4L19 6' : 'M12 5v14M5 12h14'}"/></svg></button>`;
+}
+function toggleExerciseLibrary(id) {
+  const userId = DATA.getCurrentUser();
+  if (DATA.isHidden(userId, id)) DATA.unhideExercise(userId, id);
+  else DATA.hideExercise(userId, id);
+  SyncQueue.push('exercise:update', {id});
+}
+function syncExerciseLibraryUI(allExs) {
+  const catalog = !_constructorCatalog && _exerciseLibrary === 'catalog';
+  $('screen-exercises').classList.toggle('library-catalog', catalog);
+  $('exercise-library-tabs').hidden = !!_constructorCatalog;
+  $('exercise-filter-btn').hidden = !!_constructorCatalog;
+  $('exercises-add-btn').hidden = !!_constructorCatalog || catalog || _exListEditMode;
+  exercisesSearch.placeholder = catalog ? 'Поиск по каталогу' : 'Поиск';
+  document.querySelectorAll('[data-library]').forEach(b => {
+    b.classList.toggle('active', b.dataset.library === _exerciseLibrary);
+    b.setAttribute('aria-selected', String(b.dataset.library === _exerciseLibrary));
+  });
+  const mode = _constructorCatalog ? 0 : _exerciseFilterMode;
+  $('ex-cat-tabs').parentElement.hidden = mode === 1;
+  const filter = $('exercise-filter-btn');
+  filter.classList.toggle('active', mode > 0);
+  filter.innerHTML = mode === 1 ? SVG_EX_TARGET : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${mode === 2 ? '<path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>' : '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>'}</svg>`;
+  filter.title = filter.ariaLabel = ['Фильтры: группы', 'Фильтры: движения', 'Фильтры: группы и движения'][mode];
+  const panel = $('exercise-movement-tabs');
+  panel.hidden = mode === 0;
+  const moves = [...new Set(allExs.flatMap(exerciseMovements))];
+  panel.innerHTML = `<button type="button" class="${!_exerciseMovementFilter.size ? 'active' : ''}" data-movement="">Все движения</button>` + moves.map(m => `<button type="button" title="${escHtml(m)}" class="${_exerciseMovementFilter.has(m) ? 'active' : ''}" data-movement="${escHtml(m)}">${escHtml(m)}</button>`).join('');
+  panel.querySelectorAll('button').forEach(b => b.onclick = () => {
+    const m = b.dataset.movement;
+    if (!m) _exerciseMovementFilter.clear();
+    else if (_exerciseMovementFilter.has(m)) _exerciseMovementFilter.delete(m);
+    else _exerciseMovementFilter.add(m);
+    renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = 0;
+  });
+}
+$('exercise-library-tabs').addEventListener('click', event => {
+  const button = event.target.closest('[data-library]');
+  if (!button || button.dataset.library === _exerciseLibrary) return;
+  exitExListEditMode();
+  _exerciseLibrary = button.dataset.library;
+  _exercisesCatFilter = 'all'; _exerciseFilterMode = 0; _exerciseMovementFilter.clear(); _exGroupExpanded.clear();
+  exercisesSearch.value = '';
+  renderExercisesList(''); exercisesScroll.scrollTop = 0;
+});
+$('exercise-filter-btn').addEventListener('click', () => {
+  _exerciseFilterMode = (_exerciseFilterMode + 1) % 3;
+  if (_exerciseFilterMode === 0) _exerciseMovementFilter.clear();
+  if (_exerciseFilterMode === 1) _exercisesCatFilter = 'all';
+  renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = 0;
+});
 let _exercisesShowHidden = false;
 let _exListEditMode = false;
 let _exListDrag = null;
@@ -5788,6 +5860,9 @@ const LOAD_LABELS = { weighted: "С отягощением", bodyweight: "Сво
 
 function initExercisesScreen() {
   exercisesSearch.value = "";
+  _exerciseLibrary = "mine";
+  _exerciseFilterMode = 0;
+  _exerciseMovementFilter.clear();
   _exercisesCatFilter = "all";
   _exercisesShowHidden = false;
   _exListEditMode = false;
@@ -5838,7 +5913,7 @@ function memberRowHtml(ex, cat) {
         <span class="ex-row-body">
           <span class="ex-row-name">${escHtml(ex.name)}</span>
         </span>
-        <span class="ex-row-chevron">${SVG_CHEVRON}</span>${constructorCatalogAddHtml(ex)}
+        <span class="exercise-ago">${_exerciseLibrary === "mine" && !_constructorCatalog ? exerciseAgo(ex.id) : ""}</span><span class="ex-row-chevron">${SVG_CHEVRON}</span>${constructorCatalogAddHtml(ex)}${exerciseLibraryButton(ex)}
       </div>
     </div>`;
 }
@@ -5985,15 +6060,20 @@ function renderExercisesList(query) {
   const q       = query.trim().toLowerCase();
   if (_constructorCatalog && (_constructorCatalog.owner !== Auth.userId() || _constructorCatalog.profile !== userId)) _constructorCatalog = null;
   syncConstructorCatalogUI();
-  const allExs = DATA.getVisibleExercises(userId).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id,_constructorCatalog.filterMode)); // seeded + personal, единый список
+  const allExs = (!_constructorCatalog && _exerciseLibrary === "catalog" ? DATA.DEFAULT_EXERCISES : DATA.getVisibleExercises(userId)).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id,_constructorCatalog.filterMode)); // seeded + personal, единый список
 
+  _exerciseLastDates = new Map();
+  DATA.getWorkoutHistory(userId).forEach(w => (w.exercises || []).forEach(e => {
+    if (w.startedAt > (_exerciseLastDates.get(e.exerciseId) || 0)) _exerciseLastDates.set(e.exerciseId, w.startedAt);
+  }));
+  syncExerciseLibraryUI(allExs);
   renderCatTabs(userId, Array.from(new Set(allExs.map(e => e.cat))));
 
   // Фильтр по вкладке-категории — отдельно от текстового поиска: последний
   // должен учитывать группы упражнений (см. DATA.resolveDisplayItems) —
   // если запрос совпал с ОДНИМ вариантом, показать нужно всю группу целиком,
   // а не только совпавшего участника, поэтому query нельзя резать здесь.
-  const tabFiltered = allExs.filter(e => _exercisesCatFilter === "all" || e.cat === _exercisesCatFilter);
+  const tabFiltered = allExs.filter(e => _exercisesCatFilter === "all" || e.cat === _exercisesCatFilter).filter(e => _constructorCatalog || !_exerciseMovementFilter.size || exerciseMovements(e).some(m => _exerciseMovementFilter.has(m)));
 
   // Группировка по категориям. Порядок категорий — как в списке пользователя,
   // плюс любые «осиротевшие» (встречаются в упражнениях, но нет в списке).
@@ -6012,7 +6092,7 @@ function renderExercisesList(query) {
   const customOrder = DATA.getExerciseOrder(userId);
 
   // Пустые категории показываем только на вкладке "Все" и без поиска (для drag-to-category)
-  const emptyCats = (!_constructorCatalog && !isFiltered && !q) ? catOrder.filter(c => !groups.has(c)) : [];
+  const emptyCats = (!_constructorCatalog && _exerciseLibrary === "mine" && !isFiltered && !q && !_exerciseMovementFilter.size) ? catOrder.filter(c => !groups.has(c)) : [];
   const allOrderedCats = [...orderedCats, ...emptyCats];
 
   if (_exListEditMode) exercisesScroll.classList.add("ex-list-editing");
@@ -6029,7 +6109,7 @@ function renderExercisesList(query) {
     const color = DATA.getCategoryColor(userId, cat);
     const catExs = groups.get(cat) || [];
     const isEmpty = catExs.length === 0;
-    const accentStyle = ` style="border-left-color:${escHtml(color)};"`;
+    const accentStyle = ` style="--cat-color:${escHtml(color)};"`;
     // Стабильная база по имени — дальше пересортировываем уже отображаемые
     // элементы (см. orderKey) пользовательским порядком, если он есть.
     const rawSorted = [...catExs].sort((a, b) => a.name.localeCompare(b.name, "ru"));
@@ -6045,17 +6125,17 @@ function renderExercisesList(query) {
       return displayName(a).localeCompare(displayName(b), "ru");
     });
     itemsByCat.set(cat, items);
-    if (_constructorCatalog && !items.length) return "";
+    if (!isEmpty && !items.length) return "";
     const rows = items.map(item => {
       if (item.kind !== "group") return `
-        <div class="ex-row-wrap" data-id="${escHtml(item.ex.id)}" data-cat="${escHtml(cat)}">
+        <div class="ex-row-wrap" data-id="${escHtml(item.ex.id)}" data-cat="${escHtml(cat)}" style="--cat-color:${escHtml(color)}">
           <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
           <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
           <div class="ex-row tappable" data-id="${escHtml(item.ex.id)}"${accentStyle}>
             <span class="ex-row-body">
-              <span class="ex-row-name">${escHtml(item.ex.name)}</span>
+              <span class="ex-row-name">${escHtml(item.ex.name)}</span>${exerciseMovementHtml(item.ex)}
             </span>
-            <span class="ex-row-chevron">${SVG_CHEVRON}</span>${constructorCatalogAddHtml(item.ex)}
+            <span class="exercise-ago">${_exerciseLibrary === "mine" && !_constructorCatalog ? exerciseAgo(item.ex.id) : ""}</span><span class="ex-row-chevron">${SVG_CHEVRON}</span>${constructorCatalogAddHtml(item.ex)}${exerciseLibraryButton(item.ex)}
           </div>
         </div>`;
       const expanded = _exGroupExpanded.has(item.id);
@@ -6068,16 +6148,16 @@ function renderExercisesList(query) {
         <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
         <div class="ex-row ex-row-group tappable" data-group-id="${escHtml(item.id)}"${accentStyle}>
           <span class="ex-row-body">
-            <span class="ex-row-name">${escHtml(item.name)}</span>
+            <span class="ex-row-name">${escHtml(item.name)}</span>${exerciseMovementHtml({atlas:{categories:[...new Set(item.members.flatMap(exerciseMovements))]}}, expanded)}
           </span>
-          <span class="ex-row-group-badge">${item.members.length}</span>
+          <span class="ex-row-group-badge" title="Вариации: ${item.members.length}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg></span>
           <span class="ex-row-chevron ex-row-chevron-group">${SVG_CHEVRON}</span>
         </div>
-        <div class="ex-row-group-members">${memberRows}</div>
+        <div class="ex-row-group-members">${expanded ? '<div class="exercise-variants-label">Вариации</div>' : ''}${memberRows}</div>
       </div>`;
     }).join("");
-    const header = isFiltered ? "" : `
-      <div class="ex-group${isEmpty ? " ex-group-empty" : ""}" data-cat="${escHtml(cat)}">
+    const header = `
+      <div class="ex-group${isEmpty ? " ex-group-empty" : ""}" data-cat="${escHtml(cat)}" style="--cat-color:${escHtml(color)}">
         <span class="ex-group-dot" style="background:${escHtml(color)}"></span>
         <span class="ex-group-name">${escHtml(cat)}</span>
         ${!isEmpty ? `<span class="ex-group-count">${_constructorCatalog ? items.reduce((n,it)=>n+(it.kind === "group" ? it.members.length : 1),0) : catExs.length}</span>` : ""}
@@ -6086,10 +6166,16 @@ function renderExercisesList(query) {
   }).join("");
 
   if (![...itemsByCat.values()].some(items => items.length)) {
-    exercisesScroll.innerHTML = `<p class="empty-state">Ничего не найдено</p>`;
+    exercisesScroll.innerHTML = `<p class="empty-state">${!q && _exercisesCatFilter === 'all' && !_exerciseMovementFilter.size && !_constructorCatalog && _exerciseLibrary === 'mine' ? 'Здесь будут ваши упражнения. Выберите их во вкладке «Каталог».' : 'Ничего не найдено'}</p>`;
     return;
   }
 
+  exercisesScroll.querySelectorAll('[data-library-add]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    toggleExerciseLibrary(button.dataset.libraryAdd);
+    const y = exercisesScroll.scrollTop;
+    renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = y;
+  }));
   exercisesScroll.querySelectorAll(".ex-row:not(.ex-row-group)").forEach(row => {
     row.addEventListener("click", () => {
       // В режиме правки строка только переставляется; имя меняется свайпом
@@ -6128,6 +6214,8 @@ function renderExercisesList(query) {
     }));
     return; // В режиме выбора жесты редактирования библиотеки не нужны.
   }
+
+  if (_exerciseLibrary === 'catalog') return;
 
   // Свайп (изменить/удалить) — на все обёртки упражнений, включая вложенные
   // варианты внутри раскрытой группы: это обычные упражнения, ничем не хуже.
@@ -6791,16 +6879,20 @@ function splitMuscles(str) {
 
 function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   const userId = DATA.getCurrentUser();
-  const ex = DATA.getVisibleExercises(userId).find(e => e.id === exerciseId);
+  const fromCatalog = returnScreen === "exercises" && !_constructorCatalog && _exerciseLibrary === "catalog";
+  const ex = (fromCatalog ? DATA.DEFAULT_EXERCISES : DATA.getVisibleExercises(userId)).find(e => e.id === exerciseId);
   if (!ex) return;
   _detailExerciseId = exerciseId;
   _exdReturnScreen = returnScreen;
   exitExerciseEdit();  // всегда открываем деталь в режиме просмотра, не редактирования
 
   const color = DATA.getCategoryColor(userId, ex.cat);
+  $('screen-exercise-detail').style.setProperty('--cat-color', color);
+  $('screen-exercise-detail').classList.toggle('from-catalog', fromCatalog);
+  $('exd-edit-btn').style.display = fromCatalog ? 'none' : '';
   $("exd-title").textContent = ex.name;
   $("exd-meta").innerHTML =
-    `<span class="exd-cat-dot" style="background:${escHtml(color)}"></span>${escHtml(ex.cat)}`;
+    `<span class="exd-source">${fromCatalog ? "Каталог" : "Мои"}</span>`;
 
   const media = (ex.media || "").trim();
   let mediaHtml = "";
@@ -6823,9 +6915,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
 
   // Основные движения (категории Атласа).
   const movements = (a && a.categories) || [];
-  const movementsSection = movements.length
-    ? `<div class="exd-section-label">Основные движения</div><div class="exd-chips">${movements.map(m => `<span class="exd-chip">${escHtml(m)}</span>`).join("")}</div>`
-    : "";
+  
 
   // Рабочие мышцы: новая модель (роли с пучками) или легаси-строки.
   let musclesSection = "";
@@ -6862,7 +6952,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
     ? techniqueText.split("\n").map(s => s.trim()).filter(Boolean)
     : (Array.isArray(ex.steps) ? ex.steps : []);
   const stepsSection = steps.length
-    ? `<div class="exd-section-label">Техника</div>${steps.map((s, i) => `
+    ? `<div class="exd-section-label">Техника выполнения</div>${steps.map((s, i) => `
         <div class="exd-step">
           <span class="exd-step-num">${i + 1}</span>
           <span class="exd-step-text">${escHtml(s)}</span>
@@ -6907,10 +6997,30 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
     ? `<div class="exd-tip"><span class="exd-tip-icon">💡</span><span><b>Совет.</b> ${escHtml(tip)}</span></div>`
     : "";
 
-  const body = metaSection + movementsSection + musclesSection + stepsSection
-    + mistakesSection + differencesSection + extraSection + contraSection + refSection + tipSection;
+  const tile = (label, value) => `<div class="exd-tile"><small>${label}</small><b>${value}</b></div>`;
+  const last = DATA.getLastWorkoutForExercise(userId, ex.id);
+  if (last) _exerciseLastDates.set(ex.id, last.startedAt);
+  else _exerciseLastDates.delete(ex.id);
+  const level = LEVEL_LABELS[a?.level] || a?.level || '—';
+  const tiles = `<div class="exd-tiles">${tile('Тип', escHtml(level))}${tile('Группа', `<span class="exd-cat-dot"></span>${escHtml(ex.cat)}`)}${tile(fromCatalog ? 'В моих' : 'Последний раз', fromCatalog ? (DATA.isHidden(userId, ex.id) ? 'Нет' : 'Да') : (exerciseAgo(ex.id) || '—'))}</div>`;
+  const sectionIcons = {
+    muscles:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+    technique:'<path d="M9 5h11M9 12h11M9 19h11M3 5h1M3 12h1M3 19h1"/>',
+    mistakes:'<path d="m12 3 10 18H2L12 3ZM12 9v5M12 17v1"/>',
+    features:'<path d="M9 18h6M9 21h6M8 14a6 6 0 1 1 8 0l-1 3H9l-1-3Z"/>'
+  };
+  const section = (html, icon) => {
+    if (!html) return '';
+    const svg = sectionIcons[icon] ? `<span class="exd-section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${sectionIcons[icon]}</svg></span>` : '';
+    return `<section class="exd-card">${html.replace('<div class="exd-section-label">', '<div class="exd-section-label">' + svg)}</section>`;
+  };
+  const body = `<div class="exd-overview">${movements.length ? `<div class="exd-movement-banner">${exerciseMovementHtml(ex, true)}</div>` : ''}${tiles}${metaSection}</div>`
+    + section(musclesSection, 'muscles') + section(stepsSection, 'technique') + section(mistakesSection, 'mistakes')
+    + section(differencesSection + extraSection, 'features') + section(contraSection) + refSection + section(tipSection);
+  const libraryAction = fromCatalog ? `<button type="button" class="exd-library-button" id="exd-library-button">${DATA.isHidden(userId, ex.id) ? 'Добавить в мои' : 'В моих · убрать'}</button>` : '';
   $("exd-body").innerHTML = mediaHtml +
-    (body || `<p class="exd-empty">Техника и мышцы пока не заполнены.</p>`);
+    (body || `<p class="exd-empty">Техника и мышцы пока не заполнены.</p>`) + libraryAction;
+  if (fromCatalog) $("exd-library-button").onclick = () => { toggleExerciseLibrary(ex.id); openExerciseDetail(ex.id, returnScreen); };
   // К началу: тело карточки переиспользуется между упражнениями и сохранял бы
   // прокрутку от предыдущего (открыл следующее — а ты уже в середине страницы).
   $("exd-body").scrollTop = 0;
