@@ -3698,14 +3698,14 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 
 @media (min-width:681px) { #constructor-scroll,.sg-header,.sg-footer { padding-inline:max(16px,calc((100% - 640px)/2)); } }
 @media (prefers-reduced-motion:reduce) { .sg-sheet { transition:none; } }
-/* Exercise library — prototype v9. Flat list structure preserves drag ordering. */
-#screen-exercises { --library-top:#1a1830; --library-bottom:#0d0c18; background:linear-gradient(180deg,var(--library-top),var(--library-bottom) 80%); }
-#screen-exercises.library-catalog { --library-top:#112230; --library-bottom:#0a1219; }
-#screen-exercises .exercises-header { background:#0a0911; border:0; padding:calc(var(--safe-top) + 16px) 12px 14px; }
-#screen-exercises .exercises-header-title { font-size:22px; font-weight:500; letter-spacing:-.02em; }
+/* Exercise library: one continuous surface per tab and category. */
+#screen-exercises { --library-top:#1a1830; --library-bottom:#0d0c18; --library-shell:#0a0911; background:var(--library-shell); }
+#screen-exercises.library-catalog { --library-top:#112230; --library-bottom:#0a1219; --library-shell:#070c11; }
+#screen-exercises .exercises-header { background:linear-gradient(180deg,var(--panel),var(--library-shell)); border:0; padding:calc(var(--safe-top) + 16px) 20px 14px; }
+#screen-exercises .exercises-header-title { font-size:22px; font-weight:700; letter-spacing:-.02em; }
 #screen-exercises #exercises-back-btn, #screen-exercises #ex-cat-manage-btn { width:38px; height:38px; min-width:38px; padding:0; border-radius:50%; background:transparent; border:1px solid #ffffff1a; color:#a99cf5; display:flex; align-items:center; justify-content:center; }
 #screen-exercises #exercises-back-btn svg, #screen-exercises #ex-cat-manage-btn svg { width:18px; height:18px; }
-.exercise-library-tabs { flex:none; display:flex; background:#0a0911; }
+.exercise-library-tabs { flex:none; display:flex; background:var(--library-shell); }
 .exercise-library-tabs button { flex:1; height:50px; position:relative; color:#918aa9; font-size:16px; font-weight:500; }
 .exercise-library-tabs button.active { background:var(--library-top); color:#fff; border-radius:16px 16px 0 0; }
 .exercise-library-tabs button.active:first-child:after { content:""; position:absolute; right:-14px; bottom:0; width:14px; height:14px; background:radial-gradient(circle at 100% 0,transparent 14px,var(--library-top) 14.5px); pointer-events:none; }
@@ -3720,17 +3720,16 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-exercises .ex-cat-tabs-wrap { padding:10px 12px; }
 #screen-exercises .ex-cat-tab, .exercise-movement-tabs button { padding:6px 12px; border:0; border-radius:12px; background:#ffffff0d; color:#a8a8bc; font-size:12.5px; font-weight:400; }
 #screen-exercises .ex-cat-tab.active, .exercise-movement-tabs button.active { background:#ffffff24; color:#fff; }
-.exercise-movement-tabs { display:flex; flex:none; gap:6px; padding:0 12px 10px; overflow-x:auto; scrollbar-width:none; }
+.exercise-movement-tabs { display:flex; flex:none; gap:6px; padding:10px 12px; overflow-x:auto; scrollbar-width:none; }
 .exercise-movement-tabs button { flex:none; max-width:230px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 #screen-exercises .ex-cat-tabs-wrap[hidden], #screen-exercises [hidden] { display:none!important; }
 #screen-exercises .exercises-scroll { padding:0 12px calc(28px + var(--safe-bottom)); }
-#exercises-scroll > .ex-group { margin:12px 0 0; padding:12px 16px 10px; border-radius:20px 20px 0 0; background:linear-gradient(125deg,color-mix(in srgb,var(--cat-color) 12%,#0e0e16),#0e0e16); border:1px solid #ffffff0c; border-bottom:0; }
-#exercises-scroll > .ex-group:first-child { margin-top:0; }
+#exercises-scroll .ex-category-panel { padding:12px 10px 4px; margin-bottom:12px; border-radius:20px; border:1px solid #ffffff0f; background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 12%,transparent),transparent 60%),#0e0e16; }
+#exercises-scroll .ex-group { padding:0 6px 10px; margin:0; background:none; border:0; }
 #exercises-scroll .ex-group-name { color:#a8a8bc; font-size:12.5px; font-weight:400; text-transform:none; letter-spacing:0; }
 #exercises-scroll .ex-group-dot, #exercises-scroll .ex-group-count { display:none; }
-#exercises-scroll > .ex-row-wrap { margin:0; padding:0 10px 6px; border-radius:0; border:1px solid #ffffff0c; border-top:0; border-bottom:0; background:linear-gradient(125deg,color-mix(in srgb,var(--cat-color) 6%,#0e0e16),#0e0e16); }
-#exercises-scroll > .ex-row-wrap:has(+ .ex-group), #exercises-scroll > .ex-row-wrap:last-child { border-radius:0 0 20px 20px; padding-bottom:10px; border-bottom:1px solid #ffffff0c; }
-#exercises-scroll .ex-row { border:1px solid #ffffff0f; border-radius:14px; padding:12px 13px; background:#ffffff0a; gap:8px; }
+#exercises-scroll .ex-category-panel > .ex-row-wrap { margin:0 0 6px; padding:0; border:0; border-radius:14px; background:transparent; }
+#exercises-scroll .ex-row { border:1px solid #ffffff0f; border-radius:14px; padding:12px 13px; background:linear-gradient(110deg,color-mix(in srgb,var(--cat-color) 10%,transparent),#ffffff04),#15151e; gap:8px; }
 #exercises-scroll .ex-row-name { display:block; font-size:15px; font-weight:500; line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .exercise-moves { display:flex; align-items:center; gap:5px; margin-top:7px; min-width:0; }
 .exercise-move { min-width:0; display:flex; align-items:center; gap:5px; padding:3px 9px; border-radius:9px; background:color-mix(in srgb,var(--cat-color,#a99cf5) 14%,transparent); color:color-mix(in srgb,var(--cat-color,#a99cf5) 50%,#eee); font-size:11.5px; line-height:1.4; }
@@ -3744,9 +3743,10 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #exercises-scroll .ex-row-group-badge svg { width:17px; height:17px; }
 #exercises-scroll .ex-row-chevron-group { transform:rotate(90deg); }
 #exercises-scroll .expanded .ex-row-chevron-group { transform:rotate(-90deg); }
-#exercises-scroll .ex-row-wrap-group.expanded { box-shadow:none; }
-#exercises-scroll .expanded > .ex-row-group { background:color-mix(in srgb,var(--cat-color) 11%,#0e0e16); border-color:color-mix(in srgb,var(--cat-color) 25%,transparent); border-bottom:0; border-radius:14px 14px 0 0; }
-#exercises-scroll .expanded > .ex-row-group-members { margin:0; padding:0 12px 10px; background:color-mix(in srgb,var(--cat-color) 6%,#0e0e16); border:1px solid color-mix(in srgb,var(--cat-color) 25%,transparent); border-top:0; border-radius:0 0 14px 14px; }
+#exercises-scroll .ex-row-wrap-group:not(.expanded) > .ex-row-group { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),#0e0e16; border-color:color-mix(in srgb,var(--cat-color) 28%,transparent); }
+#exercises-scroll .ex-row-wrap-group.expanded { box-shadow:none; border:1px solid color-mix(in srgb,var(--cat-color) 28%,transparent); background:linear-gradient(180deg,color-mix(in srgb,var(--cat-color) 14%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent)),#0e0e16; }
+#exercises-scroll .expanded > .ex-row-group { background:transparent; border:0; border-radius:0; }
+#exercises-scroll .expanded > .ex-row-group-members { margin:0; padding:0 12px 10px; background:transparent; border:0; border-radius:0; }
 .exercise-variants-label { color:#a0a0b4; font-size:12px; padding:10px 2px 6px; }
 #exercises-scroll .ex-row-wrap-nested { margin:0 0 5px; border-radius:12px; }
 #exercises-scroll .ex-row-wrap-nested .ex-row { min-height:42px; padding:7px 9px; border:0; background:#ffffff0a; border-radius:12px; }
@@ -3761,6 +3761,13 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #exercises-scroll.ex-list-editing > .ex-row-wrap { padding:0; margin-bottom:6px; border:0; border-radius:14px; }
 #exercises-scroll.ex-list-editing .exercise-moves, #exercises-scroll.ex-list-editing .exercise-ago { display:none; }
 #screen-exercises button:focus-visible { outline:2px solid #a99cf5; outline-offset:2px; }
+.exercise-library-body { flex:1; min-height:0; display:flex; flex-direction:column; background:linear-gradient(180deg,var(--library-top),var(--library-bottom) 75%); border-radius:0 16px 0 0; }
+.library-catalog .exercise-library-body { border-radius:16px 0 0 0; }
+.constructor-catalog .exercise-library-body { border-radius:0; }
+.exercise-library-tabs { touch-action:pan-y; }
+.exercise-movement-tabs, #ex-cat-tabs { touch-action:pan-x; cursor:grab; overscroll-behavior-x:contain; }
+.exercise-movement-tabs.drag-scrolling, #ex-cat-tabs.drag-scrolling { cursor:grabbing; }
+#exercises-scroll.ex-list-editing > .ex-group { padding:12px 4px 8px; }
 /* Detail: movement banner, metadata tiles, and separate reading cards. */
 #screen-exercise-detail { background:linear-gradient(180deg,color-mix(in srgb,var(--cat-color,#a99cf5) 20%,#11111b),#0d0c18 60%); }
 #screen-exercise-detail .detail-screen-header { padding:calc(var(--safe-top) + 16px) 12px 14px; background:transparent; border:0; gap:12px; align-items:center; }
@@ -3809,7 +3816,61 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   #screen-exercise-detail .detail-screen-header,
   #screen-exercise-detail .detail-screen-body { padding-inline:max(12px,calc((100% - 640px) / 2)); }
 }
-#exercises-scroll > .ex-group-empty { border-radius:20px; border-bottom:1px solid #ffffff0c; padding-bottom:12px; }
+
+#screen-exercise-reference { --library-top:#1a1830; --library-bottom:#0d0c18; --library-shell:#0a0911; background:var(--library-shell); }
+#screen-exercise-reference.library-catalog { --library-top:#112230; --library-bottom:#0a1219; --library-shell:#070c11; }
+#screen-exercise-reference .exercises-header { border:0; background:linear-gradient(180deg,var(--panel),var(--library-shell)); }
+#screen-exercise-reference .exercises-header-title { min-width:0; overflow-wrap:anywhere; }
+#screen-exercise-reference [hidden] { display:none!important; }
+#screen-exercise-reference.reference-leaf .exercise-library-body { border-radius:0; }
+#screen-exercises #exercises-back-btn, #screen-exercises #ex-cat-manage-btn, #exercise-reference-back { width:38px; height:38px; min-width:38px; padding:0; flex:none; display:grid; place-items:center; border-radius:50%; color:#b9aeff; background:#14141f; border:1px solid #ffffff12; }
+#screen-exercises #exercises-back-btn svg, #screen-exercises #ex-cat-manage-btn svg, #exercise-reference-back svg { width:19px; height:19px; stroke-width:1.7; }
+.reference-page-scroll { min-height:0; flex:1; overflow-y:auto; padding:14px 12px calc(24px + var(--safe-bottom)); touch-action:pan-y; overscroll-behavior:contain; scrollbar-width:none; }
+.reference-note { color:#8b8b9c; font-size:13px; line-height:1.45; margin:0; padding:0 4px 10px; }
+.reference-row { display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:12px 13px; margin-bottom:6px; border-radius:14px; background:#ffffff0a; border:1px solid #ffffff0f; color:#f2f2f7; }
+.reference-row-copy { flex:1; min-width:0; }
+.reference-row-copy b { display:block; font-size:14px; font-weight:500; line-height:1.4; overflow-wrap:anywhere; }
+.reference-row-copy small { display:block; font-size:12px; color:#8e8ea2; margin-top:2px; }
+.reference-row > svg { width:16px; height:16px; color:#77778c; flex:none; }
+.reference-count { flex:none; font-size:12px; color:#8e8ea2; }
+.reference-hub-row { border-radius:16px; padding:14px; margin-bottom:8px; gap:12px; }
+.reference-hub-row b { font-size:15px; }
+.reference-hub-icon { width:38px; height:38px; border-radius:12px; flex:none; display:grid; place-items:center; background:#ffffff12; color:#b8b0ee; }
+.reference-hub-icon svg { width:20px; height:20px; }
+.reference-tinted { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),#0e0e16; border:1px solid color-mix(in srgb,var(--cat-color) 28%,transparent); }
+.reference-search-row { display:flex; gap:8px; margin-bottom:10px; }
+.reference-field { min-width:0; width:100%; padding:11px 13px; border-radius:13px; background:#ffffff0d; color:#f2f2f7; font:inherit; font-size:14px; border:1px solid transparent; }
+.reference-field:focus { border-color:#a99cf580; outline:none; }
+.reference-create { display:grid; place-items:center; width:42px; height:42px; border-radius:14px; flex:none; background:#6f60c8; color:#fff; }
+.reference-create svg { width:20px; height:20px; }
+.reference-label { display:block; font-size:11.5px; color:#8e8ea2; margin:0 2px 6px; }
+.reference-section-title { font-size:11.5px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:#8e8ea2; margin:18px 2px 8px; }
+.reference-edit-row { display:flex; align-items:center; gap:10px; border-radius:13px; padding:10px 12px; margin-bottom:6px; color:#f2f2f7; font-size:14px; }
+.reference-edit-row > span:first-child { flex:1; min-width:0; line-height:1.4; }
+.reference-badge { display:inline-flex; align-items:center; justify-content:center; min-width:32px; min-height:32px; border-radius:9px; font-size:11.5px; color:#a0a0b4; flex:none; padding:3px 8px; background:#ffffff0d; }
+.reference-badge svg { width:18px; height:18px; }
+.reference-badge.on { color:color-mix(in srgb,var(--cat-color) 50%,white); background:color-mix(in srgb,var(--cat-color) 22%,transparent); }
+.reference-badge.on svg { fill:currentColor; }
+.reference-icon-button { width:32px; height:32px; flex:none; display:grid; place-items:center; color:#a8a8bc; }
+.reference-icon-button svg { width:18px; height:18px; }
+.reference-add { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; border:1px dashed #ffffff33; border-radius:13px; padding:11px; font-size:13px; color:#b8b0ee; margin-top:4px; }
+.reference-add svg { width:16px; height:16px; }
+.reference-picker { margin-top:8px; border-radius:14px; background:#ffffff0d; padding:6px 10px; max-height:280px; overflow-y:auto; overscroll-behavior:contain; }
+.reference-picker-row { display:flex; width:100%; gap:10px; align-items:center; text-align:left; padding:11px 0; font-size:13px; color:#cccce0; border-bottom:1px solid #ffffff0a; }
+.reference-picker-row span { flex:1; min-width:0; }
+.reference-picker-row svg { width:18px; height:18px; flex:none; }
+.reference-empty { font-size:13px; color:#8b8b9c; padding:8px 4px; }
+.reference-delete { display:block; width:100%; color:#c98a8a; margin-top:18px; padding:10px; font-size:13px; }
+.reference-movement-banner { display:flex; gap:8px; align-items:flex-start; border:1px solid #ffffff12; border-radius:16px; padding:13px; background:#ffffff09; margin-bottom:10px; font-size:13px; line-height:1.45; }
+.reference-movement-banner svg { width:18px; height:18px; flex:none; color:#b8b0ee; }
+.reference-page-scroll button:focus-visible { outline:2px solid #a99cf5; outline-offset:2px; }
+.app:has(#screen-exercise-reference.active) { overflow:clip; }
+.drag-scrolling { cursor:grabbing; user-select:none; -webkit-user-select:none; }
+@media(min-width:481px) {
+  #screen-exercise-reference .exercises-header { padding-inline:max(20px,calc((100% - 640px)/2)); }
+  #screen-exercise-reference .exercise-library-tabs, .reference-page-scroll { padding-inline:max(12px,calc((100% - 640px)/2)); }
+}
+
 </style>
 </head>
 <body>
@@ -4140,6 +4201,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
       <button type="button" role="tab" aria-selected="true" class="active" data-library="mine">Мои</button>
       <button type="button" role="tab" aria-selected="false" data-library="catalog">Каталог</button>
     </div>
+    <div class="exercise-library-body">
     <div id="constructor-catalog-context" class="constructor-catalog-context" hidden></div>
     <div class="exercises-search-wrap">
       <input class="exercises-search" id="exercises-search" placeholder="Поиск" aria-label="Поиск упражнения" type="search">
@@ -4155,7 +4217,23 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     <div class="exercise-movement-tabs" id="exercise-movement-tabs" hidden></div>
     <div class="exercises-scroll" id="exercises-scroll"></div>
     <button class="exercises-float-done" id="exercises-done-btn">Готово</button>
+    </div>
   <div id="constructor-catalog-footer" class="constructor-catalog-footer" hidden><span>Нажми на название для подробностей, на + для добавления</span><button type="button" id="constructor-catalog-done">Готово</button></div>
+  </section>
+
+  <section id="screen-exercise-reference" class="screen screen-exercises slide-right">
+    <div class="exercises-header">
+      <div class="exercises-header-top">
+        <button type="button" class="btn-chip" id="exercise-reference-back" aria-label="Назад к предыдущему разделу"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>
+        <div class="exercises-header-title" id="exercise-reference-title">Справочники</div>
+        <span class="exd-source" id="exercise-reference-scope" hidden></span>
+      </div>
+    </div>
+    <div class="exercise-library-tabs" id="exercise-reference-tabs" role="tablist" aria-label="Источник справочников">
+      <button type="button" role="tab" data-reference-scope="mine" aria-selected="true" class="active">Мои</button>
+      <button type="button" role="tab" data-reference-scope="catalog" aria-selected="false">Каталог</button>
+    </div>
+    <div class="exercise-library-body"><div id="exercise-reference-content" class="reference-page-scroll"></div></div>
   </section>
 
   <!-- ===== ЭКРАН: полная история тренировок (доступен только из шторки) ===== -->

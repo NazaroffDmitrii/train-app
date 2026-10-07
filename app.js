@@ -370,14 +370,18 @@ const DATA = (() => {
     getRefOrder(userId, kind)      { return ls(`train_ref_order_${kind}_${userId}`, []); },
     saveRefOrder(userId, kind, ids){ lsSet(`train_ref_order_${kind}_${userId}`, ids); },
 
-    // Список для UI справочника: (общие − скрытые) + личные.
+    // Список для UI: личные правки заменяют общие по id, сохраняя порядок.
     refMuscles(userId) {
       const hidden = new Set(this.getHiddenMuscleIds(userId));
-      return [...ATLAS.muscles.filter(m => !hidden.has(m.id)), ...this.getOwnMuscles(userId)];
+      const own = this.getOwnMuscles(userId), overrides = new Map(own.map(m => [m.id,m]));
+      const baseIds = new Set(ATLAS.muscles.map(m => m.id));
+      return [...ATLAS.muscles.map(m => overrides.get(m.id) || m), ...own.filter(m => !baseIds.has(m.id))].filter(m => !hidden.has(m.id));
     },
     refMovements(userId) {
       const hidden = new Set(this.getHiddenMovementIds(userId));
-      return [...ATLAS.categories.filter(m => !hidden.has(m.id)), ...this.getOwnMovements(userId)];
+      const own = this.getOwnMovements(userId), overrides = new Map(own.map(m => [m.id,m]));
+      const baseIds = new Set(ATLAS.categories.map(m => m.id));
+      return [...ATLAS.categories.map(m => overrides.get(m.id) || m), ...own.filter(m => !baseIds.has(m.id))].filter(m => !hidden.has(m.id));
     },
     // Движения мышцы по имени: общие связи + inline-связи личных мышц/движений.
     refMovesByMuscle(userId) {
@@ -2476,7 +2480,7 @@ window.addEventListener("pagehide", () => { SyncQueue.flush(); });
 /* ==========================================================================
    Screen switching
    ========================================================================== */
-const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseDetail: $("screen-exercise-detail"), muscleDetail: $("screen-muscle-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), constructor: $("screen-constructor") };
+const SCREENS = { profile: screenProfile, menu: screenMenu, workout: screenWorkout, run: screenRun, exercises: screenExercises, exerciseReference: $("screen-exercise-reference"), exerciseDetail: $("screen-exercise-detail"), muscleDetail: $("screen-muscle-detail"), history: $("screen-history"), detail: $("screen-detail"), stats: $("screen-stats"), statChart: $("screen-stat-chart"), templates: $("screen-templates"), constructor: $("screen-constructor") };
 const _screenBackStack = [];
 
 function activeScreenName() {
@@ -2549,6 +2553,7 @@ function goToScreen(name, opts = {}) {
   if (name === "workout")  { initWorkoutScreen(opts); }
   if (name === "run")      { initRunScreen(opts); }
   if (name === "exercises") { if (opts.keepFilter) { renderExercisesList(exercisesSearch.value); if (_constructorCatalog) exercisesScroll.scrollTop = _constructorCatalog.scrollTop || 0; } else initExercisesScreen(); }
+  if (name === "exerciseReference") renderExerciseReference();
   if (name === "history")  { initHistoryScreen(); }
   if (name === "stats")    { initStatsScreen(); }
   if (name === "templates") { initTemplatesScreen(); }
@@ -5102,7 +5107,7 @@ function renderPickerTabs() {
   pickerTabs.innerHTML = pickerCategories().map(c => {
     const active = c === _pickerCat ? " active" : "";
     const color = c === "Все" ? "var(--accent)" : DATA.getCategoryColor(userId, c);
-    return `<button class="picker-tab${active}" data-cat="${escHtml(c)}" style="--tab-color:${escHtml(color)}">${escHtml(c)}</button>`;
+    return `<button class="picker-tab${active}" data-cat="${escHtml(c)}" style="--tab-color:${escHtml(color)}">${escHtml(c || "Без группы")}</button>`;
   }).join("");
   pickerTabs.querySelectorAll(".picker-tab").forEach(tab => {
     tab.addEventListener("click", () => {
@@ -5762,6 +5767,61 @@ $('constructor-catalog-done').addEventListener('click',()=>{
   closeConstructorExerciseCatalog();
 });
 
+// Native touch/trackpad scrolling plus mouse dragging; a drag never opens a row.
+function setupExerciseDragScroll(element, axis, enabled = () => true) {
+  let drag = null, suppressUntil = 0;
+  const position = axis === 'x' ? 'scrollLeft' : 'scrollTop';
+  element.addEventListener('pointerdown', event => {
+    if (!enabled() || event.pointerType !== 'mouse' || event.button !== 0 || event.isPrimary === false) return;
+    if (event.target.closest('input,textarea,select')) return;
+    const picker = event.target.closest('.reference-picker');
+    if (picker && picker !== element) return;
+    drag = {id:event.pointerId,x:event.clientX,y:event.clientY,start:element[position],engaged:false};
+  });
+  element.addEventListener('pointermove', event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+    const delta = axis === 'x' ? dx : dy, cross = axis === 'x' ? dy : dx;
+    if (!drag.engaged) {
+      if (Math.max(Math.abs(delta),Math.abs(cross)) < 8) return;
+      if (!enabled() || Math.abs(cross) > Math.abs(delta)) { drag = null; return; }
+      drag.engaged = true;
+      element.dispatchEvent(new Event('drag-scroll-start'));
+      element.classList.add('drag-scrolling');
+      element.setPointerCapture?.(event.pointerId);
+    }
+    if (event.cancelable) event.preventDefault();
+    element[position] = drag.start - delta;
+  });
+  const finish = event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const previous = drag; drag = null;
+    if (!previous.engaged) return;
+    suppressUntil = Date.now() + 400;
+    element.classList.remove('drag-scrolling');
+    if (element.hasPointerCapture?.(previous.id)) element.releasePointerCapture(previous.id);
+  };
+  ['pointerup','pointercancel','lostpointercapture'].forEach(name => element.addEventListener(name,finish));
+  element.addEventListener('pointerleave',()=>{if (drag && !drag.engaged) drag = null;});
+  element.addEventListener('click',event=>{
+    if (Date.now() < suppressUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
+  },true);
+  if (axis === 'x') element.addEventListener('wheel',event=>{
+    if (!enabled() || Math.abs(event.deltaX) >= Math.abs(event.deltaY) || element.scrollWidth <= element.clientWidth) return;
+    const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientWidth : 1;
+    const next = Math.max(0,Math.min(element.scrollWidth - element.clientWidth,element.scrollLeft + event.deltaY * scale));
+    if (next === element.scrollLeft) return;
+    if (event.cancelable) event.preventDefault();
+    element.scrollLeft = next;
+  },{passive:false});
+}
+setupExerciseDragScroll(exercisesScroll,'y',()=>!_constructorCatalog && !_exListEditMode);
+setupExerciseDragScroll($('ex-cat-tabs'),'x');
+setupExerciseDragScroll($('exercise-movement-tabs'),'x');
+setupExerciseDragScroll($('exercise-reference-content'),'y');
+let _cancelExerciseHold = null;
+exercisesScroll.addEventListener('drag-scroll-start',()=>_cancelExerciseHold?.());
+
 let _editingExerciseId = null; // null = создание нового; иначе id редактируемого личного упражнения
 let _exercisesCatFilter = "all";
 let _exerciseLibrary = "mine";
@@ -5769,6 +5829,12 @@ let _exerciseFilterMode = 0;
 let _exerciseMovementFilter = new Set();
 let _exerciseLastDates = new Map();
 const SVG_EX_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/></svg>';
+function exerciseCategoryColor(userId, name) {
+  const custom = DATA.getCategoryColors(userId)[name];
+  if (custom) return custom;
+  const index = DATA.getAllCategories(userId).indexOf(name);
+  return index < 0 ? '#9696aa' : `hsl(${(215 + index * 52) % 360} 36% 60%)`;
+}
 function exerciseMovements(ex) { return ex.atlas?.categories || []; }
 function exerciseMovementHtml(ex, expanded = false) {
   const moves = exerciseMovements(ex);
@@ -5821,14 +5887,17 @@ function syncExerciseLibraryUI(allExs) {
     renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = 0;
   });
 }
-$('exercise-library-tabs').addEventListener('click', event => {
-  const button = event.target.closest('[data-library]');
-  if (!button || button.dataset.library === _exerciseLibrary) return;
+function setExerciseLibrary(scope) {
+  if (!['mine','catalog'].includes(scope) || scope === _exerciseLibrary || _constructorCatalog) return;
   exitExListEditMode();
-  _exerciseLibrary = button.dataset.library;
+  _exerciseLibrary = scope;
   _exercisesCatFilter = 'all'; _exerciseFilterMode = 0; _exerciseMovementFilter.clear(); _exGroupExpanded.clear();
   exercisesSearch.value = '';
   renderExercisesList(''); exercisesScroll.scrollTop = 0;
+}
+$('exercise-library-tabs').addEventListener('click', event => {
+  const button = event.target.closest('[data-library]');
+  if (button) setExerciseLibrary(button.dataset.library);
 });
 $('exercise-filter-btn').addEventListener('click', () => {
   _exerciseFilterMode = (_exerciseFilterMode + 1) % 3;
@@ -5879,7 +5948,7 @@ function initExercisesScreen() {
 $("exercises-back-btn").addEventListener("click", () => { if (_constructorCatalog) { closeConstructorExerciseCatalog(); return; } exitExListEditMode(); goBackScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
 // Шестерёнка → шторка «Справочник»; открывается на вкладке «Группы» (первой).
-$("ex-cat-manage-btn").addEventListener("click", () => openReferenceSheet("groups"));
+$("ex-cat-manage-btn").addEventListener("click", () => openExerciseReference());
 
 // Порядок групп для справочника: как у пользователя (getAllCategories), но только
 // группы Атласа; недостающие добавляем в каноничном порядке.
@@ -6106,7 +6175,7 @@ function renderExercisesList(query) {
 
   const itemsByCat = new Map(); // cat -> display items (для клика по группе после рендера)
   exercisesScroll.innerHTML = allOrderedCats.map(cat => {
-    const color = DATA.getCategoryColor(userId, cat);
+    const color = exerciseCategoryColor(userId, cat);
     const catExs = groups.get(cat) || [];
     const isEmpty = catExs.length === 0;
     const accentStyle = ` style="--cat-color:${escHtml(color)};"`;
@@ -6159,10 +6228,10 @@ function renderExercisesList(query) {
     const header = `
       <div class="ex-group${isEmpty ? " ex-group-empty" : ""}" data-cat="${escHtml(cat)}" style="--cat-color:${escHtml(color)}">
         <span class="ex-group-dot" style="background:${escHtml(color)}"></span>
-        <span class="ex-group-name">${escHtml(cat)}</span>
+        <span class="ex-group-name">${escHtml(cat || "Без группы")}</span>
         ${!isEmpty ? `<span class="ex-group-count">${_constructorCatalog ? items.reduce((n,it)=>n+(it.kind === "group" ? it.members.length : 1),0) : catExs.length}</span>` : ""}
       </div>`;
-    return header + rows;
+    return _exListEditMode ? header + rows : `<section class="ex-category-panel" style="--cat-color:${escHtml(color)}" aria-label="${escHtml(cat)}">${header}${rows}</section>`;
   }).join("");
 
   if (![...itemsByCat.values()].some(items => items.length)) {
@@ -6227,7 +6296,7 @@ function renderExercisesList(query) {
   // группы целиком), а также на варианты внутри раскрытой группы: вариант
   // двигается внутри группы, а если увести палец за её пределы — выносится
   // наружу (см. moveExDrag/endExDrag).
-  [...exercisesScroll.children].forEach(wrap => {
+  exercisesScroll.querySelectorAll(":scope > .ex-row-wrap, :scope > .ex-category-panel > .ex-row-wrap").forEach(wrap => {
     if (wrap.matches(".ex-row-wrap[data-id]") || wrap.matches(".ex-row-wrap-group[data-group-id]")) {
       wireExRowGesture(wrap, userId);
     }
@@ -6450,6 +6519,8 @@ function wireExRowSwipe(wrap, userId) {
 function enterExListEditMode() {
   if (_exListEditMode) return;
   _exListEditMode = true;
+  // Unwrap without rebuilding nodes: active pointer and drag handlers survive.
+  exercisesScroll.querySelectorAll(':scope > .ex-category-panel').forEach(panel => panel.replaceWith(...panel.childNodes));
   haptic(22);
   exercisesScroll.classList.add("ex-list-editing");
   const doneBtn = $("exercises-done-btn");
@@ -6467,6 +6538,8 @@ function exitExListEditMode() {
   if (doneBtn) doneBtn.classList.remove("visible");
   if (addBtn)  addBtn.hidden = false;
   saveExOrder();
+  const y = exercisesScroll.scrollTop;
+  renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = y;
 }
 
 function saveExOrder() {
@@ -6533,6 +6606,7 @@ function wireExRowGesture(wrap, userId) {
     if (target && target.closest("button")) return;
     moved = false; dragStarted = false; sx = x; sy = y;
     clearHold();
+    _cancelExerciseHold = clearHold;
     holdTimer = setTimeout(() => {
       holdTimer = null;
       if (moved) return;
@@ -6566,8 +6640,9 @@ function wireExRowGesture(wrap, userId) {
   wrap.addEventListener("touchstart", e => { if (nested()) e.stopPropagation(); const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
   wrap.addEventListener("touchmove",  e => { if (nested()) e.stopPropagation(); const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
   wrap.addEventListener("touchend",   e => { if (nested()) e.stopPropagation(); finish(); });
+  wrap.addEventListener("touchcancel", finish);
   wrap.addEventListener("mousedown",  e => { if (nested()) e.stopPropagation(); begin(e.clientX, e.clientY, e.target); });
-  wrap.addEventListener("mousemove",  e => { if (_exListDrag) move(e.clientX, e.clientY, null); });
+  wrap.addEventListener("mousemove",  e => { move(e.clientX, e.clientY, null); });
   wrap.addEventListener("mouseup",    finish);
   wrap.addEventListener("click", e => {
     if (dragStarted) { e.stopPropagation(); dragStarted = false; }
@@ -6879,14 +6954,14 @@ function splitMuscles(str) {
 
 function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   const userId = DATA.getCurrentUser();
-  const fromCatalog = returnScreen === "exercises" && !_constructorCatalog && _exerciseLibrary === "catalog";
+  const fromCatalog = (returnScreen === "exercises" && !_constructorCatalog && _exerciseLibrary === "catalog") || (returnScreen === "exerciseReference" && _referenceState.scope === "catalog");
   const ex = (fromCatalog ? DATA.DEFAULT_EXERCISES : DATA.getVisibleExercises(userId)).find(e => e.id === exerciseId);
   if (!ex) return;
   _detailExerciseId = exerciseId;
   _exdReturnScreen = returnScreen;
   exitExerciseEdit();  // всегда открываем деталь в режиме просмотра, не редактирования
 
-  const color = DATA.getCategoryColor(userId, ex.cat);
+  const color = exerciseCategoryColor(userId, ex.cat);
   $('screen-exercise-detail').style.setProperty('--cat-color', color);
   $('screen-exercise-detail').classList.toggle('from-catalog', fromCatalog);
   $('exd-edit-btn').style.display = fromCatalog ? 'none' : '';
@@ -7308,8 +7383,213 @@ function openMuscleExercisesModal(muscleName) {
   if (sheetEl && dragZone) wireSheetDragClose(sheetEl, dragZone, close);
 }
 
+// Full-page references. Catalog reads the shared atlas; edits use personal overlays.
+let _referenceState = {page:'hub', scope:'mine', name:'', query:'', picker:null, scrollTop:0, owner:null, userId:null};
+function referenceData(scope = _referenceState.scope) {
+  const userId = DATA.getCurrentUser(), mine = scope === 'mine';
+  return {
+    exercises: mine ? DATA.getVisibleExercises(userId) : DATA.DEFAULT_EXERCISES,
+    groups: mine ? DATA.getAllCategories(userId) : DATA.atlasGroups(),
+    muscles: mine ? DATA.refMuscles(userId) : DATA.atlasMuscles(),
+    movements: mine ? DATA.refMovements(userId) : DATA.atlasMovements(),
+  };
+}
+function referenceCanWrite() {
+  return _referenceState.scope === 'mine' && _referenceState.userId === DATA.getCurrentUser()
+    && _referenceState.owner === Auth.userId() && !Auth.contextChanged();
+}
+function savePersonalReference(kind, item, patch) {
+  if (!referenceCanWrite()) return false;
+  const userId = DATA.getCurrentUser();
+  const muscles = kind === 'muscles';
+  const own = [...(muscles ? DATA.getOwnMuscles(userId) : DATA.getOwnMovements(userId))];
+  const index = own.findIndex(x => x.id === item.id);
+  const updated = {...item, ...patch, owner:userId};
+  if (index < 0) own.push(updated); else own[index] = updated;
+  if (muscles) DATA.saveOwnMuscles(userId, own); else DATA.saveOwnMovements(userId, own);
+  return true;
+}
+function renameReferenceGroup(oldName, newName) {
+  if (!referenceCanWrite()) return false;
+  const name = newName.trim(), userId = DATA.getCurrentUser(), data = referenceData('mine');
+  if (!name || name === oldName || data.groups.includes(name)) return false;
+  data.exercises.filter(e => e.cat === oldName).forEach(e => DATA.updateOwnExercise(userId, e.id, {cat:name}));
+  ['muscles','movements'].forEach(kind => data[kind].filter(item => item.group === oldName).forEach(item => savePersonalReference(kind, item, {group:name})));
+  DATA.renameCategory(userId, oldName, name);
+  return true;
+}
+function referenceExerciseMuscles(ex) {
+  const a = ex.atlas;
+  return [...new Set(a ? ['target','synergist','stabilizer'].flatMap(role => (a[role] || []).map(m => m.muscle))
+    : Object.values(ex.muscles || {}).flatMap(splitMuscles))];
+}
+function openExerciseReference() {
+  exitExListEditMode();
+  _referenceState = {page:'hub', scope:_exerciseLibrary, name:'', query:'', picker:null, scrollTop:0, owner:Auth.userId(), userId:DATA.getCurrentUser()};
+  goToScreen('exerciseReference');
+}
+function referenceNavigate(page, name = '') {
+  Object.assign(_referenceState, {page,name,query:'',picker:null,scrollTop:0});
+  renderExerciseReference();
+}
+function referenceBack() {
+  const parent = {groups:'hub', movements:'hub', muscles:'hub', group:'groups', movement:'movements', muscle:'muscles'}[_referenceState.page];
+  if (parent) referenceNavigate(parent);
+  else goBackScreen('exercises', {keepFilter:true});
+}
+$('exercise-reference-back').addEventListener('click', referenceBack);
+$('exercise-reference-tabs').addEventListener('click', event => {
+  const button = event.target.closest('[data-reference-scope]');
+  if (!button || button.dataset.referenceScope === _referenceState.scope) return;
+  _referenceState.scope = button.dataset.referenceScope;
+  _referenceState.query = ''; _referenceState.picker = null; _referenceState.scrollTop = 0;
+  renderExerciseReference();
+});
+const REFERENCE_ICONS = {
+  groups:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+  movements:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/>',
+  muscles:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>', minus:'<circle cx="12" cy="12" r="9"/><path d="M7 12h10"/>',
+  star:'<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9L7.5 14 3 9.6l6.2-.9L12 3Z"/>',
+};
+function referenceIcon(name) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${REFERENCE_ICONS[name] || ''}</svg>`;
+}
+function referenceAction(action, value, label, body, extra = '') {
+  return `<button type="button" data-ref-action="${action}" data-ref-value="${escHtml(value)}" aria-label="${escHtml(label)}" ${extra}>${body}</button>`;
+}
+function referenceExerciseRows(exercises) {
+  return exercises.map(ex => referenceAction('exercise', ex.id, ex.name,
+    `<span class="reference-row-copy"><b>${escHtml(ex.name)}</b><small>${escHtml(ex.cat || 'Без группы')}</small></span>${SVG_CHEVRON}`,
+    `class="reference-row reference-tinted" style="--cat-color:${escHtml(exerciseCategoryColor(DATA.getCurrentUser(), ex.cat))}"`)).join('') || '<p class="reference-empty">Пока нет упражнений</p>';
+}
+function referenceGroupHtml(data) {
+  const s = _referenceState, mine = s.scope === 'mine', group = s.name;
+  const color = exerciseCategoryColor(DATA.getCurrentUser(), group);
+  let html = `<div class="reference-group" style="--cat-color:${escHtml(color)}">`;
+  if (mine) html += `<label class="reference-label" for="reference-group-name">Название</label><input class="reference-field" id="reference-group-name" value="${escHtml(group)}" maxlength="100">`;
+  const editRow = (kind, item) => {
+    const star = kind === 'muscles';
+    const meta = star ? referenceIcon('star') : (item.type === 'База' ? 'База' : 'Опция');
+    const active = star ? item.visible : item.type === 'База';
+    const badge = mine ? referenceAction(star ? 'star' : 'base', item.id, star ? `Видимая мышца: ${item.name}` : `Базовое движение: ${item.name}`, meta, `class="reference-badge${active ? ' on' : ''}" aria-pressed="${!!active}"`)
+      : (star ? (active ? `<span class="reference-badge on">${meta}</span>` : '') : `<span class="reference-badge${active ? ' on' : ''}">${meta}</span>`);
+    return `<div class="reference-edit-row reference-tinted"><span>${escHtml(item.name)}</span>${badge}${mine ? referenceAction('remove-' + kind, item.id, `Убрать из группы: ${item.name}`, referenceIcon('minus'), 'class="reference-icon-button"') : ''}</div>`;
+  };
+  for (const [kind, title, addLabel] of [['muscles','Мышцы группы','Добавить мышцы'],['movements','Движения группы','Добавить движения'],['exercises','Упражнения в группе','Добавить упражнения']]) {
+    const members = data[kind].filter(item => (kind === 'exercises' ? item.cat : item.group) === group);
+    html += `<h2 class="reference-section-title">${title}</h2>`;
+    if (kind === 'exercises') html += mine ? members.map(ex => `<div class="reference-edit-row reference-tinted"><span>${escHtml(ex.name)}</span>${referenceAction('remove-exercise', ex.id, `Убрать из группы: ${ex.name}`, referenceIcon('minus'), 'class="reference-icon-button"')}</div>`).join('') : referenceExerciseRows(members);
+    else html += members.map(item => editRow(kind, item)).join('');
+    if (!members.length && (kind !== 'exercises' || mine)) html += '<p class="reference-empty">Пока ничего не добавлено</p>';
+    if (mine) {
+      html += referenceAction('picker',kind,addLabel, `${referenceIcon('plus')}<span>${addLabel}</span>`, `class="reference-add" aria-expanded="${s.picker === kind}"`);
+      if (s.picker === kind) {
+        const available = data[kind].filter(item => (kind === 'exercises' ? item.cat : item.group) !== group);
+        html += '<div class="reference-picker">' + (available.map(item => referenceAction('add-' + kind, item.id, `Добавить в группу: ${item.name}`, `<span>${escHtml(item.name)}</span>${referenceIcon('plus')}`, 'class="reference-picker-row"')).join('') || '<p class="reference-empty">Всё уже добавлено</p>') + '</div>';
+      }
+    }
+  }
+  if (mine) html += referenceAction('delete-group',group,'Удалить группу','Удалить группу','class="reference-delete"');
+  return html + '</div>';
+}
+function referenceListHtml(data) {
+  const s = _referenceState, q = s.query.trim().toLowerCase();
+  if (s.page === 'groups') return data.groups.filter(name => !q || name.toLowerCase().includes(q)).map(name => referenceAction('group', name, name,
+    `<span class="reference-row-copy"><b>${escHtml(name)}</b><small>Упражнений: ${data.exercises.filter(ex => ex.cat === name).length}</small></span>${SVG_CHEVRON}`,
+    `class="reference-row reference-tinted" style="--cat-color:${escHtml(exerciseCategoryColor(DATA.getCurrentUser(), name))}"`)).join('') || '<p class="reference-empty">Группы не найдены</p>';
+  if (s.page === 'movements') return data.movements.filter(item => !q || item.name.toLowerCase().includes(q)).map(item => referenceAction('movement',item.name,item.name,
+    `<span class="reference-row-copy"><b>${escHtml(item.name)}</b></span><small class="reference-count">${data.exercises.filter(ex => exerciseMovements(ex).includes(item.name)).length}</small>${SVG_CHEVRON}`, 'class="reference-row"')).join('') || '<p class="reference-empty">Движения не найдены</p>';
+  const counts = new Map();
+  data.exercises.forEach(ex => referenceExerciseMuscles(ex).forEach(name => counts.set(name, (counts.get(name) || 0) + 1)));
+  return [...counts].filter(([name]) => !q || name.toLowerCase().includes(q)).sort(([a],[b]) => a.localeCompare(b,'ru')).map(([name,count]) => referenceAction('muscle',name,name,
+    `<span class="reference-row-copy"><b>${escHtml(name)}</b></span><small class="reference-count">${count}</small>${SVG_CHEVRON}`, 'class="reference-row"')).join('') || '<p class="reference-empty">Мышцы не найдены</p>';
+}
+function renderExerciseReference() {
+  const s = _referenceState, data = referenceData(), mine = s.scope === 'mine';
+  const leaf = ['group','movement','muscle'].includes(s.page);
+  const titles = {hub:'Справочники',groups:'Группы',movements:'Движения',muscles:'Мышцы',group:mine ? 'Группа' : s.name,movement:'Движение',muscle:s.name};
+  $('exercise-reference-title').textContent = titles[s.page];
+  const screen = $('screen-exercise-reference');
+  screen.classList.toggle('library-catalog', !mine);
+  screen.classList.toggle('reference-leaf', leaf);
+  $('exercise-reference-tabs').hidden = leaf;
+  $('exercise-reference-scope').hidden = !leaf;
+  $('exercise-reference-scope').textContent = mine ? 'Мои' : 'Каталог';
+  screen.querySelectorAll('[data-reference-scope]').forEach(button => {
+    const selected = button.dataset.referenceScope === s.scope;
+    button.classList.toggle('active',selected); button.setAttribute('aria-selected',String(selected));
+  });
+  let html = leaf ? '' : `<p class="reference-note">${mine ? 'Считаются только ваши упражнения, правки сохраняются у вас' : 'Общая база, считаются все упражнения, только просмотр'}</p>`;
+  if (s.page === 'hub') {
+    html += [['groups','Группы','Мышцы, движения и упражнения группы'],['movements','Движения','Классификация и упражнения в каждом'],['muscles','Мышцы','Где и как задействованы']].map(([key,title,description]) => referenceAction('navigate',key,title,`<span class="reference-hub-icon">${referenceIcon(key)}</span><span class="reference-row-copy"><b>${title}</b><small>${description}</small></span>${SVG_CHEVRON}`,'class="reference-row reference-hub-row"')).join('');
+  } else if (!leaf) {
+    html += `<div class="reference-search-row"><input class="reference-field" id="reference-search" type="search" aria-label="Поиск в справочнике" placeholder="${{groups:'Поиск группы…',movements:'Поиск движения…',muscles:'Поиск мышцы…'}[s.page]}" value="${escHtml(s.query)}">${mine && s.page === 'groups' ? referenceAction('new-group','','Создать группу',referenceIcon('plus'),'class="reference-create"') : ''}</div><div id="reference-list">${referenceListHtml(data)}</div>`;
+    if (mine && s.page === 'groups') html += '<p class="reference-note">Цвет группы подбирается автоматически</p>';
+  } else if (s.page === 'group') html += referenceGroupHtml(data);
+  else {
+    const exercises = data.exercises.filter(ex => s.page === 'movement' ? exerciseMovements(ex).includes(s.name) : referenceExerciseMuscles(ex).includes(s.name));
+    if (s.page === 'movement') html += `<div class="reference-movement-banner">${referenceIcon('movements')}<span>${escHtml(s.name)}</span></div>`;
+    html += referenceExerciseRows(exercises);
+  }
+  const content = $('exercise-reference-content');
+  content.innerHTML = html; content.scrollTop = s.scrollTop;
+  content.querySelectorAll('.reference-picker').forEach(picker => setupExerciseDragScroll(picker,'y'));
+  const search = $('reference-search');
+  if (search) search.oninput = () => { s.query = search.value; $('reference-list').innerHTML = referenceListHtml(referenceData()); };
+  const name = $('reference-group-name');
+  if (name) name.onchange = () => {
+    const next = name.value.trim();
+    if (renameReferenceGroup(s.name,next)) { s.name = next; name.value = next; }
+    else { name.value = s.name; if (next && next !== s.name) showToast('Группа с таким названием уже есть'); }
+  };
+}
+$('exercise-reference-content').addEventListener('click', event => {
+  const button = event.target.closest('[data-ref-action]');
+  if (!button) return;
+  const s = _referenceState, action = button.dataset.refAction, value = button.dataset.refValue;
+  if (action === 'navigate') { referenceNavigate(value); return; }
+  if (['group','movement','muscle'].includes(action)) { referenceNavigate(action,value); return; }
+  if (action === 'exercise') { s.scrollTop = $('exercise-reference-content').scrollTop; openExerciseDetail(value,'exerciseReference'); return; }
+  if (!referenceCanWrite()) return;
+  const userId = DATA.getCurrentUser(), data = referenceData('mine');
+  s.scrollTop = $('exercise-reference-content').scrollTop;
+  if (action === 'new-group') {
+    let name = 'Новая группа', n = 1;
+    while (data.groups.includes(name)) name = `Новая группа ${++n}`;
+    DATA.addCategory(userId,name); referenceNavigate('group',name); return;
+  }
+  if (action === 'picker') s.picker = s.picker === value ? null : value;
+  else if (action === 'star' || action === 'base') {
+    const kind = action === 'star' ? 'muscles' : 'movements', item = data[kind].find(x => x.id === value);
+    if (item) savePersonalReference(kind,item, action === 'star' ? {visible:!item.visible} : {type:item.type === 'База' ? 'Опция' : 'База'});
+  } else if (/^(add|remove)-(muscles|movements)$/.test(action)) {
+    const [verb,kind] = action.split('-'), item = data[kind].find(x => x.id === value);
+    if (item) savePersonalReference(kind,item,{group:verb === 'add' ? s.name : ''});
+  } else if (action === 'add-exercises' || action === 'remove-exercise') {
+    if (data.exercises.some(ex => ex.id === value)) DATA.updateOwnExercise(userId,value,{cat:action === 'add-exercises' ? s.name : ''});
+  } else if (action === 'delete-group') {
+    const group = s.name;
+    openConfirmModal({title:'Удалить группу?',message:`Группа «${group}» будет удалена из ваших. Её упражнения останутся без группы.`,onConfirm:() => {
+      if (!referenceCanWrite() || s.name !== group) return;
+      const snapshot = JSON.parse(JSON.stringify({groups:DATA.getAllCategories(userId),colors:DATA.getCategoryColors(userId),exercises:DATA.getOwnExercises(userId),muscles:DATA.getOwnMuscles(userId),movements:DATA.getOwnMovements(userId)}));
+      const current = referenceData('mine');
+      current.exercises.filter(ex => ex.cat === group).forEach(ex => DATA.updateOwnExercise(userId,ex.id,{cat:''}));
+      ['muscles','movements'].forEach(kind => current[kind].filter(item => item.group === group).forEach(item => savePersonalReference(kind,item,{group:''})));
+      DATA.deleteCategory(userId,group); referenceNavigate('groups');
+      showUndoToast('Группа удалена',() => {
+        if (!referenceCanWrite()) return;
+        DATA.saveAllCategories(userId,snapshot.groups); DATA.saveCategoryColors(userId,snapshot.colors);
+        DATA.saveOwnExercises(userId,snapshot.exercises); DATA.saveOwnMuscles(userId,snapshot.muscles); DATA.saveOwnMovements(userId,snapshot.movements);
+        renderExerciseReference();
+      });
+    }}); return;
+  }
+  renderExerciseReference();
+});
+
 /* — Управление категориями v2: свайп-удаление, долгое нажатие = редактирование/перестановка — */
-// Шторка «Справочник» (открывается шестерёнкой на экране «Упражнения»).
+// Вспомогательная шторка для переходов из прежних редакторов.
 // Три вкладки: Группы / Движения / Мышцы. «Группы» = прежний менеджер категорий
 // (переименование/перетаскивание/удаление/добавление/цвета).
 function openReferenceSheet(initialTab, focusName) {
@@ -10762,6 +11042,7 @@ if ("serviceWorker" in navigator) {
     "screen-workout":         "workout-back-btn",
     "screen-run":             "run-back-btn",
     "screen-exercises":       "exercises-back-btn",
+    "screen-exercise-reference": "exercise-reference-back",
     "screen-history":         "history-back-btn",
     "screen-stats":           "stats-back-btn",
     "screen-stat-chart":      "stat-chart-back-btn",
