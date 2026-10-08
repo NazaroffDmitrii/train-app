@@ -3746,7 +3746,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #exercises-scroll .ex-row-wrap-group:not(.expanded) > .ex-row-group { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),#0e0e16; border-color:color-mix(in srgb,var(--cat-color) 28%,transparent); }
 #exercises-scroll .ex-row-wrap-group.expanded { box-shadow:none; border:1px solid color-mix(in srgb,var(--cat-color) 28%,transparent); background:linear-gradient(180deg,color-mix(in srgb,var(--cat-color) 14%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent)),#0e0e16; }
 #exercises-scroll .expanded > .ex-row-group { background:transparent; border:0; border-radius:0; }
-#exercises-scroll .expanded > .ex-row-group-members { margin:0; padding:0 12px 10px; background:transparent; border:0; border-radius:0; }
+#exercises-scroll .expanded > .ex-row-group-members { position:relative; z-index:1; margin:0; padding:0 12px 10px; background:transparent; border:0; border-radius:0; }
 .exercise-variants-label { color:#a0a0b4; font-size:12px; padding:10px 2px 6px; }
 #exercises-scroll .ex-row-wrap-nested { margin:0 0 5px; border-radius:12px; }
 #exercises-scroll .ex-row-wrap-nested .ex-row { min-height:42px; padding:7px 9px; border:0; background:#ffffff0a; border-radius:12px; }
@@ -3869,6 +3869,32 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 @media(min-width:481px) {
   #screen-exercise-reference .exercises-header { padding-inline:max(20px,calc((100% - 640px)/2)); }
   #screen-exercise-reference .exercise-library-tabs, .reference-page-scroll { padding-inline:max(12px,calc((100% - 640px)/2)); }
+}
+
+
+/* Shared page chrome matches Templates; filters use a single 10px gap. */
+#screen-exercises .ex-cat-tabs-wrap:not([hidden]) + .exercise-movement-tabs { padding-top:0; }
+#screen-exercises .exercises-header, #screen-exercise-reference .exercises-header,
+#screen-exercise-detail .detail-screen-header, #screen-muscle-detail .detail-screen-header {
+  background:var(--panel); border-bottom:1px solid var(--border-subtle);
+  padding:calc(var(--safe-top) + 16px) 20px 14px;
+}
+#screen-exercises .exercises-header-title, #screen-exercise-reference .exercises-header-title,
+#screen-exercise-detail .detail-screen-title, #screen-muscle-detail .detail-screen-title { font-size:22px; font-weight:700; letter-spacing:-.02em; }
+#exercises-scroll .ex-row { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),#0e0e16; border-color:color-mix(in srgb,var(--cat-color) 28%,transparent); }
+#exercises-scroll .expanded > .ex-row-group { background:transparent; border:0; }
+#exercises-scroll .ex-row-wrap-nested .ex-row { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 18%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent)),#14141d; }
+.exercise-move { text-align:left; }
+.reference-name-link { flex:1; min-width:0; color:inherit; text-align:left; font:inherit; line-height:1.4; }
+.reference-name-link:hover, [data-reference-kind]:hover { color:#fff; text-decoration:underline; text-underline-offset:3px; }
+.reference-info { padding:13px; margin-bottom:12px; border:1px solid #ffffff12; border-radius:16px; background:#ffffff08; }
+.reference-info .reference-section-title:first-child { margin-top:0; }
+.reference-info .msd-anatomy { font-size:14px; line-height:1.6; color:#c8c8d8; }
+.reference-detail-edit { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; padding:11px; margin-bottom:12px; border:1px solid #a99cf550; border-radius:13px; color:#c8bfff; font-size:13px; }
+.reference-detail-edit svg { width:17px; height:17px; }
+@media(min-width:481px) {
+  #screen-exercises .exercises-header, #screen-exercise-reference .exercises-header,
+  #screen-exercise-detail .detail-screen-header, #screen-muscle-detail .detail-screen-header { padding-inline:max(20px,calc((100% - 640px)/2)); }
 }
 
 </style>

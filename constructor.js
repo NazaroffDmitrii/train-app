@@ -978,7 +978,7 @@
   /* ── Публичный API ───────────────────────────────────────────────────────── */
   window.CONSTRUCTOR = {
     onNavigate(name, internalCatalog = false) {
-      if (_sessionActive && !['constructor','exerciseDetail','muscleDetail'].includes(name) && !internalCatalog) endSession();
+      if (_sessionActive && !['constructor','exerciseDetail','muscleDetail','exerciseReference'].includes(name) && !internalCatalog) endSession();
     },
     back() {
       if (_step === 'result') { setParameters(); return true; }

@@ -137,9 +137,11 @@ const DATA = (() => {
     return {
       id: a.id,
       name: a.name,
-      cat: groups[0] || "Другое",
+      cat: a.displayCategory ?? groups[0] ?? "Другое",
+      groupId: a.variantGroup ? `shared:${a.variantGroup}` : null,
+      groupName: a.variantGroup,
       groups,
-      type: "strength",
+      type: a.type || "strength",
       owner: null,
       atlas: {
         movementGroup: a.movementGroup || "",
@@ -165,8 +167,8 @@ const DATA = (() => {
         distributors: "",
       },
       steps: (a.technique || "").split("\n").map(s => s.trim()).filter(Boolean),
-      media: "",
-      tip: "",
+      media: a.media || "",
+      tip: a.tip || "",
     };
   }
 
@@ -414,7 +416,22 @@ const DATA = (() => {
     // на самом упражнении (ex.groupId), а не списком id здесь — состав
     // группы вычисляется на лету (см. resolveDisplayItems), поэтому «роспуск»
     // группы при ≤1 видимом участнике не требует явной чистки реестра.
-    getExerciseGroups(userId) { return ls(`train_exercise_groups_${userId}`, []); },
+    getExerciseGroups(userId) {
+      const personal = ls(`train_exercise_groups_${userId}`, []);
+      const shared = [...new Set(DEFAULT_EXERCISES.map(e => e.groupName).filter(Boolean))]
+        .map(name => ({id:`shared:${name}`,name}));
+      return [...shared.filter(g => !personal.some(p => p.id === g.id)), ...personal];
+    },
+    getCatalogExercises(userId) {
+      const own = new Map(this.getOwnExercises(userId).map(e => [e.id,e]));
+      const groups = new Map(this.getExerciseGroups(userId).map(g => [g.id,g.name]));
+      const sharedNames = new Set(DEFAULT_EXERCISES.map(e => e.groupName).filter(Boolean));
+      return DEFAULT_EXERCISES.map(e => {
+        if (e.groupName !== undefined) return e;
+        const id = own.get(e.id)?.groupId || null, name = groups.get(id);
+        return {...e,groupId:sharedNames.has(name) ? `shared:${name}` : id};
+      });
+    },
     saveExerciseGroups(userId, list) { lsSet(`train_exercise_groups_${userId}`, list); },
 
     // Назначить упражнению группу по имени (из формы редактирования): пусто —
@@ -2512,7 +2529,7 @@ function goToScreen(name, opts = {}) {
 
   const fromName = activeScreenName();
   window.CONSTRUCTOR?.onNavigate(name, !!_constructorCatalog && name === "exercises");
-  if (typeof _constructorCatalog !== "undefined" && _constructorCatalog && !["exercises", "exerciseDetail", "muscleDetail"].includes(name)) {
+  if (typeof _constructorCatalog !== "undefined" && _constructorCatalog && !["exercises", "exerciseDetail", "muscleDetail", "exerciseReference"].includes(name)) {
     _constructorCatalog = null;
     syncConstructorCatalogUI();
   }
@@ -5768,6 +5785,7 @@ $('constructor-catalog-done').addEventListener('click',()=>{
 });
 
 // Native touch/trackpad scrolling plus mouse dragging; a drag never opens a row.
+let _exerciseScrollClickUntil = 0;
 function setupExerciseDragScroll(element, axis, enabled = () => true) {
   let drag = null, suppressUntil = 0;
   const position = axis === 'x' ? 'scrollLeft' : 'scrollTop';
@@ -5798,6 +5816,7 @@ function setupExerciseDragScroll(element, axis, enabled = () => true) {
     const previous = drag; drag = null;
     if (!previous.engaged) return;
     suppressUntil = Date.now() + 400;
+    _exerciseScrollClickUntil = suppressUntil;
     element.classList.remove('drag-scrolling');
     if (element.hasPointerCapture?.(previous.id)) element.releasePointerCapture(previous.id);
   };
@@ -5839,7 +5858,7 @@ function exerciseMovements(ex) { return ex.atlas?.categories || []; }
 function exerciseMovementHtml(ex, expanded = false) {
   const moves = exerciseMovements(ex);
   if (!moves.length) return '';
-  return `<span class="exercise-moves${expanded ? ' expanded' : ''}">${(expanded ? moves : moves.slice(0, 1)).map(m => `<span class="exercise-move" title="${escHtml(m)}">${SVG_EX_TARGET}<span>${escHtml(m)}</span></span>`).join('')}${!expanded && moves.length > 1 ? `<span class="exercise-more">+${moves.length - 1}</span>` : ''}</span>`;
+  return `<span class="exercise-moves${expanded ? ' expanded' : ''}">${(expanded ? moves : moves.slice(0, 1)).map(m => `<button type="button" class="exercise-move" data-reference-kind="movement" data-reference-name="${escHtml(m)}" title="${escHtml(m)}">${SVG_EX_TARGET}<span>${escHtml(m)}</span></button>`).join('')}${!expanded && moves.length > 1 ? `<span class="exercise-more">+${moves.length - 1}</span>` : ''}</span>`;
 }
 function exerciseAgo(id) {
   const ts = _exerciseLastDates.get(id);
@@ -6129,7 +6148,7 @@ function renderExercisesList(query) {
   const q       = query.trim().toLowerCase();
   if (_constructorCatalog && (_constructorCatalog.owner !== Auth.userId() || _constructorCatalog.profile !== userId)) _constructorCatalog = null;
   syncConstructorCatalogUI();
-  const allExs = (!_constructorCatalog && _exerciseLibrary === "catalog" ? DATA.DEFAULT_EXERCISES : DATA.getVisibleExercises(userId)).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id,_constructorCatalog.filterMode)); // seeded + personal, единый список
+  const allExs = (!_constructorCatalog && _exerciseLibrary === "catalog" ? DATA.getCatalogExercises(userId) : DATA.getVisibleExercises(userId)).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id,_constructorCatalog.filterMode)); // seeded + personal, единый список
 
   _exerciseLastDates = new Map();
   DATA.getWorkoutHistory(userId).forEach(w => (w.exercises || []).forEach(e => {
@@ -6222,7 +6241,7 @@ function renderExercisesList(query) {
           <span class="ex-row-group-badge" title="Вариации: ${item.members.length}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg></span>
           <span class="ex-row-chevron ex-row-chevron-group">${SVG_CHEVRON}</span>
         </div>
-        <div class="ex-row-group-members">${expanded ? '<div class="exercise-variants-label">Вариации</div>' : ''}${memberRows}</div>
+        <div class="ex-row-group-members">${expanded ? '<div class="exercise-variants-label">Вариации</div>' : ''}${memberRows}${expanded && _exerciseLibrary === 'catalog' && DATA.isAdmin() ? `<button type="button" class="reference-add" data-catalog-group="${escHtml(item.id)}">Изменить группу</button>` : ''}</div>
       </div>`;
     }).join("");
     const header = `
@@ -6284,7 +6303,10 @@ function renderExercisesList(query) {
     return; // В режиме выбора жесты редактирования библиотеки не нужны.
   }
 
-  if (_exerciseLibrary === 'catalog') return;
+  if (_exerciseLibrary === 'catalog') {
+    exercisesScroll.querySelectorAll('[data-catalog-group]').forEach(button => button.addEventListener('click',event => { event.stopPropagation(); openCatalogGroupForm(button.dataset.catalogGroup); }));
+    return;
+  }
 
   // Свайп (изменить/удалить) — на все обёртки упражнений, включая вложенные
   // варианты внутри раскрытой группы: это обычные упражнения, ничем не хуже.
@@ -6941,6 +6963,7 @@ $("exercises-done-btn").addEventListener("click", exitExListEditMode);
 /* — Экран деталей упражнения: медиа, рабочие мышцы, техника, действия — */
 let _detailExerciseId = null;
 let _exdReturnScreen = "exercises";
+let _exdCatalog = false;
 
 function isHttpUrl(url) {
   return /^https?:\/\//i.test((url || "").trim());
@@ -6964,7 +6987,8 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   const color = exerciseCategoryColor(userId, ex.cat);
   $('screen-exercise-detail').style.setProperty('--cat-color', color);
   $('screen-exercise-detail').classList.toggle('from-catalog', fromCatalog);
-  $('exd-edit-btn').style.display = fromCatalog ? 'none' : '';
+  $('exd-edit-btn').style.display = fromCatalog && !DATA.isAdmin() ? 'none' : '';
+  _exdCatalog = fromCatalog;
   $("exd-title").textContent = ex.name;
   $("exd-meta").innerHTML =
     `<span class="exd-source">${fromCatalog ? "Каталог" : "Мои"}</span>`;
@@ -7004,7 +7028,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
           <div class="exd-chips">${r.items.map(o => {
             const lbl = o.bundle ? `${o.muscle} · ${o.bundle}` : o.muscle;
             const cls = r.primary ? " primary" : (r.stab ? " stab" : "");
-            return `<span class="exd-chip${cls}">${escHtml(lbl)}</span>`;
+            return `<button type="button" class="exd-chip${cls}" data-reference-kind="muscle" data-reference-name="${escHtml(o.muscle)}">${escHtml(lbl)}</button>`;
           }).join("")}</div>
         </div>`).join("");
     musclesSection = `<div class="exd-section-label">Рабочие мышцы</div>${rolesHtml}`;
@@ -7016,7 +7040,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
       .map(r => `
         <div class="exd-muscle-role">
           <div class="exd-muscle-role-name">${escHtml(r.label)}</div>
-          <div class="exd-chips">${r.items.map(m => `<span class="exd-chip${r.primary ? " primary" : ""}">${escHtml(m)}</span>`).join("")}</div>
+          <div class="exd-chips">${r.items.map(m => `<button type="button" class="exd-chip${r.primary ? " primary" : ""}" data-reference-kind="muscle" data-reference-name="${escHtml(m)}">${escHtml(m)}</button>`).join("")}</div>
         </div>`).join("");
     musclesSection = rolesHtml ? `<div class="exd-section-label">Рабочие мышцы</div>${rolesHtml}` : "";
   }
@@ -7196,9 +7220,7 @@ function openMuscleDetailScreen(muscleId, returnScreen = "exercises", instant = 
   $("msd-body").innerHTML = bundlesHtml + anatomyHtml + movesHtml;
   $("msd-body").querySelectorAll('.ref-cell[data-goto="movement"]').forEach(cell => {
     cell.addEventListener("click", () => {
-      goToScreen("exercises");
-      initExercisesScreen();
-      openReferenceSheet("movements", cell.dataset.name);
+      openReferenceDetail("movement",cell.dataset.name);
     });
   });
 
@@ -7383,6 +7405,89 @@ function openMuscleExercisesModal(muscleName) {
   if (sheetEl && dragZone) wireSheetDragClose(sheetEl, dragZone, close);
 }
 
+// Shared edits use the existing atlas tables and server-side administrator policy.
+async function commitSharedAtlas(next, writes) {
+  if (!DATA.isAdmin() || Auth.contextChanged()) throw Error('Нет прав на общий каталог');
+  const owner = Auth.userId(), profile = DATA.getCurrentUser();
+  if (typeof DB !== 'undefined') {
+    if (!Auth.isSignedIn()) throw Error('Войдите для сохранения общего каталога');
+    for (const [method, rows] of writes) {
+      if (!DATA.isAdmin() || Auth.userId() !== owner || DATA.getCurrentUser() !== profile || Auth.contextChanged()) throw Error('Профиль изменился');
+      if (Array.isArray(rows) && !rows.length) continue;
+      await DB[method](rows);
+    }
+  }
+  if (!DATA.isAdmin() || Auth.userId() !== owner || DATA.getCurrentUser() !== profile || Auth.contextChanged()) throw Error('Профиль изменился');
+  DATA.commitAtlas(next);
+}
+async function saveSharedExercises(changes) {
+  const next = DATA.atlasSnapshot(), rows = [];
+  for (const {id, patch = {}, groupName} of changes) {
+    const position = next.exercises.findIndex(e => e.id === id);
+    if (position < 0) throw Error('Упражнение не найдено');
+    const raw = next.exercises[position], a = patch.atlas;
+    Object.assign(raw, Object.fromEntries(['name','type','media','tip'].filter(k => k in patch).map(k => [k,patch[k]])));
+    if ('cat' in patch) raw.displayCategory = patch.cat;
+    if (groupName !== undefined) raw.variantGroup = groupName.trim();
+    if (a) {
+      const {target,synergist,stabilizer,...fields} = a;
+      Object.assign(raw,fields);
+      raw.muscles = {target:target || [],synergist:synergist || [],stabilizer:stabilizer || []};
+    }
+    rows.push({id:raw.id,name:raw.name,data:raw,position});
+  }
+  await commitSharedAtlas(next,[['saveAtlasExercises',rows]]);
+}
+async function saveSharedReference(kind, item, patch) {
+  const next = DATA.atlasSnapshot(), muscle = kind === 'muscles';
+  const collection = muscle ? next.muscles : next.categories;
+  const position = collection.findIndex(x => x.id === item.id);
+  if (position < 0) throw Error('Элемент не найден');
+  const row = Object.assign(collection[position],patch);
+  const group_id = next.groupRows.find(g => g.name === row.group)?.id || null;
+  const record = muscle ? {id:row.id,name:row.name,group_id,visible:!!row.visible,bundles:row.bundles || [],position}
+    : {id:row.id,name:row.name,group_id,type:row.type || 'База',position};
+  await commitSharedAtlas(next,[[muscle ? 'saveAtlasMuscles' : 'saveAtlasMovements',record]]);
+}
+async function saveSharedCategory(oldName, newName) {
+  const name = newName.trim(), next = DATA.atlasSnapshot();
+  if (!name || name === oldName || next.groups.includes(name)) return false;
+  let group = next.groupRows.find(g => g.name === oldName);
+  if (!group) { group = {id:'ag_' + Date.now().toString(36),name}; next.groupRows.push(group); }
+  else group.name = name;
+  next.groups = next.groupRows.map(g => g.name);
+  next.muscles.forEach(m => { if (m.group === oldName) m.group = name; });
+  next.categories.forEach(m => { if (m.group === oldName) m.group = name; });
+  const exercises = [];
+  next.exercises.forEach((ex,position) => {
+    if (ex.displayCategory === oldName) { ex.displayCategory = name; exercises.push({id:ex.id,name:ex.name,data:ex,position}); }
+  });
+  await commitSharedAtlas(next,[['saveAtlasGroups',{...group,position:next.groupRows.indexOf(group)}],['saveAtlasExercises',exercises]]);
+  return true;
+}
+function openCatalogGroupForm(groupId) {
+  if (!DATA.isAdmin()) return;
+  const userId = DATA.getCurrentUser(), owner = Auth.userId();
+  const group = DATA.getExerciseGroups(userId).find(g => g.id === groupId);
+  const members = DATA.getCatalogExercises(userId).filter(e => e.groupId === groupId);
+  if (!group || !members.length) return;
+  const bd = document.createElement('div');
+  bd.className = 'modal-backdrop open ref-form-backdrop'; bd.style.zIndex = '60';
+  bd.innerHTML = `<div class="modal modal-form ref-form"><h2 class="modal-title">Группа каталога</h2><label class="ex-form-label" for="catalog-group-name">Название</label><input id="catalog-group-name" class="ex-form-input" value="${escHtml(group.name)}"><p class="ex-form-hint">Правка общей группы. Чтобы добавить вариант, укажите это название в редакторе упражнения.</p><button class="modal-option modal-option-full danger" data-group-dissolve>Распустить группу</button><div class="modal-form-actions"><button class="btn-chip" data-group-cancel>Отмена</button><button class="btn-chip primary" data-group-save>Сохранить</button></div></div>`;
+  document.body.appendChild(bd);
+  bd.querySelector('[data-group-cancel]').addEventListener('click',() => bd.remove());
+  const save = async name => {
+    if (!DATA.isAdmin() || Auth.userId() !== owner || DATA.getCurrentUser() !== userId || Auth.contextChanged()) return;
+    bd.querySelectorAll('button').forEach(b => b.disabled = true);
+    try {
+      await saveSharedExercises(members.map(e => ({id:e.id,groupName:name})));
+      bd.remove(); renderExercisesList(exercisesSearch.value);
+    } catch(error) { showToast('Ошибка сохранения: ' + error.message); bd.querySelectorAll('button').forEach(b => b.disabled = false); }
+  };
+  bd.querySelector('[data-group-save]').addEventListener('click',() => { const name = bd.querySelector('input').value.trim(); if (name) save(name); });
+  bd.querySelector('[data-group-dissolve]').addEventListener('click',() => save(''));
+}
+
 // Full-page references. Catalog reads the shared atlas; edits use personal overlays.
 let _referenceState = {page:'hub', scope:'mine', name:'', query:'', picker:null, scrollTop:0, owner:null, userId:null};
 function referenceData(scope = _referenceState.scope) {
@@ -7423,19 +7528,86 @@ function referenceExerciseMuscles(ex) {
   return [...new Set(a ? ['target','synergist','stabilizer'].flatMap(role => (a[role] || []).map(m => m.muscle))
     : Object.values(ex.muscles || {}).flatMap(splitMuscles))];
 }
+let _referenceTrail = [];
+function referenceLink(kind, name, label = name, className = 'reference-name-link') {
+  return `<button type="button" class="${className}" data-reference-kind="${kind}" data-reference-name="${escHtml(name)}">${escHtml(label)}</button>`;
+}
+function referenceEditable() {
+  return (_referenceState.scope === 'mine' || DATA.isAdmin()) && _referenceState.userId === DATA.getCurrentUser()
+    && _referenceState.owner === Auth.userId() && !Auth.contextChanged();
+}
+function referenceRelated(kind, name, scope = _referenceState.scope) {
+  if (scope === 'catalog') return [...new Set(DATA.atlasLinks().filter(l => kind === 'muscle' ? l.muscle === name : l.category === name).map(l => kind === 'muscle' ? l.category : l.muscle))];
+  const map = kind === 'muscle' ? DATA.refMovesByMuscle(DATA.getCurrentUser()) : DATA.refMusclesByMove(DATA.getCurrentUser());
+  return [...(map[name] || [])];
+}
+function referenceDetailHtml(data) {
+  const s = _referenceState, muscle = s.page === 'muscle';
+  const item = data[muscle ? 'muscles' : 'movements'].find(x => x.name === s.name);
+  const related = referenceRelated(s.page,s.name);
+  let html = item && referenceEditable() ? referenceAction('edit-item',item.id,'Редактировать',`${SVG_REF_EDIT}<span>Редактировать</span>`,'class="reference-detail-edit"') : '';
+  html += '<section class="reference-info">';
+  html += `<div class="reference-movement-banner"><span>${escHtml(s.name)}</span></div>`;
+  if (item) html += `<p class="reference-note">${escHtml(item.group || 'Без группы')}${muscle ? (item.visible ? ' · Поверхностная мышца' : ' · Глубокая мышца') : ` · ${escHtml(item.type || 'База')}`}</p>`;
+  if (muscle) {
+    if (item?.bundles?.length) html += `<h2 class="reference-section-title">Пучки</h2><div class="ref-chips">${item.bundles.map(b => `<span class="ref-chip">${escHtml(b)}</span>`).join('')}</div>`;
+    const anatomy = window.MUSCLE_ANATOMY?.[s.name];
+    html += `<h2 class="reference-section-title">Анатомия</h2>${anatomy ? `<div class="msd-anatomy">${anatomy}</div>` : '<p class="reference-empty">Анатомические данные пока не добавлены</p>'}`;
+  }
+  html += `<h2 class="reference-section-title">${muscle ? 'Участвует в движениях' : 'Работающие мышцы'}</h2>`;
+  html += related.map(name => `<div class="reference-row">${referenceLink(muscle ? 'movement' : 'muscle',name)}${SVG_CHEVRON}</div>`).join('') || '<p class="reference-empty">Связи пока не добавлены</p>';
+  html += '</section><h2 class="reference-section-title">Упражнения</h2>';
+  return html + referenceExerciseRows(data.exercises.filter(ex => muscle ? referenceExerciseMuscles(ex).includes(s.name) : exerciseMovements(ex).includes(s.name)));
+}
+function openReferenceDetail(kind, name) {
+  if (!['muscle','movement'].includes(kind)) return;
+  const active = document.querySelector('.screen.active')?.id;
+  if (active === 'screen-exercise-reference') { referenceNavigate(kind,name); return; }
+  const scope = active === 'screen-exercise-detail' ? (_exdCatalog ? 'catalog' : 'mine') : (_constructorCatalog ? 'mine' : _exerciseLibrary);
+  const frame = {screen:active, state:{..._referenceState},scroll:active === 'screen-exercise-detail' ? $('exd-body').scrollTop : exercisesScroll.scrollTop};
+  if (active === 'screen-exercise-detail') Object.assign(frame,{exerciseId:_detailExerciseId,returnScreen:_exdReturnScreen,catalog:_exdCatalog});
+  else if (active === 'screen-muscle-detail') Object.assign(frame,{muscleId:_msdMuscleId,returnScreen:_msdReturnScreen});
+  if (active !== 'screen-exercise-detail' || _exdReturnScreen !== 'exerciseReference') _referenceTrail = [];
+  _referenceTrail.push(frame);
+  _referenceState = {page:kind,name,scope,query:'',picker:null,scrollTop:0,owner:Auth.userId(),userId:DATA.getCurrentUser()};
+  $('cat-manager-backdrop')?.remove();
+  goToScreen('exerciseReference');
+}
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-reference-kind]');
+  if (!button) return;
+  if (button.closest('.drag-scrolling') || Date.now() < _exerciseScrollClickUntil) return;
+  event.preventDefault(); event.stopPropagation();
+  openReferenceDetail(button.dataset.referenceKind,button.dataset.referenceName);
+},true);
+
 function openExerciseReference() {
   exitExListEditMode();
+  _referenceTrail = [];
   _referenceState = {page:'hub', scope:_exerciseLibrary, name:'', query:'', picker:null, scrollTop:0, owner:Auth.userId(), userId:DATA.getCurrentUser()};
   goToScreen('exerciseReference');
 }
 function referenceNavigate(page, name = '') {
+  _referenceTrail.push({state:{..._referenceState,scrollTop:$('exercise-reference-content').scrollTop}});
   Object.assign(_referenceState, {page,name,query:'',picker:null,scrollTop:0});
   renderExerciseReference();
 }
 function referenceBack() {
-  const parent = {groups:'hub', movements:'hub', muscles:'hub', group:'groups', movement:'movements', muscle:'muscles'}[_referenceState.page];
-  if (parent) referenceNavigate(parent);
-  else goBackScreen('exercises', {keepFilter:true});
+  const previous = _referenceTrail.pop();
+  if (previous) {
+    _referenceState = previous.state;
+    if (previous.screen === 'screen-exercise-detail') {
+      openExerciseDetail(previous.exerciseId,previous.returnScreen);
+      $('exd-body').scrollTop = previous.scroll; return;
+    }
+    if (previous.screen === 'screen-muscle-detail') { openMuscleDetailScreen(previous.muscleId,previous.returnScreen); return; }
+    if (previous.screen && previous.screen !== 'screen-exercise-reference') {
+      goBackScreen(previous.screen.replace('screen-',''),{keepFilter:true});
+      exercisesScroll.scrollTop = previous.scroll; return;
+    }
+    renderExerciseReference(); return;
+  }
+  goBackScreen('exercises', {keepFilter:true});
 }
 $('exercise-reference-back').addEventListener('click', referenceBack);
 $('exercise-reference-tabs').addEventListener('click', event => {
@@ -7464,22 +7636,23 @@ function referenceExerciseRows(exercises) {
     `class="reference-row reference-tinted" style="--cat-color:${escHtml(exerciseCategoryColor(DATA.getCurrentUser(), ex.cat))}"`)).join('') || '<p class="reference-empty">Пока нет упражнений</p>';
 }
 function referenceGroupHtml(data) {
-  const s = _referenceState, mine = s.scope === 'mine', group = s.name;
+  const s = _referenceState, mine = referenceEditable(), group = s.name;
   const color = exerciseCategoryColor(DATA.getCurrentUser(), group);
   let html = `<div class="reference-group" style="--cat-color:${escHtml(color)}">`;
   if (mine) html += `<label class="reference-label" for="reference-group-name">Название</label><input class="reference-field" id="reference-group-name" value="${escHtml(group)}" maxlength="100">`;
+  if (!mine) html += `<div class="reference-movement-banner">${escHtml(group)}</div>`;
   const editRow = (kind, item) => {
     const star = kind === 'muscles';
     const meta = star ? referenceIcon('star') : (item.type === 'База' ? 'База' : 'Опция');
     const active = star ? item.visible : item.type === 'База';
     const badge = mine ? referenceAction(star ? 'star' : 'base', item.id, star ? `Видимая мышца: ${item.name}` : `Базовое движение: ${item.name}`, meta, `class="reference-badge${active ? ' on' : ''}" aria-pressed="${!!active}"`)
       : (star ? (active ? `<span class="reference-badge on">${meta}</span>` : '') : `<span class="reference-badge${active ? ' on' : ''}">${meta}</span>`);
-    return `<div class="reference-edit-row reference-tinted"><span>${escHtml(item.name)}</span>${badge}${mine ? referenceAction('remove-' + kind, item.id, `Убрать из группы: ${item.name}`, referenceIcon('minus'), 'class="reference-icon-button"') : ''}</div>`;
+    return `<div class="reference-edit-row reference-tinted">${referenceLink(star ? 'muscle' : 'movement',item.name)}${badge}${mine ? referenceAction('remove-' + kind, item.id, `Убрать из группы: ${item.name}`, referenceIcon('minus'), 'class="reference-icon-button"') : ''}</div>`;
   };
   for (const [kind, title, addLabel] of [['muscles','Мышцы группы','Добавить мышцы'],['movements','Движения группы','Добавить движения'],['exercises','Упражнения в группе','Добавить упражнения']]) {
     const members = data[kind].filter(item => (kind === 'exercises' ? item.cat : item.group) === group);
     html += `<h2 class="reference-section-title">${title}</h2>`;
-    if (kind === 'exercises') html += mine ? members.map(ex => `<div class="reference-edit-row reference-tinted"><span>${escHtml(ex.name)}</span>${referenceAction('remove-exercise', ex.id, `Убрать из группы: ${ex.name}`, referenceIcon('minus'), 'class="reference-icon-button"')}</div>`).join('') : referenceExerciseRows(members);
+    if (kind === 'exercises') html += mine ? members.map(ex => `<div class="reference-edit-row reference-tinted">${referenceAction('exercise',ex.id,ex.name,escHtml(ex.name),'class="reference-name-link"')}${referenceAction('remove-exercise', ex.id, `Убрать из группы: ${ex.name}`, referenceIcon('minus'), 'class="reference-icon-button"')}</div>`).join('') : referenceExerciseRows(members);
     else html += members.map(item => editRow(kind, item)).join('');
     if (!members.length && (kind !== 'exercises' || mine)) html += '<p class="reference-empty">Пока ничего не добавлено</p>';
     if (mine) {
@@ -7490,7 +7663,7 @@ function referenceGroupHtml(data) {
       }
     }
   }
-  if (mine) html += referenceAction('delete-group',group,'Удалить группу','Удалить группу','class="reference-delete"');
+  if (mine && s.scope === 'mine') html += referenceAction('delete-group',group,'Удалить группу','Удалить группу','class="reference-delete"');
   return html + '</div>';
 }
 function referenceListHtml(data) {
@@ -7500,7 +7673,7 @@ function referenceListHtml(data) {
     `class="reference-row reference-tinted" style="--cat-color:${escHtml(exerciseCategoryColor(DATA.getCurrentUser(), name))}"`)).join('') || '<p class="reference-empty">Группы не найдены</p>';
   if (s.page === 'movements') return data.movements.filter(item => !q || item.name.toLowerCase().includes(q)).map(item => referenceAction('movement',item.name,item.name,
     `<span class="reference-row-copy"><b>${escHtml(item.name)}</b></span><small class="reference-count">${data.exercises.filter(ex => exerciseMovements(ex).includes(item.name)).length}</small>${SVG_CHEVRON}`, 'class="reference-row"')).join('') || '<p class="reference-empty">Движения не найдены</p>';
-  const counts = new Map();
+  const counts = new Map(data.muscles.map(m => [m.name,0]));
   data.exercises.forEach(ex => referenceExerciseMuscles(ex).forEach(name => counts.set(name, (counts.get(name) || 0) + 1)));
   return [...counts].filter(([name]) => !q || name.toLowerCase().includes(q)).sort(([a],[b]) => a.localeCompare(b,'ru')).map(([name,count]) => referenceAction('muscle',name,name,
     `<span class="reference-row-copy"><b>${escHtml(name)}</b></span><small class="reference-count">${count}</small>${SVG_CHEVRON}`, 'class="reference-row"')).join('') || '<p class="reference-empty">Мышцы не найдены</p>';
@@ -7508,7 +7681,7 @@ function referenceListHtml(data) {
 function renderExerciseReference() {
   const s = _referenceState, data = referenceData(), mine = s.scope === 'mine';
   const leaf = ['group','movement','muscle'].includes(s.page);
-  const titles = {hub:'Справочники',groups:'Группы',movements:'Движения',muscles:'Мышцы',group:mine ? 'Группа' : s.name,movement:'Движение',muscle:s.name};
+  const titles = {hub:'Справочники',groups:'Группы',movements:'Движения',muscles:'Мышцы',group:'Группа',movement:'Движение',muscle:'Мышца'};
   $('exercise-reference-title').textContent = titles[s.page];
   const screen = $('screen-exercise-reference');
   screen.classList.toggle('library-catalog', !mine);
@@ -7520,54 +7693,66 @@ function renderExerciseReference() {
     const selected = button.dataset.referenceScope === s.scope;
     button.classList.toggle('active',selected); button.setAttribute('aria-selected',String(selected));
   });
-  let html = leaf ? '' : `<p class="reference-note">${mine ? 'Считаются только ваши упражнения, правки сохраняются у вас' : 'Общая база, считаются все упражнения, только просмотр'}</p>`;
+  let html = leaf ? '' : `<p class="reference-note">${mine ? 'Считаются только ваши упражнения, правки сохраняются у вас' : (DATA.isAdmin() ? 'Общий каталог · доступно редактирование' : 'Общая база, считаются все упражнения, только просмотр')}</p>`;
   if (s.page === 'hub') {
     html += [['groups','Группы','Мышцы, движения и упражнения группы'],['movements','Движения','Классификация и упражнения в каждом'],['muscles','Мышцы','Где и как задействованы']].map(([key,title,description]) => referenceAction('navigate',key,title,`<span class="reference-hub-icon">${referenceIcon(key)}</span><span class="reference-row-copy"><b>${title}</b><small>${description}</small></span>${SVG_CHEVRON}`,'class="reference-row reference-hub-row"')).join('');
   } else if (!leaf) {
-    html += `<div class="reference-search-row"><input class="reference-field" id="reference-search" type="search" aria-label="Поиск в справочнике" placeholder="${{groups:'Поиск группы…',movements:'Поиск движения…',muscles:'Поиск мышцы…'}[s.page]}" value="${escHtml(s.query)}">${mine && s.page === 'groups' ? referenceAction('new-group','','Создать группу',referenceIcon('plus'),'class="reference-create"') : ''}</div><div id="reference-list">${referenceListHtml(data)}</div>`;
+    html += `<div class="reference-search-row"><input class="reference-field" id="reference-search" type="search" aria-label="Поиск в справочнике" placeholder="${{groups:'Поиск группы…',movements:'Поиск движения…',muscles:'Поиск мышцы…'}[s.page]}" value="${escHtml(s.query)}">${referenceEditable() && s.page === 'groups' ? referenceAction('new-group','','Создать группу',referenceIcon('plus'),'class="reference-create"') : ''}</div><div id="reference-list">${referenceListHtml(data)}</div>`;
     if (mine && s.page === 'groups') html += '<p class="reference-note">Цвет группы подбирается автоматически</p>';
   } else if (s.page === 'group') html += referenceGroupHtml(data);
-  else {
-    const exercises = data.exercises.filter(ex => s.page === 'movement' ? exerciseMovements(ex).includes(s.name) : referenceExerciseMuscles(ex).includes(s.name));
-    if (s.page === 'movement') html += `<div class="reference-movement-banner">${referenceIcon('movements')}<span>${escHtml(s.name)}</span></div>`;
-    html += referenceExerciseRows(exercises);
-  }
+  else html += referenceDetailHtml(data);
   const content = $('exercise-reference-content');
   content.innerHTML = html; content.scrollTop = s.scrollTop;
   content.querySelectorAll('.reference-picker').forEach(picker => setupExerciseDragScroll(picker,'y'));
   const search = $('reference-search');
   if (search) search.oninput = () => { s.query = search.value; $('reference-list').innerHTML = referenceListHtml(referenceData()); };
   const name = $('reference-group-name');
-  if (name) name.onchange = () => {
+  if (name) name.onchange = async () => {
     const next = name.value.trim();
-    if (renameReferenceGroup(s.name,next)) { s.name = next; name.value = next; }
+    try {
+    if (s.scope === 'catalog' ? (referenceEditable() && await saveSharedCategory(s.name,next)) : renameReferenceGroup(s.name,next)) { s.name = next; name.value = next; }
     else { name.value = s.name; if (next && next !== s.name) showToast('Группа с таким названием уже есть'); }
+    } catch(error) { name.value = s.name; showToast('Ошибка сохранения: ' + error.message); }
   };
 }
-$('exercise-reference-content').addEventListener('click', event => {
+$('exercise-reference-content').addEventListener('click', async event => {
   const button = event.target.closest('[data-ref-action]');
   if (!button) return;
   const s = _referenceState, action = button.dataset.refAction, value = button.dataset.refValue;
   if (action === 'navigate') { referenceNavigate(value); return; }
   if (['group','movement','muscle'].includes(action)) { referenceNavigate(action,value); return; }
   if (action === 'exercise') { s.scrollTop = $('exercise-reference-content').scrollTop; openExerciseDetail(value,'exerciseReference'); return; }
-  if (!referenceCanWrite()) return;
-  const userId = DATA.getCurrentUser(), data = referenceData('mine');
+  if (!referenceEditable()) return;
+  const userId = DATA.getCurrentUser(), data = referenceData();
+  try {
+  if (action === 'edit-item') {
+    const kind = s.page === 'muscle' ? 'muscles' : 'movements';
+    const item = data[kind].find(x => x.id === value);
+    if (!item) return;
+    const editable = s.scope === 'mine' ? {...item,owner:userId} : item;
+    const saved = () => { const updated = referenceData()[kind].find(x => x.id === item.id); if (updated) s.name = updated.name; renderExerciseReference(); };
+    if (kind === 'muscles') openMuscleForm(editable,saved,s.scope); else openMovementForm(editable,saved,s.scope);
+    return;
+  }
   s.scrollTop = $('exercise-reference-content').scrollTop;
   if (action === 'new-group') {
     let name = 'Новая группа', n = 1;
     while (data.groups.includes(name)) name = `Новая группа ${++n}`;
-    DATA.addCategory(userId,name); referenceNavigate('group',name); return;
+    if (s.scope === 'catalog') await saveSharedCategory(null,name); else DATA.addCategory(userId,name);
+    referenceNavigate('group',name); return;
   }
   if (action === 'picker') s.picker = s.picker === value ? null : value;
   else if (action === 'star' || action === 'base') {
     const kind = action === 'star' ? 'muscles' : 'movements', item = data[kind].find(x => x.id === value);
-    if (item) savePersonalReference(kind,item, action === 'star' ? {visible:!item.visible} : {type:item.type === 'База' ? 'Опция' : 'База'});
+    if (item) { const patch = action === 'star' ? {visible:!item.visible} : {type:item.type === 'База' ? 'Опция' : 'База'};
+      if (s.scope === 'catalog') await saveSharedReference(kind,item,patch); else savePersonalReference(kind,item,patch); }
   } else if (/^(add|remove)-(muscles|movements)$/.test(action)) {
     const [verb,kind] = action.split('-'), item = data[kind].find(x => x.id === value);
-    if (item) savePersonalReference(kind,item,{group:verb === 'add' ? s.name : ''});
+    if (item) { const patch = {group:verb === 'add' ? s.name : ''};
+      if (s.scope === 'catalog') await saveSharedReference(kind,item,patch); else savePersonalReference(kind,item,patch); }
   } else if (action === 'add-exercises' || action === 'remove-exercise') {
-    if (data.exercises.some(ex => ex.id === value)) DATA.updateOwnExercise(userId,value,{cat:action === 'add-exercises' ? s.name : ''});
+    if (data.exercises.some(ex => ex.id === value)) { const patch = {cat:action === 'add-exercises' ? s.name : ''};
+      if (s.scope === 'catalog') await saveSharedExercises([{id:value,patch}]); else DATA.updateOwnExercise(userId,value,patch); }
   } else if (action === 'delete-group') {
     const group = s.name;
     openConfirmModal({title:'Удалить группу?',message:`Группа «${group}» будет удалена из ваших. Её упражнения останутся без группы.`,onConfirm:() => {
@@ -7586,6 +7771,7 @@ $('exercise-reference-content').addEventListener('click', event => {
     }}); return;
   }
   renderExerciseReference();
+  } catch(error) { showToast('Ошибка сохранения: ' + error.message); }
 });
 
 /* — Управление категориями v2: свайп-удаление, долгое нажатие = редактирование/перестановка — */
@@ -8398,7 +8584,7 @@ async function refSaveMuscle(existing, data) {
   const own = existing ? refItemIsOwn(existing) : !DATA.isAdmin();
   if (own) {
     const list = DATA.getOwnMuscles(userId);
-    if (existing) { const m = list.find(x => x.id === existing.id); if (m) Object.assign(m, data, { owner: userId }); }
+    if (existing) { const m = list.find(x => x.id === existing.id); if (m) Object.assign(m, data, { owner: userId }); else list.push({...existing,...data,owner:userId}); }
     else list.push({ id: refNewId("muscle"), owner: userId, ...data });
     DATA.saveOwnMuscles(userId, list);
     return;
@@ -8430,7 +8616,7 @@ async function refSaveMovement(existing, data) {
   const own = existing ? refItemIsOwn(existing) : !DATA.isAdmin();
   if (own) {
     const list = DATA.getOwnMovements(userId);
-    if (existing) { const m = list.find(x => x.id === existing.id); if (m) Object.assign(m, data, { owner: userId }); }
+    if (existing) { const m = list.find(x => x.id === existing.id); if (m) Object.assign(m, data, { owner: userId }); else list.push({...existing,...data,owner:userId}); }
     else list.push({ id: refNewId("movement"), owner: userId, ...data });
     DATA.saveOwnMovements(userId, list);
     return;
@@ -8650,11 +8836,11 @@ function wireComboSuggest(inputEl, panelEl, options) {
 }
 
 // Форма мышцы. onSaved() — колбэк после сохранения (перерисовать шторку).
-function openMuscleForm(existing, onSaved) {
-  const userId = DATA.getCurrentUser();
-  const groups = DATA.atlasGroupRows().map(g => g.name);
-  const allMoves = DATA.refMovements(userId).map(m => m.name);
-  const curMoves = existing ? [...(DATA.refMovesByMuscle(userId)[existing.name] || [])] : [];
+function openMuscleForm(existing, onSaved, scope = 'mine') {
+  const userId = DATA.getCurrentUser(), owner = Auth.userId();
+  const groups = scope === 'catalog' ? DATA.atlasGroups() : DATA.getAllCategories(userId);
+  const allMoves = (scope === 'catalog' ? DATA.atlasMovements() : DATA.refMovements(userId)).map(m => m.name);
+  const curMoves = existing ? referenceRelated('muscle',existing.name,scope) : [];
   let bundles = existing ? [...(existing.bundles || [])] : [];
   const isShared = existing && !refItemIsOwn(existing);
   const readOnly = isShared && !DATA.isAdmin();
@@ -8705,6 +8891,7 @@ function openMuscleForm(existing, onSaved) {
   bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
   const saveBtn = bd.querySelector('[data-act="save"]');
   if (saveBtn) saveBtn.addEventListener("click", async () => {
+    if (Auth.userId() !== owner || DATA.getCurrentUser() !== userId || Auth.contextChanged() || (isShared && !DATA.isAdmin())) return;
     const name = bd.querySelector("#rf-name").value.trim();
     if (!name) { bd.querySelector("#rf-name").focus(); return; }
     const data = { name, group: groupSel.getOne() || groups[0], visible: visBtn.getAttribute("aria-pressed") === "true", bundles, movements: moveSel.get() };
@@ -8715,11 +8902,11 @@ function openMuscleForm(existing, onSaved) {
 }
 
 // Форма движения.
-function openMovementForm(existing, onSaved) {
-  const userId = DATA.getCurrentUser();
-  const groups = DATA.atlasGroupRows().map(g => g.name);
-  const allMuscles = DATA.refMuscles(userId).map(m => m.name);
-  const curMuscles = existing ? [...(DATA.refMusclesByMove(userId)[existing.name] || [])] : [];
+function openMovementForm(existing, onSaved, scope = 'mine') {
+  const userId = DATA.getCurrentUser(), owner = Auth.userId();
+  const groups = scope === 'catalog' ? DATA.atlasGroups() : DATA.getAllCategories(userId);
+  const allMuscles = (scope === 'catalog' ? DATA.atlasMuscles() : DATA.refMuscles(userId)).map(m => m.name);
+  const curMuscles = existing ? referenceRelated('movement',existing.name,scope) : [];
   let type = existing ? (existing.type || "База") : "База";
   const isShared = existing && !refItemIsOwn(existing);
   const readOnly = isShared && !DATA.isAdmin();
@@ -8754,6 +8941,7 @@ function openMovementForm(existing, onSaved) {
   bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
   const saveBtn = bd.querySelector('[data-act="save"]');
   if (saveBtn) saveBtn.addEventListener("click", async () => {
+    if (Auth.userId() !== owner || DATA.getCurrentUser() !== userId || Auth.contextChanged() || (isShared && !DATA.isAdmin())) return;
     const name = bd.querySelector("#rf-name").value.trim();
     if (!name) { bd.querySelector("#rf-name").focus(); return; }
     const data = { name, group: groupSel.getOne() || groups[0], type: typeSel.getOne() || "База", muscles: muscleSel.get() };
@@ -8961,14 +9149,15 @@ function exitExerciseEdit() {
 function enterExerciseEdit() {
   if (_exdEditing) return;
   const userId = DATA.getCurrentUser();
-  const ex = DATA.getVisibleExercises(userId).find(e => e.id === _detailExerciseId);
+  if (_exdCatalog && !DATA.isAdmin()) return;
+  const ex = (_exdCatalog ? DATA.getCatalogExercises(userId) : DATA.getVisibleExercises(userId)).find(e => e.id === _detailExerciseId);
   if (!ex) return;
   _exdEditing = true;
   const a = ex.atlas || {};
   const roleNames = arr => (arr || []).map(o => o.muscle);
-  const muscleNames = DATA.refMuscles(userId).map(m => m.name);
-  const moveNames = DATA.refMovements(userId).map(m => m.name);
-  const cats = DATA.getAllCategories(userId);
+  const muscleNames = (_exdCatalog ? DATA.atlasMuscles() : DATA.refMuscles(userId)).map(m => m.name);
+  const moveNames = (_exdCatalog ? DATA.atlasMovements() : DATA.refMovements(userId)).map(m => m.name);
+  const cats = _exdCatalog ? DATA.atlasGroups() : DATA.getAllCategories(userId);
   const exGroups = DATA.getExerciseGroups(userId);
   const curGroupName = (ex.groupId && (exGroups.find(g => g.id === ex.groupId) || {}).name) || "";
   const LEVELS = ["Глобальное", "Региональное", "Локальное"];
@@ -9016,7 +9205,7 @@ function enterExerciseEdit() {
       <input class="ex-form-input" id="exe-ref" type="url" inputmode="url" placeholder="https://…" value="${escHtml(a.referenceUrl || "")}"></div>`;
   $("exd-body").scrollTop = 0;
 
-  const muscleObjs = DATA.refMuscles(userId);
+  const muscleObjs = (_exdCatalog ? DATA.atlasMuscles() : DATA.refMuscles(userId));
   const typeSel   = refChipSelect($("exe-type"), ["Силовое", "Бег"], [ex.type === "run" ? "Бег" : "Силовое"], false);
   const catSel    = refDropdownSelect($("exe-cat"), cats, [ex.cat], false);
   const levelSel  = refDropdownSelect($("exe-level"), LEVELS, curLevel ? [curLevel] : [], false);
@@ -9031,15 +9220,17 @@ function enterExerciseEdit() {
     return { muscle: n, bundle: old ? old.bundle : "" };
   });
 
-  _exdEditCtx = { a, typeSel, catSel, levelSel, targetSel, synSel, stabSel, moveSel, toRoles };
+  _exdEditCtx = { owner:Auth.userId(), userId, catalog:_exdCatalog, a, typeSel, catSel, levelSel, targetSel, synSel, stabSel, moveSel, toRoles };
   $("exd-edit-btn").style.display = "none";
   $("exd-edit-footer").style.display = "";
 }
 
-function saveExerciseEdit() {
+async function saveExerciseEdit() {
   if (!_exdEditing || !_exdEditCtx) return;
+  if (_exdEditCtx.owner !== Auth.userId() || _exdEditCtx.userId !== DATA.getCurrentUser() || Auth.contextChanged()) return;
   const userId = DATA.getCurrentUser();
-  const ex = DATA.getVisibleExercises(userId).find(e => e.id === _detailExerciseId);
+  if (_exdCatalog && !DATA.isAdmin()) return;
+  const ex = (_exdCatalog ? DATA.getCatalogExercises(userId) : DATA.getVisibleExercises(userId)).find(e => e.id === _detailExerciseId);
   if (!ex) return;
   const { a, typeSel, catSel, levelSel, targetSel, synSel, stabSel, moveSel, toRoles } = _exdEditCtx;
   const name = $("exd-e-name").value.trim();
@@ -9065,12 +9256,19 @@ function saveExerciseEdit() {
     tip: $("exe-tip").value.trim(),
     atlas,
   };
+  const saveButton = $('exd-edit-save'); saveButton.disabled = true;
+  try {
+  if (_exdEditCtx.catalog) await saveSharedExercises([{id:ex.id,patch:payload,groupName:$('exe-group').value.trim()}]);
+  else {
   DATA.updateOwnExercise(userId, _detailExerciseId, payload);
   SyncQueue.push("exercise:update", { id: _detailExerciseId });
   DATA.setExerciseGroupByName(userId, _detailExerciseId, $("exe-group").value);
+  }
   showToast("Упражнение обновлено");
   renderExercisesList(exercisesSearch.value);
-  openExerciseDetail(_detailExerciseId, _exdReturnScreen);  // сам вызовет exitExerciseEdit()
+  openExerciseDetail(_detailExerciseId, _exdReturnScreen);
+  } catch(error) { showToast("Ошибка сохранения: " + error.message); }
+  finally { saveButton.disabled = false; }
 }
 
 $("exd-edit-btn").addEventListener("click", enterExerciseEdit);
