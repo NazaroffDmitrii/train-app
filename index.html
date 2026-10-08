@@ -3699,9 +3699,9 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 @media (min-width:681px) { #constructor-scroll,.sg-header,.sg-footer { padding-inline:max(16px,calc((100% - 640px)/2)); } }
 @media (prefers-reduced-motion:reduce) { .sg-sheet { transition:none; } }
 /* Exercise library: one continuous surface per tab and category. */
-#screen-exercises { --library-top:#1a1830; --library-bottom:#0d0c18; --library-shell:#0a0911; background:var(--library-shell); }
-#screen-exercises.library-catalog { --library-top:#112230; --library-bottom:#0a1219; --library-shell:#070c11; }
-#screen-exercises .exercises-header { background:linear-gradient(180deg,var(--panel),var(--library-shell)); border:0; padding:calc(var(--safe-top) + 16px) 20px 14px; }
+#screen-exercises { --library-top:#1a1830; --library-bottom:#0d0c18; --library-shell:#112230; background:var(--library-shell); }
+#screen-exercises.library-catalog { --library-top:#112230; --library-bottom:#0a1219; --library-shell:#1a1830; }
+#screen-exercises .exercises-header { background:var(--library-shell); border:0; padding:calc(var(--safe-top) + 16px) 20px 14px; }
 #screen-exercises .exercises-header-title { font-size:22px; font-weight:700; letter-spacing:-.02em; }
 #screen-exercises #exercises-back-btn, #screen-exercises #ex-cat-manage-btn { width:38px; height:38px; min-width:38px; padding:0; border-radius:50%; background:transparent; border:1px solid #ffffff1a; color:#a99cf5; display:flex; align-items:center; justify-content:center; }
 #screen-exercises #exercises-back-btn svg, #screen-exercises #ex-cat-manage-btn svg { width:18px; height:18px; }
@@ -3817,9 +3817,9 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   #screen-exercise-detail .detail-screen-body { padding-inline:max(12px,calc((100% - 640px) / 2)); }
 }
 
-#screen-exercise-reference { --library-top:#1a1830; --library-bottom:#0d0c18; --library-shell:#0a0911; background:var(--library-shell); }
-#screen-exercise-reference.library-catalog { --library-top:#112230; --library-bottom:#0a1219; --library-shell:#070c11; }
-#screen-exercise-reference .exercises-header { border:0; background:linear-gradient(180deg,var(--panel),var(--library-shell)); }
+#screen-exercise-reference { --library-top:#1a1830; --library-bottom:#0d0c18; --library-shell:#112230; background:var(--library-shell); }
+#screen-exercise-reference.library-catalog { --library-top:#112230; --library-bottom:#0a1219; --library-shell:#1a1830; }
+#screen-exercise-reference .exercises-header { border:0; background:var(--library-shell); }
 #screen-exercise-reference .exercises-header-title { min-width:0; overflow-wrap:anywhere; }
 #screen-exercise-reference [hidden] { display:none!important; }
 #screen-exercise-reference.reference-leaf .exercise-library-body { border-radius:0; }
