@@ -7681,7 +7681,7 @@ function referenceListHtml(data) {
 function renderExerciseReference() {
   const s = _referenceState, data = referenceData(), mine = s.scope === 'mine';
   const leaf = ['group','movement','muscle'].includes(s.page);
-  const titles = {hub:'Справочники',groups:'Группы',movements:'Движения',muscles:'Мышцы',group:'Группа',movement:'Движение',muscle:'Мышца'};
+  const titles = {hub:'Справочники',groups:'Группы',movements:'Движения',muscles:'Мышцы',group:mine ? 'Группа' : s.name,movement:'Движение',muscle:s.name};
   $('exercise-reference-title').textContent = titles[s.page];
   const screen = $('screen-exercise-reference');
   screen.classList.toggle('library-catalog', !mine);

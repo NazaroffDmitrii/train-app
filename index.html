@@ -3872,15 +3872,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 }
 
 
-/* Shared page chrome matches Templates; filters use a single 10px gap. */
+/* Filters use a single 10px gap. */
 #screen-exercises .ex-cat-tabs-wrap:not([hidden]) + .exercise-movement-tabs { padding-top:0; }
-#screen-exercises .exercises-header, #screen-exercise-reference .exercises-header,
-#screen-exercise-detail .detail-screen-header, #screen-muscle-detail .detail-screen-header {
-  background:var(--panel); border-bottom:1px solid var(--border-subtle);
-  padding:calc(var(--safe-top) + 16px) 20px 14px;
-}
-#screen-exercises .exercises-header-title, #screen-exercise-reference .exercises-header-title,
-#screen-exercise-detail .detail-screen-title, #screen-muscle-detail .detail-screen-title { font-size:22px; font-weight:700; letter-spacing:-.02em; }
 #exercises-scroll .ex-row { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),#0e0e16; border-color:color-mix(in srgb,var(--cat-color) 28%,transparent); }
 #exercises-scroll .expanded > .ex-row-group { background:transparent; border:0; }
 #exercises-scroll .ex-row-wrap-nested .ex-row { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 18%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent)),#14141d; }
@@ -3892,10 +3885,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .reference-info .msd-anatomy { font-size:14px; line-height:1.6; color:#c8c8d8; }
 .reference-detail-edit { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; padding:11px; margin-bottom:12px; border:1px solid #a99cf550; border-radius:13px; color:#c8bfff; font-size:13px; }
 .reference-detail-edit svg { width:17px; height:17px; }
-@media(min-width:481px) {
-  #screen-exercises .exercises-header, #screen-exercise-reference .exercises-header,
-  #screen-exercise-detail .detail-screen-header, #screen-muscle-detail .detail-screen-header { padding-inline:max(20px,calc((100% - 640px)/2)); }
-}
 
 </style>
 </head>
