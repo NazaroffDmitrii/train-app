@@ -389,6 +389,7 @@
       const tpl = DATA.createBlankTemplate(uid, name);
       const exList = d.items.map(it => ({
         exerciseId: it.exId,
+        ...(typeof executionForExercise === 'function' ? executionForExercise(uid, DATA.getVisibleExercises(uid).find(e => e.id === it.exId)) : {}),
         sets: Array.from({ length: Math.max(1, +it.sets || 1) }, () => ({ weight: "", reps: repsToNum(it.reps) })),
       }));
       DATA.updateTemplateExercises(uid, tpl.id, exList);
