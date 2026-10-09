@@ -2224,11 +2224,6 @@ const typeModalBackdrop     = $("type-modal-backdrop");
 const settingsModalBackdrop = $("settings-modal-backdrop");
 let _typeModalPurpose = "workout";
 
-const pickerBackdrop = $("picker-backdrop");
-const pickerSearch   = $("picker-search");
-const pickerList     = $("picker-list");
-const pickerTabs     = $("picker-tabs");
-
 const rpeBackdrop = $("rpe-backdrop");
 const rpeGrid     = $("rpe-grid");
 const rpeHint     = $("rpe-hint");
@@ -2608,13 +2603,13 @@ function goToScreen(name, opts = {}) {
   // с новой вспышкой «Загрузка…» поверх). Теперь каждый вызывающий код сам
   // явно вызывает renderProfiles() — см. вызовы этой функции в auth-ui.js.
   if (name === "menu")     { refreshMenu(); requestAnimationFrame(() => requestAnimationFrame(() => window.restartStartNeonAnimation?.())); }
-  if (name === "workout")  { initWorkoutScreen(opts); }
+  if (name === "workout")  { if (!opts.resumeSelection) initWorkoutScreen(opts); }
   if (name === "run")      { initRunScreen(opts); }
   if (name === "exercises") { if (opts.keepFilter) { renderExercisesList(exercisesSearch.value); if (_constructorCatalog) exercisesScroll.scrollTop = _constructorCatalog.scrollTop || 0; } else initExercisesScreen(); }
   if (name === "exerciseReference") renderExerciseReference();
   if (name === "history")  { initHistoryScreen(); }
-  if (name === "stats")    { initStatsScreen(); }
-  if (name === "templates") { initTemplatesScreen(); }
+  if (name === "stats")    { if (!opts.resumeSelection) initStatsScreen(); }
+  if (name === "templates") { if (!opts.resumeSelection) initTemplatesScreen(); }
   if (name === "constructor" && window.CONSTRUCTOR) { CONSTRUCTOR.init({ resume: !!opts.resumeConstructor }); }
 }
 
@@ -3471,7 +3466,7 @@ document.querySelectorAll(".modal-backdrop").forEach(b => {
    ========================================================================== */
 function topmostOverlay() {
   const list = document.querySelectorAll(
-    ".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open"
+    ".modal-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open"
   );
   return list.length ? list[list.length - 1] : null;
 }
@@ -4703,6 +4698,7 @@ function renderExerciseList() {
         if (!newId || newId === ex.exerciseId) return;
         const newEx = DATA.getVisibleExercises(userId).find(x => x.id === newId);
         ex.exerciseId = newId;
+        Object.assign(ex,executionForExercise(userId,newEx));
         if (newEx) ex.name = newEx.name;
         saveWorkoutState();
         renderExerciseList();     // сбрасывает режим правки и перерисовывает
@@ -5129,180 +5125,24 @@ function updateSummaryBar() {
 /* — Добавить упражнение — */
 $("add-ex-btn").addEventListener("click", () => openExercisePicker(addExerciseToWorkout));
 
-let _pickerOnSelect = addExerciseToWorkout;
-
-let _pickerCat = "Все";   // активная вкладка-категория пикера
-
-let _pickerSelectedId = null;
-
-let _pickerGroupExpanded = new Set(); // id раскрытых групп упражнений (аккордеон, как в списке «Упражнения»)
-
-function openExercisePicker(onSelect, selectedId) {
-  _pickerOnSelect = onSelect || addExerciseToWorkout;
-  _pickerSelectedId = selectedId || null;
-  _pickerCat = "Все";
-  _pickerGroupExpanded = new Set();
-  pickerSearch.value = "";
-  renderPickerTabs();
-  renderPickerList("");
-  if (pickerList) pickerList.scrollTop = 0;
-  pickerBackdrop.classList.add("open");
-  // Без авто-фокуса на поиск: иначе клавиатура сразу перекрывает вкладки и
-  // список. Поиск открывается по тапу пользователем (п.5).
-}
-function closeExercisePicker() { pickerBackdrop.classList.remove("open"); }
-pickerBackdrop.addEventListener("click", e => { if (e.target === pickerBackdrop) closeExercisePicker(); });
-pickerSearch.addEventListener("input", () => {
-  // Активный поиск перекрывает фильтр по вкладке — возвращаем вкладку на «Все».
-  if (pickerSearch.value.trim() && _pickerCat !== "Все") { _pickerCat = "Все"; renderPickerTabs(); }
-  renderPickerList(pickerSearch.value);
-});
-
-// «Все» + реально присутствующие у пользователя категории, в порядке справочника.
-function pickerCategories() {
-  const present = new Set(DATA.getVisibleExercises(DATA.getCurrentUser()).map(e => e.cat));
-  const ordered = (DATA.EXERCISE_CATEGORIES || []).filter(c => present.has(c));
-  present.forEach(c => { if (!ordered.includes(c)) ordered.push(c); });   // вне справочника — в конец
-  return ["Все", ...ordered];
-}
-
-function renderPickerTabs() {
-  if (!pickerTabs) return;
-  const userId = DATA.getCurrentUser();
-  pickerTabs.innerHTML = pickerCategories().map(c => {
-    const active = c === _pickerCat ? " active" : "";
-    const color = c === "Все" ? "var(--accent)" : DATA.getCategoryColor(userId, c);
-    return `<button class="picker-tab${active}" data-cat="${escHtml(c)}" style="--tab-color:${escHtml(color)}">${escHtml(c || "Без группы")}</button>`;
-  }).join("");
-  pickerTabs.querySelectorAll(".picker-tab").forEach(tab => {
-    tab.addEventListener("click", () => {
-      _pickerCat = tab.dataset.cat;
-      if (pickerSearch.value) pickerSearch.value = "";   // выбор вкладки сбрасывает поиск
-      renderPickerTabs();
-      renderPickerList("");
-      pickerList.scrollTop = 0;
-      tab.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-    });
+// Every exercise selection opens the library screen; the caller keeps its draft and UI.
+function openExercisePicker(onSelect, selectedId, options = {}) {
+  const callback = onSelect || addExerciseToWorkout;
+  openConstructorExerciseCatalog({
+    kind:'picker', single:true, title:'Упражнения', subtitle:'Выбор упражнения',
+    confirmLabel:options.confirmLabel || (selectedId ? 'Заменить упражнение' : 'Выбрать упражнение'),
+    initialSelectedId:selectedId || null,
+    returnScreen:activeScreenName() || 'menu', backStack:[..._screenBackStack],
+    canSelect:options.canSelect || (() => true),
+    onConfirm(id) {
+      if (DATA.isHidden(DATA.getCurrentUser(),id)) {
+        DATA.unhideExercise(DATA.getCurrentUser(),id);
+        SyncQueue.push('exercise:update',{id});
+      }
+      callback(id); return true;
+    },
   });
 }
-
-function renderPickerList(query) {
-  const q = query.trim().toLowerCase();
-  const userId = DATA.getCurrentUser();
-  const all = DATA.getVisibleExercises(userId);
-  // Поиск ищет по всей базе (вкладка при вводе текста сама сбрасывается на
-  // «Все», см. обработчик pickerSearch), иначе — фильтр по выбранной вкладке.
-  // Текстовое совпадение — внутри resolveDisplayItems: оно же схлопывает
-  // варианты одной группы упражнений в одну строку (см. вкладку «Упражнения»).
-  const candidates = q ? all : (_pickerCat && _pickerCat !== "Все" ? all.filter(e => e.cat === _pickerCat) : all);
-  const items = DATA.resolveDisplayItems(userId, candidates, q);
-
-  if (!items.length) {
-    pickerList.innerHTML = `<p style="padding:24px 16px;color:var(--text-tertiary);font-size:14px">Ничего не найдено</p>`;
-    return;
-  }
-
-  const SVG_CHECK = `<svg class="picker-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>`;
-  const exItemHtml = e => {
-    const sel = e.id === _pickerSelectedId;
-    const color = DATA.getCategoryColor(userId, e.cat);
-    return `
-    <div class="picker-item${sel ? " selected" : ""}" data-id="${escHtml(e.id)}" style="--cat-color:${escHtml(color)}">
-      <span class="picker-item-name">${escHtml(e.name)}</span>
-      ${sel ? SVG_CHECK : ""}
-    </div>`;
-  };
-  const itemHtml = item => {
-    if (item.kind !== "group") return exItemHtml(item.ex);
-    const color = DATA.getCategoryColor(userId, item.cat);
-    const expanded = _pickerGroupExpanded.has(item.id);
-    const memberRows = expanded ? item.members.map(exItemHtml).join("") : "";
-    return `
-    <div class="picker-item-group-wrap${expanded ? " expanded" : ""}" data-group-id="${escHtml(item.id)}" style="--cat-color:${escHtml(color)}">
-      <div class="picker-item picker-item-group" data-group-id="${escHtml(item.id)}" style="--cat-color:${escHtml(color)}">
-        <span class="picker-item-name">${escHtml(item.name)}</span>
-        <span class="picker-item-group-badge">${item.members.length}</span>
-      </div>
-      <div class="picker-item-group-members">${memberRows}</div>
-    </div>`;
-  };
-
-  if (!q && _pickerCat !== "Все") {
-    // Конкретная категория — плоский список без повторного заголовка.
-    pickerList.innerHTML = items.map(itemHtml).join("");
-  } else {
-    // «Все»/поиск — с разбивкой по категориям (заголовок с цветной точкой).
-    const sections = {};
-    items.forEach(item => { const cat = item.kind === "group" ? item.cat : item.ex.cat; (sections[cat] = sections[cat] || []).push(item); });
-    pickerList.innerHTML = Object.entries(sections).map(([cat, its]) => {
-      const color = DATA.getCategoryColor(userId, cat);
-      return `<div class="picker-section-label"><span class="picker-section-dot" style="background:${escHtml(color)}"></span>${escHtml(cat)}<span class="picker-section-count">${its.length}</span></div>${its.map(itemHtml).join("")}`;
-    }).join("");
-  }
-
-  pickerList.querySelectorAll(".picker-item:not(.picker-item-group)").forEach(item => {
-    item.addEventListener("click", () => {
-      _pickerOnSelect(item.dataset.id);
-      closeExercisePicker();
-    });
-  });
-
-  pickerList.querySelectorAll(".picker-item-group").forEach(item => {
-    item.addEventListener("click", () => {
-      const groupId = item.dataset.groupId;
-      if (_pickerGroupExpanded.has(groupId)) _pickerGroupExpanded.delete(groupId);
-      else _pickerGroupExpanded.add(groupId);
-      renderPickerList(pickerSearch.value);
-    });
-  });
-}
-
-/* Закрытие шторки пикера свайпом вниз (п.4). Тянем сам лист вниз; если палец в
-   списке — только когда он прокручен в самый верх, иначе это его прокрутка. */
-(function setupPickerSwipe() {
-  const sheet = pickerBackdrop.querySelector(".picker-sheet");
-  if (!sheet) return;
-  let startY = 0, startX = 0, dy = 0, active = false, decided = false, vert = false, onList = false;
-  const down = (y, x, target) => {
-    active = true; decided = false; vert = false; dy = 0; startY = y; startX = x;
-    onList = !!(target.closest && target.closest(".picker-list"));
-    sheet.style.transition = "none";
-  };
-  const moveTo = (y, x, e) => {
-    if (!active) return;
-    const d = y - startY;
-    const dx = x - startX;
-    if (!decided) {
-      if (Math.abs(d) < 6 && Math.abs(dx) < 6) return;
-      decided = true;
-      const horiz = Math.abs(dx) > Math.abs(d);
-      vert = !horiz && d > 0 && (!onList || pickerList.scrollTop <= 0);
-      if (!vert) { active = false; sheet.style.transition = ""; return; }   // отдаём прокрутке
-    }
-    dy = Math.max(0, d);
-    if (e && e.cancelable) e.preventDefault();
-    sheet.style.transform = `translateY(${dy}px)`;
-  };
-  const up = () => {
-    if (!active) return;
-    active = false;
-    sheet.style.transition = "";
-    if (!vert) return;
-    sheet.style.transform = "";              // снимаем inline → дальше рулит CSS
-    if (dy > 110) closeExercisePicker();     // .open снимется → лист уезжает вниз
-  };
-  sheet.addEventListener("touchstart", e => down(e.touches[0].clientY, e.touches[0].clientX, e.target), { passive: true });
-  sheet.addEventListener("touchmove",  e => { const t = e.touches[0]; if (t) moveTo(t.clientY, t.clientX, e); }, { passive: false });
-  sheet.addEventListener("touchend", up);
-  sheet.addEventListener("touchcancel", up);
-  sheet.addEventListener("mousedown", e => {
-    down(e.clientY, e.clientX, e.target);
-    const mm = ev => moveTo(ev.clientY, ev.clientX, ev);
-    const mu = () => { up(); window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); };
-    window.addEventListener("mousemove", mm);
-    window.addEventListener("mouseup", mu);
-  });
-})();
 
 function addExerciseToWorkout(exerciseId) {
   if (!_workout) return;
@@ -5797,6 +5637,7 @@ function syncConstructorCatalogUI() {
   const screen=$('screen-exercises');
   screen.classList.toggle('constructor-catalog',active);
   screen.classList.toggle('constructor-replacement',!!context?.single);
+  screen.classList.toggle('exercise-selection',context?.kind === 'picker');
   screen.querySelector('.exercises-header-title').textContent=(context?.single ? context.subtitle : context?.title) || 'Упражнения';
   $('exercises-add-btn').hidden=active;
   $('ex-cat-manage-btn').hidden=active;
@@ -5807,8 +5648,8 @@ function syncConstructorCatalogUI() {
     controls.innerHTML=`${subtitle?`<p>${escHtml(subtitle)}</p>`:''}<div class="constructor-catalog-modes">${context.modes.map(m=>`<button type="button" data-catalog-mode="${escHtml(m.id)}" aria-pressed="${context.filterMode===m.id}" class="${context.filterMode===m.id?'selected':''}">${escHtml(m.label)}</button>`).join('')}</div>`;
     controls.querySelectorAll('[data-catalog-mode]').forEach(b=>b.onclick=()=>{context.filterMode=b.dataset.catalogMode;_exercisesCatFilter='all';renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=0;});
   } else controls.innerHTML=subtitle?`<p>${escHtml(subtitle)}</p>`:'';
-  $('constructor-catalog-footer').querySelector('span').textContent=context?.single?'Выбери упражнение кружком слева. Название открывает подробности.':'Нажми на название для подробностей, на кружок для добавления';
-  const done=$('constructor-catalog-done');done.textContent=context?.single?'Заменить упражнение':'Готово';
+  $('constructor-catalog-footer').querySelector('span').textContent=context?.single?'Выбери упражнение кружком слева. Шеврон открывает подробности.':'Нажми на кружок для добавления, на шеврон — для подробностей';
+  const done=$('constructor-catalog-done');done.textContent=context?.confirmLabel || (context?.single?'Заменить упражнение':'Готово');
   done.disabled=!!context?.single && (!context.selectedId || context.selectedId===context.initialSelectedId);
 }
 function openConstructorExerciseCatalog(options) {
@@ -5817,20 +5658,35 @@ function openConstructorExerciseCatalog(options) {
 }
 function closeConstructorExerciseCatalog() {
   if (!_constructorCatalog) return;
+  if (_constructorCatalog.kind === 'picker') {
+    return finishExerciseSelection(_constructorCatalog);
+  }
   consumePreviousScreen('constructor');
   goToScreen('constructor', { navigation:'back', resumeConstructor:true });
+}
+function finishExerciseSelection(context, navigate = true) {
+  _constructorCatalog = null;
+  _screenBackStack.splice(0,_screenBackStack.length,...context.backStack);
+  if (navigate) goToScreen(context.returnScreen,{navigation:'back',resumeSelection:true});
 }
 function constructorCatalogAddHtml(ex) {
   if (!_constructorCatalog) return '';
   const selected=_constructorCatalog.single ? _constructorCatalog.selectedId===ex.id : _constructorCatalog.isSelected(ex.id);
   return `<button type="button" class="constructor-catalog-add${selected?' selected':''}" data-constructor-add="${escHtml(ex.id)}" aria-pressed="${selected}" aria-label="${selected?'Выбрано':_constructorCatalog.single?'Выбрать':'Добавить'}: ${escHtml(ex.name)}" ${selected&&!_constructorCatalog.single?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${selected?'<path d="m5 12 4 4L19 6"/>':''}</svg></button>`;
 }
-$('constructor-catalog-done').addEventListener('click',()=>{
+function confirmExerciseSelection() {
   const c=_constructorCatalog;
-  if(!c || c.owner!==Auth.userId() || c.profile!==DATA.getCurrentUser())return;
-  if(c.single && (!c.selectedId || !c.onConfirm(c.selectedId)))return;
+  if(!c || c.owner!==Auth.userId() || c.profile!==DATA.getCurrentUser() || Auth.contextChanged())return;
+  if(c.single && (!c.selectedId || c.selectedId===c.initialSelectedId || !c.canSelect(c.selectedId,c.filterMode)))return;
+  const currentScreen = activeScreenName();
+  if(c.single && c.onConfirm(c.selectedId) === false)return;
+  if(c.kind === 'picker') {
+    finishExerciseSelection(c,activeScreenName() === currentScreen);
+    return;
+  }
   closeConstructorExerciseCatalog();
-});
+}
+$('constructor-catalog-done').addEventListener('click',confirmExerciseSelection);
 
 // Native touch/trackpad scrolling plus mouse dragging; a drag never opens a row.
 let _exerciseScrollClickUntil = 0;
@@ -5903,6 +5759,8 @@ function exerciseCategoryColor(userId, name) {
   return index < 0 ? '#9696aa' : `hsl(${(215 + index * 52) % 360} 36% 60%)`;
 }
 function exerciseMovements(ex) { return ex.atlas?.categories || []; }
+function exerciseLibraryHasTabs() { return !_constructorCatalog || _constructorCatalog.kind === 'picker'; }
+function exerciseCatalogSource() { return exerciseLibraryHasTabs() && _exerciseLibrary === 'catalog'; }
 function exerciseMovementHtml(ex, expanded = false) {
   const moves = exerciseMovements(ex);
   if (!moves.length) return '';
@@ -6006,17 +5864,17 @@ function openExecutionParameterForm(exerciseId, catalog, groupId = null) {
   };
 }
 function syncExerciseLibraryUI(allExs) {
-  const catalog = !_constructorCatalog && _exerciseLibrary === 'catalog';
+  const catalog = exerciseCatalogSource();
   $('screen-exercises').classList.toggle('library-catalog', catalog);
-  $('exercise-library-tabs').hidden = !!_constructorCatalog;
-  $('exercise-filter-btn').hidden = !!_constructorCatalog;
+  $('exercise-library-tabs').hidden = !exerciseLibraryHasTabs();
+  $('exercise-filter-btn').hidden = !exerciseLibraryHasTabs();
   $('exercises-add-btn').hidden = !!_constructorCatalog || catalog || _exListEditMode;
   exercisesSearch.placeholder = catalog ? 'Поиск по каталогу' : 'Поиск';
   document.querySelectorAll('[data-library]').forEach(b => {
     b.classList.toggle('active', b.dataset.library === _exerciseLibrary);
     b.setAttribute('aria-selected', String(b.dataset.library === _exerciseLibrary));
   });
-  const mode = _constructorCatalog ? 0 : _exerciseFilterMode;
+  const mode = exerciseLibraryHasTabs() ? _exerciseFilterMode : 0;
   $('ex-cat-tabs').parentElement.hidden = mode === 1;
   const filter = $('exercise-filter-btn');
   filter.classList.toggle('active', mode > 0);
@@ -6035,7 +5893,7 @@ function syncExerciseLibraryUI(allExs) {
   });
 }
 function setExerciseLibrary(scope) {
-  if (!['mine','catalog'].includes(scope) || scope === _exerciseLibrary || _constructorCatalog) return;
+  if (!['mine','catalog'].includes(scope) || scope === _exerciseLibrary || !exerciseLibraryHasTabs()) return;
   exitExListEditMode();
   _exerciseLibrary = scope;
   _exercisesCatFilter = 'all'; _exerciseFilterMode = 0; _exerciseMovementFilter.clear(); _exGroupExpanded.clear();
@@ -6122,7 +5980,7 @@ const SVG_DEL_EX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 // «живое» раскрытие при перетаскивании).
 function memberRowHtml(ex, cat, selected = false) {
   const label = ex.atlas?.variationName || ex.name;
-  const arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>';
+  const arrow = SVG_CHEVRON;
   return `
     <div class="ex-row-wrap ex-row-wrap-nested${selected ? ' variant-selected' : ''}" data-id="${escHtml(ex.id)}" data-cat="${escHtml(cat)}">
       <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
@@ -6278,7 +6136,7 @@ function renderExercisesList(query) {
   const q       = query.trim().toLowerCase();
   if (_constructorCatalog && (_constructorCatalog.owner !== Auth.userId() || _constructorCatalog.profile !== userId)) _constructorCatalog = null;
   syncConstructorCatalogUI();
-  const allExs = (!_constructorCatalog && _exerciseLibrary === "catalog" ? DATA.getCatalogExercises(userId) : DATA.getVisibleExercises(userId)).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id,_constructorCatalog.filterMode)); // seeded + personal, единый список
+  const allExs = (exerciseCatalogSource() ? DATA.getCatalogExercises(userId) : DATA.getVisibleExercises(userId)).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id,_constructorCatalog.filterMode)); // seeded + personal, единый список
 
   _exerciseLastDates = new Map();
   DATA.getWorkoutHistory(userId).forEach(w => (w.exercises || []).forEach(e => {
@@ -6291,7 +6149,7 @@ function renderExercisesList(query) {
   // должен учитывать группы упражнений (см. DATA.resolveDisplayItems) —
   // если запрос совпал с ОДНИМ вариантом, показать нужно всю группу целиком,
   // а не только совпавшего участника, поэтому query нельзя резать здесь.
-  const tabFiltered = allExs.filter(e => _exercisesCatFilter === "all" || e.cat === _exercisesCatFilter).filter(e => _constructorCatalog || !_exerciseMovementFilter.size || exerciseMovements(e).some(m => _exerciseMovementFilter.has(m)));
+  const tabFiltered = allExs.filter(e => _exercisesCatFilter === "all" || e.cat === _exercisesCatFilter).filter(e => !exerciseLibraryHasTabs() || !_exerciseMovementFilter.size || exerciseMovements(e).some(m => _exerciseMovementFilter.has(m)));
 
   // Группировка по категориям. Порядок категорий — как в списке пользователя,
   // плюс любые «осиротевшие» (встречаются в упражнениях, но нет в списке).
@@ -6376,7 +6234,7 @@ function renderExercisesList(query) {
           <span class="ex-row-group-badge" title="Вариации: ${item.members.length}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg></span>
           <span class="ex-row-chevron ex-row-chevron-group">${SVG_CHEVRON}</span>
         </div>
-        <div class="ex-row-group-members">${expanded ? `<div class="exercise-variants-heading"><span>Вариации</span>${canEdit ? `<button type="button" data-add-variation="${escHtml(item.id)}">+ Вариация</button>` : ''}</div>` : ''}${memberRows}${parameters}${expanded && canEdit ? `<button type="button" class="execution-configure" data-configure-execution="${escHtml(selected.id)}" data-execution-group="${escHtml(item.id)}">${parameters ? 'Настроить параметры' : '+ Параметр выполнения'}</button>` : ''}${expanded && _exerciseLibrary === 'catalog' && DATA.isAdmin() ? `<button type="button" class="reference-add" data-catalog-group="${escHtml(item.id)}">Изменить группу</button>` : ''}</div>
+        <div class="ex-row-group-members">${expanded ? `<div class="exercise-variants-heading"><span>Вариации</span>${canEdit ? `<button type="button" data-add-variation="${escHtml(item.id)}">+ Вариация</button>` : ''}</div>` : ''}${memberRows}${parameters}${expanded && canEdit ? `<button type="button" class="execution-configure" data-configure-execution="${escHtml(selected.id)}" data-execution-group="${escHtml(item.id)}">${parameters ? 'Настроить параметры' : '+ Параметр выполнения'}</button>` : ''}${expanded && !_constructorCatalog && _exerciseLibrary === 'catalog' && DATA.isAdmin() ? `<button type="button" class="reference-add" data-catalog-group="${escHtml(item.id)}">Изменить группу</button>` : ''}</div>
       </div>`;
     }).join("");
     const header = `
@@ -6406,7 +6264,9 @@ function renderExercisesList(query) {
     const y = exercisesScroll.scrollTop; renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = y;
   }));
   exercisesScroll.querySelectorAll('[data-variant-open]').forEach(button => button.addEventListener('click', event => {
-    event.stopPropagation(); if (!_exListEditMode) openExerciseDetail(button.dataset.variantOpen);
+    event.stopPropagation();
+    if (_constructorCatalog) _constructorCatalog.scrollTop = exercisesScroll.scrollTop;
+    if (!_exListEditMode) openExerciseDetail(button.dataset.variantOpen);
   }));
   exercisesScroll.querySelectorAll('[data-execution-for]').forEach(controls => {
     const ex = allExs.find(e => e.id === controls.dataset.executionFor); if (!ex) return;
@@ -6453,6 +6313,8 @@ function renderExercisesList(query) {
       if (!context || context.owner !== Auth.userId() || context.profile !== DATA.getCurrentUser()) return;
       if(context.single) {
         context.selectedId=button.dataset.constructorAdd;
+        const groupId = button.closest('.ex-row-wrap-group')?.dataset.groupId;
+        if (groupId) _exerciseVariantSelection.set(executionDraftKey(userId,groupId),context.selectedId);
         const y=exercisesScroll.scrollTop;renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=y;
       } else if (context.onSelect(button.dataset.constructorAdd,context.filterMode)) {
         const scrollTop = exercisesScroll.scrollTop;
@@ -7137,7 +6999,7 @@ function splitMuscles(str) {
 
 function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   const userId = DATA.getCurrentUser();
-  const fromCatalog = (returnScreen === "exercises" && !_constructorCatalog && _exerciseLibrary === "catalog") || (returnScreen === "exerciseReference" && _referenceState.scope === "catalog");
+  const fromCatalog = (returnScreen === "exercises" && exerciseCatalogSource()) || (returnScreen === "exerciseReference" && _referenceState.scope === "catalog");
   const ex = (fromCatalog ? DATA.DEFAULT_EXERCISES : DATA.getVisibleExercises(userId)).find(e => e.id === exerciseId);
   if (!ex) return;
   _detailExerciseId = exerciseId;
@@ -7732,7 +7594,7 @@ function openReferenceDetail(kind, name) {
   if (!['muscle','movement'].includes(kind)) return;
   const active = document.querySelector('.screen.active')?.id;
   if (active === 'screen-exercise-reference') { referenceNavigate(kind,name); return; }
-  const scope = active === 'screen-exercise-detail' ? (_exdCatalog ? 'catalog' : 'mine') : (_constructorCatalog ? 'mine' : _exerciseLibrary);
+  const scope = active === 'screen-exercise-detail' ? (_exdCatalog ? 'catalog' : 'mine') : (exerciseLibraryHasTabs() ? _exerciseLibrary : 'mine');
   const frame = {screen:active, state:{..._referenceState},scroll:active === 'screen-exercise-detail' ? $('exd-body').scrollTop : exercisesScroll.scrollTop};
   if (active === 'screen-exercise-detail') Object.assign(frame,{exerciseId:_detailExerciseId,returnScreen:_exdReturnScreen,catalog:_exdCatalog});
   else if (active === 'screen-muscle-detail') Object.assign(frame,{muscleId:_msdMuscleId,returnScreen:_msdReturnScreen});
@@ -10171,10 +10033,11 @@ function openOrphanRemapSheet() {
     sheet.querySelectorAll(".orphan-pick").forEach(btn => {
       btn.addEventListener("click", () => {
         const oldId = btn.dataset.old;
+        backdrop.remove();
         openExercisePicker(newId => {
           const n = DATA.remapExercise(userId, oldId, newId);
           if (n) { SyncQueue.push("exercise:remap", { from: oldId, to: newId }); showToast("Перепривязано"); }
-          rebuild();
+          initStatsScreen();
         }, null);
       });
     });
@@ -10182,69 +10045,10 @@ function openOrphanRemapSheet() {
   rebuild();
 }
 
-function openStatsExPicker(exWithHist, allEx, userId) {
-  const existing = $("stats-ex-picker");
-  if (existing) existing.remove();
-
-  const backdrop = document.createElement("div");
-  backdrop.id = "stats-ex-picker";
-  backdrop.className = "stats-picker-backdrop";
-
-  const sheet = document.createElement("div");
-  sheet.className = "stats-picker-sheet";
-  sheet.innerHTML = `<div class="stats-picker-handle"></div><div class="stats-picker-title">Выбрать упражнение</div>`;
-
-  const list = document.createElement("div");
-  list.className = "stats-picker-list";
-  exWithHist.forEach(({id, count}) => {
-    const ex = allEx.find(e=>e.id===id);
-    const name = ex?.name||id;
-    const item = document.createElement("button");
-    item.className = "stats-picker-item" + (id===_statsSelectedExId?" selected":"");
-    item.innerHTML = `${escHtml(name)}<span class="stats-picker-item-count">${count}×</span>${id===_statsSelectedExId?`<svg class="stats-picker-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`:""}`;
-    item.addEventListener("click", () => { _statsSelectedExId=id; backdrop.remove(); initStatsScreen(); });
-    list.appendChild(item);
-  });
-  sheet.appendChild(list);
-  backdrop.appendChild(sheet);
-  document.body.appendChild(backdrop);
-  requestAnimationFrame(() => backdrop.classList.add("open"));
-
-  const closeSheet = () => { backdrop.classList.remove("open"); setTimeout(() => backdrop.remove(), 250); };
-  backdrop.addEventListener("click", e => { if (e.target === backdrop) closeSheet(); });
-
-  // Свайп вниз по шторке — drag-to-dismiss
-  let sy = 0, sdy = 0, sdragging = false;
-  sheet.addEventListener("touchstart", e => {
-    if (e.touches.length !== 1) return;
-    sy = e.touches[0].clientY; sdy = 0; sdragging = true;
-    sheet.style.transition = "none";
-  }, { passive: true });
-  sheet.addEventListener("touchmove", e => {
-    if (!sdragging) return;
-    const dy = e.touches[0].clientY - sy;
-    if (dy > 0 && list.scrollTop <= 0) {
-      sdy = dy;
-      sheet.style.transform = `translateY(${dy}px)`;
-    } else {
-      sdy = 0;
-      sheet.style.transform = "";
-    }
-  }, { passive: true });
-  const onSheetEnd = () => {
-    if (!sdragging) return;
-    sdragging = false;
-    if (sdy > 80) {
-      sheet.style.transition = "transform 0.22s ease";
-      sheet.style.transform = `translateY(${sheet.offsetHeight}px)`;
-      closeSheet();
-    } else {
-      sheet.style.transition = "";
-      sheet.style.transform = "";
-    }
-  };
-  sheet.addEventListener("touchend", onSheetEnd);
-  sheet.addEventListener("touchcancel", onSheetEnd);
+function openStatsExPicker(exWithHist) {
+  const eligible = new Set(exWithHist.map(ex => ex.id));
+  openExercisePicker(id => { _statsSelectedExId = id; initStatsScreen(); }, _statsSelectedExId,
+    {canSelect:id => eligible.has(id),confirmLabel:'Выбрать упражнение'});
 }
 
 $("stats-back-btn").addEventListener("click", () => goBackScreen("menu"));
@@ -11103,8 +10907,8 @@ function tplAddExercise(id) {
     const userId = DATA.getCurrentUser();
     const tpl = DATA.getTemplate(userId, id);
     if (!tpl) return;
-    const name = DATA.getVisibleExercises(userId).find(e => e.id === exId)?.name;
-    tpl.exercises.push({ exerciseId: exId, name });
+    const definition = DATA.getVisibleExercises(userId).find(e => e.id === exId);
+    tpl.exercises.push({ exerciseId: exId, name:definition?.name, ...executionForExercise(userId,definition) });
     DATA.updateTemplateExercises(userId, id, tpl.exercises);
     SyncQueue.push("template:update", { templateId: id });
     renderTemplatesList();
@@ -11151,8 +10955,8 @@ function tplSwapExercise(id, idx) {
   const tpl = DATA.getTemplate(userId, id);
   if (!tpl || !tpl.exercises[idx]) return;
   openExercisePicker(newId => {
-    const name = DATA.getVisibleExercises(userId).find(e => e.id === newId)?.name;
-    tpl.exercises[idx] = { exerciseId: newId, name };
+    const definition = DATA.getVisibleExercises(userId).find(e => e.id === newId);
+    tpl.exercises[idx] = { exerciseId: newId, name:definition?.name, ...executionForExercise(userId,definition) };
     DATA.updateTemplateExercises(userId, id, tpl.exercises);
     SyncQueue.push("template:update", { templateId: id });
     renderTemplatesList();
@@ -11469,7 +11273,7 @@ if ("serviceWorker" in navigator) {
     if (typeof _tplDrag !== "undefined" && _tplDrag) return true; // тащим упражнение в шаблоне
     // Спрятанная (display:none) шторка-справочник — та, из которой мы ушли в
     // карточку мышцы, — НЕ должна блокировать свайп-назад: она видимо закрыта.
-    const sheets = document.querySelectorAll(".modal-backdrop.open, .picker-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open, .sg-sheet[open]");
+    const sheets = document.querySelectorAll(".modal-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open, .sg-sheet[open]");
     for (const s of sheets) { if (s.style.display !== "none") return true; }
     return false;
   }

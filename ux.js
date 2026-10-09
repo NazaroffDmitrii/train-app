@@ -1,6 +1,6 @@
 /* Screen and overlay accessibility, shared by static and dynamic UI. */
 const UX = (() => {
-  const overlaySelector='.modal-backdrop,.picker-backdrop,.bottom-sheet-backdrop,.stats-picker-backdrop';
+  const overlaySelector='.modal-backdrop,.bottom-sheet-backdrop,.stats-picker-backdrop';
   let lastScreen=null,lastOverlay=null,restoreFocus=null,isolated=new Set(),serial=0;
   const name=(el,label)=>{if(!el.getAttribute('aria-label')&&!el.getAttribute('aria-labelledby'))el.setAttribute('aria-label',label);};
   function sync(){
@@ -16,7 +16,7 @@ const UX = (() => {
     }
     if(top){let branch=top;while(branch.parentElement&&branch!==document.body){for(const sibling of branch.parentElement.children)if(sibling!==branch&&!['SCRIPT','STYLE','LINK'].includes(sibling.tagName)){sibling.inert=true;isolated.add(sibling);}branch=branch.parentElement;}}
     for(const el of document.querySelectorAll('button[id$="back-btn"]'))name(el,'Назад');
-    const names={'run-dur-h':'Время бега: часы','run-dur-m':'Время бега: минуты','run-dur-s':'Время бега: секунды','run-distance':'Дистанция, км','run-cadence':'Каденс, шагов в минуту','run-hr':'Средний пульс, ударов в минуту','workout-name-input':'Название тренировки','auth-email':'Email','auth-password':'Пароль','auth-name':'Имя','exercises-search':'Поиск упражнения','picker-search':'Поиск упражнения для тренировки'};
+    const names={'run-dur-h':'Время бега: часы','run-dur-m':'Время бега: минуты','run-dur-s':'Время бега: секунды','run-distance':'Дистанция, км','run-cadence':'Каденс, шагов в минуту','run-hr':'Средний пульс, ударов в минуту','workout-name-input':'Название тренировки','auth-email':'Email','auth-password':'Пароль','auth-name':'Имя','exercises-search':'Поиск упражнения'};
     for(const [id,label]of Object.entries(names)){const el=document.getElementById(id);if(el)name(el,label);}
     for(const field of document.querySelectorAll('.ex-form-field')){
       const label=field.querySelector('label'),input=field.querySelector('input,textarea,select');

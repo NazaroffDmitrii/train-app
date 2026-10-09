@@ -1709,124 +1709,6 @@ dialog.history-backups::backdrop { background: #0009; backdrop-filter: blur(6px)
 .run-field.val-new-record .run-time-sep { color: var(--amber); }
 
 /* ============ Exercise picker ============ */
-.picker-backdrop {
-  position: fixed; inset: 0;
-  background: rgba(5, 5, 10, 0.55); backdrop-filter: blur(5px);
-  z-index: 20;
-  opacity: 0; pointer-events: none;
-  transition: opacity 0.25s ease;
-}
-.picker-backdrop.open { opacity: 1; pointer-events: auto; }
-
-.picker-sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
-  height: 80dvh;
-  background: var(--panel);
-  border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg);
-  border-top: 1px solid var(--border-subtle);
-  display: flex; flex-direction: column;
-  transform: translateY(100%);
-  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.picker-backdrop.open .picker-sheet { transform: translateY(0); }
-
-.picker-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border-strong); margin: 12px auto 0; flex: none; }
-.picker-search-wrap { padding: 12px 16px; flex: none; }
-.picker-search {
-  width: 100%; padding: 11px 16px;
-  background: var(--panel-raised); border: 1px solid var(--border-subtle);
-  border-radius: 14px; font-size: 15px; color: var(--text-primary);
-  transition: border-color 0.15s ease;
-}
-.picker-search:focus { border-color: var(--accent); }
-
-/* Вкладки-категории (п.5) — горизонтальная лента чипов. */
-.picker-tabs {
-  display: flex; gap: 7px; flex: none;
-  padding: 2px 16px 12px; overflow-x: auto;
-  -webkit-overflow-scrolling: touch; scrollbar-width: none;
-}
-.picker-tabs::-webkit-scrollbar { display: none; }
-/* Табы пикера — как вкладки-категории во вкладке «Упражнения» (обводка цветом). */
-.picker-tab {
-  flex: none; white-space: nowrap;
-  padding: 7px 13px; border-radius: 14px;
-  background: var(--panel-raised);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--tab-color, transparent);
-  color: var(--text-secondary); font-size: 13px; font-weight: 600;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-.picker-tab.active { background: var(--accent); border-color: transparent; color: #fff; }
-
-.picker-list {
-  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
-  padding: 6px 16px calc(16px + var(--safe-bottom));
-}
-
-/* Заголовок группы — как .ex-group во вкладке «Упражнения» (цветная точка). */
-.picker-section-label {
-  display: flex; align-items: center; gap: 8px;
-  padding: 16px 6px 8px;
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.1em; color: var(--text-tertiary);
-}
-.picker-section-label:first-child { padding-top: 4px; }
-.picker-section-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.picker-section-count { font-size: 11px; font-weight: 700; color: var(--text-tertiary); opacity: 0.65; }
-
-/* Строка пикера — как карточка .ex-row (цветная левая полоса категории). */
-.picker-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 14px; cursor: pointer;
-  background: var(--panel); border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--cat-color, transparent);
-  border-radius: var(--radius-md); margin-bottom: 8px;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-.picker-item:active { background: var(--panel-raised); }
-.picker-item-icon {
-  width: 34px; height: 34px; border-radius: 10px; flex: none;
-  background: var(--accent-soft); color: var(--accent-bright);
-  display: flex; align-items: center; justify-content: center; font-size: 15px;
-}
-.picker-item-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; }
-.picker-item-cat { font-size: 12px; color: var(--text-tertiary); margin-top: 1px; }
-.picker-item.selected { border-color: var(--accent); background: var(--accent-soft); }
-.picker-item.selected .picker-item-name { color: var(--accent-bright); }
-.picker-item-check { margin-left: auto; flex: none; color: var(--accent-bright); }
-.picker-item-group-badge {
-  flex: none; font-size: 11px; font-weight: 700; color: var(--text-tertiary);
-  background: var(--panel-raised); border-radius: 8px; padding: 2px 7px;
-}
-/* Раскрытие группы в пикере — ОДНА цельная карточка (тот же приём, что и во
-   вкладке «Упражнения»): рамку/фон/акцентную полосу несёт сама обёртка, а
-   шапка и состав внутри — прозрачные. Раньше это были два отдельных бокса,
-   сшитых внахлёст (margin-top:-1px) — на стыке акцентной полосы был виден
-   разрыв; теперь стыковаться нечему, полоса непрерывная. */
-.picker-item-group-wrap { margin-bottom: 8px; }
-.picker-item-group-wrap.expanded {
-  background: var(--panel-hi);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--cat-color, transparent);
-  border-radius: var(--radius-md);
-}
-.picker-item-group-wrap.expanded .picker-item-group {
-  background: transparent; border: none; border-radius: 0; margin-bottom: 0;
-}
-.picker-item-group-members:empty { display: none; }
-.picker-item-group-wrap.expanded .picker-item-group-members {
-  background: transparent; border: none; border-radius: 0;
-  padding: 2px 10px 10px;
-  display: flex; flex-direction: column; gap: 6px;
-}
-/* Среднее между отдельной пилюлей и плоской строкой — свои мягкие уголки и
-   лёгкий фон, но без рамки/тени — плавный переход от капсулы группы. */
-.picker-item-group-members .picker-item {
-  background: var(--panel); border: none; border-radius: var(--radius-sm);
-  padding: 10px 12px; margin-bottom: 0;
-}
-
 /* ============ Screen: detail view ============ */
 .screen-detail { display: flex; flex-direction: column; background: var(--bg-base); }
 
@@ -3026,13 +2908,6 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 .stats-picker-backdrop.open .stats-picker-sheet { transform:translateY(0); }
 .stats-picker-handle { width:36px; height:4px; border-radius:2px; background:var(--border-strong); margin:0 auto 12px; }
 .stats-picker-title { font-size:12px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-tertiary); padding:0 20px 10px; border-bottom:1px solid var(--border-subtle); }
-.stats-picker-list { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:8px 0; }
-.stats-picker-item { display:flex; align-items:center; width:100%; text-align:left; padding:13px 20px; font-size:15px; font-weight:500; color:var(--text-primary); border-bottom:1px solid var(--border-subtle); transition:background 0.12s; }
-.stats-picker-item:last-child { border-bottom:none; }
-.stats-picker-item:active { background:var(--panel-raised); }
-.stats-picker-item.selected { color:var(--accent-bright); }
-.stats-picker-item-check { margin-left:auto; width:16px; height:16px; color:var(--accent-bright); }
-.stats-picker-item-count { font-size:12px; color:var(--text-tertiary); margin-left:6px; }
 
 /* ── Анимации центральной кнопки ── */
 @keyframes startPulse {
@@ -3746,7 +3621,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #exercises-scroll .ex-row-wrap-group:not(.expanded) > .ex-row-group { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),#0e0e16; border-color:color-mix(in srgb,var(--cat-color) 28%,transparent); }
 #exercises-scroll .ex-row-wrap-group.expanded { box-shadow:none; border:1px solid color-mix(in srgb,var(--cat-color) 28%,transparent); background:linear-gradient(180deg,color-mix(in srgb,var(--cat-color) 14%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent)),#0e0e16; }
 #exercises-scroll .expanded > .ex-row-group { background:transparent; border:0; border-radius:0; }
-#exercises-scroll .expanded > .ex-row-group-members { position:relative; z-index:1; margin:0; padding:0 12px 10px; background:transparent; border:0; border-radius:0; }
+#exercises-scroll .expanded > .ex-row-group-members { position:relative; z-index:1; margin:0; gap:0; padding:0 12px 10px; background:transparent; border:0; border-radius:0; }
 .exercise-variants-label { color:#a0a0b4; font-size:12px; padding:10px 2px 6px; }
 #exercises-scroll .ex-row-wrap-nested { margin:0 0 5px; border-radius:12px; }
 #exercises-scroll .ex-row-wrap-nested .ex-row { min-height:42px; padding:7px 9px; border:0; background:#ffffff0a; border-radius:12px; }
@@ -3763,7 +3638,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-exercises button:focus-visible { outline:2px solid #a99cf5; outline-offset:2px; }
 .exercise-library-body { flex:1; min-height:0; display:flex; flex-direction:column; background:linear-gradient(180deg,var(--library-top),var(--library-bottom) 75%); border-radius:0 16px 0 0; }
 .library-catalog .exercise-library-body { border-radius:16px 0 0 0; }
-.constructor-catalog .exercise-library-body { border-radius:0; }
+.constructor-catalog:not(.exercise-selection) .exercise-library-body { border-radius:0; }
 .exercise-library-tabs { touch-action:pan-y; }
 .exercise-movement-tabs, #ex-cat-tabs { touch-action:pan-x; cursor:grab; overscroll-behavior-x:contain; }
 .exercise-movement-tabs.drag-scrolling, #ex-cat-tabs.drag-scrolling { cursor:grabbing; }
@@ -3887,29 +3762,29 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .reference-detail-edit svg { width:17px; height:17px; }
 
 /* Expanded variations: one card, compact choices, parameters for the selected variant. */
-#exercises-scroll .expanded > .ex-row-group { align-items:flex-start; padding:13px 13px 8px; }
+#exercises-scroll .expanded > .ex-row-group { align-items:flex-start; padding:13px 13px 4px; }
 #exercises-scroll .expanded > .ex-row-group .ex-row-group-badge { display:none; }
 #exercises-scroll .expanded > .ex-row-group .ex-row-chevron { margin-top:3px; }
 .exercise-moves.expanded { gap:7px; margin-top:8px; }
 .exercise-moves.expanded .exercise-move { align-items:flex-start; color:#aaaabd; line-height:1.45; }
 .exercise-moves.expanded .exercise-move svg { margin-top:2px; color:color-mix(in srgb,var(--cat-color,#a99cf5) 55%,#fff); }
-.exercise-variants-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 1px 7px; color:#9898ad; font-size:12px; }
-.exercise-variants-heading button { padding:4px 0 4px 8px; color:color-mix(in srgb,var(--cat-color,#a99cf5) 45%,#eee); font:inherit; }
+.exercise-variants-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 1px 6px; color:#9898ad; font-size:12px; }
+.exercise-variants-heading button { padding:0 0 0 8px; color:color-mix(in srgb,var(--cat-color,#a99cf5) 45%,#eee); font:inherit; }
 #exercises-scroll .ex-row-wrap-nested { margin-bottom:6px; }
 #exercises-scroll .ex-row-wrap-nested .ex-row { gap:7px; min-height:44px; padding:5px 7px 5px 10px; border:1px solid transparent; background:linear-gradient(110deg,#ffffff08,#ffffff03),#191923; }
 #exercises-scroll .ex-row-wrap-nested.variant-selected .ex-row { border-color:color-mix(in srgb,var(--cat-color) 40%,transparent); background:linear-gradient(110deg,color-mix(in srgb,var(--cat-color) 20%,transparent),color-mix(in srgb,var(--cat-color) 6%,transparent)),#191923; }
 #exercises-scroll .variant-select { text-align:left; width:100%; font:inherit; color:inherit; line-height:1.35; }
-.variant-open { width:30px; height:30px; flex:none; border-radius:50%; display:grid; place-items:center; background:#ffffff08; color:#b0b0c3; }
+.variant-open { width:26px; height:30px; flex:none; display:grid; place-items:center; background:transparent; color:#65657a; }
 .variant-open svg { width:18px; height:18px; }
-.variant-selected .variant-open { background:color-mix(in srgb,var(--cat-color) 23%,transparent); color:#eee; }
+.variant-selected .variant-open { color:#9292a6; }
 .ex-row-wrap-nested .exercise-ago { font-size:10px; }
-.execution-controls { display:flex; flex-direction:column; gap:9px; padding:8px 0 2px; }
+.execution-controls { display:flex; flex-direction:column; gap:6px; padding:4px 0 0; }
 .execution-parameter { display:flex; align-items:center; flex-wrap:wrap; gap:7px 10px; }
 .execution-label { color:#9696aa; font-size:12px; overflow-wrap:anywhere; }
 .execution-options { display:flex; flex-wrap:wrap; gap:5px; min-width:0; }
 .execution-option { border:1px solid transparent; border-radius:10px; background:#ffffff07; color:#b5b5c8; padding:6px 10px; font-size:12px; line-height:1.3; overflow-wrap:anywhere; max-width:100%; }
 .execution-option.selected { color:#fff; border-color:color-mix(in srgb,var(--cat-color,#a99cf5) 45%,transparent); background:color-mix(in srgb,var(--cat-color,#a99cf5) 20%,#171720); }
-.execution-configure { padding:9px 0 2px; color:#9995ae; font-size:11px; text-align:left; }
+.execution-configure { padding:4px 0; color:#9995ae; font-size:11px; text-align:left; }
 .execution-detail .execution-controls { padding-top:0; }
 .execution-summary { display:flex; flex-wrap:wrap; gap:5px 12px; color:#9494aa; font-size:12px; line-height:1.5; padding:0 0 10px; }
 .execution-summary b { color:#c4c4d6; font-weight:500; }
@@ -4567,18 +4442,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     <button class="modal-option modal-option-full danger" id="delete-account-btn" type="button" style="display:none">
       <span class="modal-option-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg></span><span>Удалить аккаунт</span>
     </button>
-  </div>
-
-  <!-- ===== Пикер упражнений ===== -->
-  <div class="picker-backdrop" id="picker-backdrop">
-    <div class="picker-sheet">
-      <div class="picker-handle"></div>
-      <div class="picker-search-wrap">
-        <input class="picker-search" id="picker-search" placeholder="Поиск упражнения…" type="text">
-      </div>
-      <div class="picker-tabs" id="picker-tabs"></div>
-      <div class="picker-list" id="picker-list"></div>
-    </div>
   </div>
 
   <!-- ===== RPE шторка ===== -->
