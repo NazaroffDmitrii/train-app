@@ -3828,7 +3828,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-exercise-reference.reference-movement .exercises-header-top { position:relative; display:grid; grid-template-columns:38px minmax(0,1fr) 38px; gap:10px; align-items:start; width:100%; max-width:612px; margin-inline:auto; }
 #screen-exercise-reference.reference-movement .reference-header-heading { position:relative; padding-bottom:36px; z-index:1; }
 #screen-exercise-reference.reference-movement .exercises-header-title { margin:0; font-size:23px; line-height:1.34; font-weight:500; letter-spacing:-.35px; text-wrap:pretty; color:var(--movement-text); }
-#exercise-reference-type { display:inline-flex; margin-top:8px; padding:4px 8px; border-radius:8px; background:var(--movement-group); color:var(--movement-group-text); font-size:11px; line-height:1.4; }
+.reference-header-meta { display:flex; align-items:center; flex-wrap:wrap; gap:8px; width:calc(100% + 48px); margin-top:10px; }
+.reference-header-meta .movement-group-chip { min-height:31px; border:1px solid var(--movement-card-border); font-size:13px; line-height:1.3; }
 #screen-exercise-reference.reference-movement #exercise-reference-back { position:relative; z-index:2; color:var(--movement-accent); background:var(--movement-circle); }
 #exercise-reference-connector { position:absolute; left:calc(var(--movement-rail) - var(--movement-inset)); bottom:0; width:calc(var(--movement-inset) - var(--movement-rail)); height:36px; color:var(--movement-line); overflow:visible; pointer-events:none; }
 #exercise-reference-edit { grid-column:3; grid-row:1; position:relative; width:38px; height:38px; padding:0; border:1px solid #ffffff12; border-radius:50%; background:var(--movement-circle); color:var(--movement-accent); display:grid; place-items:center; z-index:2; }
@@ -3872,13 +3873,45 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .movement-exercise-toggle[data-removal-pending] { border-color:var(--movement-accent); color:var(--movement-accent); background:var(--movement-card); font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; }
 @media(pointer:coarse) { .movement-exercise-toggle::before { content:""; position:absolute; inset:-8px -12px -8px -4px; } }
 .movement-empty { grid-column:1/-1; margin:0; padding:12px 0; font-size:13px; line-height:1.5; color:var(--movement-muted); }
+.muscle-tree .movement-branch { margin-bottom:26px; }
+.muscle-tree .movement-exercises { margin-bottom:0; }
+.muscle-tree .movement-label { font-size:12px; letter-spacing:.055em; }
+.muscle-tree .movement-section-row { margin-bottom:8px; }
+.muscle-bundles { margin-top:0; }
+.muscle-bundles .movement-muscle-chip { font-size:13px; }
+.muscle-anatomy summary { list-style:none; cursor:pointer; }
+.muscle-anatomy summary::-webkit-details-marker { display:none; }
+.muscle-anatomy summary > svg { width:15px; height:15px; flex:none; color:var(--movement-muted); transform:rotate(90deg); }
+.muscle-anatomy details[open] > summary > svg { transform:rotate(-90deg); }
+.muscle-anatomy-copy { color:var(--movement-text); font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+.muscle-anatomy-copy strong,.muscle-anatomy-copy b { font-weight:600; }
+.muscle-anatomy-copy i,.muscle-anatomy-copy em { font-style:italic; }
+.muscle-anatomy-copy p { margin:0 0 8px; }
+.muscle-anatomy-copy ul,.muscle-anatomy-copy ol { margin:0; padding-left:19px; }
+.muscle-anatomy-copy li::marker { color:var(--movement-muted); }
+.muscle-anatomy-copy li + li { margin-top:8px; }
+.muscle-anatomy-copy :is(li,ul,ol) > ul { margin-top:6px; }
+.muscle-anatomy-copy > b { display:block; margin:14px 0 6px; }
+.muscle-anatomy-copy > b:first-child { margin-top:0; }
+.muscle-anatomy-copy > div:empty { display:none; }
+.muscle-movement-links { display:grid; gap:8px; }
+.muscle-movement-link { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 11px; border:1px solid var(--movement-card-border); border-radius:12px; background:var(--movement-card); color:var(--movement-text); text-align:left; text-decoration:none; font-size:14px; line-height:1.5; font-weight:500; }
+.muscle-movement-link span { min-width:0; overflow-wrap:anywhere; }
+.muscle-movement-link svg { width:16px; height:16px; flex:none; color:var(--movement-accent); }
+.muscle-tree .movement-tab { font-size:13px; line-height:1.3; }
+.muscle-tree .movement-exercise-open b { line-height:1.5; }
+.muscle-tree .movement-exercise-footer { grid-template-rows:28px 34px; }
+.muscle-tree .movement-exercise-group { font-size:12px; line-height:1.3; }
+.muscle-tree .movement-exercise-ago { font-size:12px; line-height:1.4; }
 #screen-exercise-reference.reference-movement button:focus-visible { outline:2px solid var(--movement-accent); outline-offset:3px; }
 @media(max-width:370px) {
   #screen-exercise-reference.reference-movement { --movement-inset:57px; }
   #screen-exercise-reference.reference-movement .exercises-header-top { gap:5px; }
   #screen-exercise-reference.reference-movement .exercises-header-title { font-size:21px; }
+  .reference-header-meta { width:calc(100% + 43px); gap:6px; }
   .movement-tree { padding-right:13px; }.movement-tab { padding-inline:9px; }.movement-exercise-card { padding-inline:10px; }
 }
+@media(max-width:340px) { .muscle-tree .movement-exercise-grid { grid-template-columns:minmax(0,1fr); grid-auto-rows:minmax(132px,auto); } }
 .reference-name-link:hover, [data-reference-kind]:hover { color:#fff; }
 .reference-name-link:hover { text-decoration:underline; text-underline-offset:3px; }
 .reference-info { padding:13px; margin-bottom:12px; border:1px solid #ffffff12; border-radius:16px; background:#ffffff08; }
@@ -4281,7 +4314,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     <div class="exercises-header">
       <div class="exercises-header-top">
         <button type="button" class="btn-chip" id="exercise-reference-back" aria-label="Назад к предыдущему разделу"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>
-        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><span id="exercise-reference-type" hidden></span><svg id="exercise-reference-connector" viewBox="0 0 29 44" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><path d="M29 0V8C29 25 0 24 0 38V44" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg></div>
+        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><div id="exercise-reference-meta" class="reference-header-meta" hidden><span id="exercise-reference-type" class="movement-group-chip" hidden></span><button type="button" id="exercise-reference-group" class="movement-group-chip" data-ref-action="group" hidden></button></div><svg id="exercise-reference-connector" viewBox="0 0 29 44" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><path d="M29 0V8C29 25 0 24 0 38V44" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg></div>
         <button type="button" id="exercise-reference-edit" data-ref-action="edit-item" aria-label="Редактировать движение" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         <svg id="exercise-reference-number" viewBox="0 0 232 180" role="img" aria-label="Количество упражнений" hidden><text id="exercise-reference-count" x="226" y="144" text-anchor="end"></text></svg>
         <span class="exd-source" id="exercise-reference-scope" hidden></span>
