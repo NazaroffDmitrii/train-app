@@ -7662,9 +7662,13 @@ function referenceMovementHtml(data) {
       pending ? `Отменить удаление: ${ex.name}. Осталось ${pending.remaining} с` : `${added ? 'Убрать из моих' : 'Добавить в мои'}: ${ex.name}`,
       pending ? String(pending.remaining) : referenceIcon('check'),
       `class="movement-exercise-toggle" aria-pressed="${added}" title="${pending ? 'Отменить удаление' : added ? 'Убрать из моих' : 'Добавить в мои'}"${pending ? ` data-removal-pending data-exercise-name="${escHtml(ex.name)}"` : ''}`);
+    const categoryBody = `${referenceIcon('groups')}<span>${escHtml(ex.cat || 'Без группы')}</span>`;
+    const category = ex.cat ? referenceAction('group',ex.cat,`Группа: ${ex.cat}`,categoryBody,
+      `class="movement-group-chip movement-exercise-group" title="${escHtml(ex.cat)}" data-ref-scope="${scope}"`)
+      : `<span class="movement-group-chip movement-exercise-group">${categoryBody}</span>`;
     return '<article class="movement-exercise-card">'
       + referenceAction('exercise', ex.id, ex.name, `<b>${escHtml(ex.name)}</b>`, `class="movement-exercise-open" title="${escHtml(ex.name)}"`)
-      + `<div class="movement-exercise-footer"><span class="movement-group-chip movement-exercise-group" title="${escHtml(ex.cat || 'Без группы')}">${escHtml(ex.cat || 'Без группы')}</span>${membership}`
+      + `<div class="movement-exercise-footer">${category}${membership}`
       + `<span class="movement-exercise-ago">${escHtml(exerciseAgo(ex.id) || 'Ещё не выполнялось')}</span></div></article>`;
   }).join('');
   return `<div class="movement-tree"><section class="movement-branch"><span class="movement-node">${referenceIcon('muscles')}</span>`
@@ -7721,9 +7725,9 @@ function openExerciseReference() {
   _referenceState = {page:'hub', scope:_exerciseLibrary, name:'', query:'', picker:null, scrollTop:0, owner:Auth.userId(), userId:DATA.getCurrentUser()};
   goToScreen('exerciseReference');
 }
-function referenceNavigate(page, name = '') {
+function referenceNavigate(page, name = '', scope = _referenceState.scope) {
   _referenceTrail.push({state:{..._referenceState,scrollTop:$('exercise-reference-content').scrollTop}});
-  Object.assign(_referenceState, {page,name,query:'',picker:null,scrollTop:0,exerciseScope:undefined});
+  Object.assign(_referenceState, {page,name,scope,query:'',picker:null,scrollTop:0,exerciseScope:undefined});
   renderExerciseReference();
 }
 function referenceBack() {
@@ -7864,12 +7868,21 @@ function renderExerciseReference() {
     } catch(error) { name.value = s.name; showToast('Ошибка сохранения: ' + error.message); }
   };
 }
+// Anchor the fade to the header's actual height, including wrapped titles and safe areas.
+if (window.ResizeObserver) {
+  const screen = $('screen-exercise-reference');
+  new ResizeObserver(([entry]) => screen.style.setProperty('--movement-header-end',`${entry.target.offsetHeight}px`))
+    .observe(screen.querySelector('.exercises-header'));
+}
 $('screen-exercise-reference').addEventListener('click', async event => {
   const button = event.target.closest('[data-ref-action]');
   if (!button) return;
   const s = _referenceState, action = button.dataset.refAction, value = button.dataset.refValue;
   if (action === 'navigate') { referenceNavigate(value); return; }
-  if (['group','movement','muscle'].includes(action)) { referenceNavigate(action,value); return; }
+  if (['group','movement','muscle'].includes(action)) {
+    const scope = ['mine','catalog'].includes(button.dataset.refScope) ? button.dataset.refScope : s.scope;
+    referenceNavigate(action,value,scope); return;
+  }
   if (action === 'exercise') { s.scrollTop = $('exercise-reference-content').scrollTop; openExerciseDetail(value,'exerciseReference'); return; }
   if (s.page === 'movement' && action === 'movement-scope') {
     if (!['mine','catalog'].includes(value)) return;
