@@ -3920,6 +3920,40 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .reference-detail-edit { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; padding:11px; margin-bottom:12px; border:1px solid #a99cf550; border-radius:13px; color:#c8bfff; font-size:13px; }
 .reference-detail-edit svg { width:17px; height:17px; }
 
+/* Group detail shares the muscle/movement header and connected sections. */
+.group-detail-meta{gap:7px}
+.group-detail-meta .movement-group-chip{gap:6px;padding:6px 9px;color:var(--movement-chip-text)}
+.group-detail-meta .movement-group-chip svg{color:var(--cat-color);width:13px;height:13px}
+.group-detail-meta .movement-group-chip b{font-weight:500;color:var(--movement-text)}
+.group-detail-tree .movement-branch{margin-bottom:24px}
+.group-detail-tree .movement-exercises{margin-bottom:0}
+.group-detail-tree .movement-label{font-size:11px}
+.group-detail-tree .movement-muscle-chips{margin-top:0}
+.group-detail-tree .muscle-movement-links{gap:7px}
+.group-detail-tree .muscle-movement-link{font-size:13px;line-height:1.4;padding:10px 11px}
+.group-detail-tree .movement-section-row{margin-bottom:9px}
+.group-section-heading{width:100%;margin:0}
+.group-section-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:0;color:var(--movement-muted);text-align:left;font:inherit;letter-spacing:inherit;text-transform:inherit}
+.group-section-toggle > svg{width:14px;height:14px;transform:rotate(-90deg)}
+.group-section-toggle[aria-expanded="false"] > svg{transform:rotate(90deg)}
+.group-detail-tree .movement-muscle-chip{font-size:12px;padding:8px 10px}
+.group-show-more{display:flex;align-items:center;gap:5px;padding:9px 0 0;color:var(--movement-accent);font-size:12px;line-height:1.4}
+.group-show-more svg{width:14px;height:14px}
+.group-detail-tree .movement-exercise-grid{grid-auto-rows:minmax(150px,auto)}
+.group-detail-tree .movement-exercise-card{gap:8px}
+.group-detail-tree .movement-exercise-open b{font-size:14px;line-height:1.4}
+.group-detail-tree .movement-exercise-ago{font-size:11px;line-height:1.3}
+.group-detail-tree .movement-exercise-group{background:color-mix(in srgb,var(--cat-color) 16%,var(--movement-group));color:var(--movement-group-text)}
+.group-detail-tree .movement-exercise-group svg{color:var(--cat-color)}
+.group-detail-tree .movement-exercise-toggle svg{width:14px;height:14px}
+#screen-exercise-reference.reference-group-page #exercise-reference-number text{stroke:var(--cat-color)}
+.group-empty-link{margin-top:8px;color:var(--movement-accent);font-size:13px;padding:6px 0}
+@media(max-width:340px){.group-detail-meta .movement-group-chip{font-size:12px;padding-inline:8px}.group-detail-tree .movement-exercise-grid{grid-template-columns:minmax(0,1fr);grid-auto-rows:minmax(132px,auto)}}
+.group-member-edit { display:flex; flex-direction:column; gap:5px; max-width:100%; padding:7px; border:1px solid var(--movement-card-border); border-radius:12px; background:var(--movement-card); }
+.group-member-controls { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.group-member-remove { display:flex; align-items:center; gap:5px; padding:4px 0; color:var(--movement-muted); text-align:left; font-size:11px; }
+.group-member-remove svg { width:15px; height:15px; flex:none; }
+
 /* Expanded variations: one card, compact choices, parameters for the selected variant. */
 #exercises-scroll .expanded > .ex-row-group { align-items:flex-start; padding:13px 13px 4px; }
 #exercises-scroll .expanded > .ex-row-group .ex-row-group-badge { display:none; }
@@ -4019,7 +4053,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .reference-mosaic.ascending.composed:not(.with-create) .lead { grid-column:1/-1; }
 .reference-mosaic.ascending.composed .lead .reference-mosaic-value b { font-size:100px; letter-spacing:-6px; }
 .reference-mosaic.ascending.composed .lead .reference-mosaic-name { font-size:24px; }
-.reference-mosaic-create { grid-column:span 3; min-width:0; min-height:96px; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; gap:12px; padding:13px 12px; border-radius:22px; text-align:left; font-size:13px; font-weight:600; line-height:1.2; color:var(--movement-accent); background:color-mix(in srgb,var(--movement-accent) 12%,var(--movement-card)); border:1px solid color-mix(in srgb,var(--movement-accent) 38%,var(--movement-card-border)); transition:background .18s,transform .18s; }
+.reference-mosaic-create { grid-column:span 3; min-width:0; min-height:96px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:12px; padding:13px 12px; border-radius:22px; text-align:center; font-size:13px; font-weight:600; line-height:1.2; color:var(--movement-accent); background:color-mix(in srgb,var(--movement-accent) 12%,var(--movement-card)); border:1px solid color-mix(in srgb,var(--movement-accent) 38%,var(--movement-card-border)); transition:background .18s,transform .18s; }
 .reference-mosaic-create > span:last-child { max-width:95px; }
 .reference-mosaic-create.wide { flex-direction:row; align-items:center; justify-content:center; min-height:62px; }
 .reference-mosaic-create.wide > span:last-child { max-width:none; }
@@ -4032,7 +4066,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .reference-group-tab span { font-size:11px; opacity:.8; }
 .reference-group-tab.active { background:color-mix(in srgb,var(--cat-color) 19%,var(--movement-card)); color:var(--movement-text); }
 .reference-group-page .reference-page-summary b { color:var(--cat-color); }
-.reference-group-page #exercise-reference-edit { flex:none; width:34px; height:34px; display:grid; place-items:center; border-radius:12px; color:var(--movement-accent); background:var(--movement-chip); }
+.reference-group-page #exercise-reference-edit { width:38px; height:38px; border-radius:50%; }
 .reference-group-page #exercise-reference-edit[aria-pressed="true"] { background:var(--movement-accent); color:var(--movement-circle); }
 .member-mosaic .reference-mosaic-card { min-height:138px; }
 .member-mosaic .reference-mosaic-name { font-size:16px; line-height:1.25; }
@@ -4457,7 +4491,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     <div class="exercises-header">
       <div class="exercises-header-top">
         <button type="button" class="btn-chip" id="exercise-reference-back" aria-label="Назад к предыдущему разделу"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>
-        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><p id="exercise-reference-summary" class="reference-page-summary" aria-live="polite" hidden></p><div id="exercise-reference-meta" class="reference-header-meta" hidden><span id="exercise-reference-type" class="movement-group-chip" hidden></span><button type="button" id="exercise-reference-group" class="movement-group-chip" data-ref-action="group" hidden></button></div><svg id="exercise-reference-connector" viewBox="0 0 29 44" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><path d="M29 0V8C29 25 0 24 0 38V44" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg></div>
+        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><p id="exercise-reference-summary" class="reference-page-summary" aria-live="polite" hidden></p><div id="exercise-reference-meta" class="reference-header-meta" hidden><span id="exercise-reference-type" class="movement-group-chip" hidden></span><button type="button" id="exercise-reference-group" class="movement-group-chip" data-ref-action="group" hidden></button></div><div id="exercise-reference-group-meta" class="reference-header-meta group-detail-meta" hidden></div><svg id="exercise-reference-connector" viewBox="0 0 29 44" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><path d="M29 0V8C29 25 0 24 0 38V44" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg></div>
         <button type="button" id="exercise-reference-edit" data-ref-action="edit-item" aria-label="Редактировать движение" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         <svg id="exercise-reference-number" viewBox="0 0 232 180" role="img" aria-label="Количество упражнений" hidden><text id="exercise-reference-count" x="226" y="144" text-anchor="end"></text></svg>
         <span class="exd-source" id="exercise-reference-scope" hidden></span>
