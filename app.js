@@ -5742,7 +5742,8 @@ function setupExerciseDragScroll(element, axis, enabled = () => true) {
 setupExerciseDragScroll(exercisesScroll,'y',()=>!_constructorCatalog && !_exListEditMode);
 setupExerciseDragScroll($('ex-cat-tabs'),'x');
 setupExerciseDragScroll($('exercise-movement-tabs'),'x');
-setupExerciseDragScroll($('exercise-reference-content'),'y');
+setupExerciseDragScroll($('exercise-reference-content'),'y',()=>!$('screen-exercise-reference').classList.contains('reference-movement'));
+setupExerciseDragScroll($('screen-exercise-reference'),'y',()=>$('screen-exercise-reference').classList.contains('reference-movement'));
 let _cancelExerciseHold = null;
 exercisesScroll.addEventListener('drag-scroll-start',()=>_cancelExerciseHold?.());
 
@@ -7580,14 +7581,11 @@ function referenceMovementExercises(data, scope = _referenceState.exerciseScope 
   if (scope !== s.scope && item && !movement) return [];
   return source.exercises.filter(ex => exerciseMovements(ex).includes(movement?.name || s.name));
 }
-function referenceMovementNumber(item, data) {
-  if (!item) return '';
-  const shared = DATA.atlasMovements();
-  const index = shared.findIndex(x => x.id === item.id);
-  if (index >= 0) return String(index + 1);
-  const personal = data.movements.filter(x => !shared.some(m => m.id === x.id));
-  const ownIndex = personal.findIndex(x => x.id === item.id);
-  return ownIndex >= 0 ? String(shared.length + ownIndex + 1) : '';
+function referenceMovementCount(data) {
+  return referenceMovementExercises(data).length;
+}
+function referenceScrollElement() {
+  return $(_referenceState.page === 'movement' ? 'screen-exercise-reference' : 'exercise-reference-content');
 }
 const _movementRemovals = new Map();
 function movementRemovalCurrent(pending) {
@@ -7605,7 +7603,7 @@ function toggleMovementRemoval(id) {
   const existing = _movementRemovals.get(id);
   if (existing) {
     clearTimeout(existing.timer); _movementRemovals.delete(id);
-    _referenceState.scrollTop = $('exercise-reference-content').scrollTop;
+    _referenceState.scrollTop = referenceScrollElement().scrollTop;
     renderExerciseReference(); return;
   }
   const s = _referenceState;
@@ -7616,14 +7614,14 @@ function toggleMovementRemoval(id) {
       || !referenceMovementExercises(referenceData(),'mine').some(ex => ex.id === id)) {
       _movementRemovals.delete(id);
       if (_referenceState === s && $('screen-exercise-reference').classList.contains('active')) {
-        s.scrollTop = $('exercise-reference-content').scrollTop; renderExerciseReference();
+        s.scrollTop = referenceScrollElement().scrollTop; renderExerciseReference();
       }
       return;
     }
     pending.remaining = Math.max(0,Math.ceil((pending.deadline - Date.now()) / 1000));
     if (!pending.remaining) {
       _movementRemovals.delete(id);
-      s.scrollTop = $('exercise-reference-content').scrollTop;
+      s.scrollTop = referenceScrollElement().scrollTop;
       toggleExerciseLibrary(id); renderExerciseReference(); return;
     }
     $('exercise-reference-content').querySelectorAll('[data-removal-pending]').forEach(button => {
@@ -7635,7 +7633,7 @@ function toggleMovementRemoval(id) {
     pending.timer = setTimeout(tick,Math.max(1,pending.deadline - Date.now() - (pending.remaining - 1) * 1000));
   };
   pending.timer = setTimeout(tick,1000);
-  s.scrollTop = $('exercise-reference-content').scrollTop;
+  s.scrollTop = referenceScrollElement().scrollTop;
   renderExerciseReference();
 }
 function referenceMovementHtml(data) {
@@ -7726,7 +7724,7 @@ function openExerciseReference() {
   goToScreen('exerciseReference');
 }
 function referenceNavigate(page, name = '', scope = _referenceState.scope) {
-  _referenceTrail.push({state:{..._referenceState,scrollTop:$('exercise-reference-content').scrollTop}});
+  _referenceTrail.push({state:{..._referenceState,scrollTop:referenceScrollElement().scrollTop}});
   Object.assign(_referenceState, {page,name,scope,query:'',picker:null,scrollTop:0,exerciseScope:undefined});
   renderExerciseReference();
 }
@@ -7831,11 +7829,17 @@ function renderExerciseReference() {
   screen.classList.toggle('library-catalog', movement ? (s.exerciseScope || s.scope) === 'catalog' : !mine);
   screen.classList.toggle('reference-leaf', leaf);
   const item = movement ? data.movements.find(x => x.name === s.name) : null;
+  const type = $('exercise-reference-type');
+  type.hidden = !(movement && item);
+  type.textContent = item ? (item.type === 'Опция' ? 'Опциональное' : 'Базовое') : '';
+  type.setAttribute('aria-label',`Тип движения: ${type.textContent}`);
   screen.classList.toggle('reference-movement', movement);
   screen.dataset.movementScope = movement ? (s.exerciseScope || s.scope) : '';
   $('exercise-reference-connector').toggleAttribute('hidden', !movement);
-  $('exercise-reference-number').hidden = !movement;
-  $('exercise-reference-number').textContent = movement ? referenceMovementNumber(item,data) : '';
+  $('exercise-reference-number').toggleAttribute('hidden', !movement);
+  const count = movement ? referenceMovementCount(data) : 0;
+  $('exercise-reference-count').textContent = movement ? String(count) : '';
+  $('exercise-reference-number').setAttribute('aria-label',`Количество упражнений: ${count}`);
   const edit = $('exercise-reference-edit');
   edit.hidden = !(movement && item && DATA.isAdmin() && referenceEditable());
   edit.dataset.refValue = item?.id || '';
@@ -7855,7 +7859,9 @@ function renderExerciseReference() {
   } else if (s.page === 'group') html += referenceGroupHtml(data);
   else html += referenceDetailHtml(data);
   const content = $('exercise-reference-content');
-  content.innerHTML = html; content.scrollTop = s.scrollTop;
+  content.innerHTML = html;
+  if (!movement) screen.scrollTop = 0;
+  referenceScrollElement().scrollTop = s.scrollTop;
   content.querySelectorAll('.reference-picker').forEach(picker => setupExerciseDragScroll(picker,'y'));
   const search = $('reference-search');
   if (search) search.oninput = () => { s.query = search.value; $('reference-list').innerHTML = referenceListHtml(referenceData()); };
@@ -7884,11 +7890,11 @@ $('screen-exercise-reference').addEventListener('click', async event => {
     const scope = ['mine','catalog'].includes(button.dataset.refScope) ? button.dataset.refScope : s.scope;
     referenceNavigate(action,value,scope); return;
   }
-  if (action === 'exercise') { s.scrollTop = $('exercise-reference-content').scrollTop; openExerciseDetail(value,'exerciseReference'); return; }
+  if (action === 'exercise') { s.scrollTop = referenceScrollElement().scrollTop; openExerciseDetail(value,'exerciseReference'); return; }
   if (s.page === 'movement' && action === 'movement-scope') {
     if (!['mine','catalog'].includes(value)) return;
     if (value !== (s.exerciseScope || s.scope)) cancelMovementRemovals();
-    s.exerciseScope = value; s.scrollTop = $('exercise-reference-content').scrollTop;
+    s.exerciseScope = value; s.scrollTop = referenceScrollElement().scrollTop;
     renderExerciseReference(); return;
   }
   if (s.page === 'movement' && ['movement-add','movement-remove'].includes(action)) {
@@ -7898,7 +7904,7 @@ $('screen-exercise-reference').addEventListener('click', async event => {
     if (!referenceMovementExercises(referenceData(),scope).some(ex => ex.id === value)) return;
     if ((action === 'movement-add') !== DATA.isHidden(DATA.getCurrentUser(),value)) return;
     if (action === 'movement-remove' && scope === 'mine') { toggleMovementRemoval(value); return; }
-    s.scrollTop = $('exercise-reference-content').scrollTop;
+    s.scrollTop = referenceScrollElement().scrollTop;
     toggleExerciseLibrary(value); renderExerciseReference();
     return;
   }
@@ -7915,7 +7921,7 @@ $('screen-exercise-reference').addEventListener('click', async event => {
     if (kind === 'muscles') openMuscleForm(editable,saved,s.scope); else openMovementForm(editable,saved,s.scope);
     return;
   }
-  s.scrollTop = $('exercise-reference-content').scrollTop;
+  s.scrollTop = referenceScrollElement().scrollTop;
   if (action === 'new-group') {
     let name = 'Новая группа', n = 1;
     while (data.groups.includes(name)) name = `Новая группа ${++n}`;

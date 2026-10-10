@@ -3776,11 +3776,14 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 }
 :is(#screen-exercises,#screen-exercise-reference) .exercises-header { background:transparent; border:0; }
 :is(#screen-exercises,#screen-exercise-reference) .exercise-library-body { background:transparent; border-radius:0; }
-:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs { background:transparent; gap:4px; padding:0 max(12px,calc((100% - 640px)/2)) 6px; }
+:is(#screen-exercises,#screen-exercise-reference):has(> .exercise-library-tabs:not([hidden])) { --library-chrome-bottom:color-mix(in srgb,var(--movement-header) 65%,var(--movement-top)); background:linear-gradient(180deg,var(--movement-header),var(--library-chrome-bottom) var(--movement-header-end,calc(var(--safe-top) + 68px)),var(--library-chrome-bottom)); }
+:is(#screen-exercises,#screen-exercise-reference):has(> .exercise-library-tabs:not([hidden])) .exercise-library-body { background:linear-gradient(180deg,var(--movement-top),color-mix(in srgb,var(--movement-top) 40%,var(--movement-page)) 36px,color-mix(in srgb,var(--movement-top) 10%,var(--movement-page)) 80px,var(--movement-page) 140px); border-radius:0 16px 0 0; }
+:is(#screen-exercises,#screen-exercise-reference).library-catalog:has(> .exercise-library-tabs:not([hidden])) .exercise-library-body { border-radius:16px 0 0 0; }
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs { background:transparent; gap:0; padding:0 max(0px,calc((100% - 640px)/2)); }
 :is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button { color:var(--movement-muted); }
-:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active { background:var(--movement-selected); color:var(--movement-text); border-radius:14px; }
-:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active::before,
-:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active::after { display:none; }
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active { background:var(--movement-top); color:var(--movement-text); border-radius:16px 16px 0 0; }
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active:first-child::after { right:-16px; width:16px; height:16px; background:radial-gradient(circle at 100% 0,transparent 16px,var(--movement-top) 16.5px); }
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active:last-child::before { left:-16px; width:16px; height:16px; background:radial-gradient(circle at 0 0,transparent 16px,var(--movement-top) 16.5px); }
 :is(#screen-exercises,#screen-exercise-reference) :is(#exercises-back-btn,#ex-cat-manage-btn,#exercise-reference-back) { background:var(--movement-circle); color:var(--movement-accent); }
 #screen-exercises .exercises-search { background-color:var(--movement-circle); border-color:var(--movement-card-border); color:var(--movement-text); }
 #screen-exercises .exercises-search::placeholder { color:var(--movement-muted); }
@@ -3820,20 +3823,23 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-exercise-reference .msd-anatomy { color:var(--movement-chip-text); }
 #screen-exercise-reference .exd-source { color:var(--movement-group-text); background:var(--movement-group); border-color:var(--movement-card-border); }
 :is(#screen-exercises,#screen-exercise-reference) button:focus-visible { outline-color:var(--movement-accent); }
-#screen-exercise-reference.reference-movement { --movement-rail:33px; --movement-inset:62px; }
+#screen-exercise-reference.reference-movement { --movement-rail:33px; --movement-inset:62px; overflow-y:auto; overflow-x:hidden; touch-action:pan-y; overscroll-behavior-y:contain; scrollbar-width:none; background-attachment:local; }
+#screen-exercise-reference.reference-movement::-webkit-scrollbar { display:none; }
 #screen-exercise-reference.reference-movement .exercises-header { padding:calc(var(--safe-top) + 18px) 14px 0; overflow:visible; background:transparent; }
 #screen-exercise-reference.reference-movement .exercises-header-top { position:relative; display:grid; grid-template-columns:38px minmax(0,1fr) 38px; gap:10px; align-items:start; width:100%; max-width:612px; margin-inline:auto; }
 #screen-exercise-reference.reference-movement .reference-header-heading { position:relative; padding-bottom:48px; z-index:1; }
 #screen-exercise-reference.reference-movement .exercises-header-title { margin:0; font-size:23px; line-height:1.34; font-weight:500; letter-spacing:-.35px; text-wrap:pretty; color:var(--movement-text); }
+#exercise-reference-type { display:inline-flex; margin-top:8px; padding:4px 8px; border-radius:8px; background:var(--movement-group); color:var(--movement-group-text); font-size:11px; line-height:1.4; }
 #screen-exercise-reference.reference-movement #exercise-reference-back { position:relative; z-index:2; color:var(--movement-accent); background:var(--movement-circle); }
 #exercise-reference-connector { position:absolute; left:calc(var(--movement-rail) - var(--movement-inset)); bottom:0; width:calc(var(--movement-inset) - var(--movement-rail)); height:44px; color:var(--movement-line); overflow:visible; pointer-events:none; }
 #exercise-reference-edit { grid-column:3; grid-row:1; position:relative; width:38px; height:38px; padding:0; border:1px solid #ffffff12; border-radius:50%; background:var(--movement-circle); color:var(--movement-accent); display:grid; place-items:center; z-index:2; }
 #exercise-reference-edit svg { width:18px; height:18px; }
-#exercise-reference-number { position:absolute; right:-10px; top:-26px; height:174px; font-size:174px; line-height:1; font-weight:500; letter-spacing:-7px; color:transparent; -webkit-text-stroke:1.5px var(--movement-number-stroke); opacity:.3; mask-image:linear-gradient(180deg,#000 25%,transparent 96%); -webkit-mask-image:linear-gradient(180deg,#000 25%,transparent 96%); pointer-events:none; user-select:none; }
-#screen-exercise-reference.reference-movement .exercise-library-body { position:relative; background:transparent; border-radius:0; }
+#exercise-reference-number { position:absolute; right:-4px; top:-21px; width:232px; max-width:100%; height:180px; overflow:visible; opacity:.3; mask-image:linear-gradient(180deg,#000 32%,transparent 100%); -webkit-mask-image:linear-gradient(180deg,#000 32%,transparent 100%); pointer-events:none; user-select:none; }
+#exercise-reference-number text { font-family:Arial,Helvetica,sans-serif; font-size:148px; font-weight:400; letter-spacing:-5px; fill:none; stroke:var(--movement-number-stroke); stroke-width:1.5px; }
+#screen-exercise-reference.reference-movement .exercise-library-body { position:relative; flex:none; background:transparent; border-radius:0; }
 /* Keep the rail behind the scroll viewport, including its elastic overscroll gap. */
 #screen-exercise-reference.reference-movement .exercise-library-body::before { content:""; position:absolute; left:calc(max(0px,(100% - 640px)/2) + var(--movement-rail) - .75px); top:0; bottom:0; width:1.5px; background:var(--movement-line); pointer-events:none; }
-#screen-exercise-reference.reference-movement .reference-page-scroll { padding:0 max(0px,calc((100% - 640px)/2)) calc(26px + var(--safe-bottom)); }
+#screen-exercise-reference.reference-movement .reference-page-scroll { flex:none; overflow:visible; padding:0 max(0px,calc((100% - 640px)/2)) calc(26px + var(--safe-bottom)); }
 .movement-tree { position:relative; padding:0 16px 0 var(--movement-inset); }
 .movement-tree::before { content:""; position:absolute; left:calc(var(--movement-rail) - .75px); top:0; bottom:24px; width:1.5px; background:var(--movement-line); }
 .movement-branch { position:relative; margin-bottom:20px; }
@@ -4276,9 +4282,9 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     <div class="exercises-header">
       <div class="exercises-header-top">
         <button type="button" class="btn-chip" id="exercise-reference-back" aria-label="Назад к предыдущему разделу"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>
-        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><svg id="exercise-reference-connector" viewBox="0 0 29 44" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><path d="M29 0V8C29 25 0 24 0 38V44" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg></div>
+        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><span id="exercise-reference-type" hidden></span><svg id="exercise-reference-connector" viewBox="0 0 29 44" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><path d="M29 0V8C29 25 0 24 0 38V44" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg></div>
         <button type="button" id="exercise-reference-edit" data-ref-action="edit-item" aria-label="Редактировать движение" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-        <span id="exercise-reference-number" aria-hidden="true" hidden></span>
+        <svg id="exercise-reference-number" viewBox="0 0 232 180" role="img" aria-label="Количество упражнений" hidden><text id="exercise-reference-count" x="226" y="144" text-anchor="end"></text></svg>
         <span class="exd-source" id="exercise-reference-scope" hidden></span>
       </div>
     </div>
