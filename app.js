@@ -7605,17 +7605,15 @@ function referenceMovementHtml(data) {
     `class="movement-tab${scope === value ? ' active' : ''}" aria-pressed="${scope === value}"`)).join('');
   const cards = exercises.map(ex => {
     const added = !DATA.isHidden(userId, ex.id);
-    let status = '';
-    if (scope === 'catalog') status = added ? '<span class="movement-in-mine">✓ В моих</span>'
-      : referenceAction('movement-add', ex.id, `Добавить в мои: ${ex.name}`, referenceIcon('plus'), 'class="movement-exercise-add"');
-    else {
-      const last = DATA.getLastWorkoutForExercise(userId, ex.id);
-      if (last) _exerciseLastDates.set(ex.id, last.startedAt); else _exerciseLastDates.delete(ex.id);
-      status = `<span class="movement-exercise-ago">${escHtml(exerciseAgo(ex.id) || 'Ещё не выполнялось')}</span>`;
-    }
-    return `<article class="movement-exercise-card${scope === 'catalog' && added ? ' in-mine' : ''}" style="--cat-color:${escHtml(exerciseCategoryColor(userId, ex.cat))}">`
-      + referenceAction('exercise', ex.id, ex.name, `<b>${escHtml(ex.name)}</b><small>${escHtml(ex.cat || 'Без группы')}</small>`, 'class="movement-exercise-open"')
-      + `<div class="movement-exercise-footer">${status}</div></article>`;
+    const last = DATA.getLastWorkoutForExercise(userId, ex.id);
+    if (last) _exerciseLastDates.set(ex.id, last.startedAt); else _exerciseLastDates.delete(ex.id);
+    const membership = referenceAction(added ? 'movement-remove' : 'movement-add', ex.id,
+      `${added ? 'Убрать из моих' : 'Добавить в мои'}: ${ex.name}`, referenceIcon('check'),
+      `class="movement-exercise-toggle" aria-pressed="${added}" title="${added ? 'Убрать из моих' : 'Добавить в мои'}"`);
+    return '<article class="movement-exercise-card">'
+      + referenceAction('exercise', ex.id, ex.name, `<b>${escHtml(ex.name)}</b>`, `class="movement-exercise-open" title="${escHtml(ex.name)}"`)
+      + `<div class="movement-exercise-footer"><span class="movement-group-chip movement-exercise-group" title="${escHtml(ex.cat || 'Без группы')}">${escHtml(ex.cat || 'Без группы')}</span>${membership}`
+      + `<span class="movement-exercise-ago">${escHtml(exerciseAgo(ex.id) || 'Ещё не выполнялось')}</span></div></article>`;
   }).join('');
   return `<div class="movement-tree"><section class="movement-branch"><span class="movement-node">${referenceIcon('muscles')}</span>`
     + `<div class="movement-metadata-row"><h2 class="movement-label">Работают мышцы</h2>${group}</div>`
@@ -7707,6 +7705,7 @@ const REFERENCE_ICONS = {
   movements:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/>',
   muscles:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
   plus:'<path d="M12 5v14M5 12h14"/>', minus:'<circle cx="12" cy="12" r="9"/><path d="M7 12h10"/>',
+  check:'<path d="m5 12 4 4L19 6"/>',
   star:'<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9L7.5 14 3 9.6l6.2-.9L12 3Z"/>',
 };
 function referenceIcon(name) {
@@ -7765,14 +7764,16 @@ function referenceListHtml(data) {
 }
 function renderExerciseReference() {
   const s = _referenceState, data = referenceData(), mine = s.scope === 'mine';
+  const movement = s.page === 'movement';
   const leaf = ['group','movement','muscle'].includes(s.page);
   const titles = {hub:'Справочники',groups:'Группы',movements:'Движения',muscles:'Мышцы',group:mine ? 'Группа' : s.name,movement:s.name,muscle:s.name};
   $('exercise-reference-title').textContent = titles[s.page];
   const screen = $('screen-exercise-reference');
-  screen.classList.toggle('library-catalog', !mine);
+  screen.classList.toggle('library-catalog', movement ? (s.exerciseScope || s.scope) === 'catalog' : !mine);
   screen.classList.toggle('reference-leaf', leaf);
-  const movement = s.page === 'movement', item = movement ? data.movements.find(x => x.name === s.name) : null;
+  const item = movement ? data.movements.find(x => x.name === s.name) : null;
   screen.classList.toggle('reference-movement', movement);
+  screen.dataset.movementScope = movement ? (s.exerciseScope || s.scope) : '';
   $('exercise-reference-connector').toggleAttribute('hidden', !movement);
   $('exercise-reference-number').hidden = !movement;
   $('exercise-reference-number').textContent = movement ? referenceMovementNumber(item,data) : '';
@@ -7820,12 +7821,20 @@ $('screen-exercise-reference').addEventListener('click', async event => {
     s.exerciseScope = value; s.scrollTop = $('exercise-reference-content').scrollTop;
     renderExerciseReference(); return;
   }
-  if (s.page === 'movement' && action === 'movement-add') {
+  if (s.page === 'movement' && ['movement-add','movement-remove'].includes(action)) {
     if (s.owner !== Auth.userId() || Auth.contextChanged() || s.userId !== DATA.getCurrentUser()) return;
-    if ((s.exerciseScope || s.scope) !== 'catalog') return;
-    if (!referenceMovementExercises(referenceData(),'catalog').some(ex => ex.id === value) || !DATA.isHidden(DATA.getCurrentUser(),value)) return;
+    const scope = s.exerciseScope || s.scope;
+    if (action === 'movement-add' && scope !== 'catalog') return;
+    if (!referenceMovementExercises(referenceData(),scope).some(ex => ex.id === value)) return;
+    if ((action === 'movement-add') !== DATA.isHidden(DATA.getCurrentUser(),value)) return;
     s.scrollTop = $('exercise-reference-content').scrollTop;
-    toggleExerciseLibrary(value); renderExerciseReference(); return;
+    toggleExerciseLibrary(value); renderExerciseReference();
+    if (action === 'movement-remove') showActionToast('Упражнение убрано из моих', 'Вернуть', () => {
+      if (s.owner !== Auth.userId() || Auth.contextChanged() || s.userId !== DATA.getCurrentUser()) return;
+      if (!DATA.isHidden(s.userId,value)) return;
+      toggleExerciseLibrary(value); renderExerciseReference();
+    });
+    return;
   }
   if (s.page === 'movement' && action === 'edit-item' && !DATA.isAdmin()) return;
   if (!referenceEditable()) return;

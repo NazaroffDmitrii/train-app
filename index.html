@@ -3755,54 +3755,73 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .exercise-move { text-align:left; }
 .reference-name-link { flex:1; min-width:0; color:inherit; text-align:left; font:inherit; line-height:1.4; }
 .reference-header-heading { flex:1; min-width:0; }
-#screen-exercise-reference.reference-movement { --movement-rail:33px; --movement-inset:62px; background:#0d0c18; }
-#screen-exercise-reference.reference-movement .exercises-header { padding:calc(var(--safe-top) + 18px) 14px 0; background:linear-gradient(180deg,#453664,#35294e80 78%,transparent); }
+#screen-exercise-reference.reference-movement {
+  --movement-rail:33px; --movement-inset:62px;
+  --movement-page:#0d0c18; --movement-top:#251d3b; --movement-header:#453664;
+  --movement-text:#f2f2f7; --movement-muted:#aaa6bc; --movement-line:#73608f; --movement-accent:#b9aeff;
+  --movement-circle:#14141f; --movement-node:#29213e; --movement-node-border:#6c558a; --movement-node-text:#d7c7ff;
+  --movement-chip:#211e2c; --movement-chip-text:#cdc8db; --movement-group:#2b2438; --movement-group-text:#dbd0ef;
+  --movement-target:#342849; --movement-target-border:#514264; --movement-target-text:#ede1ff;
+  --movement-tabs:#090811; --movement-selected:#2c2935; --movement-card:#11101c; --movement-card-border:#393147;
+  --movement-number-stroke:#a893c5;
+  background:linear-gradient(180deg,var(--movement-top),var(--movement-page) 460px);
+}
+#screen-exercise-reference.reference-movement[data-movement-scope="catalog"] {
+  --movement-page:#0a141a; --movement-top:#172f36; --movement-header:#2c565a;
+  --movement-muted:#a2b9bd; --movement-line:#56848e; --movement-accent:#a8dedb;
+  --movement-circle:#101e24; --movement-node:#203c41; --movement-node-border:#497780; --movement-node-text:#bce6e4;
+  --movement-chip:#192b32; --movement-chip-text:#c1d8db; --movement-group:#20373e; --movement-group-text:#cee6e6;
+  --movement-target:#254347; --movement-target-border:#3e666b; --movement-target-text:#e1f3f1;
+  --movement-tabs:#0b1b21; --movement-selected:#2b4b51; --movement-card:#101e26; --movement-card-border:#2c4b55;
+  --movement-number-stroke:#8abebd;
+}
+#screen-exercise-reference.reference-movement .exercises-header { padding:calc(var(--safe-top) + 18px) 14px 0; overflow:hidden; background:linear-gradient(180deg,var(--movement-header),var(--movement-top)); }
 #screen-exercise-reference.reference-movement .exercises-header-top { position:relative; display:grid; grid-template-columns:38px minmax(0,1fr) 38px; gap:10px; align-items:start; width:100%; max-width:612px; margin-inline:auto; }
-#screen-exercise-reference.reference-movement .reference-header-heading { position:relative; padding-bottom:40px; z-index:1; }
-#screen-exercise-reference.reference-movement .exercises-header-title { margin:0; font-size:21px; line-height:1.36; font-weight:500; letter-spacing:-.35px; text-wrap:pretty; color:#f2f2f7; }
-#exercise-reference-connector { position:absolute; left:calc(var(--movement-rail) - var(--movement-inset)); bottom:0; width:calc(var(--movement-inset) - var(--movement-rail)); height:32px; overflow:visible; pointer-events:none; }
-#exercise-reference-edit { grid-column:3; grid-row:1; position:relative; width:38px; height:38px; padding:0; border:1px solid #ffffff12; border-radius:50%; background:#14141f; color:#b9aeff; display:grid; place-items:center; z-index:2; }
+#screen-exercise-reference.reference-movement .reference-header-heading { position:relative; padding-bottom:48px; z-index:1; }
+#screen-exercise-reference.reference-movement .exercises-header-title { margin:0; font-size:23px; line-height:1.34; font-weight:500; letter-spacing:-.35px; text-wrap:pretty; color:var(--movement-text); }
+#screen-exercise-reference.reference-movement #exercise-reference-back { position:relative; z-index:2; color:var(--movement-accent); background:var(--movement-circle); }
+#exercise-reference-connector { position:absolute; left:calc(var(--movement-rail) - var(--movement-inset)); bottom:0; width:calc(var(--movement-inset) - var(--movement-rail)); height:44px; color:var(--movement-line); overflow:visible; pointer-events:none; }
+#exercise-reference-edit { grid-column:3; grid-row:1; position:relative; width:38px; height:38px; padding:0; border:1px solid #ffffff12; border-radius:50%; background:var(--movement-circle); color:var(--movement-accent); display:grid; place-items:center; z-index:2; }
 #exercise-reference-edit svg { width:18px; height:18px; }
-#exercise-reference-number { position:absolute; right:-17px; top:22px; font-size:170px; line-height:1; font-weight:500; letter-spacing:-7px; color:transparent; -webkit-text-stroke:1.5px #d8d0ff38; mask-image:linear-gradient(180deg,#000 25%,transparent 95%); -webkit-mask-image:linear-gradient(180deg,#000 25%,transparent 95%); pointer-events:none; user-select:none; }
+#exercise-reference-number { position:absolute; right:-10px; top:-26px; bottom:0; font-size:174px; line-height:1; font-weight:500; letter-spacing:-7px; color:transparent; -webkit-text-stroke:1.5px var(--movement-number-stroke); opacity:.3; mask-image:linear-gradient(180deg,#000 25%,transparent 96%); -webkit-mask-image:linear-gradient(180deg,#000 25%,transparent 96%); pointer-events:none; user-select:none; }
 #screen-exercise-reference.reference-movement .exercise-library-body { background:transparent; border-radius:0; }
 #screen-exercise-reference.reference-movement .reference-page-scroll { padding:0 max(0px,calc((100% - 640px)/2)) calc(26px + var(--safe-bottom)); }
 .movement-tree { position:relative; padding:0 16px 0 var(--movement-inset); }
-.movement-tree::before { content:""; position:absolute; left:var(--movement-rail); top:0; bottom:24px; width:1px; background:linear-gradient(180deg,#8e79cd78,#8e79cd20); }
+.movement-tree::before { content:""; position:absolute; left:calc(var(--movement-rail) - .75px); top:0; bottom:24px; width:1.5px; background:var(--movement-line); }
 .movement-branch { position:relative; margin-bottom:20px; }
-.movement-node { position:absolute; left:calc(var(--movement-rail) - var(--movement-inset) - 16px); top:0; width:32px; height:32px; border:1px solid #a48ada65; border-radius:50%; background:#29213e; color:#d7c7ff; display:grid; place-items:center; }
+.movement-node { position:absolute; left:calc(var(--movement-rail) - var(--movement-inset) - 16px); top:0; width:32px; height:32px; border:1px solid var(--movement-node-border); border-radius:50%; background:var(--movement-node); color:var(--movement-node-text); display:grid; place-items:center; }
 .movement-node svg { width:16px; height:16px; }
-.movement-label { margin:0; color:#aaa6bc; font-size:11px; line-height:32px; font-weight:500; letter-spacing:.085em; text-transform:uppercase; }
+.movement-label { margin:0; color:var(--movement-muted); font-size:11px; line-height:32px; font-weight:500; letter-spacing:.075em; text-transform:uppercase; }
 .movement-metadata-row,.movement-section-row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
-.movement-group-chip { display:inline-flex; align-items:center; gap:5px; padding:6px 9px; border-radius:10px; color:#dbd0ef; background:#2b2438; font-size:11px; line-height:1.3; max-width:100%; text-align:left; }
+.movement-group-chip { display:inline-flex; align-items:center; gap:5px; min-height:26px; padding:6px 9px; border-radius:9px; color:var(--movement-group-text); background:var(--movement-group); font-size:11px; line-height:1.25; max-width:100%; text-align:left; }
 .movement-group-chip span { min-width:0; overflow-wrap:anywhere; }
-.movement-group-chip svg { width:12px; height:12px; flex:none; color:#bfaedb; }
+.movement-group-chip svg { width:12px; height:12px; flex:none; color:var(--movement-accent); }
 .movement-muscle-chips { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
-.movement-muscle-chip { display:inline-flex; align-items:center; padding:8px 10px; border-radius:10px; color:#cdc8db; background:#211e2c; font-size:12px; line-height:1.3; text-align:left; max-width:100%; overflow-wrap:anywhere; }
-.movement-muscle-chip.target { color:#ede1ff; background:#342849; box-shadow:inset 0 0 0 1px #aa8de92a; }
+.movement-muscle-chip { display:inline-flex; align-items:center; padding:8px 10px; border-radius:10px; color:var(--movement-chip-text); background:var(--movement-chip); font-size:12px; line-height:1.3; text-align:left; max-width:100%; overflow-wrap:anywhere; }
+.movement-muscle-chip.target { color:var(--movement-target-text); background:var(--movement-target); box-shadow:inset 0 0 0 1px var(--movement-target-border); }
 .movement-exercises { margin-bottom:0; }
 .movement-section-row { margin-bottom:12px; }
-.movement-tabs { display:flex; gap:2px; padding:3px; border-radius:11px; background:#090811; }
-.movement-tab { padding:8px 10px; border-radius:8px; color:#aaa6bc; font-size:12px; line-height:1.2; }
-.movement-tab.active { color:#f2f2f7; background:#2c2935; }
-.movement-exercise-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-.movement-exercise-card { position:relative; display:flex; flex-direction:column; min-width:0; min-height:130px; padding:13px 12px; border:1px solid color-mix(in srgb,var(--cat-color) 23%,transparent); border-radius:16px; background:radial-gradient(ellipse at 100% 0,color-mix(in srgb,var(--cat-color) 15%,transparent),transparent 72%),#10101a; }
-.movement-exercise-card.in-mine { border-color:color-mix(in srgb,var(--cat-color) 15%,transparent); }
-.movement-exercise-open { display:flex; flex:1; flex-direction:column; justify-content:space-between; gap:18px; width:100%; padding:0; text-align:left; min-width:0; }
-.movement-exercise-open b { font-size:14px; font-weight:500; line-height:1.4; color:#f2f2f7; overflow-wrap:anywhere; }
-.movement-exercise-card.in-mine b { color:#d9d6e4; }
-.movement-exercise-open small { font-size:11px; line-height:1.3; color:#aaa6bc; }
-.movement-exercise-card:has(.movement-exercise-add) small { padding-right:32px; }
-.movement-exercise-footer { display:flex; align-items:center; gap:6px; margin-top:6px; min-height:15px; }
-.movement-in-mine { font-size:11px; line-height:1.3; color:#89bea7; }
-.movement-exercise-ago { font-size:11px; line-height:1.3; color:#9d98af; }
-.movement-exercise-add { position:absolute; right:9px; bottom:9px; width:32px; height:32px; padding:0; border:1px solid #8fb8e852; border-radius:50%; color:#c6d6eb; background:#152030; display:grid; place-items:center; }
-.movement-exercise-add svg { width:16px; height:16px; }
-.movement-empty { grid-column:1/-1; margin:0; padding:12px 0; font-size:13px; line-height:1.5; color:#aaa6bc; }
-#screen-exercise-reference.reference-movement button:focus-visible { outline:2px solid #a99cf5; outline-offset:3px; }
+.movement-tabs { display:flex; gap:2px; padding:3px; border-radius:11px; background:var(--movement-tabs); }
+.movement-tab { padding:8px 10px; border-radius:8px; color:var(--movement-muted); font-size:12px; line-height:1.2; }
+.movement-tab.active { color:var(--movement-text); background:var(--movement-selected); }
+.movement-exercise-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-rows:minmax(150px,1fr); gap:8px; }
+.movement-exercise-card { display:grid; grid-template-rows:1fr auto; gap:8px; min-width:0; padding:10px; border:1px solid var(--movement-card-border); border-radius:14px; background:var(--movement-card); }
+.movement-exercise-open { display:block; align-self:start; width:100%; min-width:0; padding:0; text-align:left; }
+.movement-exercise-open b { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; font-size:14px; font-weight:500; line-height:1.4; color:var(--movement-text); overflow-wrap:anywhere; }
+.movement-exercise-footer { display:grid; grid-template-columns:minmax(0,1fr) 28px; grid-template-rows:28px 29px; column-gap:4px; row-gap:4px; align-items:start; }
+.movement-exercise-group { grid-column:1; grid-row:1; align-self:center; justify-self:start; display:block; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.movement-exercise-ago { grid-column:1/-1; grid-row:2; align-self:end; font-size:11px; line-height:1.3; color:var(--movement-muted); }
+.movement-exercise-toggle { grid-column:2; grid-row:1; position:relative; width:28px; height:28px; display:grid; place-items:center; padding:0; border:1px solid var(--movement-node-border); border-radius:50%; color:var(--movement-muted); background:var(--movement-card); }
+.movement-exercise-toggle svg { width:14px; height:14px; opacity:.45; }
+.movement-exercise-toggle[aria-pressed="true"] { border-color:var(--movement-accent); color:var(--movement-circle); background:var(--movement-accent); }
+.movement-exercise-toggle[aria-pressed="true"] svg { opacity:1; }
+@media(pointer:coarse) { .movement-exercise-toggle::before { content:""; position:absolute; inset:-8px; } }
+.movement-empty { grid-column:1/-1; margin:0; padding:12px 0; font-size:13px; line-height:1.5; color:var(--movement-muted); }
+#screen-exercise-reference.reference-movement button:focus-visible { outline:2px solid var(--movement-accent); outline-offset:3px; }
 @media(max-width:370px) {
   #screen-exercise-reference.reference-movement { --movement-inset:57px; }
   #screen-exercise-reference.reference-movement .exercises-header-top { gap:5px; }
-  #screen-exercise-reference.reference-movement .exercises-header-title { font-size:20px; }
+  #screen-exercise-reference.reference-movement .exercises-header-title { font-size:21px; }
   .movement-tree { padding-right:13px; }.movement-tab { padding-inline:9px; }.movement-exercise-card { padding-inline:10px; }
 }
 .reference-name-link:hover, [data-reference-kind]:hover { color:#fff; text-decoration:underline; text-underline-offset:3px; }
@@ -4206,7 +4225,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     <div class="exercises-header">
       <div class="exercises-header-top">
         <button type="button" class="btn-chip" id="exercise-reference-back" aria-label="Назад к предыдущему разделу"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>
-        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><svg id="exercise-reference-connector" viewBox="0 0 29 40" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><defs><linearGradient id="movement-connector-fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8e79cd" stop-opacity=".2"/><stop offset="1" stop-color="#8e79cd" stop-opacity=".47"/></linearGradient></defs><path d="M29 0V5C29 19 0 18 0 32V40" stroke="url(#movement-connector-fade)" stroke-width="1"/></svg></div>
+        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><svg id="exercise-reference-connector" viewBox="0 0 29 44" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><path d="M29 0V8C29 25 0 24 0 38V44" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg></div>
         <button type="button" id="exercise-reference-edit" data-ref-action="edit-item" aria-label="Редактировать движение" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         <span id="exercise-reference-number" aria-hidden="true" hidden></span>
         <span class="exd-source" id="exercise-reference-scope" hidden></span>
