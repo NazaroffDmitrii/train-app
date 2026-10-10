@@ -5742,8 +5742,7 @@ function setupExerciseDragScroll(element, axis, enabled = () => true) {
 setupExerciseDragScroll(exercisesScroll,'y',()=>!_constructorCatalog && !_exListEditMode);
 setupExerciseDragScroll($('ex-cat-tabs'),'x');
 setupExerciseDragScroll($('exercise-movement-tabs'),'x');
-setupExerciseDragScroll($('exercise-reference-content'),'y',()=>!$('screen-exercise-reference').classList.contains('reference-movement'));
-setupExerciseDragScroll($('screen-exercise-reference'),'y',()=>$('screen-exercise-reference').classList.contains('reference-movement'));
+setupExerciseDragScroll($('exercise-reference-content'),'y');
 let _cancelExerciseHold = null;
 exercisesScroll.addEventListener('drag-scroll-start',()=>_cancelExerciseHold?.());
 
@@ -7585,7 +7584,7 @@ function referenceMovementCount(data) {
   return referenceMovementExercises(data).length;
 }
 function referenceScrollElement() {
-  return $(_referenceState.page === 'movement' ? 'screen-exercise-reference' : 'exercise-reference-content');
+  return $('exercise-reference-content');
 }
 const _movementRemovals = new Map();
 function movementRemovalCurrent(pending) {
@@ -7860,7 +7859,7 @@ function renderExerciseReference() {
   else html += referenceDetailHtml(data);
   const content = $('exercise-reference-content');
   content.innerHTML = html;
-  if (!movement) screen.scrollTop = 0;
+  screen.scrollTop = 0;
   referenceScrollElement().scrollTop = s.scrollTop;
   content.querySelectorAll('.reference-picker').forEach(picker => setupExerciseDragScroll(picker,'y'));
   const search = $('reference-search');

@@ -3823,23 +3823,22 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-exercise-reference .msd-anatomy { color:var(--movement-chip-text); }
 #screen-exercise-reference .exd-source { color:var(--movement-group-text); background:var(--movement-group); border-color:var(--movement-card-border); }
 :is(#screen-exercises,#screen-exercise-reference) button:focus-visible { outline-color:var(--movement-accent); }
-#screen-exercise-reference.reference-movement { --movement-rail:33px; --movement-inset:62px; overflow-y:auto; overflow-x:hidden; touch-action:pan-y; overscroll-behavior-y:contain; scrollbar-width:none; background-attachment:local; }
-#screen-exercise-reference.reference-movement::-webkit-scrollbar { display:none; }
-#screen-exercise-reference.reference-movement .exercises-header { padding:calc(var(--safe-top) + 18px) 14px 0; overflow:visible; background:transparent; }
+#screen-exercise-reference.reference-movement { --movement-rail:33px; --movement-inset:62px; overflow:hidden; }
+#screen-exercise-reference.reference-movement .exercises-header { padding:calc(var(--safe-top) + 16px) 14px 0; overflow:visible; background:transparent; }
 #screen-exercise-reference.reference-movement .exercises-header-top { position:relative; display:grid; grid-template-columns:38px minmax(0,1fr) 38px; gap:10px; align-items:start; width:100%; max-width:612px; margin-inline:auto; }
-#screen-exercise-reference.reference-movement .reference-header-heading { position:relative; padding-bottom:48px; z-index:1; }
+#screen-exercise-reference.reference-movement .reference-header-heading { position:relative; padding-bottom:36px; z-index:1; }
 #screen-exercise-reference.reference-movement .exercises-header-title { margin:0; font-size:23px; line-height:1.34; font-weight:500; letter-spacing:-.35px; text-wrap:pretty; color:var(--movement-text); }
 #exercise-reference-type { display:inline-flex; margin-top:8px; padding:4px 8px; border-radius:8px; background:var(--movement-group); color:var(--movement-group-text); font-size:11px; line-height:1.4; }
 #screen-exercise-reference.reference-movement #exercise-reference-back { position:relative; z-index:2; color:var(--movement-accent); background:var(--movement-circle); }
-#exercise-reference-connector { position:absolute; left:calc(var(--movement-rail) - var(--movement-inset)); bottom:0; width:calc(var(--movement-inset) - var(--movement-rail)); height:44px; color:var(--movement-line); overflow:visible; pointer-events:none; }
+#exercise-reference-connector { position:absolute; left:calc(var(--movement-rail) - var(--movement-inset)); bottom:0; width:calc(var(--movement-inset) - var(--movement-rail)); height:36px; color:var(--movement-line); overflow:visible; pointer-events:none; }
 #exercise-reference-edit { grid-column:3; grid-row:1; position:relative; width:38px; height:38px; padding:0; border:1px solid #ffffff12; border-radius:50%; background:var(--movement-circle); color:var(--movement-accent); display:grid; place-items:center; z-index:2; }
 #exercise-reference-edit svg { width:18px; height:18px; }
 #exercise-reference-number { position:absolute; right:-4px; top:-21px; width:232px; max-width:100%; height:180px; overflow:visible; opacity:.3; mask-image:linear-gradient(180deg,#000 32%,transparent 100%); -webkit-mask-image:linear-gradient(180deg,#000 32%,transparent 100%); pointer-events:none; user-select:none; }
 #exercise-reference-number text { font-family:Arial,Helvetica,sans-serif; font-size:148px; font-weight:400; letter-spacing:-5px; fill:none; stroke:var(--movement-number-stroke); stroke-width:1.5px; }
-#screen-exercise-reference.reference-movement .exercise-library-body { position:relative; flex:none; background:transparent; border-radius:0; }
+#screen-exercise-reference.reference-movement .exercise-library-body { position:relative; flex:1; min-height:0; background:transparent; border-radius:0; }
 /* Keep the rail behind the scroll viewport, including its elastic overscroll gap. */
 #screen-exercise-reference.reference-movement .exercise-library-body::before { content:""; position:absolute; left:calc(max(0px,(100% - 640px)/2) + var(--movement-rail) - .75px); top:0; bottom:0; width:1.5px; background:var(--movement-line); pointer-events:none; }
-#screen-exercise-reference.reference-movement .reference-page-scroll { flex:none; overflow:visible; padding:0 max(0px,calc((100% - 640px)/2)) calc(26px + var(--safe-bottom)); }
+#screen-exercise-reference.reference-movement .reference-page-scroll { flex:1; min-height:0; overflow-y:auto; padding:0 max(0px,calc((100% - 640px)/2)) calc(26px + var(--safe-bottom)); }
 .movement-tree { position:relative; padding:0 16px 0 var(--movement-inset); }
 .movement-tree::before { content:""; position:absolute; left:calc(var(--movement-rail) - .75px); top:0; bottom:24px; width:1.5px; background:var(--movement-line); }
 .movement-branch { position:relative; margin-bottom:20px; }
