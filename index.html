@@ -3960,6 +3960,149 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #exercises-scroll.ex-list-editing .execution-controls, #exercises-scroll.ex-list-editing .execution-configure, #exercises-scroll.ex-list-editing .exercise-variants-heading button { display:none; }
 @media(max-width:360px) { .ex-row-wrap-nested .exercise-ago { max-width:46px; white-space:normal; text-align:right; } }
 
+/* Group mosaics share the category palette with the exercise library. */
+.reference-page-summary { margin:4px 0 0; color:var(--movement-muted); font-size:12px; line-height:1.4; font-weight:400; }
+.reference-page-summary b { color:var(--movement-chip-text); font-weight:600; }
+#screen-exercise-reference .reference-mosaic-search { gap:8px; margin-bottom:12px; }
+.reference-search-box { min-width:0; flex:1; display:flex; align-items:center; gap:9px; height:42px; padding:0 12px; border-radius:14px; color:var(--movement-muted); background:var(--movement-circle); border:1px solid var(--movement-card-border); }
+.reference-search-box:focus-within { border-color:var(--movement-accent); }
+.reference-search-box > svg { width:17px; height:17px; flex:none; }
+#screen-exercise-reference .reference-search-box .reference-field { height:100%; padding:0; border:0; border-radius:0; background:transparent; color:var(--movement-text); outline:none; }
+.reference-sort { display:grid; place-items:center; flex:none; width:42px; height:42px; border-radius:14px; color:var(--movement-accent); background:var(--movement-chip); }
+.reference-sort svg { width:18px; height:18px; }
+.reference-sort.is-ascending { background:color-mix(in srgb,var(--movement-accent) 16%,var(--movement-chip)); }
+.reference-search-feedback { margin:0 3px 10px; color:var(--movement-muted); font-size:11px; }
+.reference-mosaic { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; isolation:isolate; }
+.reference-mosaic-card { grid-column:span 3; position:relative; display:flex; flex-direction:column; min-width:0; min-height:104px; overflow:hidden; border-radius:25px; background:radial-gradient(ellipse at 0 0,color-mix(in srgb,var(--cat-color) 30%,transparent),transparent 95%),var(--movement-card); border:1px solid color-mix(in srgb,var(--cat-color) 33%,var(--movement-card-border)); transition:transform .18s,border-color .18s; }
+.reference-mosaic-card:hover { border-color:color-mix(in srgb,var(--cat-color) 70%,var(--movement-card-border)); transform:translateY(-2px); }
+.reference-mosaic-open { position:relative; z-index:1; width:100%; flex:1; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px; color:var(--movement-text); text-align:left; }
+.reference-mosaic-name { position:relative; font-size:18px; font-weight:600; letter-spacing:-.5px; line-height:1.15; padding-right:18px; overflow-wrap:anywhere; }
+.reference-mosaic-value { display:flex; align-items:baseline; gap:5px; white-space:nowrap; }
+.reference-mosaic-value b { font-size:48px; line-height:.9; letter-spacing:-2px; font-weight:650; color:var(--cat-color); font-variant-numeric:tabular-nums; }
+.reference-mosaic-value small { font-size:10px; color:var(--movement-muted); }
+.reference-mosaic-arrow { position:absolute; right:12px; top:13px; display:grid; place-items:center; width:23px; height:23px; border-radius:50%; border:1px solid color-mix(in srgb,var(--cat-color) 25%,transparent); color:var(--movement-muted); opacity:.8; }
+.reference-mosaic-arrow svg { width:15px; height:15px; }
+.reference-mosaic-card.lead { grid-column:span 4; grid-row:span 2; min-height:226px; border-radius:30px; background:var(--cat-color); border:0; }
+.reference-mosaic-card.lead::before,.reference-mosaic-card.lead::after { content:""; position:absolute; width:190px; height:190px; border:1px solid #ffffff35; border-radius:50%; top:-65px; right:-92px; pointer-events:none; }
+.reference-mosaic-card.lead::after { width:225px; height:225px; top:-82px; right:-110px; }
+.reference-mosaic-card.lead .reference-mosaic-open { padding:18px; color:var(--movement-circle); }
+.reference-mosaic-card.lead .reference-mosaic-name { font-size:27px; }
+.reference-mosaic-card.lead .reference-mosaic-value b { font-size:clamp(96px,31vw,130px); line-height:.83; letter-spacing:-8px; font-weight:600; color:var(--movement-circle); }
+.reference-mosaic-card.lead .reference-mosaic-value small { color:var(--movement-circle); opacity:.72; font-size:11px; }
+.reference-mosaic-card.lead .reference-mosaic-arrow { width:28px; height:28px; right:15px; top:16px; background:#ffffff18; border-color:#00000020; color:var(--movement-circle); }
+.reference-mosaic-card.side { grid-column:span 2; min-height:108px; border-radius:24px; }
+.reference-mosaic-card.side .reference-mosaic-open { padding:12px; }
+.reference-mosaic-card.side .reference-mosaic-name { font-size:16px; padding-right:12px; }
+.reference-mosaic-card.side .reference-mosaic-value b { font-size:43px; }
+.reference-mosaic-card.side .reference-mosaic-arrow { width:17px; height:17px; right:8px; top:11px; }
+.reference-mosaic-card.side .reference-mosaic-arrow svg { width:12px; height:12px; }
+.reference-mosaic-card.bridge { grid-column:1/-1; min-height:76px; background:linear-gradient(100deg,color-mix(in srgb,var(--cat-color) 33%,transparent),transparent),var(--movement-card); }
+.reference-mosaic-card.bridge .reference-mosaic-open { flex-direction:row; align-items:center; }
+.reference-mosaic-card.bridge .reference-mosaic-name { max-width:68%; font-size:18px; }
+.reference-mosaic-card.bridge .reference-mosaic-value { padding-right:16px; }
+.reference-mosaic-card.bridge .reference-mosaic-value b { font-size:42px; }
+.reference-mosaic-card.bridge .reference-mosaic-arrow { top:50%; transform:translateY(-50%); width:20px; height:20px; }
+.reference-mosaic-card.tail { min-height:76px; border-radius:22px; }
+.reference-mosaic-card.tail .reference-mosaic-name { font-size:14px; }
+.reference-mosaic-card.tail .reference-mosaic-value { align-self:flex-end; }
+.reference-mosaic-card.tail .reference-mosaic-value b { font-size:31px; }
+.reference-mosaic-card.tail .reference-mosaic-arrow { width:16px; height:16px; right:9px; top:12px; }
+.reference-mosaic-card.tail .reference-mosaic-arrow svg { width:11px; height:11px; }
+.reference-mosaic .third { grid-column:span 2; }
+.reference-mosaic .wide,.reference-mosaic-empty { grid-column:1/-1; }
+.reference-mosaic-card.tail.third { min-height:96px; }
+.reference-mosaic-card.tail.third .reference-mosaic-open { padding:12px 10px; gap:14px; }
+.reference-mosaic-card.tail.third .reference-mosaic-name { padding-right:14px; font-size:13px; line-height:1.2; }
+.reference-mosaic-card.tail.third .reference-mosaic-value { align-self:flex-start; }
+.reference-mosaic.ascending.composed .lead { grid-row:span 1; min-height:158px; border-radius:28px; }
+.reference-mosaic.ascending.composed .lead .reference-mosaic-open { padding:16px; }
+.reference-mosaic.ascending.composed:not(.with-create) .lead { grid-column:1/-1; }
+.reference-mosaic.ascending.composed .lead .reference-mosaic-value b { font-size:100px; letter-spacing:-6px; }
+.reference-mosaic.ascending.composed .lead .reference-mosaic-name { font-size:24px; }
+.reference-mosaic-create { grid-column:span 3; min-width:0; min-height:96px; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; gap:12px; padding:13px 12px; border-radius:22px; text-align:left; font-size:13px; font-weight:600; line-height:1.2; color:var(--movement-accent); background:color-mix(in srgb,var(--movement-accent) 12%,var(--movement-card)); border:1px solid color-mix(in srgb,var(--movement-accent) 38%,var(--movement-card-border)); transition:background .18s,transform .18s; }
+.reference-mosaic-create > span:last-child { max-width:95px; }
+.reference-mosaic-create.wide { flex-direction:row; align-items:center; justify-content:center; min-height:62px; }
+.reference-mosaic-create.wide > span:last-child { max-width:none; }
+.reference-mosaic-create:hover { background:color-mix(in srgb,var(--movement-accent) 20%,var(--movement-card)); transform:translateY(-2px); }
+.reference-mosaic-plus { display:grid; place-items:center; flex:none; width:28px; height:28px; border-radius:50%; background:var(--movement-accent); color:var(--movement-circle); }
+.reference-mosaic-plus svg { width:17px; height:17px; }
+.reference-mosaic.ascending.composed .reference-mosaic-create { border-radius:26px; padding:16px 12px; }
+.reference-group-tabs { display:flex; gap:6px; padding:4px; margin:0 0 14px; border-radius:17px; background:var(--movement-circle); }
+.reference-group-tab { flex:1; display:flex; gap:7px; align-items:center; justify-content:center; min-height:38px; padding:8px; border-radius:13px; color:var(--movement-muted); font-size:14px; font-weight:500; }
+.reference-group-tab span { font-size:11px; opacity:.8; }
+.reference-group-tab.active { background:color-mix(in srgb,var(--cat-color) 19%,var(--movement-card)); color:var(--movement-text); }
+.reference-group-page .reference-page-summary b { color:var(--cat-color); }
+.reference-group-page #exercise-reference-edit { flex:none; width:34px; height:34px; display:grid; place-items:center; border-radius:12px; color:var(--movement-accent); background:var(--movement-chip); }
+.reference-group-page #exercise-reference-edit[aria-pressed="true"] { background:var(--movement-accent); color:var(--movement-circle); }
+.member-mosaic .reference-mosaic-card { min-height:138px; }
+.member-mosaic .reference-mosaic-name { font-size:16px; line-height:1.25; }
+.member-mosaic .reference-mosaic-card.side { min-height:145px; }
+.member-mosaic .reference-mosaic-card.side .reference-mosaic-name { font-size:13px; }
+.member-mosaic .reference-mosaic-card.lead { min-height:300px; }
+.member-mosaic .reference-mosaic-card.lead .reference-mosaic-name { font-size:22px; }
+.member-mosaic .reference-mosaic-card.lead .reference-mosaic-value b { font-size:92px; letter-spacing:-5px; }
+.member-mosaic .reference-mosaic-card.bridge { min-height:98px; }
+.member-mosaic .reference-mosaic-card.tail { min-height:132px; }
+.member-mosaic .reference-mosaic-card.tail .reference-mosaic-name { font-size:14px; }
+.member-mosaic .reference-mosaic-card.tail.third .reference-mosaic-name { font-size:13px; }
+.member-mosaic.ascending.composed .reference-mosaic-card.lead { min-height:180px; }
+.reference-mosaic-controls { position:relative; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:4px; padding:0 10px 10px; }
+.reference-mosaic-card.lead .reference-mosaic-controls .reference-badge { color:var(--movement-circle); background:#ffffff40; }
+.reference-mosaic-card.lead .reference-mosaic-controls .reference-icon-button { color:var(--movement-circle); }
+.reference-group-settings { margin:0 0 14px; }
+.reference-group-exercises { margin-top:18px; padding:0; border-radius:18px; background:var(--movement-card); border:1px solid var(--movement-card-border); }
+.reference-group-exercises > summary { display:flex; align-items:center; gap:9px; padding:15px; font-size:14px; font-weight:500; color:var(--movement-chip-text); cursor:pointer; list-style:none; }
+.reference-group-exercises > summary::-webkit-details-marker { display:none; }
+.reference-group-exercises > summary span { margin-left:auto; font-size:12px; color:var(--movement-muted); }
+.reference-group-exercises > summary svg { width:15px; height:15px; transform:rotate(90deg); }
+.reference-group-exercises[open] > summary svg { transform:rotate(-90deg); }
+.reference-group-exercise-list { padding:0 10px 12px; }
+@media(min-width:481px) {
+  .reference-mosaic-card.lead { min-height:240px; }
+  .reference-mosaic-card.lead .reference-mosaic-value b { font-size:150px; }
+  .reference-mosaic-card.side { min-height:115px; }
+  .member-mosaic .reference-mosaic-card.lead .reference-mosaic-value b { font-size:110px; }
+}
+@media(max-width:360px) {
+  .reference-mosaic-open { padding:12px; }
+  .reference-mosaic-name { font-size:17px; }
+  .reference-mosaic-card.lead { min-height:216px; }
+  .reference-mosaic-card.lead .reference-mosaic-open { padding:15px; }
+  .reference-mosaic-card.lead .reference-mosaic-name { font-size:24px; }
+  .reference-mosaic-card.lead .reference-mosaic-value b { font-size:100px; letter-spacing:-7px; }
+  .reference-mosaic-card.side { min-height:103px; }
+  .reference-mosaic-card.side .reference-mosaic-open { padding:10px; }
+  .reference-mosaic-card.side .reference-mosaic-name { font-size:14px; }
+  .reference-mosaic-card.side .reference-mosaic-value b { font-size:38px; }
+  .reference-mosaic-card.tail.third .reference-mosaic-open { padding:11px 9px; }
+  .reference-mosaic-card.tail.third .reference-mosaic-name { font-size:12px; padding-right:10px; }
+  .reference-mosaic-create { font-size:12px; padding:12px 10px; }
+  .reference-mosaic.ascending.composed .lead { min-height:148px; }
+  .reference-mosaic.ascending.composed .lead .reference-mosaic-value b { font-size:92px; }
+  .reference-mosaic-card.bridge .reference-mosaic-name { font-size:16px; }
+  .reference-mosaic-card.bridge .reference-mosaic-value b { font-size:35px; }
+  .member-mosaic .reference-mosaic-card.side .reference-mosaic-name { font-size:12px; }
+  .member-mosaic .reference-mosaic-card.lead .reference-mosaic-name { font-size:19px; }
+  .member-mosaic .reference-mosaic-card.lead .reference-mosaic-value b { font-size:78px; }
+  .member-mosaic .reference-mosaic-card.tail.third .reference-mosaic-name { font-size:12px; }
+}
+@media(prefers-reduced-motion:reduce) { .reference-mosaic-card,.reference-mosaic-create { transition:none; } }
+
+
+/* Anatomy names need wider tiles than short group names. */
+.member-mosaic.composed:not(.ascending) .reference-mosaic-card.lead { grid-column:1/-1; grid-row:span 1; min-height:188px; }
+.member-mosaic.composed:not(.ascending) .reference-mosaic-card.lead .reference-mosaic-open { flex-direction:row; align-items:flex-end; gap:16px; }
+.member-mosaic.composed:not(.ascending) .reference-mosaic-card.lead .reference-mosaic-name { align-self:flex-start; max-width:60%; font-size:23px; padding-right:0; }
+.member-mosaic.composed:not(.ascending) .reference-mosaic-card.lead .reference-mosaic-value { padding-top:40px; }
+.member-mosaic.composed:not(.ascending) .reference-mosaic-card.lead .reference-mosaic-value b { font-size:88px; }
+.member-mosaic .reference-mosaic-card.side { grid-column:span 3; }
+.member-mosaic.ascending .reference-mosaic-card.lead .reference-mosaic-name { font-size:20px; }
+@media(max-width:360px) {
+ .member-mosaic.composed:not(.ascending) .reference-mosaic-card.lead .reference-mosaic-name { font-size:21px; max-width:58%; }
+ .member-mosaic.composed:not(.ascending) .reference-mosaic-card.lead .reference-mosaic-value b { font-size:72px; }
+ .member-mosaic.ascending .reference-mosaic-card.lead .reference-mosaic-name { font-size:18px; }
+}
+
 </style>
 </head>
 <body>
@@ -4314,7 +4457,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     <div class="exercises-header">
       <div class="exercises-header-top">
         <button type="button" class="btn-chip" id="exercise-reference-back" aria-label="Назад к предыдущему разделу"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>
-        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><div id="exercise-reference-meta" class="reference-header-meta" hidden><span id="exercise-reference-type" class="movement-group-chip" hidden></span><button type="button" id="exercise-reference-group" class="movement-group-chip" data-ref-action="group" hidden></button></div><svg id="exercise-reference-connector" viewBox="0 0 29 44" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><path d="M29 0V8C29 25 0 24 0 38V44" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg></div>
+        <div class="reference-header-heading"><div class="exercises-header-title" id="exercise-reference-title">Справочники</div><p id="exercise-reference-summary" class="reference-page-summary" aria-live="polite" hidden></p><div id="exercise-reference-meta" class="reference-header-meta" hidden><span id="exercise-reference-type" class="movement-group-chip" hidden></span><button type="button" id="exercise-reference-group" class="movement-group-chip" data-ref-action="group" hidden></button></div><svg id="exercise-reference-connector" viewBox="0 0 29 44" preserveAspectRatio="none" fill="none" aria-hidden="true" hidden><path d="M29 0V8C29 25 0 24 0 38V44" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg></div>
         <button type="button" id="exercise-reference-edit" data-ref-action="edit-item" aria-label="Редактировать движение" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         <svg id="exercise-reference-number" viewBox="0 0 232 180" role="img" aria-label="Количество упражнений" hidden><text id="exercise-reference-count" x="226" y="144" text-anchor="end"></text></svg>
         <span class="exd-source" id="exercise-reference-scope" hidden></span>
