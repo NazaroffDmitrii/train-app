@@ -3574,8 +3574,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 @media (min-width:681px) { #constructor-scroll,.sg-header,.sg-footer { padding-inline:max(16px,calc((100% - 640px)/2)); } }
 @media (prefers-reduced-motion:reduce) { .sg-sheet { transition:none; } }
 /* Exercise library: one continuous surface per tab and category. */
-#screen-exercises { --library-top:#191726; --library-bottom:#0d0c18; --library-shell:#131f29; background:var(--library-shell); }
-#screen-exercises.library-catalog { --library-top:#131f29; --library-bottom:#0a1219; --library-shell:#191726; }
 #screen-exercises .exercises-header { background:linear-gradient(180deg,color-mix(in srgb,var(--library-shell) 30%,#101017),var(--library-shell)); border:0; padding:calc(var(--safe-top) + 16px) 20px 14px; }
 #screen-exercises .exercises-header-title { font-size:22px; font-weight:700; letter-spacing:-.02em; }
 #screen-exercises #exercises-back-btn, #screen-exercises #ex-cat-manage-btn { width:38px; height:38px; min-width:38px; padding:0; border-radius:50%; background:transparent; border:1px solid #ffffff1a; color:#a99cf5; display:flex; align-items:center; justify-content:center; }
@@ -3692,8 +3690,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   #screen-exercise-detail .detail-screen-body { padding-inline:max(12px,calc((100% - 640px) / 2)); }
 }
 
-#screen-exercise-reference { --library-top:#191726; --library-bottom:#0d0c18; --library-shell:#131f29; background:var(--library-shell); }
-#screen-exercise-reference.library-catalog { --library-top:#131f29; --library-bottom:#0a1219; --library-shell:#191726; }
 #screen-exercise-reference .exercises-header { border:0; background:linear-gradient(180deg,color-mix(in srgb,var(--library-shell) 30%,#101017),var(--library-shell)); }
 #screen-exercise-reference .exercises-header-title { min-width:0; overflow-wrap:anywhere; }
 #screen-exercise-reference [hidden] { display:none!important; }
@@ -3755,8 +3751,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .exercise-move { text-align:left; }
 .reference-name-link { flex:1; min-width:0; color:inherit; text-align:left; font:inherit; line-height:1.4; }
 .reference-header-heading { flex:1; min-width:0; }
-#screen-exercise-reference.reference-movement {
-  --movement-rail:33px; --movement-inset:62px;
+/* Shared Mine/Catalog palette, including movement pages. */
+:is(#screen-exercises,#screen-exercise-reference) {
   --movement-page:#0d0c18; --movement-top:#251d3b; --movement-header:#453664;
   --movement-text:#f2f2f7; --movement-muted:#aaa6bc; --movement-line:#73608f; --movement-accent:#b9aeff;
   --movement-circle:#14141f; --movement-node:#29213e; --movement-node-border:#6c558a; --movement-node-text:#d7c7ff;
@@ -3764,9 +3760,12 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   --movement-target:#342849; --movement-target-border:#514264; --movement-target-text:#ede1ff;
   --movement-tabs:#090811; --movement-selected:#2c2935; --movement-card:#11101c; --movement-card-border:#393147;
   --movement-number-stroke:#a893c5;
+  --library-top:var(--movement-top); --library-bottom:var(--movement-page); --library-shell:var(--movement-header);
+  --accent:var(--movement-accent); --accent-bright:var(--movement-accent); --accent-soft:color-mix(in srgb,var(--movement-accent) 14%,transparent);
+  --text-secondary:var(--movement-chip-text); --text-tertiary:var(--movement-muted);
   background:linear-gradient(180deg,var(--movement-header),var(--movement-top) var(--movement-header-end,calc(var(--safe-top) + 100px)),color-mix(in srgb,var(--movement-top) 40%,var(--movement-page)) calc(var(--movement-header-end,calc(var(--safe-top) + 100px)) + 36px),color-mix(in srgb,var(--movement-top) 10%,var(--movement-page)) calc(var(--movement-header-end,calc(var(--safe-top) + 100px)) + 80px),var(--movement-page) calc(var(--movement-header-end,calc(var(--safe-top) + 100px)) + 140px));
 }
-#screen-exercise-reference.reference-movement[data-movement-scope="catalog"] {
+:is(#screen-exercises,#screen-exercise-reference).library-catalog {
   --movement-page:#0a141a; --movement-top:#172f36; --movement-header:#2c565a;
   --movement-muted:#a2b9bd; --movement-line:#56848e; --movement-accent:#a8dedb;
   --movement-circle:#101e24; --movement-node:#203c41; --movement-node-border:#497780; --movement-node-text:#bce6e4;
@@ -3775,6 +3774,53 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   --movement-tabs:#0b1b21; --movement-selected:#2b4b51; --movement-card:#101e26; --movement-card-border:#2c4b55;
   --movement-number-stroke:#8abebd;
 }
+:is(#screen-exercises,#screen-exercise-reference) .exercises-header { background:transparent; border:0; }
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-body { background:transparent; border-radius:0; }
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs { background:transparent; gap:4px; padding:0 max(12px,calc((100% - 640px)/2)) 6px; }
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button { color:var(--movement-muted); }
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active { background:var(--movement-selected); color:var(--movement-text); border-radius:14px; }
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active::before,
+:is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active::after { display:none; }
+:is(#screen-exercises,#screen-exercise-reference) :is(#exercises-back-btn,#ex-cat-manage-btn,#exercise-reference-back) { background:var(--movement-circle); color:var(--movement-accent); }
+#screen-exercises .exercises-search { background-color:var(--movement-circle); border-color:var(--movement-card-border); color:var(--movement-text); }
+#screen-exercises .exercises-search::placeholder { color:var(--movement-muted); }
+#screen-exercises .exercises-search:focus { border-color:var(--movement-accent); }
+#screen-exercises .exercise-filter-btn { background:var(--movement-group); color:var(--movement-accent); }
+#screen-exercises .exercise-filter-btn.active { background:var(--movement-target); color:var(--movement-target-text); }
+#screen-exercises .exercises-add-btn { background:var(--movement-accent); color:var(--movement-circle); }
+#screen-exercises :is(.ex-cat-tab,.exercise-movement-tabs button) { background:var(--movement-chip); color:var(--movement-chip-text); }
+#screen-exercises :is(.ex-cat-tab,.exercise-movement-tabs button).active { background:var(--movement-target); color:var(--movement-target-text); box-shadow:inset 0 0 0 1px var(--movement-target-border); }
+#screen-exercises :is(.exercise-ago,.exercise-more,.exercise-variants-label,.ex-group-name,.ex-row-chevron,.ex-row-group-badge) { color:var(--movement-muted); }
+#screen-exercises .exercise-library-add { border-color:var(--movement-node-border); color:var(--movement-accent); background:var(--movement-card); }
+#screen-exercises .exercise-library-add.added { border-color:var(--movement-accent); color:var(--movement-circle); background:var(--movement-accent); }
+#screen-exercises .ex-category-panel { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 12%,transparent),transparent 60%),var(--movement-card); border-color:var(--movement-card-border); }
+#screen-exercises :is(.ex-row,.ex-row-wrap-group.expanded) { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) 28%,var(--movement-card-border)); }
+#screen-exercises .ex-row-wrap-group:not(.expanded) > .ex-row-group { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) 28%,var(--movement-card-border)); }
+#screen-exercises .expanded > .ex-row-group { background:transparent; border:0; }
+#screen-exercises .ex-row-wrap-nested .ex-row { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 18%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent)),var(--movement-chip); }
+#screen-exercises .constructor-catalog-footer { background:var(--movement-circle); border-color:var(--movement-card-border); }
+#screen-exercises .constructor-catalog-footer button { color:var(--movement-circle); }
+#screen-exercises .constructor-catalog-add { border-color:var(--movement-node-border); color:var(--movement-accent); }
+#screen-exercises .constructor-catalog-add.selected { background:var(--movement-accent); border-color:var(--movement-accent); color:var(--movement-circle); }
+#screen-exercises .constructor-catalog-modes { background:var(--movement-tabs); }
+#screen-exercises .constructor-catalog-modes button { color:var(--movement-muted); }
+#screen-exercises .constructor-catalog-modes .selected { background:var(--movement-selected); color:var(--movement-text); }
+#screen-exercise-reference .reference-row:not(.reference-tinted) { background:var(--movement-card); border-color:var(--movement-card-border); }
+#screen-exercise-reference .reference-tinted { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) 28%,var(--movement-card-border)); }
+#screen-exercise-reference :is(.reference-note,.reference-row-copy small,.reference-count,.reference-row > svg,.reference-label,.reference-section-title,.reference-empty,.reference-icon-button) { color:var(--movement-muted); }
+#screen-exercise-reference .reference-hub-icon { background:var(--movement-node); color:var(--movement-accent); }
+#screen-exercise-reference :is(.reference-field,.reference-picker,.reference-badge:not(.on)) { background:var(--movement-chip); color:var(--movement-chip-text); }
+#screen-exercise-reference .reference-field::placeholder { color:var(--movement-muted); }
+#screen-exercise-reference .reference-field:focus { border-color:var(--movement-accent); }
+#screen-exercise-reference .reference-create { background:var(--movement-accent); color:var(--movement-circle); }
+#screen-exercise-reference :is(.reference-add,.reference-detail-edit,.reference-movement-banner svg) { color:var(--movement-accent); border-color:var(--movement-node-border); }
+#screen-exercise-reference :is(.reference-info,.reference-movement-banner) { background:var(--movement-chip); border-color:var(--movement-card-border); }
+#screen-exercise-reference .reference-picker-row { color:var(--movement-chip-text); }
+#screen-exercise-reference .ref-chip { background:var(--movement-chip); color:var(--movement-chip-text); border-color:var(--movement-card-border); }
+#screen-exercise-reference .msd-anatomy { color:var(--movement-chip-text); }
+#screen-exercise-reference .exd-source { color:var(--movement-group-text); background:var(--movement-group); border-color:var(--movement-card-border); }
+:is(#screen-exercises,#screen-exercise-reference) button:focus-visible { outline-color:var(--movement-accent); }
+#screen-exercise-reference.reference-movement { --movement-rail:33px; --movement-inset:62px; }
 #screen-exercise-reference.reference-movement .exercises-header { padding:calc(var(--safe-top) + 18px) 14px 0; overflow:visible; background:transparent; }
 #screen-exercise-reference.reference-movement .exercises-header-top { position:relative; display:grid; grid-template-columns:38px minmax(0,1fr) 38px; gap:10px; align-items:start; width:100%; max-width:612px; margin-inline:auto; }
 #screen-exercise-reference.reference-movement .reference-header-heading { position:relative; padding-bottom:48px; z-index:1; }

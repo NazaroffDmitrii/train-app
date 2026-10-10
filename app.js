@@ -7870,9 +7870,10 @@ function renderExerciseReference() {
 }
 // Anchor the fade to the header's actual height, including wrapped titles and safe areas.
 if (window.ResizeObserver) {
-  const screen = $('screen-exercise-reference');
-  new ResizeObserver(([entry]) => screen.style.setProperty('--movement-header-end',`${entry.target.offsetHeight}px`))
-    .observe(screen.querySelector('.exercises-header'));
+  document.querySelectorAll('#screen-exercises, #screen-exercise-reference').forEach(screen => {
+    new ResizeObserver(([entry]) => screen.style.setProperty('--movement-header-end',`${entry.target.offsetHeight}px`))
+      .observe(screen.querySelector('.exercises-header'));
+  });
 }
 $('screen-exercise-reference').addEventListener('click', async event => {
   const button = event.target.closest('[data-ref-action]');
