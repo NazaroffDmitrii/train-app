@@ -2557,6 +2557,7 @@ function goBackScreen(fallback = "menu", opts = {}) {
 }
 
 function goToScreen(name, opts = {}) {
+  if (name !== "exerciseReference") cancelMovementRemovals();
   // Формы редактирования никогда не должны быть местом, куда можно "вернуться
   // назад" — если экран меняется, пока форма открыта, закрываем её сразу
   // Сворачивание приложения само по себе форму не закрывает.
@@ -7588,6 +7589,55 @@ function referenceMovementNumber(item, data) {
   const ownIndex = personal.findIndex(x => x.id === item.id);
   return ownIndex >= 0 ? String(shared.length + ownIndex + 1) : '';
 }
+const _movementRemovals = new Map();
+function movementRemovalCurrent(pending) {
+  const s = _referenceState;
+  return s === pending.state && s.page === 'movement' && s.name === pending.name
+    && (s.exerciseScope || s.scope) === 'mine' && s.owner === Auth.userId()
+    && s.userId === DATA.getCurrentUser() && !Auth.contextChanged()
+    && $('screen-exercise-reference').classList.contains('active');
+}
+function cancelMovementRemovals() {
+  _movementRemovals.forEach(pending => clearTimeout(pending.timer));
+  _movementRemovals.clear();
+}
+function toggleMovementRemoval(id) {
+  const existing = _movementRemovals.get(id);
+  if (existing) {
+    clearTimeout(existing.timer); _movementRemovals.delete(id);
+    _referenceState.scrollTop = $('exercise-reference-content').scrollTop;
+    renderExerciseReference(); return;
+  }
+  const s = _referenceState;
+  const pending = {state:s, name:s.name, deadline:Date.now() + 3000, remaining:3, timer:null};
+  _movementRemovals.set(id,pending);
+  const tick = () => {
+    if (!movementRemovalCurrent(pending) || DATA.isHidden(s.userId,id)
+      || !referenceMovementExercises(referenceData(),'mine').some(ex => ex.id === id)) {
+      _movementRemovals.delete(id);
+      if (_referenceState === s && $('screen-exercise-reference').classList.contains('active')) {
+        s.scrollTop = $('exercise-reference-content').scrollTop; renderExerciseReference();
+      }
+      return;
+    }
+    pending.remaining = Math.max(0,Math.ceil((pending.deadline - Date.now()) / 1000));
+    if (!pending.remaining) {
+      _movementRemovals.delete(id);
+      s.scrollTop = $('exercise-reference-content').scrollTop;
+      toggleExerciseLibrary(id); renderExerciseReference(); return;
+    }
+    $('exercise-reference-content').querySelectorAll('[data-removal-pending]').forEach(button => {
+      if (button.dataset.refValue === id) {
+        button.textContent = String(pending.remaining);
+        button.setAttribute('aria-label',`Отменить удаление: ${button.dataset.exerciseName}. Осталось ${pending.remaining} с`);
+      }
+    });
+    pending.timer = setTimeout(tick,Math.max(1,pending.deadline - Date.now() - (pending.remaining - 1) * 1000));
+  };
+  pending.timer = setTimeout(tick,1000);
+  s.scrollTop = $('exercise-reference-content').scrollTop;
+  renderExerciseReference();
+}
 function referenceMovementHtml(data) {
   const s = _referenceState, userId = DATA.getCurrentUser();
   const item = data.movements.find(x => x.name === s.name);
@@ -7605,11 +7655,13 @@ function referenceMovementHtml(data) {
     `class="movement-tab${scope === value ? ' active' : ''}" aria-pressed="${scope === value}"`)).join('');
   const cards = exercises.map(ex => {
     const added = !DATA.isHidden(userId, ex.id);
+    const pending = scope === 'mine' ? _movementRemovals.get(ex.id) : null;
     const last = DATA.getLastWorkoutForExercise(userId, ex.id);
     if (last) _exerciseLastDates.set(ex.id, last.startedAt); else _exerciseLastDates.delete(ex.id);
     const membership = referenceAction(added ? 'movement-remove' : 'movement-add', ex.id,
-      `${added ? 'Убрать из моих' : 'Добавить в мои'}: ${ex.name}`, referenceIcon('check'),
-      `class="movement-exercise-toggle" aria-pressed="${added}" title="${added ? 'Убрать из моих' : 'Добавить в мои'}"`);
+      pending ? `Отменить удаление: ${ex.name}. Осталось ${pending.remaining} с` : `${added ? 'Убрать из моих' : 'Добавить в мои'}: ${ex.name}`,
+      pending ? String(pending.remaining) : referenceIcon('check'),
+      `class="movement-exercise-toggle" aria-pressed="${added}" title="${pending ? 'Отменить удаление' : added ? 'Убрать из моих' : 'Добавить в мои'}"${pending ? ` data-removal-pending data-exercise-name="${escHtml(ex.name)}"` : ''}`);
     return '<article class="movement-exercise-card">'
       + referenceAction('exercise', ex.id, ex.name, `<b>${escHtml(ex.name)}</b>`, `class="movement-exercise-open" title="${escHtml(ex.name)}"`)
       + `<div class="movement-exercise-footer"><span class="movement-group-chip movement-exercise-group" title="${escHtml(ex.cat || 'Без группы')}">${escHtml(ex.cat || 'Без группы')}</span>${membership}`
@@ -7763,6 +7815,9 @@ function referenceListHtml(data) {
     `<span class="reference-row-copy"><b>${escHtml(name)}</b></span><small class="reference-count">${count}</small>${SVG_CHEVRON}`, 'class="reference-row"')).join('') || '<p class="reference-empty">Мышцы не найдены</p>';
 }
 function renderExerciseReference() {
+  _movementRemovals.forEach((pending,id) => {
+    if (!movementRemovalCurrent(pending)) { clearTimeout(pending.timer); _movementRemovals.delete(id); }
+  });
   const s = _referenceState, data = referenceData(), mine = s.scope === 'mine';
   const movement = s.page === 'movement';
   const leaf = ['group','movement','muscle'].includes(s.page);
@@ -7818,6 +7873,7 @@ $('screen-exercise-reference').addEventListener('click', async event => {
   if (action === 'exercise') { s.scrollTop = $('exercise-reference-content').scrollTop; openExerciseDetail(value,'exerciseReference'); return; }
   if (s.page === 'movement' && action === 'movement-scope') {
     if (!['mine','catalog'].includes(value)) return;
+    if (value !== (s.exerciseScope || s.scope)) cancelMovementRemovals();
     s.exerciseScope = value; s.scrollTop = $('exercise-reference-content').scrollTop;
     renderExerciseReference(); return;
   }
@@ -7827,13 +7883,9 @@ $('screen-exercise-reference').addEventListener('click', async event => {
     if (action === 'movement-add' && scope !== 'catalog') return;
     if (!referenceMovementExercises(referenceData(),scope).some(ex => ex.id === value)) return;
     if ((action === 'movement-add') !== DATA.isHidden(DATA.getCurrentUser(),value)) return;
+    if (action === 'movement-remove' && scope === 'mine') { toggleMovementRemoval(value); return; }
     s.scrollTop = $('exercise-reference-content').scrollTop;
     toggleExerciseLibrary(value); renderExerciseReference();
-    if (action === 'movement-remove') showActionToast('Упражнение убрано из моих', 'Вернуть', () => {
-      if (s.owner !== Auth.userId() || Auth.contextChanged() || s.userId !== DATA.getCurrentUser()) return;
-      if (!DATA.isHidden(s.userId,value)) return;
-      toggleExerciseLibrary(value); renderExerciseReference();
-    });
     return;
   }
   if (s.page === 'movement' && action === 'edit-item' && !DATA.isAdmin()) return;

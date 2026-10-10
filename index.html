@@ -3764,7 +3764,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   --movement-target:#342849; --movement-target-border:#514264; --movement-target-text:#ede1ff;
   --movement-tabs:#090811; --movement-selected:#2c2935; --movement-card:#11101c; --movement-card-border:#393147;
   --movement-number-stroke:#a893c5;
-  background:linear-gradient(180deg,var(--movement-top),var(--movement-page) 460px);
+  background:linear-gradient(180deg,var(--movement-header),var(--movement-top) calc(var(--safe-top) + 160px),var(--movement-page) calc(var(--safe-top) + 460px));
 }
 #screen-exercise-reference.reference-movement[data-movement-scope="catalog"] {
   --movement-page:#0a141a; --movement-top:#172f36; --movement-header:#2c565a;
@@ -3775,7 +3775,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   --movement-tabs:#0b1b21; --movement-selected:#2b4b51; --movement-card:#101e26; --movement-card-border:#2c4b55;
   --movement-number-stroke:#8abebd;
 }
-#screen-exercise-reference.reference-movement .exercises-header { padding:calc(var(--safe-top) + 18px) 14px 0; overflow:hidden; background:linear-gradient(180deg,var(--movement-header),var(--movement-top)); }
+#screen-exercise-reference.reference-movement .exercises-header { padding:calc(var(--safe-top) + 18px) 14px 0; overflow:visible; background:transparent; }
 #screen-exercise-reference.reference-movement .exercises-header-top { position:relative; display:grid; grid-template-columns:38px minmax(0,1fr) 38px; gap:10px; align-items:start; width:100%; max-width:612px; margin-inline:auto; }
 #screen-exercise-reference.reference-movement .reference-header-heading { position:relative; padding-bottom:48px; z-index:1; }
 #screen-exercise-reference.reference-movement .exercises-header-title { margin:0; font-size:23px; line-height:1.34; font-weight:500; letter-spacing:-.35px; text-wrap:pretty; color:var(--movement-text); }
@@ -3783,8 +3783,10 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #exercise-reference-connector { position:absolute; left:calc(var(--movement-rail) - var(--movement-inset)); bottom:0; width:calc(var(--movement-inset) - var(--movement-rail)); height:44px; color:var(--movement-line); overflow:visible; pointer-events:none; }
 #exercise-reference-edit { grid-column:3; grid-row:1; position:relative; width:38px; height:38px; padding:0; border:1px solid #ffffff12; border-radius:50%; background:var(--movement-circle); color:var(--movement-accent); display:grid; place-items:center; z-index:2; }
 #exercise-reference-edit svg { width:18px; height:18px; }
-#exercise-reference-number { position:absolute; right:-10px; top:-26px; bottom:0; font-size:174px; line-height:1; font-weight:500; letter-spacing:-7px; color:transparent; -webkit-text-stroke:1.5px var(--movement-number-stroke); opacity:.3; mask-image:linear-gradient(180deg,#000 25%,transparent 96%); -webkit-mask-image:linear-gradient(180deg,#000 25%,transparent 96%); pointer-events:none; user-select:none; }
-#screen-exercise-reference.reference-movement .exercise-library-body { background:transparent; border-radius:0; }
+#exercise-reference-number { position:absolute; right:-10px; top:-26px; height:174px; font-size:174px; line-height:1; font-weight:500; letter-spacing:-7px; color:transparent; -webkit-text-stroke:1.5px var(--movement-number-stroke); opacity:.3; mask-image:linear-gradient(180deg,#000 25%,transparent 96%); -webkit-mask-image:linear-gradient(180deg,#000 25%,transparent 96%); pointer-events:none; user-select:none; }
+#screen-exercise-reference.reference-movement .exercise-library-body { position:relative; background:transparent; border-radius:0; }
+/* Keep the rail behind the scroll viewport, including its elastic overscroll gap. */
+#screen-exercise-reference.reference-movement .exercise-library-body::before { content:""; position:absolute; left:calc(max(0px,(100% - 640px)/2) + var(--movement-rail) - .75px); top:0; bottom:0; width:1.5px; background:var(--movement-line); pointer-events:none; }
 #screen-exercise-reference.reference-movement .reference-page-scroll { padding:0 max(0px,calc((100% - 640px)/2)) calc(26px + var(--safe-bottom)); }
 .movement-tree { position:relative; padding:0 16px 0 var(--movement-inset); }
 .movement-tree::before { content:""; position:absolute; left:calc(var(--movement-rail) - .75px); top:0; bottom:24px; width:1.5px; background:var(--movement-line); }
@@ -3815,6 +3817,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .movement-exercise-toggle svg { width:14px; height:14px; opacity:.45; }
 .movement-exercise-toggle[aria-pressed="true"] { border-color:var(--movement-accent); color:var(--movement-circle); background:var(--movement-accent); }
 .movement-exercise-toggle[aria-pressed="true"] svg { opacity:1; }
+.movement-exercise-toggle[data-removal-pending] { border-color:var(--movement-accent); color:var(--movement-accent); background:var(--movement-card); font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; }
 @media(pointer:coarse) { .movement-exercise-toggle::before { content:""; position:absolute; inset:-8px; } }
 .movement-empty { grid-column:1/-1; margin:0; padding:12px 0; font-size:13px; line-height:1.5; color:var(--movement-muted); }
 #screen-exercise-reference.reference-movement button:focus-visible { outline:2px solid var(--movement-accent); outline-offset:3px; }
