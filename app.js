@@ -7812,15 +7812,24 @@ function referenceQuantity(count, one, few, many) {
 function referenceIndexData() {
   return referenceData(['movements','muscles'].includes(_referenceState.page) ? 'catalog' : _referenceState.scope);
 }
-const REFERENCE_BROWSE_SORTS = [['atlas','По атласу'],['desc','Больше упражнений'],['asc','Меньше упражнений']];
+const REFERENCE_BROWSE_SORTS = [['atlas','По атласу'],['desc','Больше упражнений в каталоге'],['asc','Меньше упражнений в каталоге']];
+const REFERENCE_MUSCLE_SORTS = [['atlas','По атласу'],['az','По алфавиту А–Я'],['za','По алфавиту Я–А']];
+function referenceBrowseKind() { return _referenceState.page === 'muscles' ? 'muscles' : 'movements'; }
+function referenceBrowseSorts() { return referenceBrowseKind() === 'muscles' ? REFERENCE_MUSCLE_SORTS : REFERENCE_BROWSE_SORTS; }
+function referenceBrowseTypes() {
+  return referenceBrowseKind() === 'muscles' ? [['all','Все'],['surface','Поверхностные'],['deep','Глубокие']] : [['all','Все'],['База','База'],['Опция','Опция']];
+}
+function referenceBrowseType(item) {
+  return referenceBrowseKind() === 'muscles' ? (item.visible ? 'surface' : 'deep') : (item.type === 'Опция' ? 'Опция' : 'База');
+}
 function referenceBrowseGroups(data) {
-  return [...new Set([...data.groups,...data.movements.map(item => item.group || '')])];
+  return [...new Set([...data.groups,...data[referenceBrowseKind()].map(item => item.group || '')])];
 }
 function referenceBrowseInit(data) {
   const s = _referenceState, groups = referenceBrowseGroups(data);
   if (s.browseGroup === undefined || s.browseGroup !== null && !groups.includes(s.browseGroup)) s.browseGroup = groups.includes('Ноги') ? 'Ноги' : groups[0] ?? null;
-  if (!['all','База','Опция'].includes(s.browseType)) s.browseType = 'all';
-  if (!REFERENCE_BROWSE_SORTS.some(([key]) => key === s.browseSort)) s.browseSort = 'atlas';
+  if (!referenceBrowseTypes().some(([key]) => key === s.browseType)) s.browseType = 'all';
+  if (!referenceBrowseSorts().some(([key]) => key === s.browseSort)) s.browseSort = 'atlas';
 }
 function referenceBrowseShownGroups(data) {
   const groups = referenceBrowseGroups(data), s = _referenceState;
@@ -7830,41 +7839,53 @@ function referenceBrowseShownGroups(data) {
 }
 function referenceBrowseCounts(data) {
   const counts = new Map();
-  data.exercises.forEach(ex => new Set(exerciseMovements(ex)).forEach(name => counts.set(name,(counts.get(name) || 0) + 1)));
+  data.exercises.forEach(ex => new Set(referenceBrowseKind() === 'muscles' ? referenceExerciseMuscles(ex) : exerciseMovements(ex)).forEach(name => counts.set(name,(counts.get(name) || 0) + 1)));
   return counts;
+}
+// Match the shared entity by id so personal names and hidden references agree with its detail page.
+function referenceBrowsePersonalCounts(data) {
+  const kind = referenceBrowseKind(), personal = referenceData('mine'), counts = referenceBrowseCounts(personal);
+  const own = new Map(personal[kind].map(item => [item.id,item]));
+  return new Map(data[kind].map(item => [item.name,counts.get(own.get(item.id)?.name) || 0]));
+}
+function referenceBrowseExerciseSummary(mine, catalog) {
+  return `<span class="ref-browse-library-summary"><span class="ref-browse-library-heading">Упражнения</span><span class="ref-browse-library-counts">`
+    + `<span class="ref-browse-library-count mine${mine === 0 ? ' zero' : ''}"><span>Мои</span><b>${mine}</b></span>`
+    + `<span class="ref-browse-library-count catalog${catalog === 0 ? ' zero' : ''}"><span>Каталог</span><b>${catalog}</b></span></span></span>`;
 }
 function referenceBrowseItems(data) {
   const s = _referenceState, q = s.query.trim().toLocaleLowerCase('ru'), counts = referenceBrowseCounts(data);
-  const items = data.movements.filter(item => (s.browseGroup === null || q || (item.group || '') === s.browseGroup)
-    && (!q || item.name.toLocaleLowerCase('ru').includes(q)) && (s.browseType === 'all' || (item.type === 'Опция' ? 'Опция' : 'База') === s.browseType));
-  if (s.browseSort !== 'atlas') items.sort((a,b) => (s.browseSort === 'asc' ? 1 : -1) * ((counts.get(a.name)||0)-(counts.get(b.name)||0)));
+  const items = data[referenceBrowseKind()].filter(item => (s.browseGroup === null || q || (item.group || '') === s.browseGroup)
+    && (!q || item.name.toLocaleLowerCase('ru').includes(q)) && (s.browseType === 'all' || referenceBrowseType(item) === s.browseType));
+  if (s.browseSort === 'az' || s.browseSort === 'za') items.sort((a,b) => (s.browseSort === 'az' ? 1 : -1) * a.name.localeCompare(b.name,'ru'));
+  else if (s.browseSort !== 'atlas') items.sort((a,b) => (s.browseSort === 'asc' ? 1 : -1) * ((counts.get(a.name)||0)-(counts.get(b.name)||0)));
   return items;
 }
 function referenceBrowseGroupHtml(data) {
   const s = _referenceState;
-  return referenceBrowseShownGroups(data).map(name => referenceAction('browse-group',name,`Движения группы: ${name || 'Без группы'}`,
-    `<span>${escHtml(name || 'Без группы')}</span><small>${data.movements.filter(item => (item.group || '') === name).length}</small>`,
+  return referenceBrowseShownGroups(data).map(name => referenceAction('browse-group',name,`${referenceBrowseKind() === 'muscles' ? 'Мышцы' : 'Движения'} группы: ${name || 'Без группы'}`,
+    `<span>${escHtml(name || 'Без группы')}</span><small>${data[referenceBrowseKind()].filter(item => (item.group || '') === name).length}</small>`,
     `class="ref-browse-group-switch${!name.includes(' ') && name.length > 9 ? ' long-word' : ''}" style="--cat-color:${escHtml(DATA.getCategoryColor(DATA.getCurrentUser(),name))}" aria-pressed="${s.browseGroup === name && !s.query.trim()}"`)).join('');
 }
 function referenceBrowseToolsHtml(data) {
-  return `<div class="ref-browse-search-row"><label class="ref-browse-search-box">${referenceIcon('search')}<input id="reference-search" type="search" placeholder="Поиск движения…" aria-label="Поиск движения" autocomplete="off" value="${escHtml(_referenceState.query)}">`
+  return `<div class="ref-browse-search-row"><label class="ref-browse-search-box">${referenceIcon('search')}<input id="reference-search" type="search" placeholder="Поиск ${referenceBrowseKind() === 'muscles' ? 'мышцы' : 'движения'}…" aria-label="Поиск ${referenceBrowseKind() === 'muscles' ? 'мышцы' : 'движения'}" autocomplete="off" value="${escHtml(_referenceState.query)}">`
     + referenceAction('browse-clear','','Очистить поиск','×','class="ref-browse-search-clear" id="reference-browse-clear"') + '</label>'
-    + referenceAction('browse-sort','','Сменить порядок движений',referenceIcon('sort-desc'),'class="ref-browse-filter-button" id="reference-browse-sort"') + '</div>'
+    + referenceAction('browse-sort','','Сменить порядок справочника',referenceIcon('sort-desc'),'class="ref-browse-filter-button" id="reference-browse-sort"') + '</div>'
     + '<div class="ref-browse-order-caption">Порядок: <span id="reference-browse-order" role="status" aria-live="polite"></span></div>'
     + `<div class="ref-browse-group-selector-label"><span>Группы · <b>${referenceBrowseGroups(data).length}</b></span>`
-    + referenceAction('browse-all','','Все движения','Все движения','id="reference-browse-all"') + '</div>'
-    + `<div id="reference-browse-groups" class="ref-browse-group-filters" role="group" aria-label="Группа движения">${referenceBrowseGroupHtml(data)}</div>`
+    + referenceAction('browse-all','',referenceBrowseKind() === 'muscles' ? 'Все мышцы' : 'Все движения',referenceBrowseKind() === 'muscles' ? 'Все мышцы' : 'Все движения','id="reference-browse-all"') + '</div>'
+    + `<div id="reference-browse-groups" class="ref-browse-group-filters" role="group" aria-label="Группа ${referenceBrowseKind() === 'muscles' ? 'мышцы' : 'движения'}">${referenceBrowseGroupHtml(data)}</div>`
     + referenceAction('browse-more','','Показать остальные группы','','class="ref-browse-group-more" id="reference-browse-more" aria-controls="reference-browse-groups"')
     + '<div class="ref-browse-filter-status" id="reference-browse-status"><span id="reference-browse-status-text" role="status"></span>'
     + referenceAction('browse-reset','','Сбросить фильтры','Сбросить') + '</div>';
 }
 function referenceBrowseUpdateTools(data) {
-  const s = _referenceState, groups = referenceBrowseGroups(data), mode = REFERENCE_BROWSE_SORTS.findIndex(([key]) => key === s.browseSort);
-  const current = REFERENCE_BROWSE_SORTS[mode][1], next = REFERENCE_BROWSE_SORTS[(mode+1)%REFERENCE_BROWSE_SORTS.length][1];
+  const s = _referenceState, groups = referenceBrowseGroups(data), sorts = referenceBrowseSorts(), mode = sorts.findIndex(([key]) => key === s.browseSort);
+  const current = sorts[mode][1], next = sorts[(mode+1)%sorts.length][1];
   $('reference-browse-order').textContent = current;
   const sort = $('reference-browse-sort');
   sort.setAttribute('aria-label',`Порядок: ${current}. Переключить: ${next}`); sort.title = `${current} → ${next}`;
-  sort.innerHTML = s.browseSort === 'atlas' ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>' : referenceIcon(s.browseSort === 'asc' ? 'sort-asc' : 'sort-desc');
+  sort.innerHTML = s.browseSort === 'atlas' ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>' : referenceIcon(['asc','az'].includes(s.browseSort) ? 'sort-asc' : 'sort-desc');
   $('reference-browse-groups').innerHTML = referenceBrowseGroupHtml(data);
   const more = $('reference-browse-more'), remaining = groups.length - referenceBrowseShownGroups(data).length;
   more.hidden = groups.length <= 8;
@@ -7874,32 +7895,34 @@ function referenceBrowseUpdateTools(data) {
   $('reference-browse-all').setAttribute('aria-pressed',String(s.browseGroup === null && !s.query.trim()));
   $('reference-browse-clear').hidden = !s.query;
   $('reference-browse-status').hidden = !s.query;
-  $('reference-browse-status-text').textContent = s.query ? `Поиск по всем ${data.movements.length} движениям` : '';
+  $('reference-browse-status-text').textContent = s.query ? `Поиск по всем ${data[referenceBrowseKind()].length} ${referenceBrowseKind() === 'muscles' ? 'мышцам' : 'движениям'}` : '';
 }
 function referenceMovementDeckHtml(data) {
   referenceBrowseInit(data);
-  const s = _referenceState, q = s.query.trim(), group = q ? null : s.browseGroup, counts = referenceBrowseCounts(data);
-  const all = data.movements.filter(item => group === null || (item.group || '') === group), items = referenceBrowseItems(data);
-  const tabs = [['all','Все'],['База','База'],['Опция','Опция']].map(([key,label]) => referenceAction('browse-type',key,label,
-    `${label}<small>${key === 'all' ? all.length : all.filter(item => (item.type === 'Опция' ? 'Опция' : 'База') === key).length}</small>`,
+  const s = _referenceState, q = s.query.trim(), group = q ? null : s.browseGroup, counts = referenceBrowseCounts(data), personal = referenceBrowsePersonalCounts(data), muscle = referenceBrowseKind() === 'muscles';
+  const all = data[referenceBrowseKind()].filter(item => group === null || (item.group || '') === group), items = referenceBrowseItems(data);
+  const tabs = referenceBrowseTypes().map(([key,label]) => referenceAction('browse-type',key,label,
+    `${label}<small>${key === 'all' ? all.length : all.filter(item => referenceBrowseType(item) === key).length}</small>`,
     `class="ref-browse-deck-type" aria-pressed="${s.browseType === key}"`)).join('');
   const shapes = [];
   for (let i=0;i<items.length;i++) {
-    if (items[i].name.length > 38) shapes[i] = true;
-    else if (i+1 < items.length && items[i+1].name.length <= 38) { shapes[i] = false; shapes[++i] = false; }
+    if (items[i].name.length > (muscle ? 28 : 38)) shapes[i] = true;
+    else if (i+1 < items.length && items[i+1].name.length <= (muscle ? 28 : 38)) { shapes[i] = false; shapes[++i] = false; }
     else shapes[i] = true;
   }
   const cards = items.map((item,i) => {
-    const n = counts.get(item.name) || 0, type = item.type === 'Опция' ? 'Опция' : 'База';
-    return referenceAction('movement',item.name,`${item.name}, ${type}, ${n} ${referenceQuantity(n,'упражнение','упражнения','упражнений')} в общей базе`,
-      `<span class="ref-browse-deck-title">${escHtml(item.name)}</span><span class="ref-browse-deck-card-footer"><span class="ref-browse-deck-count"><b>${n}</b> ${shapes[i] ? referenceQuantity(n,'упражнение','упражнения','упражнений') : 'упр.'}</span><span class="ref-browse-deck-card-kind ${type === 'База' ? 'base' : 'optional'}">${type}</span></span>`
-        + (group === null ? `<span class="ref-browse-deck-group">${escHtml(item.group || 'Без группы')}</span>` : ''),
+    const n = counts.get(item.name) || 0, mine = personal.get(item.name) || 0;
+    const type = muscle ? (item.visible ? 'Поверхностная' : 'Глубокая') : (item.type === 'Опция' ? 'Опция' : 'База');
+    const groupLabel = group === null ? `<span class="ref-browse-deck-group">${escHtml(item.group || 'Без группы')}</span>` : '';
+    return referenceAction(muscle ? 'muscle' : 'movement',item.name,`${item.name}, ${type}. Упражнения — мои: ${mine}; каталог: ${n} ${referenceQuantity(n,'упражнение','упражнения','упражнений')}`,
+      `<span class="ref-browse-deck-title">${escHtml(item.name)}</span><span class="ref-browse-deck-card-footer"><span class="ref-browse-deck-card-kind ${muscle ? item.visible ? 'base' : 'optional' : type === 'База' ? 'base' : 'optional'}">${type}</span>${groupLabel}</span>`
+        + referenceBrowseExerciseSummary(mine,n),
       `class="ref-browse-deck-motion${shapes[i] ? ' long' : ''}" style="--cat-color:${escHtml(DATA.getCategoryColor(DATA.getCurrentUser(),item.group))}"`);
   }).join('');
   const total = q ? items.length : all.length, tone = group !== null ? DATA.getCategoryColor(DATA.getCurrentUser(),group) : '#b9aeff';
-  const empty = q || s.browseType !== 'all' ? '<b>Ничего не найдено</b><span>Попробуйте другое название или тип.</span>' + referenceAction('browse-reset','','Сбросить фильтры','Сбросить фильтры') : '<b>Пока нет движений</b><span>В этой группе ещё нет элементов справочника.</span>';
-  return `<section class="ref-browse-group-deck" style="--deck-color:${escHtml(tone)}"><div class="ref-browse-deck-banner"><div><small>${q ? 'Результаты поиска' : 'Движения группы'}</small><h2>${escHtml(q ? 'Поиск' : group === null ? 'Все группы' : group || 'Без группы')}</h2></div><span class="ref-browse-deck-summary"><b>${total}</b><small>${referenceQuantity(total,'движение','движения','движений')}</small></span></div>`
-    + `<div class="ref-browse-deck-body"><div class="ref-browse-deck-types" role="group" aria-label="Тип движения">${tabs}</div><div class="ref-browse-deck-grid">${cards || `<div class="ref-browse-empty">${empty}</div>`}</div></div></section>`;
+  const empty = q || s.browseType !== 'all' ? '<b>Ничего не найдено</b><span>Попробуйте другое название или тип.</span>' + referenceAction('browse-reset','','Сбросить фильтры','Сбросить фильтры') : `<b>Пока нет ${muscle ? 'мышц' : 'движений'}</b><span>В этой группе ещё нет элементов справочника.</span>`;
+  return `<section class="ref-browse-group-deck" style="--deck-color:${escHtml(tone)}"><div class="ref-browse-deck-banner"><div><small>${q ? 'Результаты поиска' : muscle ? 'Мышцы группы' : 'Движения группы'}</small><h2>${escHtml(q ? 'Поиск' : group === null ? 'Все группы' : group || 'Без группы')}</h2></div><span class="ref-browse-deck-summary"><b>${total}</b><small>${muscle ? referenceQuantity(total,'мышца','мышцы','мышц') : referenceQuantity(total,'движение','движения','движений')}</small></span></div>`
+    + `<div class="ref-browse-deck-body"><div class="ref-browse-deck-types" role="group" aria-label="${muscle ? 'Расположение мышцы' : 'Тип движения'}">${tabs}</div><div class="ref-browse-deck-grid">${cards || `<div class="ref-browse-empty">${empty}</div>`}</div></div></section>`;
 }
 function referenceSearchHtml(placeholder) {
   const s = _referenceState, ascending = s.sort === 'count-asc';
@@ -7995,11 +8018,7 @@ function referenceListHtml(data) {
     return referenceMosaicHtml(data.groups.map(name => ({name,count:counts.get(name)||0,action:'group',value:name,color:DATA.getCategoryColor(DATA.getCurrentUser(),name)})),
       referenceEditable() ? {action:'new-group',value:'',label:'Новая группа'} : null);
   }
-  if (s.page === 'movements') return referenceMovementDeckHtml(data);
-  const counts = new Map(data.muscles.map(m => [m.name,0]));
-  data.exercises.forEach(ex => referenceExerciseMuscles(ex).forEach(name => counts.set(name, (counts.get(name) || 0) + 1)));
-  return [...counts].filter(([name]) => !q || name.toLowerCase().includes(q)).sort(([a],[b]) => a.localeCompare(b,'ru')).map(([name,count]) => referenceAction('muscle',name,name,
-    `<span class="reference-row-copy"><b>${escHtml(name)}</b></span><small class="reference-count">${count}</small>${SVG_CHEVRON}`, 'class="reference-row"')).join('') || '<p class="reference-empty">Мышцы не найдены</p>';
+  return referenceMovementDeckHtml(data);
 }
 function renderExerciseReference() {
   _movementRemovals.forEach((pending,id) => {
@@ -8016,6 +8035,7 @@ function renderExerciseReference() {
   screen.classList.toggle('reference-leaf', leaf);
   screen.classList.toggle('reference-groups-page',s.page === 'groups');
   screen.classList.toggle('reference-movements-page',s.page === 'movements');
+  screen.classList.toggle('reference-browse-page',['movements','muscles'].includes(s.page));
   screen.classList.toggle('reference-group-page',s.page === 'group');
   if (s.page === 'group') screen.style.setProperty('--cat-color',DATA.getCategoryColor(DATA.getCurrentUser(),s.name));
   else screen.style.removeProperty('--cat-color');
@@ -8063,14 +8083,14 @@ function renderExerciseReference() {
     button.classList.toggle('active',selected); button.setAttribute('aria-selected',String(selected));
   });
   const tools = $('exercise-reference-movement-tools');
-  tools.hidden = s.page !== 'movements';
-  if (s.page === 'movements') { referenceBrowseInit(data); tools.innerHTML = referenceBrowseToolsHtml(data); referenceBrowseUpdateTools(data); }
+  tools.hidden = !['movements','muscles'].includes(s.page);
+  if (['movements','muscles'].includes(s.page)) { referenceBrowseInit(data); tools.innerHTML = referenceBrowseToolsHtml(data); referenceBrowseUpdateTools(data); }
   else tools.innerHTML = '';
   let html = '';
   if (s.page === 'hub') {
     html += [['groups','Группы','Мышцы, движения и упражнения группы'],['movements','Движения','Классификация и упражнения в каждом'],['muscles','Мышцы','Где и как задействованы']].map(([key,title,description]) => referenceAction('navigate',key,title,`<span class="reference-hub-icon">${referenceIcon(key)}</span><span class="reference-row-copy"><b>${title}</b><small>${description}</small></span>${SVG_CHEVRON}`,'class="reference-row reference-hub-row"')).join('');
   } else if (!leaf) {
-    html += s.page === 'movements' ? '' : s.page === 'groups' ? referenceSearchHtml('Поиск группы…') : `<div class="reference-search-row"><input class="reference-field" id="reference-search" type="search" aria-label="Поиск в справочнике" placeholder="${s.page === 'movements' ? 'Поиск движения…' : 'Поиск мышцы…'}" value="${escHtml(s.query)}"></div>`;
+    html += ['movements','muscles'].includes(s.page) ? '' : s.page === 'groups' ? referenceSearchHtml('Поиск группы…') : `<div class="reference-search-row"><input class="reference-field" id="reference-search" type="search" aria-label="Поиск в справочнике" placeholder="${s.page === 'movements' ? 'Поиск движения…' : 'Поиск мышцы…'}" value="${escHtml(s.query)}"></div>`;
     html += `<div id="reference-list">${referenceListHtml(data)}</div>`;
   } else if (s.page === 'group') html += referenceGroupHtml(data);
   else html += referenceDetailHtml(data);
@@ -8080,7 +8100,7 @@ function renderExerciseReference() {
   referenceScrollElement().scrollTop = s.scrollTop;
   content.querySelectorAll('.reference-picker').forEach(picker => setupExerciseDragScroll(picker,'y'));
   const search = $('reference-search');
-  if (search) search.oninput = () => { s.query = search.value; $('reference-list').innerHTML = referenceListHtml(referenceIndexData()); if (s.page === 'movements') { referenceBrowseUpdateTools(referenceIndexData()); s.scrollTop = 0; referenceScrollElement().scrollTop = 0; } };
+  if (search) search.oninput = () => { s.query = search.value; $('reference-list').innerHTML = referenceListHtml(referenceIndexData()); if (['movements','muscles'].includes(s.page)) { referenceBrowseUpdateTools(referenceIndexData()); s.scrollTop = 0; referenceScrollElement().scrollTop = 0; } };
   referenceSortButton();
   const name = $('reference-group-name');
   if (name) name.onchange = async () => {
@@ -8102,13 +8122,13 @@ $('screen-exercise-reference').addEventListener('click', async event => {
   const button = event.target.closest('[data-ref-action]');
   if (!button) return;
   const s = _referenceState, action = button.dataset.refAction, value = button.dataset.refValue;
-  if (s.page === 'movements' && action.startsWith('browse-')) {
+  if (['movements','muscles'].includes(s.page) && action.startsWith('browse-')) {
     const data = referenceIndexData();
     referenceBrowseInit(data);
-    if (action === 'browse-sort') s.browseSort = REFERENCE_BROWSE_SORTS[(REFERENCE_BROWSE_SORTS.findIndex(([key]) => key === s.browseSort)+1)%REFERENCE_BROWSE_SORTS.length][0];
+    if (action === 'browse-sort') s.browseSort = referenceBrowseSorts()[(referenceBrowseSorts().findIndex(([key]) => key === s.browseSort)+1)%referenceBrowseSorts().length][0];
     else if (action === 'browse-group' && referenceBrowseGroups(data).includes(value)) { s.browseGroup = value; s.query = ''; s.browseType = 'all'; }
     else if (action === 'browse-all') { s.browseGroup = null; s.query = ''; s.browseType = 'all'; }
-    else if (action === 'browse-type' && ['all','База','Опция'].includes(value)) s.browseType = value;
+    else if (action === 'browse-type' && referenceBrowseTypes().some(([key]) => key === value)) s.browseType = value;
     else if (action === 'browse-more') s.browseGroupsExpanded = !s.browseGroupsExpanded;
     else if (action === 'browse-clear') s.query = '';
     else if (action === 'browse-reset') { s.browseGroup = undefined; s.query = ''; s.browseType = 'all'; s.browseSort = 'atlas'; referenceBrowseInit(data); }
