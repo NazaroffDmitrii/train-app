@@ -53,67 +53,24 @@ const ExerciseDescriptions = (() => {
    return section;
  }
  function carousel(content,label){
-   const slides=[...content.children],track=document.createElement('div');track.className='xd-carousel-track';track.setAttribute('role','region');track.setAttribute('aria-label',label);track.tabIndex=0;
+   const slides=[...content.children],track=document.createElement('div');track.className='template-carousel xd-carousel-track';track.setAttribute('role','region');track.setAttribute('aria-label',label);track.tabIndex=0;
    slides.forEach((slide,n)=>{slide.classList.add('xd-carousel-slide');slide.setAttribute('aria-label',`${n+1} из ${slides.length}`);track.append(slide);});
    const dots=document.createElement('div');dots.className='xd-carousel-dots';dots.setAttribute('role','img');dots.hidden=slides.length<2;dots.innerHTML=Array.from({length:Math.min(3,slides.length)},()=>'<span aria-hidden="true"></span>').join('');
    content.replaceChildren(dots,track);
-   let active=0,pending=null,drag=null,settleTimer=null,wheelTimer=null,wheel=null,suppressClick=false,lastWidth=0;
-   const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
-   const clamp=n=>Math.max(0,Math.min(slides.length-1,n));
-   const left=n=>slides[n].offsetLeft-slides[0].offsetLeft;
-   const resize=()=>{if(track.clientWidth&&slides[active]){const neighbor=drag?.horizontal?clamp(drag.index+(drag.dx<0?1:-1)):active;track.style.height=Math.max(slides[active].offsetHeight,drag?.horizontal?slides[neighbor].offsetHeight:0)+'px';}};
-   const render=(previous=active)=>{
+   let active=0;
+   const render=index=>{
+     const previous=active;active=index;
      const slot=slides.length<3?active:active===0?0:active===slides.length-1?2:1;
      [...dots.children].forEach((dot,n)=>dot.classList.toggle('is-active',n===slot));dots.dataset.index=active;dots.setAttribute('aria-label',`${label}: карточка ${active+1} из ${slides.length}`);
-     if(previous!==active&&!reduced()){
+     if(previous!==active&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
        const direction=Math.sign(active-previous);dots.dataset.direction=direction>0?'next':'previous';
-       const bar=dots.querySelector('.is-active');bar.getAnimations().forEach(animation=>animation.cancel());
-       bar.animate([{transform:`translateX(${-direction*7}px) scaleX(.45)`,opacity:.3},{transform:'translateX(0) scaleX(1)',opacity:1}],{duration:260,easing:'ease-out'});
-     }resize();
+       const bar=dots.querySelector('.is-active');bar?.getAnimations().forEach(animation=>animation.cancel());
+       bar?.animate([{transform:`translateX(${-direction*7}px) scaleX(.45)`,opacity:.3},{transform:'translateX(0) scaleX(1)',opacity:1}],{duration:260,easing:'ease-out'});
+     }
    };
-   const finish=()=>{clearTimeout(settleTimer);if(drag||!track.clientWidth)return;const next=pending??clamp(Math.round(track.scrollLeft/track.clientWidth));pending=null;const previous=active;active=next;track.scrollTo({left:left(active),behavior:'instant'});track.classList.remove('is-dragging');render(previous);};
-   const choose=(n,instant=false)=>{
-     const previous=active;active=clamp(n);pending=active;track.classList.remove('is-dragging');render(previous);
-     track.scrollTo({left:left(active),behavior:instant||reduced()?'instant':'smooth'});
-     clearTimeout(settleTimer);settleTimer=setTimeout(finish,instant||reduced()?0:420);
-   };
-   track.onkeydown=event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();choose(active+(event.key==='ArrowRight'?1:-1));}};
-   track.addEventListener('scroll',()=>{if(drag)return;clearTimeout(settleTimer);settleTimer=setTimeout(finish,100);},{passive:true});
-   track.addEventListener('scrollend',()=>{if(!drag)finish();});
-   track.addEventListener('pointerdown',event=>{
-     if(!event.isPrimary||event.button!==0||slides.length<2)return;
-     finish();clearTimeout(settleTimer);wheel=null;clearTimeout(wheelTimer);
-     drag={id:event.pointerId,x:event.clientX,y:event.clientY,index:active,dx:0,horizontal:false,vertical:false,sampleX:event.clientX,sampleTime:event.timeStamp,velocity:0};suppressClick=false;
-   });
-   track.addEventListener('pointermove',event=>{
-     if(!drag||event.pointerId!==drag.id||drag.vertical)return;
-     const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
-     if(!drag.horizontal){if(Math.max(Math.abs(dx),Math.abs(dy))<8)return;if(Math.abs(dy)>Math.abs(dx)){drag.vertical=true;return;}drag.horizontal=true;track.setPointerCapture(event.pointerId);track.classList.add('is-dragging');}
-     event.preventDefault();drag.dx=dx;suppressClick=true;
-     const elapsed=event.timeStamp-drag.sampleTime;if(elapsed>0){drag.velocity=(event.clientX-drag.sampleX)/elapsed;drag.sampleX=event.clientX;drag.sampleTime=event.timeStamp;}
-     track.scrollTo({left:Math.max(left(clamp(drag.index-1)),Math.min(left(clamp(drag.index+1)),left(drag.index)-dx)),behavior:'instant'});resize();
-   },{passive:false});
-   const release=(event,cancelled=false)=>{
-     if(!drag||event.pointerId!==drag.id)return;const gesture=drag;drag=null;
-     if(track.hasPointerCapture(event.pointerId))track.releasePointerCapture(event.pointerId);
-     if(!gesture.horizontal){track.classList.remove('is-dragging');return;}
-     const quick=event.timeStamp-gesture.sampleTime<100&&Math.abs(gesture.velocity)>.45&&Math.abs(gesture.dx)>12;
-     const advance=!cancelled&&(Math.abs(gesture.dx)>Math.max(32,track.clientWidth*.16)||quick);
-     choose(gesture.index+(advance?(gesture.dx<0?1:-1):0));
-   };
-   track.addEventListener('pointerup',event=>release(event));track.addEventListener('pointercancel',event=>release(event,true));track.addEventListener('lostpointercapture',event=>{if(event.target===track&&!track.hasPointerCapture(event.pointerId))release(event,true);});
-   track.addEventListener('click',event=>{if(suppressClick){suppressClick=false;event.preventDefault();event.stopImmediatePropagation();}},true);
-   // A horizontal wheel/trackpad burst advances one card; vertical scrolling stays native.
-   track.addEventListener('wheel',event=>{
-     const delta=event.shiftKey&&Math.abs(event.deltaY)>Math.abs(event.deltaX)?event.deltaY:event.deltaX;
-     if(!delta||!event.shiftKey&&Math.abs(event.deltaY)>Math.abs(delta)||slides.length<2)return;
-     event.preventDefault();if(!wheel)wheel={index:active,delta:0,moved:false};wheel.delta+=delta;
-     if(!wheel.moved&&Math.abs(wheel.delta)>24){wheel.moved=true;choose(wheel.index+(wheel.delta>0?1:-1));}
-     clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheel=null;},180);
-   },{passive:false});
-   const observer=new ResizeObserver(()=>{const width=track.clientWidth;if(width&&width!==lastWidth){lastWidth=width;drag=null;choose(active,true);}else resize();});slides.forEach(slide=>observer.observe(slide));observer.observe(track);
-   const cleanup=new MutationObserver(()=>{if(!content.isConnected){clearTimeout(settleTimer);clearTimeout(wheelTimer);observer.disconnect();cleanup.disconnect();}});cleanup.observe($('screen-exercise-detail'),{childList:true,subtree:true});
-   requestAnimationFrame(()=>render());
+   const controller=setupTemplateCarousel(track,{onIndexChange:render,followHeight:true});
+   track.onkeydown=event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();const index=Math.max(0,Math.min(slides.length-1,controller.currentIndex()+(event.key==='ArrowRight'?1:-1)));track.scrollTo({left:templateCarouselTargets(track)[index],behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}};
+   const cleanup=new MutationObserver(()=>{if(!content.isConnected){controller.destroy();cleanup.disconnect();}});cleanup.observe($('screen-exercise-detail'),{childList:true,subtree:true});
  }
  function parameters(ex,catalog,returnScreen,options){
    const host=document.createElement('div'),current=options.executionSnapshot||executionForExercise(DATA.getCurrentUser(),ex);
@@ -124,27 +81,28 @@ const ExerciseDescriptions = (() => {
     const body=$('exd-body'),scroll=body.scrollTop;openExerciseDetail(ex.id,returnScreen,{scope:catalog?'catalog':'mine'});body.scrollTop=scroll;
    });return host;
  }
- function mountRemoval(ex,returnScreen,options){
-   const screen=$('screen-exercise-detail');screen.querySelector('[data-xd-remove]')?.remove();
-   if(options.previewExercise||_exdCatalog&&!DATA.isAdmin())return;
-   const catalog=_exdCatalog,userId=DATA.getCurrentUser(),owner=Auth.userId(),shared=DATA.DEFAULT_EXERCISES.some(item=>item.id===ex.id);
+ function mountRemoval(ex,returnScreen,options={}){
+   const screen=options.container||$('screen-exercise-detail');screen.querySelector('[data-xd-remove]')?.remove();
+   const catalog=options.catalog??_exdCatalog;
+   if(options.previewExercise||catalog&&!DATA.isAdmin())return;
+   const userId=DATA.getCurrentUser(),owner=Auth.userId(),shared=DATA.DEFAULT_EXERCISES.some(item=>item.id===ex.id);
    const current=()=>owner===Auth.userId()&&userId===DATA.getCurrentUser()&&!Auth.contextChanged()&&(!catalog||DATA.isAdmin());
-   const leave=()=>{renderExercisesList(exercisesSearch.value);if(screen.classList.contains('active')&&_detailExerciseId===ex.id&&_exdCatalog===catalog)goBackScreen(returnScreen,{keepFilter:true,resumeConstructor:returnScreen==='constructor'});else if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();};
+   const leave=()=>{options.onRemoved?.();renderExercisesList(exercisesSearch.value);if($('screen-exercise-detail').classList.contains('active')&&_detailExerciseId===ex.id&&_exdCatalog===catalog)goBackScreen(returnScreen,{keepFilter:true,resumeConstructor:returnScreen==='constructor'});else if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();};
    const label=catalog?'Удалить из каталога':shared?'Убрать из моих':'Удалить упражнение';
    const button=document.createElement('button');button.type='button';button.className='btn-chip xd-remove';button.dataset.xdRemove='';button.setAttribute('aria-label',label);button.title=label;button.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg>';
-   screen.querySelector('.detail-screen-header').append(button);
+   screen.querySelector('.xe-toolbar, .detail-screen-header').append(button);
    button.onclick=()=>{
-     if(!current())return;
+     if(!current()||options.isCurrent&&!options.isCurrent())return;
      const dialog=document.createElement('dialog');dialog.className='xd-sheet xd-remove-sheet';
      dialog.innerHTML=`<h2>${label}?</h2><p>«${escHtml(ex.name)}» ${catalog?'будет удалено из общего каталога.':shared?'исчезнет из «Моих»; в каталоге оно останется.':'можно будет восстановить в «Недавно удалённых» в течение 7 дней.'}</p><p class="xd-editor-error" role="alert" hidden></p><div class="xd-remove-actions"><button type="button" data-cancel>Отмена</button><button type="button" data-remove-confirm>${label}</button></div>`;
      dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());screen.append(dialog);dialog.showModal();
      dialog.querySelector('[data-remove-confirm]').onclick=async event=>{
-       if(!current()){dialog.close();return;}const confirm=event.currentTarget;confirm.disabled=true;
+       if(!current()||options.isCurrent&&!options.isCurrent()){dialog.close();return;}const confirm=event.currentTarget;confirm.disabled=true;
        try{
          if(catalog){
            const next=DATA.atlasSnapshot(),position=next.exercises.findIndex(item=>item.id===ex.id);if(position<0)throw Error('Упражнение уже удалено');const raw=next.exercises.splice(position,1)[0];
            await commitSharedAtlas(next,[['deleteAtlasExercise',ex.id]]);
-           if(!current()){dialog.close();return;}dialog.close();leave();
+           if(!current()||options.isCurrent&&!options.isCurrent()){dialog.close();return;}dialog.close();leave();
            showUndoToast('Упражнение удалено из каталога',async()=>{if(!current())return;try{const restore=DATA.atlasSnapshot();if(restore.exercises.some(item=>item.id===raw.id))return;const index=Math.min(position,restore.exercises.length);restore.exercises.splice(index,0,raw);await commitSharedAtlas(restore,[['saveAtlasExercises',[{id:raw.id,name:raw.name,data:raw,position:index}]]]);if(current()){renderExercisesList(exercisesSearch.value);if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();showToast('Восстановлено');}}catch(error){showToast('Не удалось восстановить: '+error.message);}});
          }else if(shared){
            DATA.hideExercise(userId,ex.id);dialog.close();leave();showUndoToast('Упражнение убрано из моих',()=>{if(!current())return;DATA.unhideExercise(userId,ex.id);renderExercisesList(exercisesSearch.value);if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();});
@@ -159,7 +117,7 @@ const ExerciseDescriptions = (() => {
  }
  function decorate(ex,returnScreen,options={}){
    const screen=$('screen-exercise-detail'),body=$('exd-body'),catalog=_exdCatalog,a=ex.atlas||{},userId=DATA.getCurrentUser();
-   screen.classList.add('xd-view');$('exd-title').textContent='Упражнение';
+   screen.classList.add('xd-view');screen.querySelector('[data-xd-remove]')?.remove();$('exd-title').textContent='Упражнение';
    document.querySelector('.xd-source')?.remove();
    document.querySelectorAll('.xd-membership').forEach(button=>button.remove());
    const tabs=document.createElement('div');tabs.className='xd-source';tabs.dataset.active=catalog?'catalog':'mine';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Источник упражнения');
@@ -249,14 +207,13 @@ const ExerciseDescriptions = (() => {
      _referenceTrail=[{screen:'screen-exercise-detail',state:{..._referenceState},exerciseId:ex.id,returnScreen,scroll:body.scrollTop}];
      _referenceState={page:'group',name:ex.cat,scope:_exerciseLibrary,query:'',sort:'count-desc',picker:null,scrollTop:0,owner:Auth.userId(),userId};goToScreen('exerciseReference');
    };}
-   if(catalog&&!options.previewExercise){const button=hero.querySelector('.xd-membership');button.setAttribute('aria-pressed',String(included));button.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="${included?'m5 12 4 4L19 6':'M12 5v14M5 12h14'}"/></svg>${included?'В моих':'Добавить в мои'}`;button.onclick=()=>{toggleExerciseLibrary(ex.id);openExerciseDetail(ex.id,returnScreen,{scope:'catalog'});};}
+   if(catalog&&!options.previewExercise){const button=hero.querySelector('.xd-membership');button.setAttribute('aria-pressed',String(included));button.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg>`;button.setAttribute('aria-label',included?'Убрать из моих':'Добавить в мои');button.title=included?'Убрать из моих':'Добавить в мои';button.onclick=()=>{toggleExerciseLibrary(ex.id);openExerciseDetail(ex.id,returnScreen,{scope:'catalog'});};}
    let header=screen.querySelector('.xd-fixed-header');
    if(!header){header=document.createElement('header');header.className='xd-fixed-header';const toolbar=screen.querySelector('.detail-screen-header');screen.prepend(header);header.append(toolbar);}
    header.querySelector('.xd-hero')?.remove();header.append(hero);
-   const membershipButton=hero.querySelector('.xd-membership');if(membershipButton)header.querySelector('.detail-screen-header').append(membershipButton);
-   mountRemoval(ex,returnScreen,options);
+   const membershipButton=hero.querySelector('.xd-membership');if(membershipButton)header.querySelector('.detail-screen-header').insertBefore(membershipButton,$('exd-edit-btn'));
    const inner=document.createElement('div');inner.className='xd-scroll-inner';inner.append(...(media?[media]:[]),...(tree.querySelector('.xd-section')?[tree]:[]),...links);body.replaceChildren(inner);
    body.scrollTop=0;body.querySelectorAll('.exd-video-btn').forEach(link=>{link.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>Открыть материал';});
  }
- window.ExerciseDetailPage={decorate};
+ window.ExerciseDetailPage={decorate,mountRemoval};
 })();

@@ -1449,7 +1449,9 @@ function setupTemplateCarousel(carousel, options = {}) {
     settledIndex: 0,
     settledLeft: 0,
     width: carousel.clientWidth,
+    destroyed: false,
   };
+  let observer = null;
 
   const updateIndex = index => {
     const items = templateCarouselItems(carousel);
@@ -1465,7 +1467,7 @@ function setupTemplateCarousel(carousel, options = {}) {
   const syncHeight = () => {
     const items = templateCarouselItems(carousel);
     if (!items.length) { carousel.style.removeProperty("height"); return; }
-    const index = Math.max(0, Math.min(state.settledIndex, items.length - 1));
+    const index = Math.max(0, Math.min(options.followHeight ? templateCarouselIndex(carousel) : state.settledIndex, items.length - 1));
     const height = Math.ceil(items[index].getBoundingClientRect().height);
     if (height > 0) carousel.style.height = `${height}px`;
   };
@@ -1479,6 +1481,7 @@ function setupTemplateCarousel(carousel, options = {}) {
   };
 
   const snap = (behavior = "smooth") => {
+    if (!carousel.clientWidth) return;
     const items = templateCarouselItems(carousel);
     const targets = templateCarouselTargets(carousel);
     if (!items.length || !targets.length) return;
@@ -1558,12 +1561,13 @@ function setupTemplateCarousel(carousel, options = {}) {
     scheduleSnap();
   };
   const onScroll = () => {
-    if (state.ignoreScroll) return;
+    if (state.ignoreScroll || !carousel.clientWidth) return;
     if ((state.pointerActive || state.fingerDown) && Math.abs(carousel.scrollLeft - state.interactionStartLeft) > 6) {
       state.interactionMoved = true;
     }
     beginGesture();
     updateIndex(templateCarouselIndex(carousel));
+    if (options.followHeight) syncHeight();
     scheduleSnap();
   };
   const onScrollEnd = () => {
@@ -1578,22 +1582,31 @@ function setupTemplateCarousel(carousel, options = {}) {
   carousel.addEventListener("pointerup", onPointerFinish, { passive: true });
   carousel.addEventListener("pointercancel", onPointerFinish, { passive: true });
   carousel.addEventListener("scroll", onScroll, { passive: true });
-  carousel.addEventListener("click", event => {
+  const onClick = event => {
     if (event.isTrusted && Date.now() < state.suppressClickUntil) {
       event.preventDefault();
       event.stopImmediatePropagation();
     }
-  }, true);
+  };
+  carousel.addEventListener("click", onClick, true);
   if ("onscrollend" in carousel) carousel.addEventListener("scrollend", onScrollEnd, { passive: true });
 
   if (window.ResizeObserver) {
-    const observer = new ResizeObserver(() => {
+    observer = new ResizeObserver(() => {
       if (!carousel.isConnected) { observer.disconnect(); return; }
       const nextWidth = carousel.clientWidth;
+      // A collapsed section has zero geometry. Keep its last card until it
+      // becomes visible; snapping against zero-width targets resets it to 0.
+      if (!nextWidth) return;
       if (Math.abs(nextWidth - state.width) > 1) {
         state.width = nextWidth;
         options.onWidthChange?.();
-        requestAnimationFrame(() => snap("auto"));
+        const index = state.settledIndex;
+        requestAnimationFrame(() => {
+          if (state.destroyed) return;
+          carousel.scrollTo({left: templateCarouselTargets(carousel)[index] || 0, behavior:"auto"});
+          snap("auto");
+        });
       }
       // ResizeObserver fires on every frame of the card's expand/collapse
       // transition. Keep the carousel height in lockstep even while the tap's
@@ -1614,10 +1627,15 @@ function setupTemplateCarousel(carousel, options = {}) {
   updateIndex(initialIndex);
   syncHeight();
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (carousel.isConnected) state.ignoreScroll = false;
+    if (carousel.isConnected && !state.destroyed) state.ignoreScroll = false;
   }));
 
-  const controller = { snap, syncHeight, currentIndex: () => templateCarouselIndex(carousel) };
+  const destroy = () => {
+    state.destroyed = true; state.ignoreScroll = true; clearTimeout(state.snapTimer); observer?.disconnect();
+    [["touchstart",onTouchStart],["touchend",onTouchFinish],["touchcancel",onTouchFinish],["pointerdown",onPointerDown],["pointermove",onPointerMove],["pointerup",onPointerFinish],["pointercancel",onPointerFinish],["scroll",onScroll],["scrollend",onScrollEnd]].forEach(([name,handler])=>carousel.removeEventListener(name,handler));
+    carousel.removeEventListener("click",onClick,true);
+  };
+  const controller = { snap, syncHeight, destroy, currentIndex: () => templateCarouselIndex(carousel) };
   carousel._templateCarouselController = controller;
   return controller;
 }
