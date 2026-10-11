@@ -9,7 +9,7 @@
   const roles=[['target','Агонисты'],['synergist','Синергисты'],['stabilizer','Стабилизаторы']];
   let draft,baseline,seed,root,form,context=[],contextKey='',dirty=false,previewEx=null,pendingNew=false;
   let editorOptions={},editorOwner,editorUser,editorReturn,previewReturn;
-  const validContext=()=>editorOwner===Auth.userId()&&editorUser===DATA.getCurrentUser()&&!Auth.contextChanged()&&(!editorOptions.catalog||DATA.isAdmin());
+  const validContext=()=>editorOwner===Auth.userId()&&editorUser===DATA.getCurrentUser()&&!Auth.contextChanged()&&editorOptions.isCurrent?.()!==false&&(!editorOptions.catalog||DATA.isAdmin());
   const quantity=(n,forms)=>n+' '+forms[n%100>10&&n%100<20?2:n%10===1?0:n%10>=2&&n%10<=4?1:2];
   const keyFor=values=>JSON.stringify(values.map(v=>[v.id,v.value]).sort((a,b)=>a[0].localeCompare(b[0])));
   const parameters=()=>draft.parameters;
@@ -164,7 +164,9 @@
       else{const updated=DATA.updateOwnExercise(editorUser,id,payload);if(!updated)throw Error('Упражнение больше недоступно');SyncQueue.push('exercise:update',{id});}
       if(!validContext()){dispose();return;}
       _executionDrafts.set(executionDraftKey(editorUser,id),executionSnapshot(ex.atlas.executionParameters,context));
-      const wasNew=pendingNew;dirty=false;dispose();renderExercisesList(exercisesSearch.value);showToast(wasNew?'Упражнение добавлено':'Упражнение обновлено');
+      const wasNew=pendingNew,onCreated=editorOptions.onCreated;dirty=false;dispose();showToast(wasNew?'Упражнение добавлено':'Упражнение обновлено');
+      if(wasNew&&onCreated){onCreated(id);return;}
+      renderExercisesList(exercisesSearch.value);
       if(editorReturn.screen==='exerciseDetail'||wasNew)openExerciseDetail(id,editorReturn.screen==='exerciseDetail'?editorReturn.returnScreen:editorReturn.screen==='exerciseReference'?'exerciseReference':'exercises',{scope:editorOptions.catalog?'catalog':'mine'});
       else if(editorReturn.screen==='exerciseReference')renderExerciseReference();
     }catch(error){if(root){const message=root.querySelector('[data-general-error]');message.textContent='Ошибка сохранения: '+error.message;message.hidden=false;}}finally{button.disabled=false;}

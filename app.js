@@ -5733,7 +5733,7 @@ function syncConstructorCatalogUI() {
   screen.classList.toggle('constructor-replacement',!!context?.single);
   screen.classList.toggle('exercise-selection',context?.kind === 'picker');
   screen.querySelector('.exercises-header-title').textContent=(context?.single ? context.subtitle : context?.title) || 'Упражнения';
-  $('exercises-add-btn').hidden=active;
+  $('exercises-add-btn').hidden=!canCreateExerciseFromList();
   $('constructor-catalog-footer').hidden=!active;
   const subtitle=context?.single ? '' : context?.subtitle;
   const controls=$('constructor-catalog-context');controls.hidden=!context?.modes && !subtitle;
@@ -5958,7 +5958,7 @@ function syncExerciseLibraryUI(allExs) {
   $('screen-exercises').classList.toggle('library-catalog', catalog);
   $('exercise-library-tabs').hidden = !exerciseLibraryHasTabs();
   $('exercise-filter-btn').hidden = !exerciseLibraryHasTabs();
-  $('exercises-add-btn').hidden = !!_constructorCatalog || catalog || _exListEditMode;
+  $('exercises-add-btn').hidden = !canCreateExerciseFromList();
   exercisesSearch.placeholder = catalog ? 'Поиск по каталогу' : 'Поиск';
   document.querySelectorAll('[data-library]').forEach(b => {
     b.classList.toggle('active', b.dataset.library === _exerciseLibrary);
@@ -9583,8 +9583,41 @@ function openMovementForm(existing, onSaved, scope = 'mine') {
   });
 }
 
+function canCreateExerciseFromList() {
+  if (_exListEditMode) return false;
+  const context = _constructorCatalog;
+  return context ? context.owner === Auth.userId() && context.profile === DATA.getCurrentUser() && !Auth.contextChanged()
+    : !exerciseCatalogSource();
+}
+
+function finishCreatedExerciseSelection(context, id) {
+  if (_constructorCatalog !== context || context.owner !== Auth.userId() || context.profile !== DATA.getCurrentUser() || Auth.contextChanged()) return;
+  const exercise = DATA.getVisibleExercises(context.profile).find(ex => ex.id === id);
+  if (!exercise) return;
+  const eligible = context.canSelect(id, context.filterMode);
+  if (context.single && eligible) context.selectedId = id;
+  setReferenceLibraryScope('mine');
+  _exercisesCatFilter = 'all';
+  _exerciseMovementFilter.clear();
+  exercisesSearch.value = eligible ? exercise.name : '';
+  context.scrollTop = 0;
+  if (activeScreenName() !== 'exercises') goToScreen('exercises', {navigation:'back', keepFilter:true, instant:true});
+  else renderExercisesList(exercisesSearch.value);
+  exercisesScroll.scrollTop = 0;
+  if (!eligible) showToast('Упражнение создано, но не подходит под условия текущего выбора');
+}
+
+function openNewExerciseFromList() {
+  if (!canCreateExerciseFromList()) return;
+  const context = _constructorCatalog;
+  openExerciseForm(null, context ? {
+    isCurrent: () => _constructorCatalog === context && canCreateExerciseFromList(),
+    onCreated: id => finishCreatedExerciseSelection(context, id),
+  } : {});
+}
+
 /* — Форма добавления / редактирования личного упражнения — */
-$("exercises-add-btn").addEventListener("click", () => openExerciseForm(null));
+$("exercises-add-btn").addEventListener("click", openNewExerciseFromList);
 $("exercise-form-cancel").addEventListener("click", () => closeModal(exerciseFormBackdrop));
 
 function buildCategoryChips(selected) {

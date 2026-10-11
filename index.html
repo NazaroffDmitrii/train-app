@@ -2263,7 +2263,7 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
 /* Когда видна плавающая «Готово» — увеличиваем нижний отступ ровно настолько,
    чтобы кнопка не перекрывала последние упражнения (высота пилюли + небольшой
    зазор), без лишней пустоты. */
-body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc(74px + var(--safe-bottom)); }
+.screen.active:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc(74px + var(--safe-bottom)); }
 
 .exercises-section-label {
   padding: 14px 6px 8px;
@@ -2447,6 +2447,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
   transform: translateX(-50%) translateY(0);
   opacity: 1; pointer-events: auto;
 }
+.screen:not(.active) .exercises-float-done { visibility:hidden; pointer-events:none; }
 
 .ex-row.tappable { cursor: pointer; transition: background 0.12s ease; }
 .ex-row.tappable:active { background: var(--panel-raised); }
@@ -3451,7 +3452,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 .constructor-catalog-footer { flex:none; padding:12px max(16px,calc((100% - 640px)/2)) calc(16px + var(--safe-bottom)); background:var(--panel); border-top:1px solid var(--border-subtle); }
 .constructor-catalog-footer[hidden] { display:none; }.constructor-catalog-footer span { display:block; text-align:center; color:var(--text-tertiary); font-size:12px; margin-bottom:10px; }
 .constructor-catalog-footer button { width:100%; min-height:48px; border-radius:18px; background:var(--accent); color:white; font-size:16px; font-weight:600; }
-.constructor-catalog .ex-row-edit-slot,.constructor-catalog .ex-row-delete,.constructor-catalog #exercises-add-btn { display:none; }
+.constructor-catalog .ex-row-edit-slot,.constructor-catalog .ex-row-delete { display:none; }
 /* Готовый план v12: радар, дерево движений и карточки по дням. */
 .sg-result .sg-header { grid-template-columns:44px minmax(0,1fr) 44px; gap:0; }
 .sg-result .sg-header #constructor-back-btn { width:38px; height:38px; color:var(--sg-light); }
@@ -4618,7 +4619,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     <div class="exercises-search-wrap">
       <input class="exercises-search" id="exercises-search" placeholder="Поиск" aria-label="Поиск упражнения" type="search">
       <button type="button" class="exercise-filter-btn" id="exercise-filter-btn" aria-label="Фильтры: группы" title="Фильтры: группы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
-      <button class="exercises-add-btn" id="exercises-add-btn" title="Добавить упражнение">
+      <button type="button" class="exercises-add-btn" id="exercises-add-btn" title="Создать упражнение" aria-label="Создать упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
