@@ -70,6 +70,8 @@ button {
   font-family: inherit;
   border: none; background: none; color: inherit; cursor: pointer;
 }
+/* Pointer taps may focus controls; only keyboard focus gets an outline. */
+:focus:not(:focus-visible) { outline:none; }
 button:focus-visible {
   outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
@@ -3746,8 +3748,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .exercise-move { text-align:left; }
 .reference-name-link { flex:1; min-width:0; color:inherit; text-align:left; font:inherit; line-height:1.4; }
 .reference-header-heading { flex:1; min-width:0; }
-/* Shared Mine/Catalog palette, including movement pages. */
-:is(#screen-exercises,#screen-exercise-reference) {
+/* Shared purple palette and continuous header fade. */
+:is(#screen-exercises,#screen-exercise-reference,#screen-templates,#screen-stats) {
   --movement-page:#0d0c18; --movement-top:#251d3b; --movement-header:#453664;
   --movement-text:#f2f2f7; --movement-muted:#aaa6bc; --movement-line:#73608f; --movement-accent:#b9aeff;
   --movement-circle:#14141f; --movement-node:#29213e; --movement-node-border:#6c558a; --movement-node-text:#d7c7ff;
@@ -3769,7 +3771,20 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   --movement-tabs:#0b1b21; --movement-selected:#2b4b51; --movement-card:#101e26; --movement-card-border:#2c4b55;
   --movement-number-stroke:#8abebd;
 }
-:is(#screen-exercises,#screen-exercise-reference) .exercises-header { background:transparent; border:0; }
+:is(#screen-exercises,#screen-exercise-reference,#screen-templates,#screen-stats) .exercises-header { background:transparent; border:0; }
+/* Templates and statistics inherit the movement page's purple surfaces. */
+:is(#screen-templates,#screen-stats) {
+  --panel:#171421; --panel-raised:var(--movement-chip); --panel-hi:var(--movement-group);
+  --border-subtle:var(--movement-card-border); --border-strong:var(--movement-target-border);
+  --text-primary:var(--movement-text);
+}
+:is(#templates-back-btn,#stats-back-btn) { width:38px; height:38px; min-width:38px; padding:0; display:grid; place-items:center; border:0; border-radius:50%; background:var(--movement-circle); color:var(--movement-accent); }
+:is(#templates-back-btn,#stats-back-btn) svg { width:18px; height:18px; }
+#screen-templates .tpl-filter-btn { background:var(--movement-chip); border-color:var(--movement-card-border); }
+#screen-templates .tpl-header-add { background:var(--movement-accent); color:var(--movement-circle); }
+#screen-templates :is(.tpl-add-menu,.tpl-filter-menu) { background:var(--panel-raised); }
+#screen-templates :is(.tpl-add-menu-item,.tpl-menu-item):active { background:var(--panel-hi); }
+#screen-stats .history-filters-row { background:transparent; border:0; }
 :is(#screen-exercises,#screen-exercise-reference) .exercise-library-body { background:transparent; border-radius:0; }
 :is(#screen-exercises,#screen-exercise-reference):has(> .exercise-library-tabs:not([hidden])) { --library-chrome-bottom:color-mix(in srgb,var(--movement-header) 65%,var(--movement-top)); background:linear-gradient(180deg,var(--movement-header),var(--library-chrome-bottom) var(--movement-header-end,calc(var(--safe-top) + 68px)),var(--library-chrome-bottom)); }
 :is(#screen-exercises,#screen-exercise-reference):has(> .exercise-library-tabs:not([hidden])) .exercise-library-body { background:linear-gradient(180deg,var(--movement-top),color-mix(in srgb,var(--movement-top) 40%,var(--movement-page)) 36px,color-mix(in srgb,var(--movement-top) 10%,var(--movement-page)) 80px,var(--movement-page) 140px); border-radius:0 16px 0 0; }
@@ -3789,7 +3804,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .exercise-reference-panel-links>button+button::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:1px; background:#ffffff14; }
 .exercise-reference-panel-links>button:focus-visible { outline:2px solid var(--movement-accent); outline-offset:1px; }
 .exercise-reference-panel-links>button:active { background:color-mix(in srgb,var(--movement-accent) 15%,transparent); }
-@media(hover:hover) { .exercise-reference-panel-links>button:hover { background:color-mix(in srgb,var(--movement-accent) 9%,transparent); } }
+@media (hover:hover) and (pointer:fine) { .exercise-reference-panel-links>button:hover { background:color-mix(in srgb,var(--movement-accent) 9%,transparent); } }
 @media(max-width:340px) { .exercise-reference-panel-links>button { font-size:11px; } }
 #screen-exercises .exercises-search::placeholder { color:var(--movement-muted); }
 #screen-exercises .exercises-search:focus { border-color:var(--movement-accent); }
@@ -3920,8 +3935,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   .movement-tree { padding-right:13px; }.movement-tab { padding-inline:9px; }.movement-exercise-card { padding-inline:10px; }
 }
 @media(max-width:340px) { .muscle-tree .movement-exercise-grid { grid-template-columns:minmax(0,1fr); grid-auto-rows:minmax(132px,auto); } }
-.reference-name-link:hover, [data-reference-kind]:hover { color:#fff; }
-.reference-name-link:hover { text-decoration:underline; text-underline-offset:3px; }
+@media (hover:hover) and (pointer:fine) { .reference-name-link:hover, [data-reference-kind]:hover { color:#fff; } }
+@media (hover:hover) and (pointer:fine) { .reference-name-link:hover { text-decoration:underline; text-underline-offset:3px; } }
 .reference-info { padding:13px; margin-bottom:12px; border:1px solid #ffffff12; border-radius:16px; background:#ffffff08; }
 .reference-info .reference-section-title:first-child { margin-top:0; }
 .reference-info .msd-anatomy { font-size:14px; line-height:1.6; color:#c8c8d8; }
@@ -3973,11 +3988,9 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .exercise-variants-heading button { padding:0 0 0 8px; color:color-mix(in srgb,var(--cat-color,#a99cf5) 45%,#eee); font:inherit; }
 #exercises-scroll .ex-row-wrap-nested { margin-bottom:6px; }
 #exercises-scroll .ex-row-wrap-nested .ex-row { gap:7px; min-height:44px; padding:5px 7px 5px 10px; border:1px solid transparent; background:linear-gradient(110deg,#ffffff08,#ffffff03),#191923; }
-#exercises-scroll .ex-row-wrap-nested.variant-selected .ex-row { border-color:color-mix(in srgb,var(--cat-color) 40%,transparent); background:linear-gradient(110deg,color-mix(in srgb,var(--cat-color) 20%,transparent),color-mix(in srgb,var(--cat-color) 6%,transparent)),#191923; }
 #exercises-scroll .variant-select { text-align:left; width:100%; font:inherit; color:inherit; line-height:1.35; }
 .variant-open { width:26px; height:30px; flex:none; display:grid; place-items:center; background:transparent; color:#65657a; }
 .variant-open svg { width:18px; height:18px; }
-.variant-selected .variant-open { color:#9292a6; }
 .ex-row-wrap-nested .exercise-ago { font-size:10px; }
 .execution-controls { display:flex; flex-direction:column; gap:6px; padding:4px 0 0; }
 .execution-parameter { display:flex; align-items:center; flex-wrap:wrap; gap:7px 10px; }
@@ -4016,7 +4029,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .reference-search-feedback { margin:0 3px 10px; color:var(--movement-muted); font-size:11px; }
 .reference-mosaic { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; isolation:isolate; }
 .reference-mosaic-card { grid-column:span 3; position:relative; display:flex; flex-direction:column; min-width:0; min-height:104px; overflow:hidden; border-radius:25px; background:radial-gradient(ellipse at 0 0,color-mix(in srgb,var(--cat-color) 30%,transparent),transparent 95%),var(--movement-card); border:1px solid color-mix(in srgb,var(--cat-color) 33%,var(--movement-card-border)); transition:transform .18s,border-color .18s; }
-.reference-mosaic-card:hover { border-color:color-mix(in srgb,var(--cat-color) 70%,var(--movement-card-border)); transform:translateY(-2px); }
+@media (hover:hover) and (pointer:fine) { .reference-mosaic-card:hover { border-color:color-mix(in srgb,var(--cat-color) 70%,var(--movement-card-border)); transform:translateY(-2px); } }
 .reference-mosaic-open { position:relative; z-index:1; width:100%; flex:1; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px; color:var(--movement-text); text-align:left; }
 .reference-mosaic-name { position:relative; font-size:18px; font-weight:600; letter-spacing:-.5px; line-height:1.15; padding-right:18px; overflow-wrap:anywhere; }
 .reference-mosaic-value { display:flex; align-items:baseline; gap:5px; white-space:nowrap; }
@@ -4065,7 +4078,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .reference-mosaic-create > span:last-child { max-width:95px; }
 .reference-mosaic-create.wide { flex-direction:row; align-items:center; justify-content:center; min-height:62px; }
 .reference-mosaic-create.wide > span:last-child { max-width:none; }
-.reference-mosaic-create:hover { background:color-mix(in srgb,var(--movement-accent) 20%,var(--movement-card)); transform:translateY(-2px); }
+@media (hover:hover) and (pointer:fine) { .reference-mosaic-create:hover { background:color-mix(in srgb,var(--movement-accent) 20%,var(--movement-card)); transform:translateY(-2px); } }
 .reference-mosaic-plus { display:grid; place-items:center; flex:none; width:28px; height:28px; border-radius:50%; background:var(--movement-accent); color:var(--movement-circle); }
 .reference-mosaic-plus svg { width:17px; height:17px; }
 .reference-mosaic.ascending.composed .reference-mosaic-create { border-radius:26px; padding:16px 12px; }
@@ -4189,7 +4202,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .ref-browse-deck-type[aria-pressed="true"]{background:color-mix(in srgb,var(--deck-color) 15%,var(--movement-group));color:color-mix(in srgb,var(--deck-color) 30%,#fff)}
 .ref-browse-deck-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .ref-browse-deck-motion{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;min-width:0;gap:12px;padding:13px;border:1px solid color-mix(in srgb,var(--cat-color) 13%,var(--movement-card-border));border-radius:16px;background:linear-gradient(140deg,color-mix(in srgb,var(--cat-color) 7%,var(--movement-chip)),var(--movement-card));text-align:left;transition:border-color .2s,background .2s}
-.ref-browse-deck-motion:hover{border-color:var(--cat-color);background:color-mix(in srgb,var(--cat-color) 10%,var(--movement-chip))}
+@media (hover:hover) and (pointer:fine) { .ref-browse-deck-motion:hover{border-color:var(--cat-color);background:color-mix(in srgb,var(--cat-color) 10%,var(--movement-chip))} }
 .ref-browse-deck-motion.long{grid-column:1/-1}
 .ref-browse-deck-card-kind{font-size:9px;line-height:1.3;color:var(--movement-muted);overflow-wrap:anywhere}
 .ref-browse-deck-title{display:block;font-size:15px;line-height:1.3;font-weight:500;letter-spacing:-.2px;color:var(--movement-text);overflow-wrap:anywhere;width:100%}
@@ -4216,7 +4229,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .ref-browse-group-more svg{width:18px;height:18px;transition:transform .15s}
 .ref-browse-group-more[aria-expanded="true"] svg{transform:rotate(180deg)}
 @media(prefers-reduced-motion:reduce){.ref-browse-group-more svg{transition:none}}
-.ref-browse-group-more:hover{color:var(--movement-accent)}
+@media (hover:hover) and (pointer:fine) { .ref-browse-group-more:hover{color:var(--movement-accent)} }
 @media(max-width:340px){.ref-browse-deck-motion{padding:13px;gap:12px}.ref-browse-deck-title{font-size:15px}.ref-browse-deck-motion.long .ref-browse-deck-title{font-size:16px}.ref-browse-deck-card-kind{font-size:9px;padding:3px 5px}}
 
 .ref-browse-group-switch.long-word{flex-direction:column;align-items:flex-start;justify-content:center;gap:2px}
@@ -4264,7 +4277,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .reference-section-toggle>svg{width:14px;height:14px;flex:none;transform:rotate(-90deg)}
 .reference-section-toggle[aria-expanded="false"]>svg{transform:rotate(90deg)}
 .movement-node[aria-expanded="false"]{color:var(--movement-muted);background:var(--movement-card)}
-.movement-node:hover{border-color:var(--movement-accent)}
+@media (hover:hover) and (pointer:fine) { .movement-node:hover{border-color:var(--movement-accent)} }
 .movement-exercises .reference-section-heading{flex:1 1 90px}
 </style>
 <link rel="stylesheet" href="exercise-pages.css">

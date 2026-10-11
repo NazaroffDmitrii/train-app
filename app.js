@@ -8214,7 +8214,7 @@ function renderExerciseReference() {
 }
 // Anchor the fade to the header's actual height, including wrapped titles and safe areas.
 if (window.ResizeObserver) {
-  document.querySelectorAll('#screen-exercises, #screen-exercise-reference').forEach(screen => {
+  document.querySelectorAll('#screen-exercises, #screen-exercise-reference, #screen-templates, #screen-stats').forEach(screen => {
     new ResizeObserver(([entry]) => screen.style.setProperty('--movement-header-end',`${entry.target.offsetHeight}px`))
       .observe(screen.querySelector('.exercises-header'));
   });
