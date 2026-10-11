@@ -5892,7 +5892,7 @@ function syncExerciseLibraryUI(allExs) {
 function setExerciseLibrary(scope) {
   if (!['mine','catalog'].includes(scope) || scope === _exerciseLibrary || !exerciseLibraryHasTabs()) return;
   exitExListEditMode();
-  _exerciseLibrary = scope;
+  setReferenceLibraryScope(scope);
   _exercisesCatFilter = 'all'; _exerciseFilterMode = 0; _exerciseMovementFilter.clear(); _exGroupExpanded.clear();
   exercisesSearch.value = '';
   renderExercisesList(''); exercisesScroll.scrollTop = 0;
@@ -5931,7 +5931,6 @@ const LOAD_LABELS = { weighted: "С отягощением", bodyweight: "Сво
 
 function initExercisesScreen() {
   exercisesSearch.value = "";
-  _exerciseLibrary = "mine";
   _exerciseFilterMode = 0;
   _exerciseMovementFilter.clear();
   _exercisesCatFilter = "all";
@@ -7004,7 +7003,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   const userId = DATA.getCurrentUser();
   const fromCatalog = (returnScreen === "exercises" && exerciseCatalogSource()) || (returnScreen === "exerciseReference" && (['movement','muscle'].includes(_referenceState.page) ? (_referenceState.exerciseScope || _referenceState.scope) : _referenceState.scope) === "catalog");
   const ex = (fromCatalog ? DATA.DEFAULT_EXERCISES : DATA.getVisibleExercises(userId)).find(e => e.id === exerciseId);
-  if (!ex) return;
+  if (!ex) return false;
   _detailExerciseId = exerciseId;
   _exdReturnScreen = returnScreen;
   exitExerciseEdit();  // всегда открываем деталь в режиме просмотра, не редактирования
@@ -7563,6 +7562,20 @@ function referenceExerciseMuscles(ex) {
     : Object.values(ex.muscles || {}).flatMap(splitMuscles))];
 }
 let _referenceTrail = [];
+// The selected exercise library is shared across the current browsing session.
+// Entity scope stays separate: a shared atlas item can still show personal exercises.
+function setReferenceLibraryScope(scope) {
+  if (!['mine','catalog'].includes(scope)) return;
+  if (scope !== _exerciseLibrary || scope !== (_referenceState.exerciseScope || _referenceState.scope)) cancelMovementRemovals();
+  _exerciseLibrary = scope;
+  const apply = state => {
+    if (['movement','muscle'].includes(state.page)) state.exerciseScope = scope;
+    else { state.scope = scope; state.exerciseScope = undefined; }
+    if (state.page === 'group') { state.editGroup = false; state.picker = null; }
+  };
+  apply(_referenceState);
+  _referenceTrail.forEach(frame => { if (frame.state) apply(frame.state); });
+}
 function referenceLink(kind, name, label = name, className = 'reference-name-link', body = null) {
   return `<button type="button" class="${className}" data-reference-kind="${kind}" data-reference-name="${escHtml(name)}">${body ?? escHtml(label)}</button>`;
 }
@@ -7755,7 +7768,8 @@ function openExerciseReference(page = 'hub') {
   _referenceState = {page, scope:_exerciseLibrary, name:'', query:'', sort:'count-desc', picker:null, scrollTop:0, owner:Auth.userId(), userId:DATA.getCurrentUser()};
   goToScreen('exerciseReference');
 }
-function referenceNavigate(page, name = '', scope = _referenceState.scope, exerciseScope) {
+function referenceNavigate(page, name = '', scope, exerciseScope) {
+  if (scope === undefined) scope = ['movement','muscle'].includes(page) ? _referenceState.scope : _exerciseLibrary;
   if (exerciseScope === undefined && ['movement','muscle'].includes(page) && ['movement','muscle'].includes(_referenceState.page) && scope === _referenceState.scope) exerciseScope = _referenceState.exerciseScope;
   _referenceTrail.push({state:{..._referenceState,scrollTop:referenceScrollElement().scrollTop}});
   Object.assign(_referenceState, {page,name,scope,query:'',picker:null,scrollTop:0,exerciseScope,browseGroup:undefined,browseType:'all',browseSort:'atlas',browseGroupsExpanded:false,browseGroupRowStart:0,sectionClosed:undefined,groupKind:'muscles',editGroup:false,groupExpanded:undefined,groupClosed:undefined,groupExercisesOpen:false});
@@ -7766,7 +7780,12 @@ function referenceBack() {
   if (previous) {
     _referenceState = previous.state;
     if (previous.screen === 'screen-exercise-detail') {
-      openExerciseDetail(previous.exerciseId,previous.returnScreen);
+      if (openExerciseDetail(previous.exerciseId,previous.returnScreen) === false) {
+        if (_screenBackStack[_screenBackStack.length - 1] === 'exerciseDetail') _screenBackStack.pop();
+        if (previous.returnScreen === 'exerciseReference') renderExerciseReference();
+        else goBackScreen(previous.returnScreen,{keepFilter:true});
+        return;
+      }
       $('exd-body').scrollTop = previous.scroll; return;
     }
     if (previous.screen === 'screen-muscle-detail') { openMuscleDetailScreen(previous.muscleId,previous.returnScreen); return; }
@@ -7782,7 +7801,7 @@ $('exercise-reference-back').addEventListener('click', referenceBack);
 $('exercise-reference-tabs').addEventListener('click', event => {
   const button = event.target.closest('[data-reference-scope]');
   if (!button || button.dataset.referenceScope === _referenceState.scope) return;
-  _referenceState.scope = button.dataset.referenceScope;
+  setReferenceLibraryScope(button.dataset.referenceScope);
   _referenceState.query = ''; _referenceState.picker = null; _referenceState.scrollTop = 0;
   renderExerciseReference();
 });
@@ -7883,7 +7902,6 @@ function referenceBrowseToolsHtml(data) {
   return `<div class="ref-browse-search-row"><label class="ref-browse-search-box">${referenceIcon('search')}<input id="reference-search" type="search" placeholder="Поиск ${referenceBrowseKind() === 'muscles' ? 'мышцы' : 'движения'}…" aria-label="Поиск ${referenceBrowseKind() === 'muscles' ? 'мышцы' : 'движения'}" autocomplete="off" value="${escHtml(_referenceState.query)}">`
     + referenceAction('browse-clear','','Очистить поиск','×','class="ref-browse-search-clear" id="reference-browse-clear"') + '</label>'
     + referenceAction('browse-sort','','Сменить порядок справочника',referenceIcon('sort-desc'),'class="ref-browse-filter-button" id="reference-browse-sort"') + '</div>'
-    + '<div class="ref-browse-order-caption">Порядок: <span id="reference-browse-order" role="status" aria-live="polite"></span></div>'
     + `<div class="ref-browse-group-selector-label"><span>Группы · <b>${referenceBrowseGroups(data).length}</b></span>`
     + referenceAction('browse-all','',referenceBrowseKind() === 'muscles' ? 'Все мышцы' : 'Все движения',referenceBrowseKind() === 'muscles' ? 'Все мышцы' : 'Все движения','id="reference-browse-all"') + '</div>'
     + `<div id="reference-browse-groups" class="ref-browse-group-filters" role="group" aria-label="Группа ${referenceBrowseKind() === 'muscles' ? 'мышцы' : 'движения'}">${referenceBrowseGroupHtml(data)}</div>`
@@ -7894,7 +7912,6 @@ function referenceBrowseToolsHtml(data) {
 function referenceBrowseUpdateTools(data) {
   const s = _referenceState, groups = referenceBrowseGroups(data), sorts = referenceBrowseSorts(), mode = sorts.findIndex(([key]) => key === s.browseSort);
   const current = sorts[mode][1], next = sorts[(mode+1)%sorts.length][1];
-  $('reference-browse-order').textContent = current;
   const sort = $('reference-browse-sort');
   sort.setAttribute('aria-label',`Порядок: ${current}. Переключить: ${next}`); sort.title = `${current} → ${next}`;
   sort.innerHTML = s.browseSort === 'atlas' ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>' : referenceIcon(['asc','az'].includes(s.browseSort) ? 'sort-asc' : 'sort-desc');
@@ -7931,7 +7948,7 @@ function referenceMovementDeckHtml(data) {
         + referenceBrowseExerciseSummary(mine,n),
       `class="ref-browse-deck-motion${shapes[i] ? ' long' : ''}" style="--cat-color:${escHtml(DATA.getCategoryColor(DATA.getCurrentUser(),item.group))}"`);
   }).join('');
-  const total = q ? items.length : all.length, tone = group !== null ? DATA.getCategoryColor(DATA.getCurrentUser(),group) : '#b9aeff';
+  const total = q ? items.length : all.length, tone = group !== null ? DATA.getCategoryColor(DATA.getCurrentUser(),group) : 'var(--movement-accent)';
   const empty = q || s.browseType !== 'all' ? '<b>Ничего не найдено</b><span>Попробуйте другое название или тип.</span>' + referenceAction('browse-reset','','Сбросить фильтры','Сбросить фильтры') : `<b>Пока нет ${muscle ? 'мышц' : 'движений'}</b><span>В этой группе ещё нет элементов справочника.</span>`;
   return `<section class="ref-browse-group-deck" style="--deck-color:${escHtml(tone)}"><div class="ref-browse-deck-banner"><div><small>${q ? 'Результаты поиска' : muscle ? 'Мышцы группы' : 'Движения группы'}</small><h2>${escHtml(q ? 'Поиск' : group === null ? 'Все группы' : group || 'Без группы')}</h2></div><span class="ref-browse-deck-summary"><b>${total}</b><small>${muscle ? referenceQuantity(total,'мышца','мышцы','мышц') : referenceQuantity(total,'движение','движения','движений')}</small></span></div>`
     + `<div class="ref-browse-deck-body"><div class="ref-browse-deck-types" role="group" aria-label="${muscle ? 'Расположение мышцы' : 'Тип движения'}">${tabs}</div><div class="ref-browse-deck-grid">${cards || `<div class="ref-browse-empty">${empty}</div>`}</div></div></section>`;
@@ -8043,7 +8060,7 @@ function renderExerciseReference() {
   const titles = {hub:'Справочники',groups:'Группы',movements:'Движения',muscles:'Мышцы',group:s.name,movement:s.name,muscle:s.name};
   $('exercise-reference-title').textContent = titles[s.page];
   const screen = $('screen-exercise-reference');
-  screen.classList.toggle('library-catalog', tree ? (s.exerciseScope || s.scope) === 'catalog' : s.page === 'groups' && !mine);
+  screen.classList.toggle('library-catalog', tree ? (s.exerciseScope || s.scope) === 'catalog' : !mine);
   screen.classList.toggle('reference-leaf', leaf);
   screen.classList.toggle('reference-groups-page',s.page === 'groups');
   screen.classList.toggle('reference-movements-page',s.page === 'movements');
@@ -8188,16 +8205,14 @@ $('screen-exercise-reference').addEventListener('click', async event => {
   }
   if (action === 'navigate') { referenceNavigate(value); return; }
   if (['group','movement','muscle'].includes(action)) {
-    const scope = ['mine','catalog'].includes(button.dataset.refScope) ? button.dataset.refScope : s.scope;
+    const scope = ['mine','catalog'].includes(button.dataset.refScope) ? button.dataset.refScope : action === 'group' ? _exerciseLibrary : s.scope;
     const common = ['movements','muscles'].includes(s.page) && ['movement','muscle'].includes(action);
     referenceNavigate(action,value,common ? 'catalog' : scope,common ? s.scope : undefined); return;
   }
   if (action === 'exercise') { s.scrollTop = referenceScrollElement().scrollTop; openExerciseDetail(value,'exerciseReference'); return; }
   if (['movement','muscle','group'].includes(s.page) && action === 'movement-scope') {
     if (!['mine','catalog'].includes(value)) return;
-    if (value !== (s.exerciseScope || s.scope)) cancelMovementRemovals();
-    if (s.page === 'group') { s.scope = value; s.exerciseScope = undefined; s.editGroup = false; s.picker = null; }
-    else s.exerciseScope = value;
+    setReferenceLibraryScope(value);
     s.scrollTop = referenceScrollElement().scrollTop;
     renderExerciseReference(); return;
   }
