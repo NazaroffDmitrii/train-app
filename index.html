@@ -520,6 +520,12 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 .template-carousel-dots i { width:4px; height:4px; border-radius:4px; background:#3a3950; transition:width .18s ease,background .18s ease; }
 .template-carousel-dots i.active { width:14px; background:var(--template-carousel-accent,#9d93f0); }
 .launcher-carousel-dots { --template-carousel-accent:var(--selected-color); }
+.compact-carousel-dots { display:flex; align-items:center; justify-content:flex-end; gap:5px; height:4px; pointer-events:none; }
+.compact-carousel-dots[hidden] { display:none; }
+.compact-carousel-dots span { display:block; width:4px; height:4px; border-radius:4px; background:color-mix(in srgb,var(--text-tertiary) 35%,transparent); transition:width .18s,background .18s; }
+.compact-carousel-dots span.is-active { width:12px; background:var(--compact-carousel-accent,var(--accent-bright)); }
+@media(prefers-reduced-motion:reduce) { .compact-carousel-dots span { transition:none; } }
+
 .template-carousel {
   display:flex; align-items:flex-start; gap:10px; overflow-x:auto; overflow-y:hidden;
   overscroll-behavior-x:contain; touch-action:pan-x pan-y; scroll-snap-type:x mandatory;
@@ -2999,7 +3005,7 @@ body:has(.exercises-float-done.visible) .exercises-scroll { padding-bottom: calc
 .tpl-group { margin-bottom:8px; }
 .tpl-group-head { min-height:28px; padding:0 3px 7px; display:flex; align-items:center; gap:8px; }
 .tpl-group-title { flex:1; color:var(--text-tertiary); font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; }
-.tpl-group-dots { --template-carousel-accent:#9d93f0; }
+.tpl-group-dots { --compact-carousel-accent:var(--movement-accent,#b9aeff); }
 .tpl-group-more { width:28px; height:28px; flex:none; display:grid; place-items:center; border-radius:50%; color:#77758d; }
 .tpl-group-more:active,.tpl-group-more.open { color:#cbc7ed; background:#222132; }
 .tpl-group-more svg { width:16px; height:16px; }
