@@ -7634,6 +7634,15 @@ function toggleMovementRemoval(id) {
   s.scrollTop = referenceScrollElement().scrollTop;
   renderExerciseReference();
 }
+function referenceSection(key, title, icon, body, extra = '', className = '', id = '') {
+  const open = _referenceState.sectionClosed?.[key] !== true, bodyId = 'reference-section-' + key;
+  const controls = `aria-expanded="${open}" aria-controls="${bodyId}"`;
+  return `<section class="movement-branch ${className}" data-reference-section="${key}"${id ? ` id="${id}"` : ''}>`
+    + referenceAction('section-toggle',key,`${open ? 'Свернуть' : 'Раскрыть'}: ${title}`,referenceIcon(icon),`class="movement-node" ${controls}`)
+    + `<div class="movement-section-row"><h2 class="movement-label reference-section-heading">`
+    + referenceAction('section-toggle',key,title,`<span>${escHtml(title)}</span>${SVG_CHEVRON}`,`class="reference-section-toggle" ${controls}`)
+    + `</h2>${extra}</div><div id="${bodyId}"${open ? '' : ' hidden'}>${body}</div></section>`;
+}
 function referenceExerciseBranch(data) {
   const s = _referenceState, userId = DATA.getCurrentUser();
   const scope = s.exerciseScope || s.scope;
@@ -7661,10 +7670,9 @@ function referenceExerciseBranch(data) {
       + (s.page === 'group' && s.editGroup && referenceEditable() ? referenceAction('remove-exercise',ex.id,`Убрать из группы: ${ex.name}`,`${referenceIcon('minus')}<span>Убрать из группы</span>`,'class="group-member-remove"') : '') + '</article>';
   }).join('');
   const subject = s.page === 'muscle' ? 'этой мышцы' : 'этого движения';
-  return `<section class="movement-branch movement-exercises"><span class="movement-node">${referenceIcon('exercises')}</span>`
-    + `<div class="movement-section-row"><h2 class="movement-label">Упражнения</h2><div class="movement-tabs" role="group" aria-label="Источник упражнений">${tabs}</div></div>`
-    + `<div class="movement-exercise-grid" aria-live="polite">${cards || `<p class="movement-empty">${s.page === 'group' ? (scope === 'mine' ? 'В моих пока нет упражнений этой группы. Можно добавить их из каталога.' : 'В каталоге пока нет упражнений этой группы.') : scope === 'mine' ? `В моих пока нет упражнений для ${subject}. Можно добавить их из каталога.` : `В каталоге пока нет упражнений для ${subject}.`}</p>`}</div>`
-    + (s.page === 'group' && s.editGroup && referenceEditable() ? referenceAction('picker','exercises','Добавить упражнения',`${referenceIcon('plus')}<span>Добавить упражнения</span>`,`class="reference-add" aria-expanded="${s.picker === 'exercises'}"`) + referenceGroupPickerHtml(data,'exercises') : '') + '</section>';
+  const body = `<div class="movement-exercise-grid" aria-live="polite">${cards || `<p class="movement-empty">${s.page === 'group' ? (scope === 'mine' ? 'В моих пока нет упражнений этой группы. Можно добавить их из каталога.' : 'В каталоге пока нет упражнений этой группы.') : scope === 'mine' ? `В моих пока нет упражнений для ${subject}. Можно добавить их из каталога.` : `В каталоге пока нет упражнений для ${subject}.`}</p>`}</div>`
+    + (s.page === 'group' && s.editGroup && referenceEditable() ? referenceAction('picker','exercises','Добавить упражнения',`${referenceIcon('plus')}<span>Добавить упражнения</span>`,`class="reference-add" aria-expanded="${s.picker === 'exercises'}"`) + referenceGroupPickerHtml(data,'exercises') : '');
+  return referenceSection('exercises','Упражнения','exercises',body,`<div class="movement-tabs" role="group" aria-label="Источник упражнений">${tabs}</div>`,'movement-exercises');
 }
 function referenceMovementHtml(data) {
   const s = _referenceState;
@@ -7673,9 +7681,8 @@ function referenceMovementHtml(data) {
     ex.atlas ? (ex.atlas.target || []).map(m => m.muscle) : splitMuscles(ex.muscles?.primary)));
   const chips = related.map(name => referenceLink('muscle', name, name,
     'movement-muscle-chip' + (targets.has(name) ? ' target' : ''))).join('');
-  return `<div class="movement-tree"><section class="movement-branch"><span class="movement-node">${referenceIcon('muscles')}</span>`
-    + '<div class="movement-metadata-row"><h2 class="movement-label">Работают мышцы</h2></div>'
-    + `<div class="movement-muscle-chips">${chips || '<p class="reference-empty">Связи пока не добавлены</p>'}</div></section>`
+  return '<div class="movement-tree">' + referenceSection('muscles','Работают мышцы','muscles',
+    `<div class="movement-muscle-chips">${chips || '<p class="reference-empty">Связи пока не добавлены</p>'}</div>`)
     + referenceExerciseBranch(data) + '</div>';
 }
 function referenceAnatomySections(html) {
@@ -7698,22 +7705,16 @@ function referenceAnatomySections(html) {
 function referenceMuscleHtml(data) {
   const s = _referenceState, item = data.muscles.find(x => x.name === s.name);
   let html = '<div class="movement-tree muscle-tree">';
-  if (item?.bundles?.length) {
-    html += `<section class="movement-branch"><span class="movement-node">${referenceIcon('bundles')}</span>`
-      + '<div class="movement-section-row"><h2 class="movement-label">Пучки</h2></div>'
-      + `<div class="movement-muscle-chips muscle-bundles">${item.bundles.map(b => `<span class="movement-muscle-chip">${escHtml(b)}</span>`).join('')}</div></section>`;
-  }
+  if (item?.bundles?.length) html += referenceSection('bundles','Пучки','bundles',
+    `<div class="movement-muscle-chips muscle-bundles">${item.bundles.map(b => `<span class="movement-muscle-chip">${escHtml(b)}</span>`).join('')}</div>`);
   const anatomy = window.MUSCLE_ANATOMY?.[s.name];
   const sections = anatomy ? referenceAnatomySections(anatomy) : [{title:'Анатомия',icon:'muscles',html:'<p class="movement-empty">Анатомические данные пока не добавлены</p>'}];
   sections.forEach((section,index) => {
-    html += `<section class="movement-branch muscle-anatomy"><span class="movement-node">${referenceIcon(section.icon)}</span>`
-      + `<details data-anatomy-key="${index}"${s.anatomyOpen?.[index] === false ? '' : ' open'}><summary class="movement-section-row"><h2 class="movement-label">${escHtml(section.title)}</h2>${SVG_CHEVRON}</summary>`
-      + `<div class="muscle-anatomy-copy">${section.html}</div></details></section>`;
+    html += referenceSection('anatomy-' + index,section.title,section.icon,`<div class="muscle-anatomy-copy">${section.html}</div>`,'','muscle-anatomy');
   });
   const related = referenceRelated('muscle',s.name);
-  html += `<section class="movement-branch"><span class="movement-node">${referenceIcon('movements')}</span>`
-    + '<div class="movement-section-row"><h2 class="movement-label">Участвует в движениях</h2></div>'
-    + `<div class="muscle-movement-links">${related.map(name => referenceLink('movement',name,name,'muscle-movement-link',`<span>${escHtml(name)}</span>${SVG_CHEVRON}`)).join('') || '<p class="movement-empty">Связи пока не добавлены</p>'}</div></section>`;
+  html += referenceSection('movements','Участвует в движениях','movements',
+    `<div class="muscle-movement-links">${related.map(name => referenceLink('movement',name,name,'muscle-movement-link',`<span>${escHtml(name)}</span>${SVG_CHEVRON}`)).join('') || '<p class="movement-empty">Связи пока не добавлены</p>'}</div>`);
   return html + referenceExerciseBranch(data) + '</div>';
 }
 function referenceDetailHtml(data) {
@@ -7750,7 +7751,7 @@ function openExerciseReference() {
 function referenceNavigate(page, name = '', scope = _referenceState.scope, exerciseScope) {
   if (exerciseScope === undefined && ['movement','muscle'].includes(page) && ['movement','muscle'].includes(_referenceState.page) && scope === _referenceState.scope) exerciseScope = _referenceState.exerciseScope;
   _referenceTrail.push({state:{..._referenceState,scrollTop:referenceScrollElement().scrollTop}});
-  Object.assign(_referenceState, {page,name,scope,query:'',picker:null,scrollTop:0,exerciseScope,browseGroup:undefined,browseType:'all',browseSort:'atlas',browseGroupsExpanded:false,anatomyOpen:undefined,groupKind:'muscles',editGroup:false,groupExpanded:undefined,groupClosed:undefined,groupExercisesOpen:false});
+  Object.assign(_referenceState, {page,name,scope,query:'',picker:null,scrollTop:0,exerciseScope,browseGroup:undefined,browseType:'all',browseSort:'atlas',browseGroupsExpanded:false,sectionClosed:undefined,groupKind:'muscles',editGroup:false,groupExpanded:undefined,groupClosed:undefined,groupExercisesOpen:false});
   renderExerciseReference();
 }
 function referenceBack() {
@@ -7827,7 +7828,7 @@ function referenceBrowseGroups(data) {
 }
 function referenceBrowseInit(data) {
   const s = _referenceState, groups = referenceBrowseGroups(data);
-  if (s.browseGroup === undefined || s.browseGroup !== null && !groups.includes(s.browseGroup)) s.browseGroup = groups.includes('Ноги') ? 'Ноги' : groups[0] ?? null;
+  if (s.browseGroup === undefined || s.browseGroup !== null && !groups.includes(s.browseGroup)) s.browseGroup = null;
   if (!referenceBrowseTypes().some(([key]) => key === s.browseType)) s.browseType = 'all';
   if (!referenceBrowseSorts().some(([key]) => key === s.browseSort)) s.browseSort = 'atlas';
 }
@@ -7981,7 +7982,7 @@ function referenceGroupSection(data, kind) {
   const counts = new Map();
   referenceMovementExercises(data).forEach(ex => (muscle ? referenceExerciseMuscles(ex) : exerciseMovements(ex)).forEach(name => counts.set(name,(counts.get(name) || 0) + 1)));
   const items = data[kind].filter(item => item.group === s.name).sort((a,b) => (counts.get(b.name) || 0) - (counts.get(a.name) || 0));
-  const expanded = !!s.groupExpanded?.[kind], open = s.groupClosed?.[kind] !== true;
+  const expanded = s.groupExpanded?.[kind] !== false;
   const visible = expanded || editable ? items : items.slice(0,limit);
   const links = visible.map(item => {
     const link = referenceAction(muscle ? 'muscle' : 'movement',item.name,item.name,
@@ -7997,14 +7998,14 @@ function referenceGroupSection(data, kind) {
     `${expanded ? 'Свернуть список' : `Ещё ${items.length-limit} ${muscle ? referenceQuantity(items.length-limit,'мышца','мышцы','мышц') : referenceQuantity(items.length-limit,'движение','движения','движений')}`}${referenceIcon(expanded ? 'minus' : 'plus')}`,'class="group-show-more"') : '';
   const add = editable ? referenceAction('picker',kind,muscle ? 'Добавить мышцы' : 'Добавить движения',
     `${referenceIcon('plus')}<span>${muscle ? 'Добавить мышцы' : 'Добавить движения'}</span>`,`class="reference-add" aria-expanded="${s.picker === kind}"`) + referenceGroupPickerHtml(data,kind) : '';
-  return `<section class="movement-branch" id="group-section-${kind}"><span class="movement-node">${referenceIcon(kind)}</span>`
-    + `<div class="movement-section-row"><h2 class="movement-label group-section-heading">${referenceAction('group-section',kind,title,`<span>${title}</span>${SVG_CHEVRON}`,`class="group-section-toggle" aria-expanded="${open}" aria-controls="group-members-${kind}"`)}</h2></div>`
-    + `<div id="group-members-${kind}"${open ? '' : ' hidden'}><div class="${muscle ? 'movement-muscle-chips' : 'muscle-movement-links'}">${links || '<p class="movement-empty">Пока ничего не добавлено</p>'}</div>${more}${add}</div></section>`;
+  return referenceSection('group-' + kind,title,kind,
+    `<div class="${muscle ? 'movement-muscle-chips' : 'muscle-movement-links'}">${links || '<p class="movement-empty">Пока ничего не добавлено</p>'}</div>${more}${add}`,
+    '', '', 'group-section-' + kind);
 }
 function referenceGroupHtml(data) {
   const s = _referenceState, editable = referenceEditable() && s.editGroup;
   let html = '<div class="movement-tree group-detail-tree">';
-  if (editable) html += `<section class="movement-branch reference-group-settings"><span class="movement-node">${referenceIcon('groups')}</span><label class="reference-label" for="reference-group-name">Название группы</label><input class="reference-field" id="reference-group-name" value="${escHtml(s.name)}" maxlength="100"></section>`;
+  if (editable) html += referenceSection('settings','Название группы','groups',`<input class="reference-field" id="reference-group-name" aria-label="Название группы" value="${escHtml(s.name)}" maxlength="100">`,'','reference-group-settings');
   html += referenceGroupSection(data,'muscles') + referenceGroupSection(data,'movements') + referenceExerciseBranch(data);
   if (editable && s.scope === 'mine') html += referenceAction('delete-group',s.name,'Удалить группу','Удалить группу','class="reference-delete"');
   return html + '</div>';
@@ -8154,11 +8155,25 @@ $('screen-exercise-reference').addEventListener('click', async event => {
       if (section) { const offset = section.getBoundingClientRect().top - content.getBoundingClientRect().top; content.scrollTo({top:content.scrollTop + offset,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'}); }
       return;
     }
-    if (action === 'group-section' || action === 'group-expand') {
-      const key = action === 'group-section' ? 'groupClosed' : 'groupExpanded';
-      s[key] = {...s[key],[value]:!s[key]?.[value]};
+    if (action === 'group-expand') {
+      s.groupExpanded = {...s.groupExpanded,[value]:s.groupExpanded?.[value] === false};
       s.scrollTop = referenceScrollElement().scrollTop; renderExerciseReference(); return;
     }
+  }
+  if (action === 'section-toggle' && ['movement','muscle','group'].includes(s.page)) {
+    const section = $('exercise-reference-content').querySelector(`[data-reference-section="${CSS.escape(value)}"]`);
+    if (!section) return;
+    const closed = s.sectionClosed?.[value] !== true;
+    s.sectionClosed = {...s.sectionClosed,[value]:closed};
+    const body = $('reference-section-' + value); body.hidden = closed;
+    section.querySelectorAll('[data-ref-action="section-toggle"]').forEach(toggle => {
+      toggle.setAttribute('aria-expanded',String(!closed));
+      if (toggle.classList.contains('movement-node')) {
+        const title = section.querySelector('.reference-section-toggle span').textContent;
+        toggle.setAttribute('aria-label',`${closed ? 'Раскрыть' : 'Свернуть'}: ${title}`);
+      }
+    });
+    s.scrollTop = referenceScrollElement().scrollTop; return;
   }
   if (action === 'navigate') { referenceNavigate(value); return; }
   if (['group','movement','muscle'].includes(action)) {
@@ -8190,7 +8205,7 @@ $('screen-exercise-reference').addEventListener('click', async event => {
   if (!referenceEditable()) return;
   const userId = DATA.getCurrentUser(), data = referenceData();
   try {
-  if (action === 'group-edit' && s.page === 'group') { s.editGroup = !s.editGroup; s.picker = null; if (s.editGroup) s.groupClosed = {}; s.scrollTop = referenceScrollElement().scrollTop; renderExerciseReference(); return; }
+  if (action === 'group-edit' && s.page === 'group') { s.editGroup = !s.editGroup; s.picker = null; if (s.editGroup) { s.groupClosed = {}; s.sectionClosed = {}; } s.scrollTop = referenceScrollElement().scrollTop; renderExerciseReference(); return; }
   if (action === 'edit-item') {
     const kind = s.page === 'muscle' ? 'muscles' : 'movements';
     const item = data[kind].find(x => x.id === value);
@@ -8254,13 +8269,7 @@ $('screen-exercise-reference').addEventListener('keydown',event => {
   const kind = event.key === 'Home' ? 'muscles' : event.key === 'End' ? 'movements' : tab.dataset.refValue === 'muscles' ? 'movements' : 'muscles';
   $('screen-exercise-reference').querySelector(`[data-ref-action="group-kind"][data-ref-value="${kind}"]`).click();
 });
-$('exercise-reference-content').addEventListener('toggle',event => {
-  const details = event.target;
-  if (_referenceState.page === 'group' && $('exercise-reference-content').contains(details) && details.matches('details[data-group-exercises]')) { _referenceState.groupExercisesOpen = details.open; return; }
-  if (_referenceState.page !== 'muscle' || !details.matches('details[data-anatomy-key]')
-    || !$('exercise-reference-content').contains(details)) return;
-  (_referenceState.anatomyOpen ||= {})[details.dataset.anatomyKey] = details.open;
-},true);
+
 
 /* — Управление категориями v2: свайп-удаление, долгое нажатие = редактирование/перестановка — */
 // Вспомогательная шторка для переходов из прежних редакторов.

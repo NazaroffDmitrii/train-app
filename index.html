@@ -4217,13 +4217,13 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 /* Shared compact index cards: approved muscle layout and explicit exercise sources. */
 #screen-exercise-reference.reference-browse-page .reference-page-scroll{padding-top:2px}
 .reference-browse-page .ref-browse-deck-grid{gap:6px}
-.reference-browse-page .ref-browse-deck-motion{min-height:110px;padding:10px;gap:5px;border-radius:13px}
+.reference-browse-page .ref-browse-deck-motion{justify-content:flex-start;min-height:110px;padding:10px;gap:5px;border-radius:13px}
 .reference-browse-page .ref-browse-deck-motion.long{min-height:94px}
 .reference-browse-page .ref-browse-deck-title{font-size:14px;line-height:1.3;flex:initial}
 .reference-browse-page .ref-browse-deck-motion.long .ref-browse-deck-title{font-size:15px;line-height:1.3}
 .reference-browse-page .ref-browse-deck-card-kind{font-size:9px;padding:3px 5px;white-space:nowrap}
-.reference-browse-page .ref-browse-deck-card-footer{gap:5px;align-items:center}
-.reference-browse-page .ref-browse-deck-group{font-size:9px;line-height:1.3;overflow-wrap:anywhere}
+.reference-browse-page .ref-browse-deck-card-footer{gap:5px;align-items:flex-end;flex-wrap:nowrap;margin-top:auto}
+.reference-browse-page .ref-browse-deck-group{flex:1;min-width:0;text-align:right;font-size:9px;line-height:1.3;overflow-wrap:anywhere}
 .ref-browse-library-summary{display:flex;flex-direction:column;gap:3px;width:100%;border-top:1px solid #ffffff0d;padding-top:6px}
 .ref-browse-library-heading{font-size:10px;line-height:1.3;color:var(--movement-muted)}
 .ref-browse-library-counts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;width:100%}
@@ -4237,6 +4237,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
  .reference-browse-page .ref-browse-deck-motion.long{min-height:96px}
  .reference-browse-page .ref-browse-deck-title{font-size:13px}
  .reference-browse-page .ref-browse-deck-motion.long .ref-browse-deck-title{font-size:14px}
+ .reference-browse-page .ref-browse-deck-card-footer{flex-wrap:wrap}
+ .reference-browse-page .ref-browse-deck-group{flex:0 1 auto;margin-left:auto}
  .ref-browse-library-summary{padding-top:5px}
  .ref-browse-library-counts{gap:5px}
  .ref-browse-library-count{gap:3px;font-size:9.5px}
@@ -4244,6 +4246,16 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
  .ref-browse-deck-types{flex-wrap:wrap;gap:3px}
  .ref-browse-deck-type{font-size:11px;padding:7px 8px}
 }
+
+/* Every detail branch has the same header and rail-node disclosure. */
+.reference-section-heading{flex:1;min-width:0}
+.reference-section-toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:0;color:inherit;text-align:left;font:inherit;letter-spacing:inherit;text-transform:inherit}
+.reference-section-toggle>span{min-width:0;overflow-wrap:anywhere}
+.reference-section-toggle>svg{width:14px;height:14px;flex:none;transform:rotate(-90deg)}
+.reference-section-toggle[aria-expanded="false"]>svg{transform:rotate(90deg)}
+.movement-node[aria-expanded="false"]{color:var(--movement-muted);background:var(--movement-card)}
+.movement-node:hover{border-color:var(--movement-accent)}
+.movement-exercises .reference-section-heading{flex:1 1 90px}
 </style>
 </head>
 <body>
