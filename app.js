@@ -5641,7 +5641,6 @@ function syncConstructorCatalogUI() {
   screen.classList.toggle('exercise-selection',context?.kind === 'picker');
   screen.querySelector('.exercises-header-title').textContent=(context?.single ? context.subtitle : context?.title) || 'Упражнения';
   $('exercises-add-btn').hidden=active;
-  $('ex-cat-manage-btn').hidden=active;
   $('constructor-catalog-footer').hidden=!active;
   const subtitle=context?.single ? '' : context?.subtitle;
   const controls=$('constructor-catalog-context');controls.hidden=!context?.modes && !subtitle;
@@ -5950,8 +5949,13 @@ function initExercisesScreen() {
 
 $("exercises-back-btn").addEventListener("click", () => { if (_constructorCatalog) { closeConstructorExerciseCatalog(); return; } exitExListEditMode(); goBackScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
-// Шестерёнка → шторка «Справочник»; открывается на вкладке «Группы» (первой).
-$("ex-cat-manage-btn").addEventListener("click", () => openExerciseReference());
+// Прямые переходы из панели в начале обычного списка упражнений.
+exercisesScroll.addEventListener('click', event => {
+  const button = event.target.closest('[data-exercise-reference]');
+  if (!button || _constructorCatalog || _exListEditMode || Date.now() < _exerciseScrollClickUntil) return;
+  event.preventDefault(); event.stopPropagation();
+  openExerciseReference(button.dataset.exerciseReference);
+});
 
 // Порядок групп для справочника: как у пользователя (getAllCategories), но только
 // группы Атласа; недостающие добавляем в каноничном порядке.
@@ -6179,7 +6183,8 @@ function renderExercisesList(query) {
   const displayName = item => item.kind === "group" ? item.name : item.ex.name;
 
   const itemsByCat = new Map(); // cat -> display items (для клика по группе после рендера)
-  exercisesScroll.innerHTML = allOrderedCats.map(cat => {
+  const referencePanel = !_constructorCatalog && !_exListEditMode ? `<nav class="exercise-reference-panel" aria-label="Справочники"><div class="exercise-reference-panel-title">Справочники</div><div class="exercise-reference-panel-links"><button type="button" data-exercise-reference="groups" aria-label="Открыть группы">Группы</button><button type="button" data-exercise-reference="movements" aria-label="Открыть движения">Движения</button><button type="button" data-exercise-reference="muscles" aria-label="Открыть мышцы">Мышцы</button></div></nav>` : '';
+  exercisesScroll.innerHTML = referencePanel + allOrderedCats.map(cat => {
     const color = exerciseCategoryColor(userId, cat);
     const catExs = groups.get(cat) || [];
     const isEmpty = catExs.length === 0;
@@ -6245,7 +6250,7 @@ function renderExercisesList(query) {
   }).join("");
 
   if (![...itemsByCat.values()].some(items => items.length)) {
-    exercisesScroll.innerHTML = `<p class="empty-state">${!q && _exercisesCatFilter === 'all' && !_exerciseMovementFilter.size && !_constructorCatalog && _exerciseLibrary === 'mine' ? 'Здесь будут ваши упражнения. Выберите их во вкладке «Каталог».' : 'Ничего не найдено'}</p>`;
+    exercisesScroll.innerHTML = referencePanel + `<p class="empty-state">${!q && _exercisesCatFilter === 'all' && !_exerciseMovementFilter.size && !_constructorCatalog && _exerciseLibrary === 'mine' ? 'Здесь будут ваши упражнения. Выберите их во вкладке «Каталог».' : 'Ничего не найдено'}</p>`;
     return;
   }
 
@@ -7742,10 +7747,12 @@ document.addEventListener('click', event => {
   openReferenceDetail(button.dataset.referenceKind,button.dataset.referenceName);
 },true);
 
-function openExerciseReference() {
+function openExerciseReference(page = 'hub') {
+  if (!['hub','groups','movements','muscles'].includes(page) || _constructorCatalog) return;
+  const scroll = exercisesScroll.scrollTop;
   exitExListEditMode();
-  _referenceTrail = [];
-  _referenceState = {page:'hub', scope:_exerciseLibrary, name:'', query:'', picker:null, scrollTop:0, owner:Auth.userId(), userId:DATA.getCurrentUser()};
+  _referenceTrail = [{screen:'screen-exercises',state:{..._referenceState},scroll}];
+  _referenceState = {page, scope:_exerciseLibrary, name:'', query:'', sort:'count-desc', picker:null, scrollTop:0, owner:Auth.userId(), userId:DATA.getCurrentUser()};
   goToScreen('exerciseReference');
 }
 function referenceNavigate(page, name = '', scope = _referenceState.scope, exerciseScope) {
