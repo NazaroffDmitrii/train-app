@@ -2591,6 +2591,11 @@ function goToScreen(name, opts = {}) {
   allScreens.forEach(s => s.classList.remove("active"));
   const target = SCREENS[name];
   if (!target) { if (opts.instant) allScreens.forEach(s => { s.style.transition = ""; }); return; }
+  // Native modal dialogs keep the whole document inert even on an invisible screen.
+  // Close them before completing navigation so they cannot block the next page.
+  allScreens.filter(s => s !== target).forEach(s => {
+    s.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
+  });
   target.classList.add("active");
   if (opts.instant) {
     void target.offsetWidth;  // применить мгновенное состояние до восстановления перехода
@@ -11506,7 +11511,7 @@ if ("serviceWorker" in navigator) {
     if (typeof _tplDrag !== "undefined" && _tplDrag) return true; // тащим упражнение в шаблоне
     // Спрятанная (display:none) шторка-справочник — та, из которой мы ушли в
     // карточку мышцы, — НЕ должна блокировать свайп-назад: она видимо закрыта.
-    const sheets = document.querySelectorAll(".modal-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open, .sg-sheet[open]");
+    const sheets = document.querySelectorAll(".modal-backdrop.open, .bottom-sheet-backdrop.open, .stats-picker-backdrop.open, .settings-modal-backdrop.open, dialog[open]");
     for (const s of sheets) { if (s.style.display !== "none") return true; }
     return false;
   }
