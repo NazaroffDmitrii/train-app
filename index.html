@@ -4139,7 +4139,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 
 
 /* Shared movement index: approved group deck and cycling order button. */
-.ref-browse-tools{flex:none;width:100%;max-width:640px;margin:0 auto;padding:0 12px 12px}
+.ref-browse-tools{flex:none;width:100%;max-width:640px;margin:0 auto;padding:0 12px 8px}
 .ref-browse-search-row{display:flex;gap:8px}
 .ref-browse-search-box{display:flex;align-items:center;gap:9px;flex:1;min-width:0;padding:0 12px;height:42px;border-radius:14px;background:var(--movement-circle);border:1px solid var(--movement-card-border);color:var(--movement-muted)}
 .ref-browse-search-box svg{width:17px;height:17px;flex:none}
@@ -4152,7 +4152,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .ref-browse-filter-status{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;font-size:12px;color:var(--movement-muted)}
 .ref-browse-filter-status button{color:var(--movement-accent);flex:none}
 .ref-browse-tools button:focus-visible{outline:2px solid var(--movement-accent);outline-offset:2px}
-.ref-browse-group-filters{max-height:28dvh;overflow-y:auto;scrollbar-width:none}
+.ref-browse-group-filters{max-height:min(270px,44dvh);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#5b4a74 transparent}
 .ref-browse-empty{display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center;color:var(--movement-muted);font-size:13px;line-height:1.4}
 .ref-browse-empty button{margin-top:4px;color:var(--movement-accent)}
 #screen-exercise-reference.reference-movements-page .reference-page-scroll{padding-top:2px}
@@ -4162,7 +4162,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .ref-browse-group-selector-label button{font-size:11px;color:var(--movement-accent)}
 .ref-browse-group-selector-label button[aria-pressed="true"]{text-decoration:underline;text-underline-offset:4px}
 .ref-browse-group-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:0;overflow-y:auto;overflow-x:hidden}
-.ref-browse-group-switch{display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;padding:10px 8px;border:1px solid color-mix(in srgb,var(--cat-color) 27%,#393147);border-radius:13px;background:color-mix(in srgb,var(--cat-color) 6%,#17131f);color:var(--movement-chip-text);text-align:left;min-height:48px}
+.ref-browse-group-switch{display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;padding:10px 8px;border:1px solid color-mix(in srgb,var(--cat-color) 27%,#393147);border-radius:13px;background:color-mix(in srgb,var(--cat-color) 6%,#17131f);color:var(--movement-chip-text);text-align:left;min-height:48px;height:48px;padding-block:6px}
 .ref-browse-group-switch span{font-size:11px;line-height:1.2;min-width:0;overflow-wrap:anywhere}
 .ref-browse-group-switch small{font-size:10px;opacity:.6;flex:none}
 .ref-browse-group-switch[aria-pressed="true"]{background:var(--cat-color);border-color:var(--cat-color);color:#15111e}
@@ -4206,7 +4206,10 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .ref-browse-order-caption span{color:var(--movement-chip-text)}
 .ref-browse-group-selector-label{padding-top:8px}
 .ref-browse-group-selector-label b{font-weight:400}
-.ref-browse-group-more{display:block;width:100%;padding:10px 0 0;color:var(--movement-muted);font-size:11px;line-height:1.3;text-align:center}
+.ref-browse-group-more{display:flex;align-items:center;justify-content:center;width:100%;height:30px;padding:3px 0 0;color:var(--movement-muted)}
+.ref-browse-group-more svg{width:18px;height:18px;transition:transform .15s}
+.ref-browse-group-more[aria-expanded="true"] svg{transform:rotate(180deg)}
+@media(prefers-reduced-motion:reduce){.ref-browse-group-more svg{transition:none}}
 .ref-browse-group-more:hover{color:var(--movement-accent)}
 @media(max-width:340px){.ref-browse-deck-motion{padding:13px;gap:12px}.ref-browse-deck-title{font-size:15px}.ref-browse-deck-motion.long .ref-browse-deck-title{font-size:16px}.ref-browse-deck-card-kind{font-size:9px;padding:3px 5px}}
 

@@ -7751,7 +7751,7 @@ function openExerciseReference() {
 function referenceNavigate(page, name = '', scope = _referenceState.scope, exerciseScope) {
   if (exerciseScope === undefined && ['movement','muscle'].includes(page) && ['movement','muscle'].includes(_referenceState.page) && scope === _referenceState.scope) exerciseScope = _referenceState.exerciseScope;
   _referenceTrail.push({state:{..._referenceState,scrollTop:referenceScrollElement().scrollTop}});
-  Object.assign(_referenceState, {page,name,scope,query:'',picker:null,scrollTop:0,exerciseScope,browseGroup:undefined,browseType:'all',browseSort:'atlas',browseGroupsExpanded:false,sectionClosed:undefined,groupKind:'muscles',editGroup:false,groupExpanded:undefined,groupClosed:undefined,groupExercisesOpen:false});
+  Object.assign(_referenceState, {page,name,scope,query:'',picker:null,scrollTop:0,exerciseScope,browseGroup:undefined,browseType:'all',browseSort:'atlas',browseGroupsExpanded:false,browseGroupRowStart:0,sectionClosed:undefined,groupKind:'muscles',editGroup:false,groupExpanded:undefined,groupClosed:undefined,groupExercisesOpen:false});
   renderExerciseReference();
 }
 function referenceBack() {
@@ -7834,9 +7834,13 @@ function referenceBrowseInit(data) {
 }
 function referenceBrowseShownGroups(data) {
   const groups = referenceBrowseGroups(data), s = _referenceState;
-  const shown = s.browseGroupsExpanded ? [...groups] : groups.slice(0,8);
-  if (groups.length > 8 && !s.browseGroupsExpanded && s.browseGroup !== null && !shown.includes(s.browseGroup)) shown[shown.length-1] = s.browseGroup;
-  return shown;
+  const lastStart = Math.max(0,groups.length - 4);
+  let start = Number.isInteger(s.browseGroupRowStart) ? Math.max(0,Math.min(s.browseGroupRowStart,lastStart)) : 0;
+  const selected = s.browseGroup === null ? -1 : groups.indexOf(s.browseGroup);
+  if (selected >= 0 && (selected < start || selected >= start + 4)) start = Math.min(Math.floor(selected / 4) * 4,lastStart);
+  s.browseGroupRowStart = start;
+  const row = groups.slice(start,start + 4);
+  return s.browseGroupsExpanded ? [...row,...groups.filter(name => !row.includes(name))] : row;
 }
 function referenceBrowseCounts(data) {
   const counts = new Map();
@@ -7876,7 +7880,7 @@ function referenceBrowseToolsHtml(data) {
     + `<div class="ref-browse-group-selector-label"><span>Группы · <b>${referenceBrowseGroups(data).length}</b></span>`
     + referenceAction('browse-all','',referenceBrowseKind() === 'muscles' ? 'Все мышцы' : 'Все движения',referenceBrowseKind() === 'muscles' ? 'Все мышцы' : 'Все движения','id="reference-browse-all"') + '</div>'
     + `<div id="reference-browse-groups" class="ref-browse-group-filters" role="group" aria-label="Группа ${referenceBrowseKind() === 'muscles' ? 'мышцы' : 'движения'}">${referenceBrowseGroupHtml(data)}</div>`
-    + referenceAction('browse-more','','Показать остальные группы','','class="ref-browse-group-more" id="reference-browse-more" aria-controls="reference-browse-groups"')
+    + referenceAction('browse-more','','Показать остальные группы','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>','class="ref-browse-group-more" id="reference-browse-more" aria-controls="reference-browse-groups"')
     + '<div class="ref-browse-filter-status" id="reference-browse-status"><span id="reference-browse-status-text" role="status"></span>'
     + referenceAction('browse-reset','','Сбросить фильтры','Сбросить') + '</div>';
 }
@@ -7888,11 +7892,11 @@ function referenceBrowseUpdateTools(data) {
   sort.setAttribute('aria-label',`Порядок: ${current}. Переключить: ${next}`); sort.title = `${current} → ${next}`;
   sort.innerHTML = s.browseSort === 'atlas' ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>' : referenceIcon(['asc','az'].includes(s.browseSort) ? 'sort-asc' : 'sort-desc');
   $('reference-browse-groups').innerHTML = referenceBrowseGroupHtml(data);
-  const more = $('reference-browse-more'), remaining = groups.length - referenceBrowseShownGroups(data).length;
-  more.hidden = groups.length <= 8;
-  more.textContent = s.browseGroupsExpanded ? 'Свернуть группы' : `Ещё ${remaining} ${referenceQuantity(remaining,'группа','группы','групп')}`;
+  const more = $('reference-browse-more'), remaining = Math.max(0,groups.length - 4);
+  more.hidden = !remaining;
   more.setAttribute('aria-expanded',String(!!s.browseGroupsExpanded));
-  more.setAttribute('aria-label',more.textContent);
+  more.setAttribute('aria-label',s.browseGroupsExpanded ? 'Свернуть группы' : `Показать остальные группы: ${remaining}`);
+  $('reference-browse-groups').scrollTop = 0;
   $('reference-browse-all').setAttribute('aria-pressed',String(s.browseGroup === null && !s.query.trim()));
   $('reference-browse-clear').hidden = !s.query;
   $('reference-browse-status').hidden = !s.query;
@@ -8126,13 +8130,13 @@ $('screen-exercise-reference').addEventListener('click', async event => {
   if (['movements','muscles'].includes(s.page) && action.startsWith('browse-')) {
     const data = referenceIndexData();
     referenceBrowseInit(data);
-    if (action === 'browse-sort') s.browseSort = referenceBrowseSorts()[(referenceBrowseSorts().findIndex(([key]) => key === s.browseSort)+1)%referenceBrowseSorts().length][0];
-    else if (action === 'browse-group' && referenceBrowseGroups(data).includes(value)) { s.browseGroup = value; s.query = ''; s.browseType = 'all'; }
-    else if (action === 'browse-all') { s.browseGroup = null; s.query = ''; s.browseType = 'all'; }
+    if (action === 'browse-sort') { s.browseSort = referenceBrowseSorts()[(referenceBrowseSorts().findIndex(([key]) => key === s.browseSort)+1)%referenceBrowseSorts().length][0]; s.browseGroupsExpanded = false; }
+    else if (action === 'browse-group' && referenceBrowseGroups(data).includes(value)) { s.browseGroup = value; s.query = ''; s.browseType = 'all'; s.browseGroupsExpanded = false; }
+    else if (action === 'browse-all') { s.browseGroup = null; s.query = ''; s.browseType = 'all'; s.browseGroupsExpanded = false; }
     else if (action === 'browse-type' && referenceBrowseTypes().some(([key]) => key === value)) s.browseType = value;
     else if (action === 'browse-more') s.browseGroupsExpanded = !s.browseGroupsExpanded;
     else if (action === 'browse-clear') s.query = '';
-    else if (action === 'browse-reset') { s.browseGroup = undefined; s.query = ''; s.browseType = 'all'; s.browseSort = 'atlas'; referenceBrowseInit(data); }
+    else if (action === 'browse-reset') { s.browseGroup = undefined; s.query = ''; s.browseType = 'all'; s.browseSort = 'atlas'; s.browseGroupsExpanded = false; s.browseGroupRowStart = 0; referenceBrowseInit(data); }
     else return;
     $('reference-search').value = s.query;
     $('reference-list').innerHTML = referenceMovementDeckHtml(data);
@@ -8270,6 +8274,14 @@ $('screen-exercise-reference').addEventListener('keydown',event => {
   $('screen-exercise-reference').querySelector(`[data-ref-action="group-kind"][data-ref-value="${kind}"]`).click();
 });
 
+
+$('exercise-reference-movement-tools').addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || !['movements','muscles'].includes(_referenceState.page) || !_referenceState.browseGroupsExpanded) return;
+  event.preventDefault();
+  _referenceState.browseGroupsExpanded = false;
+  referenceBrowseUpdateTools(referenceIndexData());
+  $('reference-browse-more').focus({preventScroll:true});
+});
 
 /* — Управление категориями v2: свайп-удаление, долгое нажатие = редактирование/перестановка — */
 // Вспомогательная шторка для переходов из прежних редакторов.
