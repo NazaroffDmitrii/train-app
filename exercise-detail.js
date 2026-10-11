@@ -55,19 +55,9 @@ const ExerciseDescriptions = (() => {
  function carousel(content,label){
    const slides=[...content.children],track=document.createElement('div');track.className='template-carousel xd-carousel-track';track.setAttribute('role','region');track.setAttribute('aria-label',label);track.tabIndex=0;
    slides.forEach((slide,n)=>{slide.classList.add('xd-carousel-slide');slide.setAttribute('aria-label',`${n+1} из ${slides.length}`);track.append(slide);});
-   const dots=document.createElement('div');dots.className='xd-carousel-dots';dots.setAttribute('role','img');dots.hidden=slides.length<2;dots.innerHTML=Array.from({length:Math.min(3,slides.length)},()=>'<span aria-hidden="true"></span>').join('');
+   const dots=document.createElement('div');dots.className='xd-carousel-dots';
    content.replaceChildren(dots,track);
-   let active=0;
-   const render=index=>{
-     const previous=active;active=index;
-     const slot=slides.length<3?active:active===0?0:active===slides.length-1?2:1;
-     [...dots.children].forEach((dot,n)=>dot.classList.toggle('is-active',n===slot));dots.dataset.index=active;dots.setAttribute('aria-label',`${label}: карточка ${active+1} из ${slides.length}`);
-     if(previous!==active&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
-       const direction=Math.sign(active-previous);dots.dataset.direction=direction>0?'next':'previous';
-       const bar=dots.querySelector('.is-active');bar?.getAnimations().forEach(animation=>animation.cancel());
-       bar?.animate([{transform:`translateX(${-direction*7}px) scaleX(.45)`,opacity:.3},{transform:'translateX(0) scaleX(1)',opacity:1}],{duration:260,easing:'ease-out'});
-     }
-   };
+   const render=setupCompactCarouselDots(dots,slides.length,label);
    const controller=setupTemplateCarousel(track,{onIndexChange:render,followHeight:true});
    track.onkeydown=event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();const index=Math.max(0,Math.min(slides.length-1,controller.currentIndex()+(event.key==='ArrowRight'?1:-1)));track.scrollTo({left:templateCarouselTargets(track)[index],behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}};
    const cleanup=new MutationObserver(()=>{if(!content.isConnected){controller.destroy();cleanup.disconnect();}});cleanup.observe($('screen-exercise-detail'),{childList:true,subtree:true});

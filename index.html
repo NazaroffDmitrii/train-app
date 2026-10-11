@@ -528,7 +528,7 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 
 .template-carousel {
   display:flex; align-items:flex-start; gap:10px; overflow-x:auto; overflow-y:hidden;
-  overscroll-behavior-x:contain; touch-action:pan-x pan-y; scroll-snap-type:x mandatory;
+  overscroll-behavior-x:contain; touch-action:pan-y pinch-zoom; scroll-snap-type:x mandatory;
   scrollbar-width:none; transition:height .2s ease; -webkit-overflow-scrolling:touch;
 }
 .template-carousel::-webkit-scrollbar { display:none; }
@@ -3681,7 +3681,11 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #exd-body .exd-section-label { display:flex; align-items:center; gap:9px; }
 .exd-section-icon { width:26px; height:26px; border-radius:9px; background:color-mix(in srgb,var(--cat-color) 22%,transparent); color:color-mix(in srgb,var(--cat-color) 50%,white); display:inline-flex; align-items:center; justify-content:center; flex:none; }
 .exd-section-icon svg { width:16px; height:16px; }
-.app:has(#screen-exercises.active) { overflow:clip; }
+/* Give the exercise picker a bounded native scroller from its first layout. */
+#screen-exercises { min-height:0; overflow:hidden; }
+#screen-exercises.active { transform:none; }
+#screen-exercises > .exercise-library-body { height:0; flex:1 1 0px; min-width:0; overflow:hidden; }
+#screen-exercises #exercises-scroll { height:0; flex:1 1 0px; min-height:0; min-width:0; overflow-x:hidden; overflow-y:scroll; overscroll-behavior-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
 .app:has(#screen-exercise-detail.active) { overflow:hidden; }
 @media (min-width:481px) {
   #screen-exercises .exercises-header,
