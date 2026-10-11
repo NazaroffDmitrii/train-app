@@ -183,6 +183,9 @@ const DATA = (() => {
         movementGroup: a.movementGroup || "",
         variationName: a.variationName || "",
         executionParameters: normalizeExecutionParameters(a.executionParameters),
+        executionDescriptions: a.executionDescriptions || {version:1,variants:{}},
+        ...(Array.isArray(a.features)?{features:a.features}:{}),
+        ...(Array.isArray(a.mistakeDetails)?{mistakeDetails:a.mistakeDetails}:{}),
         equipment: a.equipment || "",
         loadTypes: a.loadTypes || [],
         level: a.level || "",
@@ -5988,7 +5991,7 @@ function memberRowHtml(ex, cat, selected = false) {
       <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
       <div class="ex-row tappable" data-id="${escHtml(ex.id)}">
         <span class="ex-row-body">
-          <button type="button" class="ex-row-name variant-select" data-variant-select="${escHtml(ex.id)}" aria-pressed="${selected}">${escHtml(label)}</button>
+          <button type="button" class="ex-row-name variant-select" data-variant-select="${escHtml(ex.id)}" data-variant-open="${escHtml(ex.id)}" aria-pressed="${selected}">${escHtml(label)}</button>
         </span>
         <span class="exercise-ago">${_exerciseLibrary === "mine" && !_constructorCatalog ? exerciseAgo(ex.id) : ""}</span><button type="button" class="variant-open" data-variant-open="${escHtml(ex.id)}" aria-label="Открыть: ${escHtml(ex.name)}">${arrow}</button>${constructorCatalogAddHtml(ex)}${exerciseLibraryButton(ex)}
       </div>
@@ -6287,7 +6290,12 @@ function renderExercisesList(query) {
   }));
   exercisesScroll.querySelectorAll(".ex-row:not(.ex-row-group)").forEach(row => {
     row.addEventListener("click", () => {
-      if (row.closest(".ex-row-wrap-nested") && !_exListEditMode) { row.querySelector("[data-variant-select]")?.click(); return; }
+      if (row.closest(".ex-row-wrap-nested") && !_exListEditMode) {
+        const groupId = row.closest('[data-group-id]').dataset.groupId;
+        _exerciseVariantSelection.set(executionDraftKey(userId,groupId),row.dataset.id);
+        const y = exercisesScroll.scrollTop; renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = y;
+        return;
+      }
       // В режиме правки строка только переставляется; имя меняется свайпом
       // вправо → форма (как у мышц/движений). Инлайн-переименование убрано.
       if (_exListEditMode) return;
@@ -6999,10 +7007,12 @@ function splitMuscles(str) {
   return (str || "").split(",").map(s => s.trim()).filter(Boolean);
 }
 
-function openExerciseDetail(exerciseId, returnScreen = "exercises") {
+function openExerciseDetail(exerciseId, returnScreen = "exercises", navigationOptions = {}) {
   const userId = DATA.getCurrentUser();
-  const fromCatalog = (returnScreen === "exercises" && exerciseCatalogSource()) || (returnScreen === "exerciseReference" && (['movement','muscle'].includes(_referenceState.page) ? (_referenceState.exerciseScope || _referenceState.scope) : _referenceState.scope) === "catalog");
-  const ex = (fromCatalog ? DATA.DEFAULT_EXERCISES : DATA.getVisibleExercises(userId)).find(e => e.id === exerciseId);
+  const fromCatalog = navigationOptions.scope ? navigationOptions.scope === "catalog" : (returnScreen === "exercises" && exerciseCatalogSource()) || (returnScreen === "exerciseReference" && (['movement','muscle'].includes(_referenceState.page) ? (_referenceState.exerciseScope || _referenceState.scope) : _referenceState.scope) === "catalog");
+  const rawExercise = navigationOptions.previewExercise || (fromCatalog ? DATA.DEFAULT_EXERCISES : DATA.getVisibleExercises(userId)).find(e => e.id === exerciseId);
+  const snapshot = rawExercise && (navigationOptions.executionSnapshot || executionForExercise(userId,rawExercise));
+  const ex = rawExercise && (window.ExerciseDetailPage ? ExerciseDescriptions.resolve(rawExercise,snapshot).exercise : rawExercise);
   if (!ex) return false;
   _detailExerciseId = exerciseId;
   _exdReturnScreen = returnScreen;
@@ -7042,7 +7052,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
 
   // Рабочие мышцы: новая модель (роли с пучками) или легаси-строки.
   let musclesSection = "";
-  const hasAtlasMuscles = a && Array.isArray(a.target) && a.target.length;
+  const hasAtlasMuscles = a && ATLAS_ROLES.some(role=>Array.isArray(a[role.key])&&a[role.key].length);
   if (hasAtlasMuscles) {
     const rolesHtml = ATLAS_ROLES.map(r => ({ ...r, items: (a[r.key] || []) }))
       .filter(r => r.items.length)
@@ -7154,7 +7164,8 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises") {
   // прокрутку от предыдущего (открыл следующее — а ты уже в середине страницы).
   $("exd-body").scrollTop = 0;
 
-  goToScreen("exerciseDetail");
+  goToScreen("exerciseDetail", navigationOptions);
+  window.ExerciseDetailPage?.decorate(rawExercise,returnScreen,navigationOptions);
 }
 
 $("exd-back-btn").addEventListener("click", () => goBackScreen(_exdReturnScreen, { keepFilter: true, resumeConstructor: _exdReturnScreen === "constructor" }));
@@ -7780,8 +7791,8 @@ function referenceBack() {
   if (previous) {
     _referenceState = previous.state;
     if (previous.screen === 'screen-exercise-detail') {
-      if (openExerciseDetail(previous.exerciseId,previous.returnScreen) === false) {
-        if (_screenBackStack[_screenBackStack.length - 1] === 'exerciseDetail') _screenBackStack.pop();
+      if (_screenBackStack[_screenBackStack.length - 1] === 'exerciseDetail') _screenBackStack.pop();
+      if (openExerciseDetail(previous.exerciseId,previous.returnScreen,{navigation:'back'}) === false) {
         if (previous.returnScreen === 'exerciseReference') renderExerciseReference();
         else goBackScreen(previous.returnScreen,{keepFilter:true});
         return;
@@ -9526,164 +9537,12 @@ $("exercise-form-add-step").addEventListener("click", () => {
   tas[tas.length - 1]?.focus();
 });
 
-// Полный редактор упражнения по модели Атласа (#6). Динамическая модалка со
-// всеми полями ex.atlas: тип/категория, оборудование, уровень, целевые/синергисты/
-// стабилизаторы (выбор из справочника мышц), движения, техника, частые ошибки,
-// противопоказания, референс, медиа, совет. Сохраняет в own-оверлей (copy-on-write).
+// The agreed full-page editor is shared by add, swipe-edit and detail-edit.
 function openExerciseForm(exerciseId, options = {}) {
-  const userId = DATA.getCurrentUser(), owner = Auth.userId();
-  if (options.catalog && !DATA.isAdmin()) return;
-  const ex = exerciseId ? DATA.getVisibleExercises(userId).find(e => e.id === exerciseId) : null;
-  if (exerciseId && !ex) return;
-  const a = (ex && ex.atlas) || {};
-  const roleNames = arr => (arr || []).map(o => o.muscle);
-  const muscleNames = DATA.refMuscles(userId).map(m => m.name);
-  const moveNames = DATA.refMovements(userId).map(m => m.name);
-  const cats = DATA.getAllCategories(userId);
-  const exGroups = DATA.getExerciseGroups(userId);
-  const curGroupName = (ex && ex.groupId && (exGroups.find(g => g.id === ex.groupId) || {}).name) || options.groupName || "";
-  const LEVELS = ["Глобальное", "Региональное", "Локальное"];
-  const curLevel = LEVEL_LABELS[a.level] || a.level || "";
-  let technique = (ex && Array.isArray(ex.steps) ? ex.steps.join("\n") : (a.technique || ""));
-  let mistakes = (a.mistakes || []).join("\n");
-
-  const bd = document.createElement("div");
-  bd.className = "modal-backdrop open ref-form-backdrop";
-  bd.style.zIndex = "60";
-  bd.innerHTML = `
-    <div class="modal modal-form ref-form">
-      <h2 class="modal-title">${ex ? "Редактировать упражнение" : "Новое упражнение"}</h2>
-      <div class="ex-form-field"><label class="ex-form-label">Название</label>
-        <input class="ex-form-input" id="ef-name" type="text" placeholder="Например, Гакк-приседания" value="${escHtml(ex ? ex.name : "")}"></div>
-      <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips ex-form-2col" id="ef-type"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Категория</label><div class="ex-form-dd" id="ef-cat"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Группа</label>
-        <div class="ex-form-dd ef-combo">
-          <input class="ex-form-input" id="ef-group" type="text" autocomplete="off" placeholder="Например, Жим лёжа" value="${escHtml(curGroupName)}">
-          <div class="ef-dd-panel ef-combo-panel" id="ef-group-panel"></div>
-        </div>
-        <p class="ex-form-hint">Похожие варианты одного упражнения (штанга/гантели/тренажёр) — впиши общее имя, они схлопнутся в одну строку в списке.</p></div>
-      <div class="ex-form-field"><label class="ex-form-label">Короткое название вариации</label><input class="ex-form-input" id="ef-variation" maxlength="120" placeholder="Например, Со штангой" value="${escHtml(a.variationName || '')}"></div>
-      <div id="ef-execution"></div>
-      <div class="ex-form-field"><label class="ex-form-label">Оборудование</label>
-        <input class="ex-form-input" id="ef-equip" type="text" placeholder="Например, Штанга" value="${escHtml(a.equipment || "")}"></div>
-      <div class="ex-form-field"><label class="ex-form-label">Уровень</label><div class="ex-form-dd" id="ef-level"></div></div>
-      <div class="ex-form-group-label">Рабочие мышцы</div>
-      <div class="ex-form-field"><label class="ex-form-label">Целевые</label><div class="ex-form-dd" id="ef-target"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Синергисты</label><div class="ex-form-dd" id="ef-syn"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Стабилизаторы</label><div class="ex-form-dd" id="ef-stab"></div></div>
-      <div class="ex-form-field"><label class="ex-form-label">Движения</label><div class="ex-form-dd" id="ef-moves"></div></div>
-      <div class="ex-form-group-label">Техника и заметки</div>
-      <div class="ex-form-field"><label class="ex-form-label">Техника (по шагу на строку)</label>
-        <textarea class="ex-form-input ex-form-textarea" id="ef-tech" rows="4" placeholder="Один шаг — одна строка">${escHtml(technique)}</textarea></div>
-      <div class="ex-form-field"><label class="ex-form-label">Частые ошибки (по одной на строку)</label>
-        <textarea class="ex-form-input ex-form-textarea" id="ef-mistakes" rows="3">${escHtml(mistakes)}</textarea></div>
-      <div class="ex-form-field"><label class="ex-form-label">Отличия от похожих</label>
-        <textarea class="ex-form-input ex-form-textarea" id="ef-diff" rows="3">${escHtml(a.differences || "")}</textarea></div>
-      <div class="ex-form-field"><label class="ex-form-label">Нюанс</label>
-        <textarea class="ex-form-input ex-form-textarea" id="ef-extra" rows="3">${escHtml(a.extra || "")}</textarea></div>
-      <div class="ex-form-field"><label class="ex-form-label">Противопоказания</label>
-        <textarea class="ex-form-input ex-form-textarea" id="ef-contra" rows="2">${escHtml(a.contraindications || "")}</textarea></div>
-      <div class="ex-form-field"><label class="ex-form-label">Совет</label>
-        <textarea class="ex-form-input ex-form-textarea" id="ef-tip" rows="2">${escHtml(ex ? (ex.tip || "") : "")}</textarea></div>
-      <div class="ex-form-field"><label class="ex-form-label">Ссылка на медиа (фото/гиф/видео)</label>
-        <input class="ex-form-input" id="ef-media" type="url" inputmode="url" placeholder="https://…" value="${escHtml(ex ? (ex.media || "") : "")}"></div>
-      <div class="ex-form-field"><label class="ex-form-label">Ссылка-референс</label>
-        <input class="ex-form-input" id="ef-ref" type="url" inputmode="url" placeholder="https://…" value="${escHtml(a.referenceUrl || "")}"></div>
-      <div class="modal-form-actions">
-        <button class="btn-chip" data-act="cancel">Отмена</button>
-        <button class="btn-chip primary" data-act="save">Сохранить</button>
-      </div>
-    </div>`;
-  document.body.appendChild(bd);
-
-  // Тип — две равные кнопки (два столбца); остальное — выпадающие списки.
-  const executionEditor = mountExecutionEditor(bd.querySelector("#ef-execution"), a.executionParameters || options.parameters);
-  const typeSel  = refChipSelect(bd.querySelector("#ef-type"), ["Силовое", "Бег"], [ex && ex.type === "run" ? "Бег" : "Силовое"], false);
-  const muscleObjs = DATA.refMuscles(userId);
-  const catSel   = refDropdownSelect(bd.querySelector("#ef-cat"), cats, [ex ? ex.cat : (options.cat || cats[0] || "Ноги")], false);
-  const levelSel = refDropdownSelect(bd.querySelector("#ef-level"), LEVELS, curLevel ? [curLevel] : [], false);
-  const targetSel = roleMuscleSelect(bd.querySelector("#ef-target"), muscleObjs, a.target || []);
-  const synSel    = roleMuscleSelect(bd.querySelector("#ef-syn"), muscleObjs, a.synergist || []);
-  const stabSel   = roleMuscleSelect(bd.querySelector("#ef-stab"), muscleObjs, a.stabilizer || []);
-  const moveSel   = refDropdownSelect(bd.querySelector("#ef-moves"), moveNames, a.categories || [], true);
-  wireComboSuggest(bd.querySelector("#ef-group"), bd.querySelector("#ef-group-panel"), exGroups.map(g => g.name));
-
-  // сохранить пучок у мышцы, если он уже был задан (иначе пусто)
-  const toRoles = (names, prev) => names.map(n => {
-    const old = (prev || []).find(o => o.muscle === n);
-    return { muscle: n, bundle: old ? old.bundle : "" };
-  });
-
-  const close = () => bd.remove();
-  bd.addEventListener("click", e => { if (e.target === bd) close(); });
-  bd.querySelector('[data-act="cancel"]').addEventListener("click", close);
-  bd.querySelector('[data-act="save"]').addEventListener("click", async () => {
-    if (owner !== Auth.userId() || userId !== DATA.getCurrentUser() || Auth.contextChanged()) return;
-    let parameters;
-    try { parameters = executionEditor.get(); } catch(error) { showToast(error.message); return; }
-    const name = bd.querySelector("#ef-name").value.trim();
-    if (!name) { bd.querySelector("#ef-name").focus(); showToast("Введи название упражнения"); return; }
-    const atlas = Object.assign((ex && ex.atlas) ? JSON.parse(JSON.stringify(ex.atlas)) : {}, {
-      variationName: bd.querySelector("#ef-variation").value.trim(),
-      executionParameters: parameters,
-      equipment: bd.querySelector("#ef-equip").value.trim(),
-      level: levelSel.getOne() || "",
-      target:     targetSel.get(),
-      synergist:  synSel.get(),
-      stabilizer: stabSel.get(),
-      categories: moveSel.get(),
-      technique: bd.querySelector("#ef-tech").value.trim(),
-      mistakes: bd.querySelector("#ef-mistakes").value.split("\n").map(s => s.trim()).filter(Boolean),
-      differences: bd.querySelector("#ef-diff").value.trim(),
-      extra: bd.querySelector("#ef-extra").value.trim(),
-      contraindications: bd.querySelector("#ef-contra").value.trim(),
-      referenceUrl: bd.querySelector("#ef-ref").value.trim(),
-    });
-    const payload = {
-      name, type: typeSel.getOne() === "Бег" ? "run" : "strength",
-      cat: catSel.getOne() || "Другое",
-      media: bd.querySelector("#ef-media").value.trim(),
-      tip: bd.querySelector("#ef-tip").value.trim(),
-      atlas,
-    };
-    const saveButton = bd.querySelector('[data-act="save"]'); saveButton.disabled = true;
-    try {
-    let savedId = exerciseId;
-    if (options.catalog) {
-      savedId = `ae_${crypto.randomUUID()}`;
-      const groupName = bd.querySelector('#ef-group').value.trim();
-      const existing = groupName === options.groupName && options.groupId
-        ? DATA.getCatalogExercises(userId).filter(e => e.groupId === options.groupId).map(e => ({id:e.id,groupName})) : [];
-      await saveSharedExercises([...existing,{id:savedId,patch:payload,groupName,create:true}]);
-      if (groupName) _exGroupExpanded.add(`shared:${groupName}`);
-      showToast('Вариация добавлена в каталог');
-    } else if (exerciseId) {
-      DATA.updateOwnExercise(userId, exerciseId, payload);
-      SyncQueue.push("exercise:update", { id: exerciseId });
-      showToast("Упражнение обновлено");
-    } else {
-      savedId = DATA.addExercise(userId, payload).id;
-      SyncQueue.push("exercise:create", { name });
-      showToast("Упражнение добавлено");
-    }
-    if (!options.catalog) DATA.setExerciseGroupByName(userId, savedId, bd.querySelector("#ef-group").value);
-    close();
-    renderExercisesList(exercisesSearch.value);
-    if (savedId && SCREENS.exerciseDetail.classList.contains("active")) openExerciseDetail(savedId, _exdReturnScreen);
-    } catch(error) { showToast("Ошибка сохранения: " + error.message); }
-    finally { saveButton.disabled = false; }
-  });
+  window.ExerciseEditor?.open(exerciseId,options);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Inline-редактирование упражнения ПРЯМО на его странице-детали (карандаш в
-   шапке, симметрично стрелке «назад»). В отличие от модалки openExerciseForm
-   (её открывает свайп вправо в списке), здесь редактируем ту же страницу в её
-   же формате: заголовок становится полем ввода, тело — набором полей с теми же
-   разделами, что и в просмотре. Save/Cancel — в футере, который виден только в
-   этом режиме. Сохранение — тот же own-оверлей (copy-on-write), что и в модалке.
-   ══════════════════════════════════════════════════════════════════════════ */
+// Legacy footer remains hidden; editing is owned by ExerciseEditor.
 let _exdEditing = false;
 let _exdEditCtx = null;
 
@@ -9699,136 +9558,10 @@ function exitExerciseEdit() {
 }
 
 function enterExerciseEdit() {
-  if (_exdEditing) return;
-  const userId = DATA.getCurrentUser();
   if (_exdCatalog && !DATA.isAdmin()) return;
-  const ex = (_exdCatalog ? DATA.getCatalogExercises(userId) : DATA.getVisibleExercises(userId)).find(e => e.id === _detailExerciseId);
-  if (!ex) return;
-  _exdEditing = true;
-  const a = ex.atlas || {};
-  const roleNames = arr => (arr || []).map(o => o.muscle);
-  const muscleNames = (_exdCatalog ? DATA.atlasMuscles() : DATA.refMuscles(userId)).map(m => m.name);
-  const moveNames = (_exdCatalog ? DATA.atlasMovements() : DATA.refMovements(userId)).map(m => m.name);
-  const cats = _exdCatalog ? DATA.atlasGroups() : DATA.getAllCategories(userId);
-  const exGroups = DATA.getExerciseGroups(userId);
-  const curGroupName = (ex.groupId && (exGroups.find(g => g.id === ex.groupId) || {}).name) || "";
-  const LEVELS = ["Глобальное", "Региональное", "Локальное"];
-  const curLevel = LEVEL_LABELS[a.level] || a.level || "";
-  const technique = (Array.isArray(ex.steps) && ex.steps.length) ? ex.steps.join("\n") : (a.technique || "");
-  const mistakes = (a.mistakes || []).join("\n");
-
-  // Заголовок в шапке превращаем в поле ввода имени — сохраняем «тот же формат».
-  $("exd-title").innerHTML = `<input class="exd-title-input" id="exd-e-name" type="text" value="${escHtml(ex.name)}" placeholder="Название">`;
-
-  $("exd-body").innerHTML = `
-    <div class="ex-form-field"><label class="ex-form-label">Тип</label><div class="ex-form-chips ex-form-2col" id="exe-type"></div></div>
-    <div class="ex-form-field"><label class="ex-form-label">Категория</label><div class="ex-form-dd" id="exe-cat"></div></div>
-    <div class="ex-form-field"><label class="ex-form-label">Группа</label>
-      <div class="ex-form-dd ef-combo">
-        <input class="ex-form-input" id="exe-group" type="text" autocomplete="off" placeholder="Например, Жим лёжа" value="${escHtml(curGroupName)}">
-        <div class="ef-dd-panel ef-combo-panel" id="exe-group-panel"></div>
-      </div>
-      <p class="ex-form-hint">Похожие варианты одного упражнения (штанга/гантели/тренажёр) схлопнутся в одну строку в списке.</p></div>
-    <div class="ex-form-field"><label class="ex-form-label">Короткое название вариации</label><input class="ex-form-input" id="exe-variation" maxlength="120" placeholder="Например, Со штангой" value="${escHtml(a.variationName || '')}"></div>
-    <div id="exe-execution"></div>
-    <div class="ex-form-field"><label class="ex-form-label">Оборудование</label>
-      <input class="ex-form-input" id="exe-equip" type="text" placeholder="Например, Штанга" value="${escHtml(a.equipment || "")}"></div>
-    <div class="ex-form-field"><label class="ex-form-label">Уровень</label><div class="ex-form-dd" id="exe-level"></div></div>
-    <div class="exd-section-label">Рабочие мышцы</div>
-    <div class="ex-form-field"><label class="ex-form-label">Целевые</label><div class="ex-form-dd" id="exe-target"></div></div>
-    <div class="ex-form-field"><label class="ex-form-label">Синергисты</label><div class="ex-form-dd" id="exe-syn"></div></div>
-    <div class="ex-form-field"><label class="ex-form-label">Стабилизаторы</label><div class="ex-form-dd" id="exe-stab"></div></div>
-    <div class="exd-section-label">Основные движения</div>
-    <div class="ex-form-field"><label class="ex-form-label">Движения</label><div class="ex-form-dd" id="exe-moves"></div></div>
-    <div class="exd-section-label">Техника</div>
-    <div class="ex-form-field"><label class="ex-form-label">По шагу на строку</label>
-      <textarea class="ex-form-input ex-form-textarea" id="exe-tech" rows="5" placeholder="Один шаг — одна строка">${escHtml(technique)}</textarea></div>
-    <div class="ex-form-field"><label class="ex-form-label">Частые ошибки (по одной на строку)</label>
-      <textarea class="ex-form-input ex-form-textarea" id="exe-mistakes" rows="3">${escHtml(mistakes)}</textarea></div>
-    <div class="ex-form-field"><label class="ex-form-label">Отличия от похожих</label>
-      <textarea class="ex-form-input ex-form-textarea" id="exe-diff" rows="3">${escHtml(a.differences || "")}</textarea></div>
-    <div class="ex-form-field"><label class="ex-form-label">Нюанс</label>
-      <textarea class="ex-form-input ex-form-textarea" id="exe-extra" rows="3">${escHtml(a.extra || "")}</textarea></div>
-    <div class="ex-form-field"><label class="ex-form-label">Противопоказания</label>
-      <textarea class="ex-form-input ex-form-textarea" id="exe-contra" rows="2">${escHtml(a.contraindications || "")}</textarea></div>
-    <div class="ex-form-field"><label class="ex-form-label">Совет</label>
-      <textarea class="ex-form-input ex-form-textarea" id="exe-tip" rows="2">${escHtml(ex.tip || "")}</textarea></div>
-    <div class="ex-form-field"><label class="ex-form-label">Ссылка на медиа (фото/гиф/видео)</label>
-      <input class="ex-form-input" id="exe-media" type="url" inputmode="url" placeholder="https://…" value="${escHtml(ex.media || "")}"></div>
-    <div class="ex-form-field"><label class="ex-form-label">Ссылка-референс</label>
-      <input class="ex-form-input" id="exe-ref" type="url" inputmode="url" placeholder="https://…" value="${escHtml(a.referenceUrl || "")}"></div>`;
-  $("exd-body").scrollTop = 0;
-
-  const muscleObjs = (_exdCatalog ? DATA.atlasMuscles() : DATA.refMuscles(userId));
-  const executionEditor = mountExecutionEditor($("exe-execution"),a.executionParameters);
-  const typeSel   = refChipSelect($("exe-type"), ["Силовое", "Бег"], [ex.type === "run" ? "Бег" : "Силовое"], false);
-  const catSel    = refDropdownSelect($("exe-cat"), cats, [ex.cat], false);
-  const levelSel  = refDropdownSelect($("exe-level"), LEVELS, curLevel ? [curLevel] : [], false);
-  const targetSel = roleMuscleSelect($("exe-target"), muscleObjs, a.target || []);
-  const synSel    = roleMuscleSelect($("exe-syn"), muscleObjs, a.synergist || []);
-  const stabSel   = roleMuscleSelect($("exe-stab"), muscleObjs, a.stabilizer || []);
-  const moveSel   = refDropdownSelect($("exe-moves"), moveNames, a.categories || [], true);
-  wireComboSuggest($("exe-group"), $("exe-group-panel"), exGroups.map(g => g.name));
-
-  const toRoles = (names, prev) => names.map(n => {
-    const old = (prev || []).find(o => o.muscle === n);
-    return { muscle: n, bundle: old ? old.bundle : "" };
-  });
-
-  _exdEditCtx = { owner:Auth.userId(), userId, catalog:_exdCatalog, executionEditor, a, typeSel, catSel, levelSel, targetSel, synSel, stabSel, moveSel, toRoles };
-  $("exd-edit-btn").style.display = "none";
-  $("exd-edit-footer").style.display = "";
+  openExerciseForm(_detailExerciseId,{catalog:_exdCatalog});
 }
-
-async function saveExerciseEdit() {
-  if (!_exdEditing || !_exdEditCtx) return;
-  if (_exdEditCtx.owner !== Auth.userId() || _exdEditCtx.userId !== DATA.getCurrentUser() || Auth.contextChanged()) return;
-  const userId = DATA.getCurrentUser();
-  if (_exdCatalog && !DATA.isAdmin()) return;
-  const ex = (_exdCatalog ? DATA.getCatalogExercises(userId) : DATA.getVisibleExercises(userId)).find(e => e.id === _detailExerciseId);
-  if (!ex) return;
-  const { a, typeSel, catSel, levelSel, targetSel, synSel, stabSel, moveSel, toRoles } = _exdEditCtx;
-  const name = $("exd-e-name").value.trim();
-  if (!name) { $("exd-e-name").focus(); showToast("Введи название упражнения"); return; }
-  let parameters;
-  try { parameters = _exdEditCtx.executionEditor.get(); } catch(error) { showToast(error.message); return; }
-  const atlas = Object.assign(ex.atlas ? JSON.parse(JSON.stringify(ex.atlas)) : {}, {
-    variationName: $('exe-variation').value.trim(),
-    executionParameters: parameters,
-    equipment: $("exe-equip").value.trim(),
-    level: levelSel.getOne() || "",
-    target:     targetSel.get(),
-    synergist:  synSel.get(),
-    stabilizer: stabSel.get(),
-    categories: moveSel.get(),
-    technique: $("exe-tech").value.trim(),
-    mistakes: $("exe-mistakes").value.split("\n").map(s => s.trim()).filter(Boolean),
-    differences: $("exe-diff").value.trim(),
-    extra: $("exe-extra").value.trim(),
-    contraindications: $("exe-contra").value.trim(),
-    referenceUrl: $("exe-ref").value.trim(),
-  });
-  const payload = {
-    name, type: typeSel.getOne() === "Бег" ? "run" : "strength",
-    cat: catSel.getOne() || "Другое",
-    media: $("exe-media").value.trim(),
-    tip: $("exe-tip").value.trim(),
-    atlas,
-  };
-  const saveButton = $('exd-edit-save'); saveButton.disabled = true;
-  try {
-  if (_exdEditCtx.catalog) await saveSharedExercises([{id:ex.id,patch:payload,groupName:$('exe-group').value.trim()}]);
-  else {
-  DATA.updateOwnExercise(userId, _detailExerciseId, payload);
-  SyncQueue.push("exercise:update", { id: _detailExerciseId });
-  DATA.setExerciseGroupByName(userId, _detailExerciseId, $("exe-group").value);
-  }
-  showToast("Упражнение обновлено");
-  renderExercisesList(exercisesSearch.value);
-  openExerciseDetail(_detailExerciseId, _exdReturnScreen);
-  } catch(error) { showToast("Ошибка сохранения: " + error.message); }
-  finally { saveButton.disabled = false; }
-}
+function saveExerciseEdit() { /* The full-page editor owns its save action. */ }
 
 $("exd-edit-btn").addEventListener("click", enterExerciseEdit);
 $("exd-edit-save").addEventListener("click", saveExerciseEdit);
