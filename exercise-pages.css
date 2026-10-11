@@ -64,7 +64,7 @@
 .xd-technique-paragraph{font-size:12px;line-height:1.75;color:#d2cedd;margin:0}
 .xd-technique-paragraph:last-child{margin-bottom:0}.xd-technique-paragraph.xd-dependent-fragment{padding:0;margin:0}
 .xd-errors-content,.xd-features-content{padding:14px;border:1px solid var(--xd-border);border-radius:19px;background:var(--xd-card)}
-.xd-carousel-track{display:flex;align-items:flex-start;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;gap:0;scrollbar-width:none;overscroll-behavior-x:contain;max-width:100%;transition:height .18s;touch-action:pan-y pinch-zoom;outline-offset:-2px!important}
+.xd-carousel-track{display:flex;align-items:flex-start;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;gap:0;scrollbar-width:none;overscroll-behavior-x:contain;max-width:100%;transition:height .18s;touch-action:pan-x pan-y pinch-zoom;outline-offset:-2px!important}
 .xd-carousel-track::-webkit-scrollbar{display:none}
 .xd-carousel-slide{flex:0 0 100%;min-width:0;scroll-snap-align:start;scroll-snap-stop:always;box-sizing:border-box}
 .xd-error-item,.xd-feature-item{border:0;margin:0;padding:0;background:transparent;box-shadow:none;overflow:hidden}
