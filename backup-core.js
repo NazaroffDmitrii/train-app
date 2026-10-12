@@ -17,10 +17,13 @@ function validateImportSection(field, value) {
     for (const exercise of exercises) {
       if (!object(exercise) || !id(exercise.exerciseId) || !Array.isArray(exercise.sets)) fail();
       if (exercise.supersetId != null && !id(exercise.supersetId)) fail();
+      if (exercise.metric != null && !['reps','time'].includes(exercise.metric)) fail();
       for (const set of exercise.sets) {
         if (!object(set)) fail();
         if (set.weight != null && !number(set.weight)) fail(); // Assistance weights may be negative.
         if (set.reps != null && (!number(set.reps, 0) || !Number.isInteger(set.reps))) fail();
+        if (set.metric != null && !['reps','time'].includes(set.metric)) fail();
+        if (set.durationSec != null && (!number(set.durationSec, 0) || !Number.isSafeInteger(set.durationSec))) fail();
         if (set.rpe != null && (!number(set.rpe, 0) || set.rpe > 10)) fail();
         for (const key of ["done", "warmup", "dropSet"]) if (set[key] != null && typeof set[key] !== "boolean") fail();
       }

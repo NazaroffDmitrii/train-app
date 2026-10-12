@@ -4292,6 +4292,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .movement-exercises .reference-section-heading{flex:1 1 90px}
 </style>
 <link rel="stylesheet" href="exercise-pages.css">
+<link rel="stylesheet" href="workout.css">
+<link rel="stylesheet" href="statistics.css">
 </head>
 <body>
 
@@ -4495,43 +4497,42 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   <section id="screen-workout" class="screen screen-workout slide-right">
     <div class="workout-header">
       <div class="workout-header-top">
-        <input class="workout-name-input" id="workout-name-input" value="Силовая тренировка" placeholder="Название">
+        <input class="workout-name-input" id="workout-name-input" aria-label="Название тренировки" value="Силовая тренировка" placeholder="Название">
         <div class="timer-chip">
-          <div class="timer-chip-dot"></div>
           <span id="workout-timer">00:00</span>
         </div>
       </div>
       <div class="workout-header-actions">
-        <button class="btn-chip" id="workout-back-btn">
+        <button class="btn-chip" id="workout-back-btn" aria-label="Свернуть тренировку">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
         </button>
-        <button class="btn-chip primary" id="finish-workout-btn" style="flex:1; justify-content:center;">Завершить</button>
+        <button class="btn-chip primary" id="finish-workout-btn" style="flex:1; justify-content:center;">Завершить тренировку</button>
+        <button class="btn-chip" id="workout-movements-btn" aria-label="Скрыть самопроверку движений" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M21 12a9 9 0 1 1-9-9M18 12a6 6 0 1 1-6-6M12 12l9-9"/></svg></button>
       </div>
     </div>
 
+    <div class="aw-coverage-pin" id="workout-coverage-pin" aria-hidden="true" inert><section class="aw-coverage"><button type="button" class="aw-cover-toggle" aria-label="Вернуться к базовым движениям"><span class="aw-cover-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M21 12a9 9 0 1 1-9-9M18 12a6 6 0 1 1-6-6M12 12l9-9"/></svg></span><span class="aw-cover-copy"><b>Базовые движения</b><small id="workout-pin-count">Выполнено 0 движений</small></span><span class="aw-chevron">⌄</span></button></section></div>
     <div class="workout-scroll" id="workout-scroll">
       <div class="summary-bar" id="summary-bar">
-        <div class="sum-item"><div class="sum-num" id="sum-exercises">0</div><div class="sum-label">упр</div></div>
-        <div class="sum-item"><div class="sum-num" id="sum-sets">0</div><div class="sum-label">подх ✓</div></div>
+        <div class="sum-item"><div class="sum-num" id="sum-exercises">0</div><div class="sum-label">упражнений</div></div>
+        <div class="sum-item"><div class="sum-num" id="sum-sets">0</div><div class="sum-label">подходов ✓</div></div>
         <div class="sum-item"><div class="sum-num" id="sum-volume">0</div><div class="sum-label">кг объём</div></div>
       </div>
+      <section class="aw-coverage" id="workout-coverage"><div id="workout-coverage-preview"><button type="button" class="aw-cover-toggle" id="workout-coverage-toggle" aria-expanded="false"><span class="aw-cover-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M21 12a9 9 0 1 1-9-9M18 12a6 6 0 1 1-6-6M12 12l9-9"/></svg></span><span class="aw-cover-copy"><b>Базовые движения</b><small id="workout-coverage-count">Выполнено 0 движений</small></span><span class="aw-chevron" id="workout-coverage-chevron">⌄</span></button></div><div class="aw-coverage-body" id="workout-coverage-body" hidden></div></section>
       <button class="add-ex-btn" id="add-ex-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Добавить упражнение
       </button>
     </div>
 
-    <!-- Таймер отдыха между подходами (появляется после отметки «выполнено») -->
     <div class="rest-timer" id="rest-timer" hidden>
-      <button class="rest-adj" id="rest-minus" title="−15 секунд">−15</button>
-      <div class="rest-main">
-        <div class="rest-time" id="rest-time">1:30</div>
-        <div class="rest-label">отдых</div>
+      <div class="rest-pill" id="rest-pill">
+        <button class="rest-adj" id="rest-minus" aria-label="Уменьшить отдых на 15 секунд">−15</button>
+        <button class="rest-main" id="rest-toggle" aria-label="Запустить отдых"><span class="rest-time" id="rest-time">01:30</span><small class="rest-label" id="rest-label">запустить</small></button>
+        <button class="rest-adj" id="rest-plus" aria-label="Добавить 15 секунд отдыха">+15</button>
       </div>
-      <button class="rest-adj" id="rest-plus" title="+15 секунд">+15</button>
-      <button class="rest-skip" id="rest-skip" title="Пропустить отдых">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+      <button class="rest-skip" id="rest-skip" aria-label="Свернуть таймер отдыха"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5m7-7-7 7 7 7"/></svg></button>
+      <button class="rest-orb" id="rest-open" aria-label="Развернуть таймер отдыха" aria-hidden="true" inert><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M10 2h4M12 9v4l2 2M17 5l2-2"/></svg></button>
     </div>
   </section>
 
@@ -4677,7 +4678,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   <section id="screen-stats" class="screen screen-stats slide-right">
     <div class="exercises-header">
       <div class="exercises-header-top">
-        <button class="btn-chip" id="stats-back-btn">
+        <button class="btn-chip" id="stats-back-btn" aria-label="Назад">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
         </button>
         <div class="exercises-header-title">Статистика</div>
@@ -4935,7 +4936,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   </div>
 
   <!-- ===== RPE шторка ===== -->
-  <div class="bottom-sheet-backdrop" id="rpe-backdrop">
+  <div class="bottom-sheet-backdrop" id="rpe-backdrop" role="dialog" aria-label="Усилие подхода" aria-modal="true" aria-hidden="true">
     <div class="bottom-sheet">
       <div class="bottom-sheet-handle"></div>
       <div class="bottom-sheet-title">RPE — усилие подхода</div>

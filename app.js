@@ -47,7 +47,7 @@ function executionForExercise(userId, ex) {
 // результат): такой подход не должен УМЕНЬШАТЬ общий тоннаж тренировки —
 // он просто не участвует в его сумме (вклад — 0, а не отрицательное число).
 function setVolume(s) {
-  return Math.max(0, (s.weight || 0) * (s.reps || 0));
+  return s.metric === "time" ? 0 : Math.max(0, (s.weight || 0) * (s.reps || 0));
 }
 
 // Учесть один выполненный подход в рекордах упражнения. maxWeight — старт с
@@ -904,7 +904,7 @@ const DATA = (() => {
         // Дроп-сет (s.dropSet) — не самостоятельная попытка на свежих силах, а
         // облегчённое продолжение предыдущего подхода, поэтому в рекорды
         // (макс. вес/повторы) не идёт; в тоннаж выше — идёт, это честная работа.
-        ex.sets.filter(s => s.done && s.reps > 0 && !s.dropSet).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
+        ex.sets.filter(s => s.done && s.metric !== "time" && s.reps > 0 && !s.dropSet).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
         if (recs[ex.exerciseId]) recs[ex.exerciseId].maxVolume = Math.max(recs[ex.exerciseId].maxVolume || 0, exVol);
       });
       lsSet(`train_records_${userId}`, recs);
@@ -925,7 +925,7 @@ const DATA = (() => {
           // Дроп-сет (s.dropSet) — не самостоятельная попытка на свежих силах, а
         // облегчённое продолжение предыдущего подхода, поэтому в рекорды
         // (макс. вес/повторы) не идёт; в тоннаж выше — идёт, это честная работа.
-        ex.sets.filter(s => s.done && s.reps > 0 && !s.dropSet).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
+        ex.sets.filter(s => s.done && s.metric !== "time" && s.reps > 0 && !s.dropSet).forEach(s => applySetToRecord(recs, ex.exerciseId, s));
           if (recs[ex.exerciseId]) recs[ex.exerciseId].maxVolume = Math.max(recs[ex.exerciseId].maxVolume || 0, exVol);
         });
       });
@@ -977,6 +977,19 @@ const DATA = (() => {
     getRestDefault() { const v = ls("train_rest_default", 90); return (typeof v === "number" && v > 0) ? v : 90; },
     setRestDefault(sec) { lsSet("train_rest_default", sec); },
 
+    // Preference is scoped to the signed-in account and profile; history also carries the unit.
+    getExerciseMetric(userId, exerciseId) {
+      const prefs=ls(`train_measurement_${_dataAccount || "local"}_${userId}`,{});
+      if (["reps","time"].includes(prefs[exerciseId])) return prefs[exerciseId];
+      const old=this.getLastWorkoutForExercise(userId,exerciseId)?.exercises.find(e=>e.exerciseId===exerciseId);
+      return old?.metric === "time" || (!old?.metric && old?.sets?.some(s=>s.done && s.metric === "time")) ? "time" : "reps";
+    },
+    setExerciseMetric(userId, exerciseId, metric) {
+      assertDataAccount();if(!["reps","time"].includes(metric))return false;
+      const key=`train_measurement_${_dataAccount || "local"}_${userId}`,prefs=ls(key,{});
+      prefs[exerciseId]=metric;return lsSet(key,prefs);
+    },
+
     // Последняя тренировка, в которой встречалось данное упражнение
     getLastWorkoutForExercise(userId, exerciseId) {
       const history = this.getWorkoutHistory(userId);
@@ -1006,7 +1019,7 @@ const DATA = (() => {
         const block = w.exercises.find(e => e.exerciseId === exerciseId);
         // Вес не фильтруем по > 0: для упражнений с помощью (гравитрон и т.п.)
         // он отрицательный, и график прогресса иначе всегда был бы пустым.
-        const doneSets = block.sets.filter(s => s.done && s.reps > 0);
+        const doneSets = block.sets.filter(s => s.done && s.metric !== "time" && s.reps > 0);
         if (!doneSets.length) return null;
         const top = doneSets.reduce((a, b) => (b.weight > a.weight || (b.weight === a.weight && b.reps > a.reps)) ? b : a);
         return { date: w.startedAt, weight: top.weight, reps: top.reps };
@@ -1250,12 +1263,16 @@ const DATA = (() => {
           const sets = lastSets.length > 1
             ? lastSets.map(() => ({ weight: 0, reps: 0, rpe: 0, done: false }))
             : [{ weight: 0, reps: 0, rpe: 0, done: false }];
+          const snapshot=Array.isArray(ex.executionParameters) ? copyExecutionSnapshot(ex) : executionForExercise(userId,exerciseById.get(ex.exerciseId));
+          const metric=this.getExerciseMetric(userId,ex.exerciseId);
+          const seeded=typeof WorkoutCore !== 'undefined' ? WorkoutCore.seed(this.getWorkoutHistory(userId),{exerciseId:ex.exerciseId,...snapshot},metric) : sets;
           return {
+            metric, movements:[...(exerciseById.get(ex.exerciseId)?.atlas?.categories || [])],
             exerciseId: ex.exerciseId,
             ...(Array.isArray(ex.executionParameters) ? copyExecutionSnapshot(ex) : executionForExercise(userId, exerciseById.get(ex.exerciseId))),
             supersetId: ex.supersetId || null,   // связки суперсета из шаблона
             name: exerciseById.get(ex.exerciseId)?.name, // снимок имени — устойчивость к потере справочника
-            sets,
+            sets:seeded,
           };
         }),
       };
@@ -3800,7 +3817,8 @@ function initWorkoutScreen({ resume = false } = {}) {
   if (!_workout) return;
 
   $("workout-name-input").value = _workout.name || "Силовая тренировка";
-  endRest(false);            // отдых не переживает навигацию — прячем пилюлю
+  WorkoutUI.initialize(_workout, !!_editingHistory);
+  restoreRestTimer();
   applyWorkoutEditorChrome(); // подпись кнопок/секундомера под режим (живой vs правка)
   if (!_editingHistory) startWorkoutTimer(); // у прошлой тренировки секундомер не идёт
   renderExerciseList();
@@ -3811,6 +3829,7 @@ function initWorkoutScreen({ resume = false } = {}) {
 // (тот же экран, что и во время тренировки). Правим копию — оригинал трогаем
 // только при «Сохранить» (commitWorkoutEdit → saveEditedWorkout).
 function openWorkoutEditor(workout) {
+  suspendRestTimer();
   _editingHistory = workout;
   _workout = JSON.parse(JSON.stringify(workout));
   goToScreen("workout");
@@ -3830,7 +3849,7 @@ function applyWorkoutEditorChrome() {
     // дату вправо, и она выглядит не по центру пилюли.
     if (dot) dot.style.display = "none";
   } else {
-    finishBtn.textContent = "Завершить";
+    finishBtn.textContent = "Завершить тренировку";
     if (dot) dot.style.display = "";
   }
 }
@@ -3839,15 +3858,16 @@ function applyWorkoutEditorChrome() {
 // через общий saveEditedWorkout (он же пересчитывает рекорды, шлёт синк,
 // обновляет список истории и открывает деталь тренировки).
 function commitWorkoutEdit() {
+  if (!WorkoutUI.ownsCurrent(_workout)) { showToast('Профиль изменился. Перезагрузи страницу перед сохранением.'); return; }
   const userId = DATA.getCurrentUser();
   _workout.name = $("workout-name-input").value || _workout.name || "Силовая тренировка";
   const edited = _workout;
+  consumePreviousScreen("detail");
+  if (!saveEditedWorkout(edited, userId, { navigation: "back" })) return;
   _editingHistory = null;
   _workout = null;
   exitExEditMode();
   stopWorkoutTimer();
-  consumePreviousScreen("detail");
-  saveEditedWorkout(edited, userId, { navigation: "back" });
 }
 
 // Уйти из редактора истории без сохранения — черновик просто отбрасываем
@@ -3926,109 +3946,107 @@ function notifyRestDone() {
 }
 
 function restRemaining() {
-  return Math.max(0, _restDurationSec - Math.floor((Date.now() - _restStartTs) / 1000));
+  if (!_restWorkout) return DATA.getRestDefault();
+  const state=_restWorkout._restTimer;
+  return state?.status === 'running' ? Math.max(0,state.duration-Math.floor((Date.now()-state.startedAt)/1000)) : state?.status === 'expired' ? 0 : state?.duration || DATA.getRestDefault();
 }
-function renderRest() { $("rest-time").textContent = formatDuration(restRemaining()); }
-
-// Завершить отдых. commit=true — зачесть фактически отдохнутые секунды в total.
+let _restWorkout=null, _restUser=null, _restAccount=null;
+function restOwnerValid() {
+  return !!_restWorkout && !_editingHistory && DATA.getCurrentUser()===_restUser
+    && (typeof Auth==='undefined' || Auth.userId()===_restAccount && !Auth.contextChanged())
+    && DATA.getActiveWorkout(_restUser)?.id===_restWorkout.id;
+}
+function persistRestTimer() {
+  if(!restOwnerValid()){suspendRestTimer();return;}
+  try { DATA.saveActiveWorkout(_restUser,_restWorkout); } catch { suspendRestTimer(); }
+}
+function suspendRestTimer() {
+  if(_restInt){clearInterval(_restInt);_restInt=null;}
+}
+function renderRest() {
+  const timer=$('rest-timer'),state=_restWorkout?._restTimer;
+  timer.hidden=!!_editingHistory || !state;
+  if(timer.hidden)return;
+  const running=state.status==='running',collapsed=!!state.collapsed,seconds=restRemaining();
+  $('rest-time').textContent=WorkoutCore.formatTime(seconds).padStart(5,'0');
+  $('rest-label').textContent=running?'отдых':state.status==='expired'?'отдых окончен':'запустить';
+  $('rest-toggle').setAttribute('aria-label',running?'Остановить и сбросить отдых':'Запустить отдых');
+  timer.classList.toggle('collapsed',collapsed);timer.classList.toggle('finished',state.status==='expired');
+  $('rest-pill').inert=collapsed;$('rest-skip').inert=collapsed;$('rest-open').inert=!collapsed;
+  $('rest-open').setAttribute('aria-hidden',!collapsed);
+  $('rest-open').setAttribute('aria-label',state.status==='expired'?'Отдых окончен. Развернуть таймер':running?`Развернуть таймер. Осталось ${WorkoutCore.formatTime(seconds)}`:'Развернуть таймер отдыха');
+  requestAnimationFrame(positionRestTimer);
+}
+function settleRest(commit) {
+  const state=_restWorkout?._restTimer;
+  if(state?.status==='running' && commit){
+    const elapsed=Math.max(0,Math.min(state.duration,Math.floor((Date.now()-state.startedAt)/1000)));
+    _restWorkout.restSec=(_restWorkout.restSec||0)+elapsed;
+  }
+  suspendRestTimer();_restStartTs=0;
+}
+// Count the running interval exactly once, then return to the remembered idle duration.
 function endRest(commit) {
-  if (_restInt) { clearInterval(_restInt); _restInt = null; }
-  if (commit && _restStartTs && _workout) {
-    const rested = Math.min(_restDurationSec, Math.floor((Date.now() - _restStartTs) / 1000));
-    _workout.restSec = (_workout.restSec || 0) + rested;
-    saveWorkoutState();
-  }
-  _restStartTs = 0;
-  const timer = $("rest-timer");
-  timer.hidden = true;
-  timer.style.bottom = "";                              // сбросить вычисленную позицию
-  $("workout-scroll").classList.remove("rest-active");  // вернуть обычный нижний отступ
+  if(!restOwnerValid()){suspendRestTimer();return;}
+  const collapsed=!!_restWorkout._restTimer?.collapsed;
+  settleRest(commit);_restDurationSec=DATA.getRestDefault();
+  _restWorkout._restTimer={status:'idle',duration:_restDurationSec,startedAt:0,collapsed};
+  persistRestTimer();renderRest();
 }
-
-// Высота нижней safe-area (home-indicator). env() из JS напрямую не прочитать —
-// меряем зондом.
-function getSafeBottom() {
-  const probe = document.createElement("div");
-  probe.style.cssText = "position:fixed;left:0;bottom:0;width:0;height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none;";
-  document.body.appendChild(probe);
-  const h = probe.getBoundingClientRect().height || 0;
-  probe.remove();
-  return h;
+function positionRestTimer() { WorkoutUI.positionTimer(); }
+function expireRestTimer(signal=true) {
+  if(!restOwnerValid()){suspendRestTimer();return;}
+  settleRest(true);
+  _restWorkout._restTimer={status:'expired',duration:0,startedAt:0,collapsed:true};
+  persistRestTimer();renderRest();
+  if(signal){haptic(40);playRestDoneSound();notifyRestDone();}
 }
-
-// Размещение пилюли отдыха:
-//  • если все упражнения помещаются на экране — центрируем пилюлю в свободном
-//    месте под последним блоком (зазор сверху = зазору снизу);
-//  • если список длинный (есть прокрутка) — пилюля у низа, а под неё в прокрутке
-//    резервируется место, чтобы «Добавить упражнение» можно было доскроллить
-//    выше пилюли.
-function positionRestTimer() {
-  const timer = $("rest-timer");
-  if (timer.hidden) return;
-  const scroll = $("workout-scroll");
-  const addBtn = scroll.querySelector(".add-ex-btn");
-  const th = timer.getBoundingClientRect().height || 56;
-  const safe = getSafeBottom();
-
-  // Запас места под пилюлю при длинном списке: верхний зазор (20+safe) + высота
-  // пилюли + нижний зазор (20+safe) − margin кнопки (16) = th + 24 + 2·safe.
-  // Кладём готовое px-значение: умножение env() на число внутри calc Chrome
-  // считает невалидным и сбрасывает всё правило (поэтому safe учитываем тут).
-  scroll.style.setProperty("--rest-reserve", Math.round(th + 24 + 2 * safe) + "px");
-
-  // помещается ли контент без прокрутки (считаем без зарезервированного отступа)
-  scroll.classList.remove("rest-active");
-  const fits = addBtn && scroll.scrollHeight <= scroll.clientHeight + 1;
-
-  const screenH = window.innerHeight;
-  const freeTop = addBtn ? addBtn.getBoundingClientRect().bottom : 0;
-  const freeBottom = screenH - safe;
-
-  if (fits && (freeBottom - freeTop) >= th + 40) {
-    const center = (freeTop + freeBottom) / 2;          // центр свободного места
-    timer.style.bottom = Math.max(20 + safe, screenH - (center + th / 2)) + "px";
-  } else {
-    timer.style.bottom = "";                            // CSS-дефолт: 20px + safe
-    scroll.classList.add("rest-active");                // резерв места под пилюлю
-  }
-}
-
-function startRest() {
-  endRest(true);                  // если отдых уже шёл — зачесть его и начать заново
-  ensureAudio();                  // в контексте тапа — чтобы звук потом сработал
-  // Один раз (в жесте) спросим разрешение на уведомления — для сигнала, когда
-  // приложение свёрнуто.
-  if (!_restNotifAsked && "Notification" in window && Notification.permission === "default") {
-    _restNotifAsked = true;
-    try { Notification.requestPermission(); } catch {}
-  }
-  _restDurationSec = DATA.getRestDefault();   // запомненный пользователем дефолт
-  _restStartTs = Date.now();
-  $("rest-timer").hidden = false;
-  positionRestTimer();            // центрирует пилюлю в свободном месте либо ставит у низа
-  renderRest();
-  _restInt = setInterval(() => {
-    if (restRemaining() <= 0) { haptic(40); playRestDoneSound(); notifyRestDone(); endRest(true); return; }
+function armRestTimer() {
+  suspendRestTimer();
+  _restInt=setInterval(()=>{
+    if(!restOwnerValid()){suspendRestTimer();return;}
+    if(restRemaining()<=0){expireRestTimer();return;}
     renderRest();
-  }, 250);
+  },250);
 }
-// ± меняют и текущий отдых, и запомненный дефолт (на следующие тренировки).
-$("rest-minus").addEventListener("click", () => {
-  _restDurationSec = Math.max(15, _restDurationSec - 15);
-  DATA.setRestDefault(_restDurationSec);
-  if (restRemaining() <= 0) endRest(true); else renderRest();
-});
-$("rest-plus").addEventListener("click", () => {
-  _restDurationSec += 15;
-  DATA.setRestDefault(_restDurationSec);
+function restoreRestTimer() {
+  suspendRestTimer();
+  if(_editingHistory){_restWorkout=null;renderRest();return;}
+  _restWorkout=_workout;_restUser=DATA.getCurrentUser();_restAccount=typeof Auth==='undefined'?null:Auth.userId();
+  _restWorkout._restTimer ||= {status:'idle',duration:DATA.getRestDefault(),startedAt:0,collapsed:false};
+  const state=_restWorkout._restTimer;
+  _restDurationSec=state.duration;_restStartTs=state.startedAt||0;
+  if(state.status==='running'){
+    if(restRemaining()<=0)expireRestTimer(false);else armRestTimer();
+  }
   renderRest();
-});
-$("rest-skip").addEventListener("click", () => endRest(true));
-
-// Изменение размеров вьюпорта (поворот, адресная строка, клавиатура) — если
-// идёт отдых, пересчитать положение пилюли.
-window.addEventListener("resize", () => { if (!$("rest-timer").hidden) positionRestTimer(); });
-if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (!$("rest-timer").hidden) positionRestTimer(); });
+}
+function startRest(seconds) {
+  if(!restOwnerValid())return;
+  endRest(true);ensureAudio();
+  if(!_restNotifAsked && 'Notification' in window && Notification.permission==='default'){
+    _restNotifAsked=true;try{Notification.requestPermission();}catch{}
+  }
+  _restDurationSec=Number.isFinite(seconds)&&seconds>0?seconds:DATA.getRestDefault();_restStartTs=Date.now();
+  _restWorkout._restTimer={status:'running',duration:_restDurationSec,startedAt:_restStartTs,collapsed:false};
+  persistRestTimer();renderRest();armRestTimer();
+}
+function adjustRest(delta) {
+  if(!restOwnerValid())return;
+  const state=_restWorkout._restTimer;
+  if(state.status==='expired'){if(delta>0)startRest(15);return;}
+  state.duration=Math.max(15,state.duration+delta);_restDurationSec=state.duration;
+  DATA.setRestDefault(state.duration);
+  if(state.status==='running' && restRemaining()<=0)expireRestTimer();else{persistRestTimer();renderRest();}
+}
+$('rest-minus').addEventListener('click',()=>adjustRest(-15));
+$('rest-plus').addEventListener('click',()=>adjustRest(15));
+$('rest-toggle').addEventListener('click',()=>_restWorkout?._restTimer?.status==='running'?endRest(true):startRest());
+$('rest-skip').addEventListener('click',()=>{if(!restOwnerValid())return;_restWorkout._restTimer.collapsed=true;persistRestTimer();renderRest();});
+$('rest-open').addEventListener('click',()=>{if(!restOwnerValid())return;_restWorkout._restTimer.collapsed=false;persistRestTimer();renderRest();});
+window.addEventListener('resize',positionRestTimer);
+if(window.visualViewport)window.visualViewport.addEventListener('resize',positionRestTimer);
+document.addEventListener('visibilitychange',()=>{if(restOwnerValid()&&_restWorkout._restTimer?.status==='running'){if(restRemaining()<=0)expireRestTimer();else renderRest();}});
 
 // Фоновая синхронизация (sync.js) пишет в ту же персистентную активную
 // тренировку отдельно от экрана (создаёт удалённый bin и проставляет его id).
@@ -4045,6 +4063,7 @@ function carryRemoteBinId(target, userId) {
 
 function saveWorkoutState() {
   if (!_workout) return;
+  if (typeof WorkoutUI !== 'undefined' && !WorkoutUI.ownsCurrent(_workout)) { showToast('Профиль изменился. Перезагрузи страницу перед продолжением.'); return; }
   _workout.name = $("workout-name-input").value || "Силовая тренировка";
   // Правка истории: изменения копятся в черновике в памяти и коммитятся разом
   // по «Сохранить». В активную тренировку и в синк ничего не пишем.
@@ -4057,7 +4076,6 @@ function saveWorkoutState() {
 /* — Кнопки шапки — */
 $("workout-back-btn").addEventListener("click", () => {
   if (_editingHistory) { cancelWorkoutEdit(); return; } // выход из правки истории без сохранения
-  endRest(true);      // зачесть текущий отдых, прежде чем уйти с экрана
   saveWorkoutState();
   stopWorkoutTimer(); // секундомер на кнопке меню сам покажет время активной тренировки
   goBackScreen("menu");
@@ -4085,6 +4103,7 @@ function finishWorkout() {
 }
 
 function doFinishWorkout() {
+  if (typeof WorkoutUI !== 'undefined' && !WorkoutUI.ownsCurrent(_workout)) { showToast('Профиль изменился. Перезагрузи страницу перед сохранением.'); return; }
   if (typeof Bridge === 'undefined') { showToast('Приложение ещё загружается. Повторите завершение через несколько секунд.'); return; }
   const userId = DATA.getCurrentUser();
   _workout.name = $("workout-name-input").value || "Силовая тренировка";
@@ -4096,11 +4115,12 @@ function doFinishWorkout() {
   // потом очищаем активную. Иначе при переполнении localStorage история не
   // сохранится (lsSet вернёт false), а активная — сотрётся, и тренировка
   // пропадёт целиком при «успешном» на вид завершении.
-  if (!DATA.saveWorkout(userId, _workout)) {
+  const completed = typeof WorkoutCore !== "undefined" ? WorkoutCore.finalize(_workout) : _workout;
+  if (!DATA.saveWorkout(userId, completed)) {
     showToast("Не удалось сохранить — освободи место (удали старые тренировки) и попробуй снова");
     return; // активную НЕ трогаем — данные целы, можно повторить
   }
-  DATA.updateRecords(userId, _workout);
+  DATA.updateRecords(userId, completed);
   DATA.clearActiveWorkout(userId);
   (_workout.exercises || []).forEach(ex => _executionDrafts.delete(executionDraftKey(userId,ex.exerciseId)));
   SyncQueue.push("workout:finish", { workoutId: _workout.id });
@@ -4342,6 +4362,7 @@ function enterExEditMode() {
     btn.textContent = "Готово";
     btn.addEventListener("click", exitExEditMode);
     document.getElementById("screen-workout").appendChild(btn);
+    positionRestTimer();
   }
 }
 function exitExEditMode() {
@@ -4351,6 +4372,7 @@ function exitExEditMode() {
   $("workout-scroll").classList.remove("ex-editing");
   const btn = $("ex-edit-done");
   if (btn) btn.remove();
+  positionRestTimer();
 }
 
 /* — Перетаскивание блока: общая логика для touch и mouse —
@@ -4517,7 +4539,7 @@ function findPrWorkout(userId, exerciseId, rec) {
     const ex = (w.exercises || []).find(e => e.exerciseId === exerciseId);
     if (!ex) return;
     const hit = (ex.sets || []).some(s =>
-      s.done && !s.dropSet && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight);
+      s.done && !s.dropSet && s.metric !== "time" && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight);
     if (hit) match = w;
   });
   return match;
@@ -4743,24 +4765,14 @@ function renderExerciseList() {
     // случае показываем нейтральную заглушку вместо сырого e_own_… id.
     const exDef = visible.find(e => e.id === ex.exerciseId)
       || { name: ex.name || "Упражнение недоступно" };
-    const rec = DATA.getExerciseRecord(userId, ex.exerciseId);
     const lastWorkout = findLast(ex.exerciseId);
-    // «Прошлый раз» больше не выводим отдельной строкой — прошлые значения
-    // показываются только подсказкой-тенью в пустых полях (см. renderSetsInBlock), п.4.
-
-    // Рекорд веса — компактный бейдж в шапке (как в макете 03). Вес может
-    // быть отрицательным (упражнения с помощью) — рекорд есть, если он вообще
-    // был поставлен хоть раз (см. applySetToRecord: null = рекорда ещё нет).
-    let prChip = "";
-    if (rec && rec.maxWeight != null) {
-      prChip = `<span class="ex-pr-chip" title="Рекорд: ${rec.maxWeight} кг × ${rec.repsAtMaxWeight}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 17l-6.3 4.4L8 14 2 9.4h7.6z"/></svg>
-        ${rec.maxWeight} кг
-      </span>`;
-    }
+    const prChip = WorkoutUI.recordHtml(ex);
+    const previousNote = WorkoutCore.previousNote(history,ex);
+    const noteOpen = ex._noteOpen ?? (!!ex.note || !!previousNote && !ex._noteDismissed);
 
     const block = document.createElement("div");
     block.className = "ex-block";
+    block._workoutExercise = ex;
 
     block.innerHTML = `
       <button class="ex-del-badge" title="Удалить упражнение" aria-label="Удалить упражнение">
@@ -4779,17 +4791,14 @@ function renderExerciseList() {
       ${executionControlsHtml(Array.isArray(ex.executionParameters) ? ex : executionSnapshot(exDef.atlas?.executionParameters), ex.exerciseId)}
       <div class="ex-divider"></div>
       <div class="sets-table">
-        <div class="sets-header"><span>#</span><span>Кг</span><span>Повт</span><span>RPE</span><span></span></div>
+        <div class="sets-header"><span>№</span><span>Кг</span><span class="set-measurement-label">${ex.metric === "time" ? "Время" : "Повт."}</span><span>RPE</span><span></span></div>
         <div class="sets-body"></div>
       </div>
-      <textarea class="set-note-input" placeholder="Заметка к тренировке…" rows="2">${ex.note || ""}</textarea>
+      <textarea class="set-note-input" aria-label="Заметка к выполнению упражнения" placeholder="${escHtml(previousNote || "Заметка к выполнению…")}" rows="2" ${noteOpen ? "" : "hidden"}>${escHtml(ex.note || "")}</textarea>
       <div class="sets-actions">
         <button class="btn-chip add-set-btn" style="flex:1">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Добавить подход
-        </button>
-        <button class="set-dropset-btn" title="Добавить дроп-сет (тот же подход со сброшенным весом сразу после)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="15" y2="12"/><line x1="4" y1="18" x2="10" y2="18"/></svg>
         </button>
         <button class="set-note-btn ${ex.note ? "has-note" : ""}" title="Заметка">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L13 14l-4 1 1-4 6.5-6.5z"/></svg>
@@ -4807,7 +4816,7 @@ function renderExerciseList() {
     scroll.insertBefore(block, addBtn);
     wireExecutionControls(block, () => Array.isArray(ex.executionParameters) ? ex : executionSnapshot(exDef.atlas?.executionParameters), snapshot => {
       if (!_workout?.exercises.includes(ex)) return;
-      Object.assign(ex,snapshot); saveWorkoutState();
+      Object.assign(ex,snapshot); delete ex._noteOpen; delete ex._noteDismissed; saveWorkoutState();
       const y = scroll.scrollTop; renderExerciseList(); scroll.scrollTop = y;
     });
 
@@ -4845,7 +4854,11 @@ function renderExerciseList() {
         const newEx = DATA.getVisibleExercises(userId).find(x => x.id === newId);
         ex.exerciseId = newId;
         Object.assign(ex,executionForExercise(userId,newEx));
+        // Replacement deliberately assigns the preserved rows to the new exercise.
+        ex.sets.forEach(set => Object.assign(set,copyExecutionSnapshot(ex)));
         if (newEx) ex.name = newEx.name;
+        ex.movements=[...(newEx?.atlas?.categories || [])];
+        WorkoutCore.chooseMetric(ex,DATA.getExerciseMetric(userId,newId));
         saveWorkoutState();
         renderExerciseList();     // сбрасывает режим правки и перерисовывает
         updateSummaryBar();
@@ -4873,25 +4886,7 @@ function renderExerciseList() {
     // Add set
     block.querySelector(".add-set-btn").addEventListener("click", () => {
       haptic();
-      // prefill from last set
-      const last = ex.sets[ex.sets.length - 1];
-      ex.sets.push({ weight: last ? last.weight : 0, reps: last ? last.reps : 0, rpe: 0, done: false });
-      saveWorkoutState();
-      renderSetsInBlock(block, ex, lastWorkout);
-      updateSummaryBar();
-    });
-
-    // Add drop-set — то же упражнение сразу со сброшенным весом, без отдыха
-    // между ним и предыдущим подходом. Помечается ex.sets[i].dropSet=true:
-    // считается в тоннаж (реальная работа), но не в рекорды (см. applySetToRecord)
-    // и не потеряется к следующей тренировке, как терялось бы при обычном подходе.
-    block.querySelector(".set-dropset-btn").addEventListener("click", () => {
-      if (!ex.sets.length) { showToast("Сначала добавь обычный подход"); return; }
-      haptic();
-      const last = ex.sets[ex.sets.length - 1];
-      // done:true сразу — у дроп-сета нет своей галочки (это же усилие, что и
-      // основной подход, отмечать отдельно и прерываться на это незачем).
-      ex.sets.push({ weight: last.weight, reps: 0, rpe: 0, done: true, dropSet: true });
+      ex.sets.push(WorkoutCore.blank(ex.metric));
       saveWorkoutState();
       renderSetsInBlock(block, ex, lastWorkout);
       updateSummaryBar();
@@ -4918,7 +4913,7 @@ function renderExerciseList() {
       prChipEl.addEventListener("click", (e) => {
         e.stopPropagation();
         if (scroll.classList.contains("ex-editing")) return;
-        const prWorkout = findPrWorkout(userId, ex.exerciseId, rec);
+        const prWorkout = WorkoutUI.currentRecord(ex)?.workout;
         if (prWorkout) openDetailScreen(prWorkout, "workout", ex.exerciseId);
         else showToast("Рекорд поставлен в текущей тренировке");
       });
@@ -4927,11 +4922,12 @@ function renderExerciseList() {
     // Note toggle
     const noteBtn   = block.querySelector(".set-note-btn");
     const noteInput = block.querySelector(".set-note-input");
-    if (ex.note) noteInput.classList.add("visible");
+    noteInput.hidden = !noteOpen;
     noteBtn.addEventListener("click", () => {
       // Не фокусируем поле автоматически — чтобы клавиатура не выскакивала,
       // когда пользователь просто хочет посмотреть уже записанную заметку (п.3).
-      noteInput.classList.toggle("visible");
+      noteInput.hidden = !noteInput.hidden;
+      ex._noteOpen = !noteInput.hidden; ex._noteDismissed = noteInput.hidden; saveWorkoutState();
     });
     noteInput.addEventListener("input", () => {
       ex.note = noteInput.value;
@@ -4950,245 +4946,9 @@ function renderExerciseList() {
 
 // lastWorkout передаёт renderExerciseList (уже посчитан один раз на рендер);
 // если не передан (одиночный вызов), считаем тут.
-function renderSetsInBlock(block, ex, lastWorkout) {
-  const tbody = block.querySelector(".sets-body");
-  tbody.innerHTML = "";
+function renderSetsInBlock(block, ex, lastWorkout) { WorkoutUI.renderSets(block, ex); }
+function wireDropTree(group) { WorkoutUI.layoutDropTree(group); }
 
-  if (lastWorkout === undefined) {
-    lastWorkout = DATA.getLastWorkoutForExercise(DATA.getCurrentUser(), ex.exerciseId);
-  }
-  const lastExData  = lastWorkout ? lastWorkout.exercises.find(e => e.exerciseId === ex.exerciseId) : null;
-  const lastSets    = lastExData  ? lastExData.sets.filter(s => s.done) : [];
-
-  // Нумерация — только у обычных подходов (дроп-сет и так понятен по отступу,
-  // отдельный номер ему не нужен, см. .set-dropset-btn).
-  let mainNum = 0;
-  const labels = ex.sets.map(s => { if (s.dropSet) return ""; mainNum++; return `${mainNum}`; });
-
-  // Основной подход + все его дроп-сеты идут в общей обёртке .set-group —
-  // так их можно измерить и связать линией-деревом одним блоком (см.
-  // wireDropTree), и она не путается с деревом соседнего подхода.
-  let group = null;
-
-  ex.sets.forEach((set, sIdx) => {
-    const prev = lastSets[sIdx];
-    const wrap = document.createElement("div");
-    wrap.className = "set-row-wrap" + (set.dropSet ? " set-row-wrap-drop" : "");
-    const del = document.createElement("div");
-    del.className = "set-row-delete";
-    del.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>Удалить</span>`;
-    const row = document.createElement("div");
-    row.className = "set-row";
-    // Дроп-сет — без номера, RPE и галочки "выполнено": это то же усилие, что
-    // и основной подход (тут не прерываются отмечать его отдельно, отдыха
-    // между ними по смыслу нет — засчитывается выполненным сразу при
-    // добавлении, см. .set-dropset-btn), только кг/повт, подвешенные на
-    // линии от веса основного подхода (см. wireDropTree).
-    row.innerHTML = set.dropSet ? `
-      <div class="set-drop-fields">
-        <div class="set-field set-field-weight set-field-weight-mini${(set.weight || 0) < 0 ? " negative" : ""}">
-          <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.)">±</button>
-          <input type="number" inputmode="decimal" placeholder="кг" value="${escHtml(set.weight || "")}" step="0.5">
-        </div>
-        <div class="set-field set-field-reps-mini"><input type="number" inputmode="numeric" placeholder="повт" value="${escHtml(set.reps || "")}"></div>
-      </div>
-    ` : `
-      <span class="set-num">${labels[sIdx]}</span>
-      <div class="set-field set-field-weight${(set.weight || 0) < 0 ? " negative" : ""}">
-        <button type="button" class="set-sign-btn" title="Минус — для упражнений с помощью (гравитрон и т.п.): чем ближе к нулю, тем лучше результат">±</button>
-        <input type="number" inputmode="decimal" placeholder="${escHtml(prev ? prev.weight : "кг")}" value="${escHtml(set.weight || "")}" step="0.5" ${prev ? 'class="has-prev"' : ""}>
-      </div>
-      <div class="set-field"><input type="number" inputmode="numeric" placeholder="${escHtml(prev ? prev.reps : "повт")}" value="${escHtml(set.reps || "")}" ${prev ? 'class="has-prev"' : ""}></div>
-      <button class="rpe-btn ${set.rpe ? "has-rpe" : ""}" aria-label="RPE — усилие подхода" title="RPE — усилие подхода">${set.rpe ? set.rpe : (prev && prev.rpe ? `<span class="rpe-ghost">${prev.rpe}</span>` : "—")}</button>
-      <button class="set-done-btn ${set.done ? "done" : ""}" title="Отметить выполненным">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      </button>
-    `;
-
-    // Weight input
-    const weightInput = row.querySelectorAll("input")[0];
-    const weightField = row.querySelector(".set-field-weight");
-    const markNegative = () => weightField.classList.toggle("negative", (parseFloat(weightInput.value) || 0) < 0);
-    weightInput.addEventListener("change", () => {
-      ex.sets[sIdx].weight = parseFloat(weightInput.value) || 0;
-      markNegative();
-      saveWorkoutState(); updateSummaryBar();
-    });
-    // ± — переключить знак веса. Нужно для упражнений с помощью (гравитрон
-    // и т.п.): виртуальная цифровая клавиатура (inputmode="decimal") на
-    // многих устройствах не даёт набрать "-", поэтому это единственный
-    // надёжный способ ввести отрицательный вес независимо от клавиатуры.
-    row.querySelector(".set-sign-btn").addEventListener("click", () => {
-      const next = -(parseFloat(weightInput.value) || 0);
-      weightInput.value = next || "";
-      ex.sets[sIdx].weight = next;
-      markNegative();
-      saveWorkoutState(); updateSummaryBar();
-    });
-
-    // Reps input
-    const repsInput = row.querySelectorAll("input")[1];
-    repsInput.addEventListener("change", () => {
-      ex.sets[sIdx].reps = parseInt(repsInput.value) || 0;
-      saveWorkoutState(); updateSummaryBar();
-    });
-
-    // RPE button — только у обычных подходов (индекс упражнения берём живым:
-    // блоки могут переставляться, чтобы пикер писал RPE именно в него).
-    const rpeBtn = row.querySelector(".rpe-btn");
-    if (rpeBtn) rpeBtn.addEventListener("click", () => {
-      openRpePicker(_workout.exercises.indexOf(ex), sIdx, rpeBtn);
-    });
-
-    // Done toggle — у дроп-сета кнопки нет (см. выше), он уже done с момента добавления.
-    const doneBtn = row.querySelector(".set-done-btn");
-    if (doneBtn) doneBtn.addEventListener("click", () => {
-      haptic();
-      // Snag current input values before toggling
-      ex.sets[sIdx].weight = parseFloat(weightInput.value) || 0;
-      ex.sets[sIdx].reps   = parseInt(repsInput.value) || 0;
-      ex.sets[sIdx].done   = !ex.sets[sIdx].done;
-      // Отдых — только в живой тренировке. При правке истории таймер отдыха не
-      // нужен и не должен доначислять restSec старой тренировки.
-      if (ex.sets[sIdx].done && !_editingHistory) startRest(); // подход выполнен — пошёл отдых
-      saveWorkoutState();
-      renderSetsInBlock(block, ex, lastWorkout);
-      updateSummaryBar();
-    });
-
-    // Свайп влево по строке → удалить подход (п.7). Удаляем по ссылке на объект
-    // подхода: индексы после ре-рендера сдвигаются. У дроп-сета жест ловим по
-    // ВСЕЙ ширине строки (включая пустую область слева от полей — так его легко
-    // нащупать, не попадая в узкие поля-инпуты), а ехать под пальцем должен
-    // только блок полей .set-drop-fields (см. wireDropTree — он же и совпадает
-    // с красной подложкой). У обычного подхода ловим и двигаем всю строку.
-    wrap.appendChild(del);
-    wrap.appendChild(row);
-    const moveEl = set.dropSet ? row.querySelector(".set-drop-fields") : row;
-    wireSetRowSwipe(wrap, row, () => {
-      const i = ex.sets.indexOf(set);
-      if (i === -1) return;
-      // Удаление ОСНОВНОГО подхода утягивает за собой все его дроп-сеты
-      // каскадом — иначе они остались бы в массиве и "перепривязались" бы
-      // визуально к соседнему предыдущему подходу (это то же самое усилие,
-      // без основного подхода дроп-сеты сами по себе смысла не имеют).
-      let count = 1;
-      if (!set.dropSet) {
-        while (ex.sets[i + count] && ex.sets[i + count].dropSet) count++;
-      }
-      ex.sets.splice(i, count);
-      saveWorkoutState();
-      renderSetsInBlock(block, ex, lastWorkout);
-      updateSummaryBar();
-      showToast(set.dropSet ? "Дроп-сет удалён" : (count > 1 ? "Подход и его дроп-сеты удалены" : "Подход удалён"));
-    }, moveEl);
-
-    if (!set.dropSet || !group) {
-      group = document.createElement("div");
-      group.className = "set-group";
-      tbody.appendChild(group);
-    }
-    group.appendChild(wrap);
-  });
-
-  // Линии-деревья от веса основного подхода к его дроп-сетам — считаются от
-  // реальных координат (см. wireDropTree), поэтому делаем это ПОСЛЕ того, как
-  // все строки уже в DOM и их можно измерить.
-  tbody.querySelectorAll(".set-group").forEach(wireDropTree);
-}
-
-// Соединяет основной подход с его дроп-сетами линией-деревом (см. набросок
-// пользователя): вертикальный "ствол" стартует РОВНО по центру поля веса
-// основного подхода, горизонтальные "ветки" ведут к каждому дроп-сету, а его
-// "повт" заканчивается РОВНО там же, где заканчивается RPE основного подхода.
-// Считаем через getBoundingClientRect (не фиксированные px) — иначе слетает
-// при другой ширине экрана.
-function wireDropTree(group) {
-  group.querySelectorAll(".set-drop-trunk, .set-drop-branch").forEach(el => el.remove());
-  const mainWrap = group.querySelector(".set-row-wrap:not(.set-row-wrap-drop)");
-  const dropWraps = [...group.querySelectorAll(".set-row-wrap-drop")];
-  if (!mainWrap || !dropWraps.length) return;
-
-  const groupRect = group.getBoundingClientRect();
-  // Detached/скрытый блок меряется в нули — тогда все ширины схлопнулись бы в
-  // мусор (кг→минимум, повт→0, ствол в левый край). Не трогаем разметку, пока
-  // блок реально не в потоке (страховка; штатно блок вставляется в DOM ещё до
-  // рендера — см. renderExerciseList).
-  if (!groupRect.width) return;
-  const weightRect = mainWrap.querySelector(".set-field-weight").getBoundingClientRect();
-  const rpeRect = mainWrap.querySelector(".rpe-btn").getBoundingClientRect();
-  const trunkX = weightRect.left + weightRect.width / 2 - groupRect.left;
-  const endX = rpeRect.right - groupRect.left;
-
-  const BRANCH_GAP = 14; // расстояние от ствола до первого поля мини-подхода
-  const FIELD_GAP = 6;
-  const startX = trunkX + BRANCH_GAP;
-  const totalW = Math.max(0, endX - startX);
-  // MIN_WEIGHT_W — чтобы кнопке "±" (см. CSS .set-field-weight-mini .set-sign-btn)
-  // всегда хватало места и поле не сжималось у́же неё на узких экранах.
-  const MIN_WEIGHT_W = 46;
-  const weightW = Math.max(MIN_WEIGHT_W, Math.round(totalW * 0.42)); // кг короче повт
-  const repsW = Math.max(0, totalW - weightW - FIELD_GAP);
-
-  dropWraps.forEach(w => {
-    const fields = w.querySelector(".set-drop-fields");
-    fields.style.marginLeft = startX + "px";
-    // Ширину блока полей фиксируем ровно по содержимому (кг + зазор + повт).
-    // Без этого flex-контейнер растягивается на всю ширину строки, и его
-    // непрозрачный фон (см. CSS .set-drop-fields) тянется ВПРАВО за "повт" до
-    // края карточки — при свайпе он перекрывал красную подложку, из-за чего
-    // между "повт" и красной плашкой "Удалить" зиял пустой зазор. Теперь правый
-    // край блока совпадает с концом "повт", и красное открывается сразу за ним.
-    fields.style.width = (weightW + FIELD_GAP + repsW) + "px";
-    fields.querySelector(".set-field-weight-mini").style.width = weightW + "px";
-    fields.querySelector(".set-field-reps-mini").style.width = repsW + "px";
-    // Зона свайпа/удаления (красная подложка) — под реальными полями, а не
-    // во всю строку: иначе она осталась бы там, где поля были в старой
-    // раскладке, и не совпадала бы с тем, что реально видно.
-    const del = w.querySelector(".set-row-delete");
-    if (del) {
-      del.style.left = startX + "px";
-      del.style.right = "auto"; // иначе right:0 из inset (см. CSS) и left вместе растянут блок на всю ширину
-      del.style.width = (weightW + FIELD_GAP + repsW) + "px";
-    }
-  });
-
-  const mainBottom = mainWrap.getBoundingClientRect().bottom - groupRect.top;
-  const lastRect = dropWraps[dropWraps.length - 1].getBoundingClientRect();
-  const lastCenterY = lastRect.top + lastRect.height / 2 - groupRect.top;
-
-  const trunk = document.createElement("div");
-  trunk.className = "set-drop-trunk";
-  trunk.style.left = trunkX + "px";
-  trunk.style.top = mainBottom + "px";
-  trunk.style.height = Math.max(0, lastCenterY - mainBottom) + "px";
-  group.appendChild(trunk);
-
-  dropWraps.forEach(w => {
-    const r = w.getBoundingClientRect();
-    const centerY = r.top + r.height / 2 - groupRect.top;
-    const branch = document.createElement("div");
-    branch.className = "set-drop-branch";
-    branch.style.left = trunkX + "px";
-    branch.style.top = centerY + "px";
-    branch.style.width = BRANCH_GAP + "px";
-    group.appendChild(branch);
-  });
-}
-
-// Ширина экрана могла смениться (поворот) — пересчитать все видимые деревья.
-window.addEventListener("resize", () => {
-  document.querySelectorAll(".set-group").forEach(wireDropTree);
-});
-
-// Горизонтальный свайп влево по строке подхода → раскрыть зону «Удалить»;
-// за порогом отпускания подход удаляется, иначе строка возвращается. Вертикаль
-// отдаём скроллу; в режиме перестановки свайп выключен. (п.7)
-// row — элемент, НА КОТОРОМ ловим жест (зона касания); tEl — элемент, который
-// реально едет под пальцем (по умолчанию тот же). У дроп-сета это разные вещи:
-// ловить надо по всей ширине строки (включая пустую область слева от полей —
-// иначе касание попадает только в узкие поля-инпуты, а по инпуту свайп мы не
-// начинаем, и жест почти невозможно нащупать), а ехать должен только блок полей.
 function wireSetRowSwipe(wrap, row, onDelete, tEl = row) {
   let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, swiped = false;
   const MAX = 132, DEL = 92;
@@ -5258,7 +5018,7 @@ function wireSetRowSwipe(wrap, row, onDelete, tEl = row) {
 
 function updateSummaryBar() {
   const exs = (_workout && _workout.exercises) || [];
-  const doneSets = exs.reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
+  const doneSets = exs.reduce((n, ex) => n + ex.sets.filter(s => WorkoutCore.performed(s) && !s.dropSet).length, 0);
   const volume   = exs.reduce((v, ex) => v + ex.sets.filter(s => s.done).reduce((sv, s) => sv + setVolume(s), 0), 0);
   $("sum-exercises").textContent = exs.length;
   $("sum-sets").textContent = doneSets;
@@ -5266,6 +5026,7 @@ function updateSummaryBar() {
   // Контент мог изменить высоту (добавили/удалили подход/упражнение) — если идёт
   // отдых, пересчитать положение пилюли.
   if (!$("rest-timer").hidden) positionRestTimer();
+  WorkoutUI.renderCoverage();
 }
 
 /* — Добавить упражнение — */
@@ -5292,25 +5053,14 @@ function openExercisePicker(onSelect, selectedId, options = {}) {
 
 function addExerciseToWorkout(exerciseId) {
   if (!_workout) return;
-  // Префилл количеством подходов из прошлой тренировки делаем здесь, при
-  // добавлении (а не в renderExerciseList — рендер не должен мутировать данные).
-  const lastWorkout = DATA.getLastWorkoutForExercise(DATA.getCurrentUser(), exerciseId);
-  const lastEx = lastWorkout ? lastWorkout.exercises.find(e => e.exerciseId === exerciseId) : null;
-  const lastSets = lastEx ? lastEx.sets.filter(s => s.done && (s.weight || s.reps)) : [];
-  const sets = lastSets.length > 1
-    ? lastSets.map(() => ({ weight: 0, reps: 0, rpe: 0, done: false }))
-    : [{ weight: 0, reps: 0, rpe: 0, done: false }];
-  // Снимок имени кладём в сам блок тренировки: если позже упражнение
-  // удалят/потеряют из личного списка (в т.ч. при гонке синхронизации),
-  // тренировка всё равно покажет имя, а не сырой id (см. рендер ниже).
-  const definition = DATA.getVisibleExercises(DATA.getCurrentUser()).find(e => e.id === exerciseId);
-  _workout.exercises.push({ exerciseId, name: definition?.name, sets, ...executionForExercise(DATA.getCurrentUser(), definition) });
-  saveWorkoutState();
-  renderExerciseList();
-  updateSummaryBar();
-  // Scroll to new block
-  const scroll = $("workout-scroll");
-  setTimeout(() => { scroll.scrollTop = scroll.scrollHeight; }, 50);
+  const userId=DATA.getCurrentUser(),definition=DATA.getVisibleExercises(userId).find(e=>e.id===exerciseId);
+  if(!definition)return;
+  const metric=DATA.getExerciseMetric(userId,exerciseId);
+  const exercise={exerciseId,name:definition.name,metric,movements:[...(definition.atlas?.categories || [])],...executionForExercise(userId,definition)};
+  exercise.sets=WorkoutCore.seed(DATA.getWorkoutHistory(userId),exercise,metric);
+  _workout.exercises.push(exercise);
+  saveWorkoutState();renderExerciseList();updateSummaryBar();
+  requestAnimationFrame(()=>{const block=[...$("workout-scroll").querySelectorAll('.ex-block')].find(b=>b._workoutExercise===exercise);if(block){const scroll=$('workout-scroll');scroll.scrollTo({top:scroll.scrollTop+block.getBoundingClientRect().top-scroll.getBoundingClientRect().top-76,behavior:'smooth'});}});
 }
 
 /* — RPE picker — */
@@ -5322,6 +5072,7 @@ function closeRpePicker() {
   const target = _rpeTarget;
   _rpeTarget = null;
   rpeBackdrop.classList.remove('open');
+  rpeBackdrop.setAttribute?.('aria-hidden','true');
   if (target && _workout === target.workout && target.button?.isConnected) {
     target.button.focus({ preventScroll: true });
     target.scroll.scrollTop = target.scrollTop;
@@ -5351,7 +5102,7 @@ function openRpePicker(exIdx, sIdx, button) {
       set.rpe = val;
       saveWorkoutState();
       // Keep the existing exercise/input DOM and its scroll anchor intact.
-      if (button?.isConnected) { button.textContent = String(val); button.classList.add('has-rpe'); }
+      if (button?.isConnected) { button.textContent = String(val); button.classList.add('has-rpe'); if(typeof WorkoutUI !== 'undefined') WorkoutUI.decorateRpeButton(button,set); }
       rpeGrid.querySelectorAll(".rpe-option").forEach(b => b.classList.toggle("selected", parseInt(b.dataset.rpe) === val));
       rpeHint.textContent = DATA.RPE_LABELS[val];
       clearTimeout(_rpeCloseTimer);
@@ -5361,7 +5112,9 @@ function openRpePicker(exIdx, sIdx, button) {
     btn.addEventListener("mouseleave", () => { rpeHint.textContent = _rpeTarget === target ? DATA.RPE_LABELS[set.rpe] || "" : ""; });
   });
 
+  if(typeof WorkoutUI !== "undefined") WorkoutUI.wireRpeSheet();
   rpeBackdrop.classList.add("open");
+  rpeBackdrop.setAttribute?.('aria-hidden','false');
 }
 rpeBackdrop.addEventListener("click", e => { if (e.target === rpeBackdrop) closeRpePicker(); });
 
@@ -9857,7 +9610,7 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
             <div class="wd-cols">
               <span class="wd-col-idx">#</span>
               <span class="wd-col">кг</span>
-              <span class="wd-col">повт</span>
+              <span class="wd-col">${doneSets.every(s=>s.metric === "time") ? "время" : doneSets.some(s=>s.metric === "time") ? "повт / время" : "повт"}</span>
               ${anyRpe ? `<span class="wd-col wd-col-rpe">rpe</span>` : ""}
             </div>
             <div class="wd-sets">
@@ -9867,7 +9620,7 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
                 return `<div class="wd-set${s.dropSet ? " wd-set-drop" : ""}">
                   <span class="wd-set-num">${setLabels[i]}</span>
                   <div class="wd-cell${pr ? " pr" : ""}">${pr ? "★ " : ""}${s.weight || "—"}</div>
-                  <div class="wd-cell">${s.reps}</div>
+                  <div class="wd-cell">${s.metric === "time" ? WorkoutCore.formatTime(s.durationSec) : s.reps}</div>
                   ${anyRpe ? `<div class="wd-cell wd-rpe ${s.rpe ? rpeClass(s.rpe) : "none"}">${s.rpe || "—"}</div>` : ""}
                 </div>`;
               }).join("")}
@@ -10019,7 +9772,13 @@ function openDetailEditMode(workout) {
 }
 
 function saveEditedWorkout(workout, userId, screenOptions = {}) {
-  DATA.updateWorkout(userId, workout); // сначала записываем правку в историю
+  if (typeof WorkoutCore !== "undefined") workout = WorkoutCore.finalize(workout);
+  try {
+    if (DATA.updateWorkout(userId, workout) === false) throw Error("Не удалось сохранить тренировку");
+  } catch (error) {
+    showToast(error.message || "Не удалось сохранить тренировку");
+    return false; // Keep the editor's draft available to retry.
+  }
   // Если история полная — пересчитываем рекорды (правка веса вниз тоже должна
   // опускать рекорд). Иначе только повышаем (updateRecords), чтобы не занизить.
   DATA.recomputeRecords(userId);
@@ -10028,385 +9787,27 @@ function saveEditedWorkout(workout, userId, screenOptions = {}) {
   renderHistory(userId);
   openDetailScreen(workout, _detailReturnScreen, null, screenOptions);
   showToast("Тренировка сохранена");
+  return true;
 }
 
 $("detail-back-btn").addEventListener("click", () => goBackScreen(_detailReturnScreen));
 
-/* ==========================================================================
-   Screen 6: Stats (раздел 9.2 спецификации)
-   - вкладка «Силовые»: список упражнений с двумя рекордами, тап → график
-     рабочего веса по тренировкам
-   - вкладка «Бег»: сводка (пробежки/дистанция/рекорды) + графики прогресса
-     по дистанции и темпу
-   Тоннаж и расчётный 1ПМ сознательно не считаются (раздел 9.2 спеки).
-   ========================================================================== */
-
-let _statsTab = "strength"; // сохраняется между заходами на экран в рамках сессии
-
-/* ── СТАТИСТИКА (новая версия по ТЗ) ── */
-
-// Переменные состояния статистики
-let _statsPeriod = "month";         // "week"|"month"|"3month"|"year"|"all"
-let _statsTypeFilter = "all";       // "all"|"strength"|"run" — какой из трёх экранов
-let _statsSelectedExId = null;      // ID выбранного упражнения
-let _statsGraphMode = "weight";    // "weight" | "volume"
-
-// Период для дропдауна статистики (ключи совпадают с statsPeriodStart).
-const STATS_PERIODS = [
-  ["all",    "Всё время"],
-  ["week",   "Неделя"],
-  ["month",  "Месяц"],
-  ["3month", "3 месяца"],
-  ["year",   "Год"],
-];
-
-// DAY_MS, statsStartOfDay, computeStreak — в lib.js (чистая логика, тестируется).
-
-function statsPeriodStart() {
-  if (_statsPeriod === "all")    return 0;
-  if (_statsPeriod === "week")   return Date.now() - 7   * DAY_MS;
-  if (_statsPeriod === "month")  return Date.now() - 30  * DAY_MS;
-  if (_statsPeriod === "3month") return Date.now() - 90  * DAY_MS;
-  if (_statsPeriod === "year")   return Date.now() - 365 * DAY_MS;
-  return 0;
-}
-
-// ── Календарь: диапазон ──
-function statsCalendarRange(workouts) {
-  const MAX_WEEKS = 12;
-  const todayStart = statsStartOfDay(Date.now());
-  if (!workouts.length) return { from: todayStart - 4*7*DAY_MS, to: todayStart };
-  // reduce, а не Math.min(...spread): spread большого массива упирается в лимит
-  // аргументов стека (история может быть длинной).
-  const firstDay = statsStartOfDay(workouts.reduce((m, w) => Math.min(m, w.startedAt), Infinity));
-  const weeksElapsed = Math.ceil((todayStart - firstDay) / (7*DAY_MS));
-  if (weeksElapsed <= MAX_WEEKS) {
-    const d = new Date(firstDay);
-    const dow = d.getDay(); const back = dow === 0 ? 6 : dow - 1;
-    return { from: firstDay - back*DAY_MS, to: todayStart };
-  }
-  return { from: todayStart - MAX_WEEKS*7*DAY_MS, to: todayStart };
-}
-
-// ── Рендер календаря ──
-function renderStatsCalendar(workouts) {
-  const COUNT = 15;
-  const todayStart = statsStartOfDay(Date.now());
-  let html = `<div style="display:grid;grid-template-columns:repeat(${COUNT},1fr);gap:5px;">`;
-  for (let i = COUNT - 1; i >= 0; i--) {
-    const ts = todayStart - i * DAY_MS;
-    const day = workouts.filter(w => statsStartOfDay(w.startedAt) === ts);
-    const hasS = day.some(w => w.type === "strength");
-    const hasR = day.some(w => w.type === "run");
-    let bg = "rgba(255,255,255,0.05)";
-    if (hasS && hasR) bg = "linear-gradient(135deg,#8a78f0 50%,#3fd6a0 50%)";
-    else if (hasS) bg = "#8a78f0";
-    else if (hasR) bg = "#3fd6a0";
-    const opacity = (hasS || hasR) ? " opacity:0.85;" : "";
-    html += `<div style="aspect-ratio:1;border-radius:3px;background:${bg};${opacity}"></div>`;
-  }
-  html += `</div>`;
-  return html;
-}
-
-// ── Данные упражнений с историей ──
-function statsExWithHistory(workouts) {
-  const cnt = {};
-  workouts.filter(w => w.type === "strength").forEach(w => {
-    (w.exercises||[]).forEach(ex => { cnt[ex.exerciseId] = (cnt[ex.exerciseId]||0)+1; });
-  });
-  return Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([id,count])=>({id,count}));
-}
-
-// ── График прогресса SVG ──
-function renderStatsGraph(points, mode, containerW, containerH) {
-  if (points.length < 2) return `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:13px;color:var(--text-tertiary);font-style:italic">${points.length===0?"Нет данных за период":"Нужно минимум 2 тренировки"}</div>`;
-  const vals = points.map(p => mode === "weight" ? p.maxWeight : p.volume);
-  const minV = vals.reduce((a, b) => Math.min(a, b), Infinity);
-  const maxV = vals.reduce((a, b) => Math.max(a, b), -Infinity);
-  const minTs = points[0].ts, maxTs = points[points.length-1].ts;
-  // W и H берутся из реальных измеренных размеров контейнера (см. вызов ниже),
-  // чтобы 1 единица viewBox = 1 css-пиксель и график не растягивался/сплющивался
-  // под форму карточки. H заметно увеличен — раньше было 80px, график выглядел
-  // сжатым (п.10).
-  const W = containerW || 280, H = containerH || 150, px = 16, py = 18;
-  const gW=W-px*2, gH=H-py*2;
-  const rangeV = maxV-minV||1, rangeTs = maxTs-minTs||1;
-  const xOf = ts => px + (ts-minTs)/rangeTs*gW;
-  const yOf = v  => py + gH - (v-minV)/rangeV*gH;
-  const area = [
-    `${xOf(points[0].ts).toFixed(1)},${H-py}`,
-    ...points.map((p,i)=>`${xOf(p.ts).toFixed(1)},${yOf(vals[i]).toFixed(1)}`),
-    `${xOf(points[points.length-1].ts).toFixed(1)},${H-py}`
-  ].join(" ");
-  const line = points.map((p,i)=>`${xOf(p.ts).toFixed(1)},${yOf(vals[i]).toFixed(1)}`).join(" ");
-  const dots = points.map((p,i)=>`<circle cx="${xOf(p.ts).toFixed(1)}" cy="${yOf(vals[i]).toFixed(1)}" r="3.6" fill="var(--accent)"/>`).join("");
-  // Метки месяцев — x зажат внутрь поля графика, чтобы text-anchor="middle"
-  // не выталкивал часть подписи за пределы SVG (там она обрезалась рамкой
-  // карточки с overflow:hidden — например «июнь» превращался в «юнь»/«люнь»).
-  let monthsSeen = new Set(), monthLabels = "";
-  points.forEach(p => {
-    const d = new Date(p.ts), key = `${d.getFullYear()}-${d.getMonth()}`;
-    if (!monthsSeen.has(key)) {
-      monthsSeen.add(key);
-      const lbl = d.toLocaleString("ru-RU",{month:"short"}).replace(".","");
-      const lx = Math.min(Math.max(xOf(p.ts), 14), W-14);
-      monthLabels += `<text x="${lx.toFixed(1)}" y="${H-4}" font-size="10.5" fill="rgba(255,255,255,0.3)" text-anchor="middle">${lbl}</text>`;
-    }
-  });
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%">
-    <polygon points="${area}" fill="rgba(124,108,230,0.07)"/>
-    <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
-    ${dots}${monthLabels}
-  </svg>`;
-}
-
-// ── Главная функция ──
+/* Statistics state stays in the app; rendering and calculations live in statistics.js. */
+let _statsPeriod = "month";
+let _statsTypeFilter = "all";
+let _statsSelectedExId = null;
+let _statsGraphMode = "weight";
+const STATS_PERIODS = [["all","Всё время"],["week","Неделя"],["month","Месяц"],["3month","3 месяца"],["year","Год"]];
 function initStatsScreen() {
-  const userId = DATA.getCurrentUser();
-  if (!userId) return;
-  const workouts = DATA.getWorkoutHistory(userId) || [];
-  const scroll = $("stats-scroll");
-  if (!scroll) return;
-
-  const ps = statsPeriodStart();
-  const filtered = workouts.filter(w => w.startedAt >= ps);
-  const strength = filtered.filter(w => w.type === "strength");
-  const runs = filtered.filter(w => w.type === "run");
-
-  // Тоннаж
-  let volume = 0;
-  strength.forEach(w => (w.exercises||[]).forEach(ex => (ex.sets||[]).filter(s=>s.done&&s.reps>0).forEach(s=>{ volume+=setVolume(s); })));
-
-  // Время
-  let totalMs = 0;
-  filtered.forEach(w => { if (w.finishedAt && w.startedAt) totalMs += w.finishedAt - w.startedAt; });
-  const totalMin = Math.round(totalMs/60000);
-  const durStr = totalMin < 60 ? `${totalMin} мин` : `${Math.floor(totalMin/60)} ч ${totalMin%60>0?totalMin%60+" мин":""}`.trim();
-
-  // Серия
-  const streak = computeStreak(workouts);
-
-  // Бег
-  let totalDist=0, paceSecs=[], bestPaceSec=Infinity;
-  runs.forEach(w => {
-    totalDist += parseFloat(w.distance)||0;
-    if (w.pace) {
-      const [m,s] = w.pace.split(":").map(Number);
-      const ps2 = m*60+(s||0);
-      paceSecs.push(ps2);
-      if (ps2<bestPaceSec) bestPaceSec=ps2;
-    }
+  if (!window.TrainStats) return;
+  window.TrainStats.render({
+    period:_statsPeriod, type:_statsTypeFilter, exerciseId:_statsSelectedExId, graphMode:_statsGraphMode,
+    setPeriod(key) { _statsPeriod=key; initStatsScreen(); },
+    setType(key) { _statsTypeFilter=key; initStatsScreen(); },
+    selectExercise(id) { _statsSelectedExId=id; this.exerciseId=id; },
+    setExercise(id) { _statsSelectedExId=id; initStatsScreen(); },
+    setGraphMode(key) { _statsGraphMode=key; initStatsScreen(); }
   });
-  const avgPaceSec = paceSecs.length ? Math.round(paceSecs.reduce((a,b)=>a+b,0)/paceSecs.length) : null;
-  const paceStr = s => { if(s===null||s===Infinity) return "—"; return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; };
-
-  // Упражнение
-  const exWithHist = statsExWithHistory(workouts);
-  const allEx = DATA.getVisibleExercises(userId);
-  if (!_statsSelectedExId || !allEx.find(e=>e.id===_statsSelectedExId)) {
-    _statsSelectedExId = exWithHist[0]?.id || null;
-  }
-  const selEx = allEx.find(e=>e.id===_statsSelectedExId);
-  const selRec = _statsSelectedExId ? DATA.getExerciseRecord(userId, _statsSelectedExId) : null;
-
-  // Данные для графика
-  let graphPoints = [];
-  if (_statsSelectedExId) {
-    workouts.filter(w=>w.type==="strength").sort((a,b)=>a.startedAt-b.startedAt).forEach(w => {
-      const ex = (w.exercises||[]).find(e=>e.exerciseId===_statsSelectedExId);
-      if (!ex) return;
-      // Вес — без фильтра по >0 (упражнения с помощью работают в минусе, см.
-      // getExerciseProgress); тоннаж по-прежнему через setVolume — минус в
-      // тоннаж не идёт.
-      const done = (ex.sets||[]).filter(s=>s.done&&s.reps>0);
-      if (!done.length) return;
-      graphPoints.push({ ts: w.startedAt, maxWeight: Math.max(...done.map(s=>s.weight||0)), volume: Math.round(done.reduce((a,s)=>a+setVolume(s),0)) });
-    });
-  }
-
-  // Прогресс за период — отдельной ячейкой под графиком
-  const gpInPeriod = graphPoints.filter(p=>p.ts>=ps);
-  let progTxt = "—", progValCls = "";
-  if (gpInPeriod.length>=2 && gpInPeriod[0].maxWeight!==0) {
-    // Знаменатель — |первое значение|, а не само число: для упражнений с
-    // помощью вес отрицательный, и деление на отрицательное число развернуло
-    // бы знак (реальное улучшение — приближение к нулю — показалось бы
-    // регрессом). |x| работает верно в обоих случаях.
-    const first = gpInPeriod[0].maxWeight, last = gpInPeriod[gpInPeriod.length-1].maxWeight;
-    const pct = Math.round((last - first) / Math.abs(first) * 100);
-    progTxt = pct>0?`+${pct}%`:`${pct}%`;
-    progValCls = pct>0?" up":pct<0?" down":"";
-  }
-
-  // Время по типам (для карточек)
-  let strengthMs = 0, runMs = 0;
-  strength.forEach(w => { if (w.finishedAt && w.startedAt) strengthMs += w.finishedAt - w.startedAt; });
-  runs.forEach(w => { if (w.finishedAt && w.startedAt) runMs += w.finishedAt - w.startedAt; });
-  const _hrsStr = ms => { const h = ms / 3600000; return h < 1 ? `${Math.round(h * 60)} мин` : `${Math.round(h * 10) / 10} ч`; };
-  const strengthHrs = strengthMs > 0 ? _hrsStr(strengthMs) : "—";
-  const runHrs = runMs > 0 ? _hrsStr(runMs) : "—";
-  const oneRM = selRec && typeof estimate1RM === "function" ? estimate1RM(selRec.maxWeight, selRec.repsAtMaxWeight) : 0;
-
-  // Доп. метрики для детальных экранов (за выбранный период)
-  let totalSets = 0, totalReps = 0, restSecTotal = 0;
-  strength.forEach(w => (w.exercises||[]).forEach(ex => (ex.sets||[]).filter(s=>s.done&&s.reps>0).forEach(s=>{ totalSets++; totalReps += s.reps||0; })));
-  strength.forEach(w => { restSecTotal += w.restSec || 0; });
-  let longestRun = 0;
-  runs.forEach(w => { const d = parseFloat(w.distance)||0; if (d>longestRun) longestRun = d; });
-  const avgDistPerRun = runs.length ? totalDist/runs.length : 0;
-  const km = v => `${Math.round(v*10)/10} км`;
-
-  // Календарь активности фильтруем по выбранному типу.
-  const calWorkouts = _statsTypeFilter === "strength" ? workouts.filter(w=>w.type==="strength")
-    : _statsTypeFilter === "run" ? workouts.filter(w=>w.type==="run")
-    : workouts;
-  const calendarBlock = `<div class="s-section-label">Активность</div><div class="s-calendar">${renderStatsCalendar(calWorkouts)}</div>`;
-
-  // Дропдауны фильтров (тип + период) — в шапке экрана, как в Истории.
-  const typeOpts = [["all","Все"],["strength","Силовые"],["run","Бег"]].map(([key,label]) =>
-    ({ key, label, count: key==="all"?filtered.length : key==="strength"?strength.length : runs.length }));
-  buildHistoryDropdown($("stats-type-dd"), typeOpts, _statsTypeFilter, key => { _statsTypeFilter = key; initStatsScreen(); });
-  buildHistoryDropdown($("stats-period-dd"), STATS_PERIODS.map(([key,label])=>({key,label})), _statsPeriod, key => { _statsPeriod = key; initStatsScreen(); });
-
-  const tile = (val, label, cls="") => `<div class="s-ex-rec"><div class="s-ex-rec-val${cls}">${val}</div><div class="s-ex-rec-label">${label}</div></div>`;
-
-  // Карточка прогресса по упражнению (только на экране силовых).
-  const exerciseCardHtml = _statsSelectedExId ? `
-    <div class="s-ex-card">
-      <div class="s-ex-header">
-        <div class="s-ex-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(selEx?.name||_statsSelectedExId)}</div>
-        <button class="s-ex-pick-btn" id="stats-ex-pick-btn" title="Изменить упражнение">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-      </div>
-      <div class="s-ex-body">
-        <div class="s-chart-frame" id="s-graph-wrap">${renderStatsGraph(gpInPeriod, _statsGraphMode)}</div>
-        <div class="s-ex-recs">
-          ${tile(selRec ? `${selRec.maxWeight} кг` : "—", "макс. вес")}
-          ${tile(oneRM ? `${oneRM} кг` : "—", "1ПМ расчёт")}
-          <div class="s-ex-rec${progValCls === ' up' ? ' prog-up' : ''}">
-            <div class="s-ex-rec-val${progValCls}">${progTxt}</div>
-            <div class="s-ex-rec-label">прогресс</div>
-          </div>
-        </div>
-      </div>
-    </div>` : `<div class="s-empty">Проведи первую силовую тренировку</div>`;
-
-  // Старые упражнения из истории, которых нет в новой базе — предложить привязку,
-  // чтобы статистика/рекорды считались корректно (после перехода на «Атлас»).
-  const orphans = DATA.getOrphanExercises(userId);
-  const orphanBanner = orphans.length ? `
-    <button class="s-orphan-banner" id="s-orphan-btn">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-      <span><b>Старых упражнений: ${orphans.length}</b><small>Привяжи к базе, чтобы учитывалась статистика</small></span>
-      <svg class="s-orphan-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
-    </button>` : "";
-
-  let html;
-  if (_statsTypeFilter === "strength") {
-    // ── Экран 2: силовые ──
-    html = `
-      <div class="s-card s-card-full s-card-blue">
-        <div class="s-type-label s-type-blue">Силовые тренировки</div>
-        <div class="s-divider"></div>
-        <div class="s-tiles s-tiles-3">
-          ${tile(strength.length, "Тренировки")}
-          ${tile(strengthHrs, "Время")}
-          ${tile(volume>0?`${volume.toLocaleString("ru-RU")} кг`:"—", "Тоннаж")}
-        </div>
-        <div class="s-tiles s-tiles-3">
-          ${tile(totalSets||"—", "Подходы")}
-          ${tile(totalReps||"—", "Повторы")}
-          ${tile(restSecTotal>0?_hrsStr(restSecTotal*1000):"—", "Отдых")}
-        </div>
-      </div>
-      ${calendarBlock}
-      ${orphanBanner}
-      ${exerciseCardHtml}
-    `;
-  } else if (_statsTypeFilter === "run") {
-    // ── Экран 3: бег ──
-    html = `
-      <div class="s-card s-card-full s-card-green">
-        <div class="s-type-label s-type-green">Беговые тренировки</div>
-        <div class="s-divider"></div>
-        <div class="s-tiles s-tiles-3">
-          ${tile(runs.length, "Пробежки")}
-          ${tile(runHrs, "Время")}
-          ${tile(totalDist>0?km(totalDist):"—", "Дистанция")}
-        </div>
-        <div class="s-tiles s-tiles-3">
-          ${tile(paceStr(avgPaceSec), "Ср. темп")}
-          ${tile(paceStr(bestPaceSec===Infinity?null:bestPaceSec), "Лучший темп")}
-          ${tile(longestRun>0?km(longestRun):"—", "Макс. дист.")}
-        </div>
-      </div>
-      ${calendarBlock}
-      <div class="s-section-label">Средние за пробежку</div>
-      <div class="s-card s-card-full">
-        <div class="s-tiles s-tiles-2">
-          ${tile(avgDistPerRun>0?km(avgDistPerRun):"—", "Дист./пробежку")}
-          ${tile(runs.length?_hrsStr(runMs/runs.length):"—", "Время/пробежку")}
-        </div>
-      </div>
-    `;
-  } else {
-    // ── Экран 1: все ──
-    html = `
-      <div class="s-cards-grid">
-        <div class="s-card s-card-blue s-card-stat">
-          <div class="s-type-label s-type-blue">Силовые</div>
-          <div class="s-divider"></div>
-          <div class="s-main-num">${strength.length}</div>
-          <div class="s-main-sub">трен.</div>
-          <div class="s-divider"></div>
-          <div class="s-sub-stats">
-            <div><div class="s-sub-val">${strengthHrs}</div><div class="s-sub-label">Время</div></div>
-            <div><div class="s-sub-val">${volume > 0 ? `${volume.toLocaleString("ru-RU")} кг` : "—"}</div><div class="s-sub-label">Тоннаж</div></div>
-          </div>
-        </div>
-        <div class="s-card s-card-green s-card-stat">
-          <div class="s-type-label s-type-green">Бег</div>
-          <div class="s-divider"></div>
-          <div class="s-main-num">${runs.length}</div>
-          <div class="s-main-sub">трен.</div>
-          <div class="s-divider"></div>
-          <div class="s-sub-stats">
-            <div><div class="s-sub-val">${runHrs}</div><div class="s-sub-label">Время</div></div>
-            <div><div class="s-sub-val">${totalDist > 0 ? km(totalDist) : "—"}</div><div class="s-sub-label">Дист.</div></div>
-          </div>
-        </div>
-      </div>
-      ${calendarBlock}
-      <div class="s-card s-card-full">
-        <div class="s-tiles s-tiles-2">
-          ${tile(filtered.length, "Всего трен.")}
-          ${tile(durStr || "—", "Общее время")}
-          ${tile(streak.current ? `${streak.current} дн.` : "—", "Текущая серия")}
-          ${tile(streak.best ? `${streak.best} дн.` : "—", "Лучшая серия")}
-        </div>
-      </div>
-    `;
-  }
-  scroll.innerHTML = html;
-
-  // График рисуется 1:1 в пикселях — перерисовываем с точными размерами после вставки в DOM.
-  const graphWrap = $("s-graph-wrap");
-  if (graphWrap) {
-    const realW = Math.round(graphWrap.getBoundingClientRect().width);
-    const realH = Math.round(graphWrap.getBoundingClientRect().height);
-    if (realW > 0) graphWrap.innerHTML = renderStatsGraph(gpInPeriod, _statsGraphMode, realW, realH);
-  }
-
-  // Выбор упражнения — используем общий пикер с категориями и поиском
-  const pickBtn = $("stats-ex-pick-btn");
-  if (pickBtn) pickBtn.addEventListener("click", () => {
-    openExercisePicker(id => { _statsSelectedExId = id; initStatsScreen(); }, _statsSelectedExId);
-  });
-
-  const orphanBtn = $("s-orphan-btn");
-  if (orphanBtn) orphanBtn.addEventListener("click", () => openOrphanRemapSheet());
 }
 
 // Лист перепривязки старых упражнений: список «сирот» из истории, у каждого —
