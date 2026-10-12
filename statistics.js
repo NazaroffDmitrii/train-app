@@ -106,16 +106,93 @@
     m.current.forEach(w=>{const b=bins.find(b=>w.startedAt>=b.from && w.startedAt<b.to);if(b){b.count++;b.seconds+=duration(w);b[w.type]++;b[w.type+'Seconds']+=duration(w);}});
     return {bins,group};
   }
-  const api={analyze,summarize,exerciseSeries,change,periodRange,duration,paceSeconds,activityBins};
+  const calendarDay=ts=>{const d=new Date(ts);d.setHours(0,0,0,0);return +d;};
+  const calendarShift=(ts,n)=>{const d=new Date(ts);d.setDate(d.getDate()+n);return +d;};
+  const calendarShort=ts=>new Date(ts).toLocaleDateString('ru-RU',{day:'numeric',month:'short'}).replace('.','');
+  const calendarWeekdays=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  function calendarBins(model) {
+    const span=model.range.days||model.elapsedDays||1,mode=span<=35?'days':span<=120?'weeks':'months';
+    const from=model.range.from||calendarDay(model.current[0]?.startedAt||model.now),to=calendarShift(calendarDay(model.now),1);
+    let cursor=new Date(from);cursor.setHours(0,0,0,0);
+    if(mode==='weeks')cursor.setDate(cursor.getDate()-(cursor.getDay()+6)%7);
+    if(mode==='months')cursor.setDate(1);
+    const months=(new Date(to-1).getFullYear()-cursor.getFullYear())*12+new Date(to-1).getMonth()-cursor.getMonth()+1;
+    const crossYear=new Date(from).getFullYear()!==new Date(to-1).getFullYear();
+    const step=mode==='months'?Math.max(1,Math.ceil(months/60)):1,cells=[];
+    while(+cursor<to) {
+      const next=new Date(cursor);
+      if(mode==='months')next.setMonth(next.getMonth()+step);else next.setDate(next.getDate()+(mode==='weeks'?7:1));
+      const start=Math.max(from,+cursor),end=Math.min(to,+next);
+      let label=mode==='days'?String(new Date(start).getDate()):mode==='weeks'?calendarShort(start):new Date(start).toLocaleDateString('ru-RU',{month:'short'}).replace('.','')+(crossYear?' '+String(new Date(start).getFullYear()).slice(-2):'');
+      cells.push({from:start,to:end,label,workouts:[],strength:0,run:0,count:0});cursor=next;
+    }
+    const byDay=mode==='days'?new Map(cells.map(c=>[calendarDay(c.from),c])):null;
+    model.current.forEach(w=>{
+      const cell=byDay?byDay.get(calendarDay(w.startedAt)):cells.find(c=>w.startedAt>=c.from&&w.startedAt<c.to);
+      if(cell){cell.workouts.push(w);cell.count++;cell[w.type]++;}
+    });
+    const strip=mode==='days'&&span===7;
+    return {mode,span,from,to,step,cells,strip,offset:mode==='days'&&!strip?(new Date(from).getDay()+6)%7:0,weekdays:strip?cells.map(c=>calendarWeekdays[new Date(c.from).getDay()]):['Пн','Вт','Ср','Чт','Пт','Сб','Вс']};
+  }
+  const api={analyze,summarize,exerciseSeries,change,periodRange,duration,paceSeconds,activityBins,calendarBins};
   if(typeof module!=='undefined' && module.exports)module.exports=api;
   if(typeof window==='undefined')return;
   const escape = value => String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const icons={activity:'<path d="M3 12h4l3-7 4 14 3-7h4"/>',clock:'<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>',weight:'<path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/>',run:'<path d="m4 18 5-4 3 2 3 4M7 9l5-3 4 5h4M12 6l-2 7"/><circle cx="16" cy="3" r="1.5"/>',arrow:'<path d="m9 5 7 7-7 7"/>',calendar:'<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/>'};
   const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]||icons.activity}</svg>`;
-  let activityMode='count', selectedDay=null, selectedActivity=null, viewKey='';
+  let activityMode='count', selectedInterval=null, selectedActivity=null, viewKey='', calendarExpanded=false;
+  let openFocusFilter=null, filterState=null;
   const plural=(n,forms)=>forms[n%100>=11&&n%100<=14?2:n%10===1?0:n%10>=2&&n%10<=4?1:2];
   const trainingWord=n=>plural(n,['тренировка','тренировки','тренировок']);
   const runWord=n=>plural(n,['пробежка','пробежки','пробежек']);
+  const focusTypes=[['all','Все','Все тренировки'],['strength','Сил','Силовые'],['run','Бег','Бег']];
+  const focusPeriods=[['week','7 д','Последние 7 дней'],['month','30 д','Последние 30 дней'],['3month','90 д','Последние 90 дней'],['year','Год','Последние 365 дней'],['all','∞','За всё время']];
+  function updateFocusExpansion() {
+    const screen=document.getElementById('screen-stats');
+    const controls=screen.querySelector('.sf-controls');if(!controls)return;
+    controls.querySelectorAll('[data-sf-trigger]').forEach(button=>button.setAttribute('aria-expanded',String(openFocusFilter===button.dataset.sfTrigger)));
+    controls.querySelectorAll('[data-sf-menu]').forEach(menu=>{
+      const isOpen=openFocusFilter===menu.dataset.sfMenu,shell=menu.closest('.sf-filter-shell');
+      menu.dataset.open=String(isOpen);menu.setAttribute('aria-hidden',String(!isOpen));menu.inert=!isOpen;
+      shell.dataset.open=String(isOpen);shell.style.height=`${isOpen?38+menu.scrollHeight:38}px`;
+    });
+  }
+  function syncFocusFilters(state) {
+    filterState=state;const screen=document.getElementById('screen-stats');
+    const header=screen.querySelector('.exercises-header-top'),existing=header.querySelector('.sf-controls');
+    const controls=existing||document.createElement('div');controls.className='sf-controls';
+    const selectedType=focusTypes.find(([key])=>key===filterState.type),selectedPeriod=focusPeriods.find(([key])=>key===filterState.period);
+    if(!existing){
+      controls.innerHTML=`<div class="sf-filter-anchor"><div class="sf-filter-shell"><button class="sf-circle sf-circle--type" type="button" data-sf-trigger="type" aria-controls="sf-type-options"></button><div id="sf-type-options" class="sf-options sf-options--type" data-sf-menu="type" role="group" aria-label="Тип тренировок">${focusTypes.map(([key,short,label])=>`<button type="button" data-sf-type="${key}" aria-label="${label}" title="${label}">${short}</button>`).join('')}</div></div></div><div class="sf-filter-anchor"><div class="sf-filter-shell"><button class="sf-circle sf-circle--period" type="button" data-sf-trigger="period" aria-controls="sf-period-options"></button><div id="sf-period-options" class="sf-options sf-options--period" data-sf-menu="period" role="group" aria-label="Период статистики">${focusPeriods.map(([key,label,title])=>`<button type="button" data-sf-period="${key}" aria-label="${title}" title="${title}">${label}</button>`).join('')}</div></div></div>`;
+      header.append(controls);
+      controls.querySelectorAll('[data-sf-trigger]').forEach(button=>button.addEventListener('click',()=>{openFocusFilter=openFocusFilter===button.dataset.sfTrigger?null:button.dataset.sfTrigger;updateFocusExpansion();}));
+      controls.querySelectorAll('[data-sf-type],[data-sf-period]').forEach(button=>button.addEventListener('click',()=>{
+        const type=button.hasAttribute('data-sf-type'),key=type?button.dataset.sfType:button.dataset.sfPeriod;
+        openFocusFilter=null;updateFocusExpansion();
+        if(type)filterState.setType(key);else filterState.setPeriod(key);
+        controls.querySelector(`[data-sf-trigger="${type?'type':'period'}"]`)?.focus({preventScroll:true});
+      }));
+    }
+    const typeButton=controls.querySelector('[data-sf-trigger="type"]'),periodButton=controls.querySelector('[data-sf-trigger="period"]');
+    typeButton.textContent=selectedType[1];periodButton.textContent=selectedPeriod[1];
+    typeButton.setAttribute('aria-label',`Тип тренировок: ${selectedType[2]}`);periodButton.setAttribute('aria-label',`Период: ${selectedPeriod[2]}`);
+    typeButton.title=selectedType[2];periodButton.title=selectedPeriod[2];
+    controls.querySelectorAll('[data-sf-type]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.sfType===filterState.type)));
+    controls.querySelectorAll('[data-sf-period]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.sfPeriod===filterState.period)));
+    updateFocusExpansion();
+  }
+  document.addEventListener('pointerdown',event=>{
+    if(openFocusFilter&&!document.querySelector('#screen-stats .sf-controls')?.contains(event.target)){openFocusFilter=null;updateFocusExpansion();}
+  },true);
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&openFocusFilter){const key=openFocusFilter;openFocusFilter=null;updateFocusExpansion();document.querySelector(`#screen-stats [data-sf-trigger="${key}"]`)?.focus({preventScroll:true});event.preventDefault();}
+  });
+  function chartToggle(kind,mode) {
+    const next={weight:'volume',volume:'weight',count:'time',time:'count'}[mode];
+    const names={weight:'Рабочий вес',volume:'Тоннаж',count:'Количество тренировок',time:'Время тренировок'};
+    const attr=kind==='graph'?'data-st-graph':'data-st-activity';
+    return `<button type="button" class="sf-chart-switch" data-sf-chart="${kind}" data-mode="${mode}" ${attr}="${next}" aria-label="${names[mode]}. Переключить: ${names[next].toLowerCase()}" title="${names[mode]}. Переключить: ${names[next].toLowerCase()}">${kind==='graph'?`<span class="sf-mode-label">${mode==='weight'?'Вес':'Объём'}</span>`:icon(mode==='count'?'calendar':'clock').replace('<svg','<svg class="sf-icon-swap"')}</button>`;
+  }
   function delta(value,before,model) {
     if(!model.range.days)return '<span class="st-delta">За всю историю</span>';
     if(!model.prior.count)return '<span class="st-delta">Нет данных для сравнения</span>';
@@ -125,8 +202,8 @@
   function metric(label,value,unit,sub,name) {
     return `<div class="st-metric"><div class="st-metric-label">${icon(name)}${label}</div><div class="st-metric-value">${value}<small>${unit}</small></div><div class="st-metric-sub">${sub}</div></div>`;
   }
-  function panel(title,caption,body,extra='',cls='') {
-    return `<section class="st-panel ${cls}"><div class="st-panel-heading"><div><h2>${title}</h2><p>${caption}</p></div>${extra}</div>${body}</section>`;
+  function panel(title,caption,body,extra='',cls='',attrs='') {
+    return `<section class="st-panel ${cls}" ${attrs}><div class="st-panel-heading"><div><h2>${title}</h2><p>${caption}</p></div>${extra}</div>${body}</section>`;
   }
   function activityChart(m) {
     const {bins,group}=activityBins(m), values=bins.map(b=>activityMode==='time'?Math.round(b.seconds/60):b.count), max=Math.max(1,...values);
@@ -134,16 +211,45 @@
     const b=selectedActivity===null?null:bins[selectedActivity];
     return `<div class="st-bars" aria-label="Активность ${ {day:'по дням',week:'по неделям',month:'по месяцам',quarter:'по кварталам',year:'по годам'}[group]}">${bins.map((b,i)=>`<button class="st-bar-col${selectedActivity===i?' selected':''}" data-st-bin="${i}" aria-pressed="${selectedActivity===i}" aria-label="${escape(label(b))}: ${b.count} ${trainingWord(b.count)}, ${Math.round(b.seconds/60)} минут"><span class="st-bar-value">${values[i]||''}</span><span class="st-bar-track"><span class="st-bar${values[i]?'':' st-bar-zero'}" style="height:${values[i]?Math.max(5,values[i]/max*100):3}%"><i style="height:${activityMode==='time'?(b.seconds?b.runSeconds/b.seconds*100:0):(b.count?b.run/b.count*100:0)}%"></i></span></span></button>`).join('')}</div><div class="st-chart-axis"><span>${date(bins[0].from)}</span><span>${{day:'по дням',week:'по неделям',month:'по месяцам',quarter:'по кварталам',year:'по годам'}[group]}</span><span>${date(m.now)}</span></div><div class="st-bin-detail" aria-live="polite">${b?`<b>${label(b)}</b><span>${b.count} ${trainingWord(b.count)} · ${time(b.seconds)}</span>`:'<span>Нажми на столбец, чтобы увидеть итоги</span>'}</div>`;
   }
+  const calendarDate=ts=>new Date(ts).toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric'}).replace('.','');
+  const shortDuration=seconds=>seconds>0?Math.round(seconds/60)+' мин':'—';
+  const paceLabel=seconds=>seconds>0?`${Math.floor(Math.round(seconds)/60)}:${String(Math.round(seconds)%60).padStart(2,'0')}`:'—';
+  function calendarDetails(selected,entries,data,dateSpan) {
+    if(!selected)return '';
+    const sum=summarize(entries),strength=summarize(entries.filter(w=>w.type==='strength')),run=summarize(entries.filter(w=>w.type==='run'));
+    const ratio=selected.count?selected.strength/selected.count*100:0;
+    const title={days:'День в деталях',weeks:'Неделя в деталях',months:data.step===1?'Месяц в деталях':'Период в деталях'}[data.mode];
+    const list=(calendarExpanded?entries:entries.slice(0,6)).map(w=>{
+      const stats=summarize([w]),date=new Date(w.startedAt),running=w.type==='run';
+      const metric=running?`${fmt(stats.distance)} км${stats.avgPace?' · '+paceLabel(stats.avgPace)+'/км':''}`:`${fmt(stats.volume/1000)} т · ${stats.sets} ${plural(stats.sets,['подход','подхода','подходов'])}`;
+      return `<button type="button" class="sf-session-card" data-sf-session="${escape(w.id)}" data-type="${w.type}"><span class="sf-session-date"><b>${date.getDate()}</b><small>${escape(date.toLocaleDateString('ru-RU',{month:'short'}).replace('.',''))}</small></span><span class="sf-session-info"><small><i></i>${running?'Бег':'Силовая'}<span>${shortDuration(stats.seconds)}</span></small><b>${escape(w.name||'Тренировка')}</b><span>${metric}</span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>`;
+    }).join('');
+    return `<section class="sf-calendar-selection"><header class="sf-detail-heading"><div><span>${escape(dateSpan(selected))}</span><h3>${title}</h3></div><button type="button" class="sf-detail-close" aria-label="Закрыть подробности календаря"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M7 17 17 7"/></svg></button></header>${selected.count?`<div class="sf-detail-totals"><div><strong>${sum.count}</strong><span>${plural(sum.count,['тренировка','тренировки','тренировок'])}</span></div><div><strong>${sum.seconds?Math.round(sum.seconds/60):'—'}<small>${sum.seconds?' мин':''}</small></strong><span>в движении</span></div><div><strong>${sum.days}</strong><span>${plural(sum.days,['активный день','активных дня','активных дней'])}</span></div></div><div class="sf-detail-ratio" role="img" aria-label="Силовые: ${selected.strength} (${fmt(ratio)}%). Бег: ${selected.run} (${fmt(100-ratio)}%)"><i style="width:${ratio}%"></i><i style="width:${100-ratio}%"></i></div><div class="sf-detail-types">${selected.strength?`<div><span><i class="st-dot-strength"></i>Силовые <b>${selected.strength}</b></span><strong>${fmt(strength.volume/1000)} <small>т тоннажа</small></strong></div>`:''}${selected.run?`<div><span><i class="st-dot-run"></i>Бег <b>${selected.run}</b></span><strong>${fmt(run.distance)} <small>км дистанции</small></strong></div>`:''}</div><div class="sf-detail-list-heading">Тренировки периода <span>Открой любую →</span></div><div class="sf-session-list">${list}</div>${entries.length>6?`<button type="button" class="sf-calendar-more" data-sf-more="list">${calendarExpanded?'Свернуть список':'Ещё '+(entries.length-6)+' '+plural(entries.length-6,['тренировка','тренировки','тренировок'])}</button>`:''}`:`<div class="sf-detail-empty"><strong>Пауза в расписании</strong><p>За этот ${data.mode==='days'?'день':'период'} тренировок не записано.</p></div>`}</section>`;
+  }
   function calendar(m) {
-    const count=Math.min(m.range.days||56,56), first=shiftDay(dayStart(m.now),1-count), offset=(new Date(first).getDay()+6)%7;
-    let cells='<span class="st-cal-blank"></span>'.repeat(offset);
-    const byDay=new Map(); m.current.forEach(w=>{const key=dayKey(w.startedAt); if(!byDay.has(key))byDay.set(key,[]);byDay.get(key).push(w);});
-    for(let i=0;i<count;i++) {
-      const ts=shiftDay(first,i), list=byDay.get(dayKey(ts))||[], s=list.some(w=>w.type==='strength'), r=list.some(w=>w.type==='run');
-      cells+=`<button type="button" class="st-cal-day${s&&r?' st-cal-both':s?' st-cal-strength':r?' st-cal-run':''}${dayKey(ts)===selectedDay?' selected':''}${i===count-1?' today':''}" data-st-day="${ts}" aria-pressed="${dayKey(ts)===selectedDay}" aria-label="${fullDate(ts)}: ${list.length} тренировок"><span>${new Date(ts).getDate()}</span>${list.length?'<i></i>':''}</button>`;
-    }
-    const selection=selectedDay?m.current.filter(w=>dayKey(w.startedAt)===selectedDay):[];
-    return `<div class="st-cal-weekdays">${['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d=>`<span>${d}</span>`).join('')}</div><div class="st-calendar">${cells}</div><div class="st-legend"><span><i class="st-dot-strength"></i>Силовые</span><span><i class="st-dot-run"></i>Бег</span><span>Нажми на день</span></div><div id="st-day-detail" aria-live="polite">${selectedDay?selection.length?selection.map(w=>`<button class="st-session" data-st-workout="${escape(w.id)}"><span class="st-session-icon ${w.type==='run'?'mint':''}">${icon(w.type==='run'?'run':'weight')}</span><span><b>${escape(w.name||'Тренировка')}</b><small>${date(w.startedAt)} · ${time(duration(w))}${w.type==='run'?' · '+fmt(positive(w.distance))+' км':''}</small></span>${icon('arrow')}</button>`).join(''):'<p class="st-note">В этот день тренировок не было.</p>':''}</div>`;
+    const data=calendarBins(m),max=Math.max(1,...data.cells.map(c=>c.count));
+    const selected=data.cells.find(c=>String(c.from)===selectedInterval);
+    const entries=selected?selected.workouts.slice().sort((a,b)=>b.startedAt-a.startedAt):[];
+    const dateSpan=c=>`${calendarDate(c.from)}${data.mode==='days'?'':' — '+calendarDate(c.to-1)}`;
+    const getColor=c=>c.strength&&c.run?`linear-gradient(90deg,var(--sf-cal-strength) ${c.strength/c.count*100}%,var(--sf-cal-run) ${c.strength/c.count*100}%)`:c.run?'var(--sf-cal-run)':'var(--sf-cal-strength)';
+    const scale={days:'По дням',weeks:'По неделям',months:data.step===1?'По месяцам':`По ${data.step} мес`}[data.mode];
+    const badge=`<span class="sf-calendar-scale">${{days:'Дни',weeks:'Недели',months:'Месяцы'}[data.mode]}</span>`;
+    const cells=data.cells.map(c=>`<button type="button" class="sf-calendar-cell${c.count?' has-activity':''}${selectedInterval===String(c.from)?' selected':''}${c.to===data.to?' today':''}" data-sf-cell="${c.from}" aria-pressed="${selectedInterval===String(c.from)}" aria-label="${escape(dateSpan(c))}: ${c.count} ${trainingWord(c.count)}" style="--cell-color:${getColor(c)};--cell-opacity:${c.count ? .35+c.count/max*.42 : 0}">${data.mode==='days'?`<span>${c.label}</span>${c.count?'<i></i>':''}`:`<strong>${c.count}</strong><span>${escape(c.label)}</span>`}</button>`).join('');
+    const body=`<div class="sf-calendar-body">${data.mode==='days'?`<div class="st-cal-weekdays">${data.weekdays.map(d=>`<span>${d}</span>`).join('')}</div>`:''}<div class="sf-calendar-grid sf-calendar-grid--${data.mode}">${'<span></span>'.repeat(data.offset)}${cells}</div><div class="st-legend"><span><i class="st-dot-strength"></i>Силовые</span><span><i class="st-dot-run"></i>Бег</span><span>Нажми на ${data.mode==='days'?'день':data.mode==='weeks'?'неделю':'месяц'}</span></div><div class="sf-calendar-detail" aria-live="polite">${calendarDetails(selected,entries,data,dateSpan)}</div></div>`;
+    return panel('Календарь активности',`${scale} · ${calendarDate(data.from)} — ${calendarDate(data.to-1)}`,body,badge,'st-calendar-panel',`data-calendar-scale="${data.mode}"`);
+  }
+  function methodsPanel() {
+    const items=[
+      ['Период','7, 30, 90 или 365 дней, включая сегодня. «∞» — вся история.'],
+      ['Сравнение','Предыдущий отрезок такой же длины, до того же времени суток.'],
+      ['Регулярность','Тренировки ÷ дни периода × 7. За всё время отсчёт идёт от первой тренировки.'],
+      ['Время','Записанная длительность. Если её нет — разница между окончанием и началом. Среднее — только по тренировкам с длительностью.'],
+      ['Тоннаж','Положительный вес × повторы выполненных подходов. Дроп-сеты включены; помощь и собственный вес не добавляются.'],
+      ['Средний темп','Темп каждой пробежки взвешивается по её дистанции. Нужны и дистанция, и темп.'],
+      ['Прогресс','Рабочий вес — максимальный вес обычного выполненного подхода с повторами. Варианты упражнения объединены. Изменение: (последнее − первое) ÷ |первое| × 100%. Если первое равно нулю, процент не показывается.'],
+      ['Распределение нагрузки','Каждый выполненный подход учитывается один раз — в основной группе упражнения.']
+    ];
+    return `<details class="st-method"><summary>Как считаются показатели</summary><dl class="sf-method-list">${items.map(([title,body])=>`<div><dt>${title}</dt><dd>${body}</dd></div>`).join('')}</dl></details>`;
   }
   function progressChart(points,mode) {
     const p=points.filter(p=>mode==='volume'||p.weight!==null);
@@ -156,13 +262,13 @@
   function exercisePanel(series,m,state) {
     const inPeriod=series.map(ex=>({...ex,points:ex.points.filter(p=>p.ts>=m.range.from)})).filter(ex=>ex.points.length);
     let ex=inPeriod.find(ex=>ex.id===state.exerciseId) || series.find(ex=>ex.id===state.exerciseId) || inPeriod[0] || series[0];
-    if(!ex)return panel('Прогресс упражнения','Рабочий вес и выполненный объём','<p class="st-note">Здесь появится прогресс после первой силовой тренировки.</p>');
+    if(!ex)return panel('Прогресс упражнения','Рабочий вес и выполненный объём','<p class="st-note">Здесь появится прогресс после первой силовой тренировки.</p>','','st-ex-panel st-progress-feature sf-progress-section');
     state.selectExercise(ex.id);
     const points=ex.points.filter(p=>p.ts>=m.range.from), mode=state.graphMode, valid=points.filter(p=>mode==='volume'||p.weight!==null), val=p=>mode==='volume'?p.volume:p.weight;
     const first=valid[0],last=valid[valid.length-1], pct=valid.length>=2?change(val(last),val(first)):null;
     const title=`<button class="st-ex-select" id="stats-ex-pick-btn" aria-label="Выбрать упражнение">${escape(ex.name)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
-    const tabs=`<div class="st-toggle">${[['weight','Вес'],['volume','Тоннаж']].map(([key,label])=>`<button data-st-graph="${key}" class="${mode===key?'active':''}" aria-pressed="${mode===key}">${label}</button>`).join('')}</div>`;
-    return panel('Прогресс упражнения','По выполненным подходам за выбранный период',`${title}<div class="st-ex-summary"><div><strong>${last?fmt(val(last)):'—'}<small>${last?' кг':''}</small></strong><span>${mode==='volume'?'Объём последней тренировки':'Последний рабочий вес'}</span></div><span class="st-change ${pct>0?'positive':''}">${pct===null?'Нужны 2 точки':`${pct>0?'+':''}${pct}%`}</span></div>${progressChart(points,mode)}<div class="st-ex-foot"><span>${points.length} ${trainingWord(points.length)}</span><span>Лучший за период: ${valid.length?fmt(Math.max(...valid.map(val)))+' кг':'—'}</span></div><details class="st-data"><summary>Данные и расчёт</summary><p>${mode==='volume'?'Тоннаж = положительный вес × повторы, включая дроп-сеты. Собственный вес и помощь в тоннаж не входят.':'Вес = максимальный вес выполненного подхода с повторами, без дроп-сетов. Отрицательный вес обозначает помощь; приближение к нулю увеличивает показатель.'} Изменение — между первой и последней точкой периода. Варианты выполнения объединены.</p>${points.map(p=>`<div><span>${date(p.ts)}</span><b>${val(p)===null?'—':fmt(val(p))+' кг'}</b></div>`).join('')}</details>`,tabs,'st-ex-panel');
+    const tabs=chartToggle('graph',mode);
+    return panel('Прогресс упражнения','По выполненным подходам за выбранный период',`${title}<div class="st-ex-summary"><div><strong>${last?fmt(val(last)):'—'}<small>${last?' кг':''}</small></strong><span>${mode==='volume'?'Объём последней тренировки':'Последний рабочий вес'}</span></div><span class="st-change ${pct>0?'positive':''}">${pct===null?'Нужны 2 точки':`${pct>0?'+':''}${pct}%`}</span></div>${progressChart(points,mode)}<div class="st-ex-foot"><span>${points.length} ${trainingWord(points.length)}</span><span>Лучший за период: ${valid.length?fmt(Math.max(...valid.map(val)))+' кг':'—'}</span></div><details class="st-data"><summary>Данные графика</summary>${points.map(p=>`<div><span>${date(p.ts)}</span><b>${val(p)===null?'—':fmt(val(p))+' кг'}</b></div>`).join('')}</details>`,tabs,'st-ex-panel st-progress-feature sf-progress-section');
   }
   function trendsPanel(series,m) {
     const trends=series.map(ex=>{
@@ -172,7 +278,7 @@
       return pct===null?null:{id:ex.id,name:ex.name,first,last,pct,count:points.length};
     }).filter(Boolean).sort((a,b)=>b.pct-a.pct).slice(0,5);
     if(!trends.length)return '';
-    return panel('Динамика упражнений','Рабочий вес: от первой к последней тренировке периода',`<div class="st-trends">${trends.map(ex=>`<button class="st-trend" data-st-exercise="${escape(ex.id)}"><span><b>${escape(ex.name)}</b><small>${fmt(ex.first)} → ${fmt(ex.last)} кг · ${ex.count} ${trainingWord(ex.count)}</small></span><span class="st-change ${ex.pct>0?'positive':''}">${ex.pct>0?'+':''}${ex.pct}%</span>${icon('arrow')}</button>`).join('')}</div>`);
+    return panel('Динамика упражнений','Рабочий вес: от первой к последней тренировке периода',`<div class="st-trends">${trends.map(ex=>`<button class="st-trend" data-st-exercise="${escape(ex.id)}"><span><b>${escape(ex.name)}</b><small>${fmt(ex.first)} → ${fmt(ex.last)} кг · ${ex.count} ${trainingWord(ex.count)}</small></span><span class="st-change ${ex.pct>0?'positive':''}">${ex.pct>0?'+':''}${ex.pct}%</span>${icon('arrow')}</button>`).join('')}</div>`,'','sf-trends-section');
   }
   function loadPanel(series,m) {
     const groups=new Map(); series.forEach(ex=>{const sets=ex.points.filter(p=>p.ts>=m.range.from).reduce((sum,p)=>sum+p.sets,0);if(sets)groups.set(ex.cat,(groups.get(ex.cat)||0)+sets);});
@@ -189,33 +295,36 @@
     const key=`${user}|${state.type}|${state.period}`;
     const scrollTop=scroll.scrollTop;
     const activeControl=scroll.contains(document.activeElement)?document.activeElement:null;
-    const focusAttribute=activeControl?[...activeControl.attributes].find(a=>['data-st-activity','data-st-graph','data-st-day','data-st-bin'].includes(a.name)):null;
+    const focusAttribute=activeControl?[...activeControl.attributes].find(a=>['data-sf-chart','data-sf-cell','data-st-bin','data-sf-more'].includes(a.name)):null;
     const sameView=key===viewKey;
-    if(key!==viewKey){selectedDay=null;selectedActivity=null;} viewKey=key;
+    const openDetails=[...scroll.querySelectorAll('details[open]')].map(el=>el.className);
+    if(key!==viewKey){selectedInterval=null;selectedActivity=null;calendarExpanded=false;openFocusFilter=null;} viewKey=key;
     const m=analyze(DATA.getWorkoutHistory(user),state.period,state.type), s=m.summary;
-    const catalog=DATA.getVisibleExercises(user), series=exerciseSeries(m.scope,catalog), strength=summarize(m.current.filter(w=>w.type==='strength')), runs=summarize(m.current.filter(w=>w.type==='run'));
-    const opts=[['all','Все'],['strength','Силовые'],['run','Бег']].map(([key,label])=>({key,label,count:m.all.filter(w=>w.startedAt>=m.range.from && (key==='all'||w.type===key)).length}));
-    buildHistoryDropdown(document.getElementById('stats-type-dd'),opts,state.type,key=>state.setType(key));
-    buildHistoryDropdown(document.getElementById('stats-period-dd'),STATS_PERIODS.map(([key,label])=>({key,label})),state.period,key=>state.setPeriod(key));
-    const rangeLabel=m.current.length?`${date(m.range.from||m.current[0].startedAt)} — ${date(m.now)}`:(m.range.from?`${date(m.range.from)} — ${date(m.now)}`:'Вся история');
-    const headline=state.type==='run'?'Твой беговой ритм':state.type==='strength'?'Твоя сила в цифрах':'Твой тренировочный ритм';
-    const hero=`<section class="st-hero"><div class="st-eyebrow">ОБЗОР · ${escape(rangeLabel)}</div><h1>${headline}</h1><div class="st-hero-total"><strong>${s.count}</strong><div><span>${state.type==='run'?runWord(s.count):trainingWord(s.count)}</span>${delta(s.count,m.prior.count,m)}</div></div><div class="st-hero-footer">${state.type==='all'?`<span>${icon('weight')} ${strength.count} силовых</span><span class="mint">${icon('run')} ${runs.count} ${runWord(runs.count)}</span>`:`<span>${icon('calendar')} ${s.days} дней с тренировками</span><span>${icon('activity')} ${fmt(m.perWeek)} в неделю</span>`}</div><div class="st-hero-orbit" aria-hidden="true"></div></section>`;
+    const catalog=DATA.getVisibleExercises(user), series=exerciseSeries(m.scope,catalog), runs=summarize(m.current.filter(w=>w.type==='run'));
+    syncFocusFilters(state);
+    const periodNames={week:'7 дней',month:'30 дней','3month':'90 дней',year:'365 дней',all:'всё время'};
+    const headline={all:'Твой прогресс',strength:'Твои силовые',run:'Твой бег'}[state.type];
+    const hero=`<section class="st-hero"><div class="st-eyebrow">${periodNames[state.period]} · ${state.type==='run'?'БЕГ':state.type==='strength'?'СИЛОВЫЕ':'ВСЕ ТРЕНИРОВКИ'}</div><h1>${headline}</h1><div class="st-focus-lead">${state.type==='run'?'Дистанция, темп и ритм тренировок':series.length?'От тренировки к тренировке — в цифрах':'Твоя активность за выбранный период'}</div><div class="st-focus-total"><strong>${s.count}</strong><span>${state.type==='run'?runWord(s.count):trainingWord(s.count)}</span>${delta(s.count,m.prior.count,m)}</div></section>`;
     const stats=`<div class="st-metrics">${metric('Время тренировок',time(s.seconds),'',s.timed?`${time(s.avgSeconds)} в среднем`:'Длительность пока не записана','clock')}${metric('Регулярность',fmt(m.perWeek),'в неделю',`${s.days} активных дней за период`,'activity')}${state.type==='run'?metric('Дистанция',fmt(s.distance),'км',delta(s.distance,m.prior.distance,m),'run'):metric('Тоннаж',fmt(s.volume/1000),'т',delta(s.volume,m.prior.volume,m),'weight')}${state.type==='run'?metric('Средний темп',pace(s.avgPace),'мин/км','С учётом дистанции пробежек','clock'):metric('Выполнено',s.sets,'подходов',`${fmt(s.reps)} повторов за период`,'weight')}</div>`;
-    const toggle=`<div class="st-toggle">${[['count','Тренировки'],['time','Время']].map(([key,label])=>`<button data-st-activity="${key}" class="${activityMode===key?'active':''}" aria-pressed="${activityMode===key}">${label}</button>`).join('')}</div>`;
-    const charts=panel('Ритм тренировок','Как распределяется активность внутри периода',activityChart(m),toggle,'st-activity-panel')+panel('Календарь активности',`${date(shiftDay(dayStart(m.now),1-Math.min(m.range.days||56,56)))} — ${date(m.now)} · ${m.range.days>56||!m.range.days?'последние 8 недель':'выбранный период'}`,calendar(m),'','st-calendar-panel');
+    const toggle=chartToggle('activity',activityMode);
+    const legend='<div class="st-legend sf-rhythm-legend"><span><i class="st-dot-strength"></i>Силовые</span><span><i class="st-dot-run"></i>Бег</span></div>';
+    const charts=calendar(m)+panel('Ритм тренировок',activityMode==='count'?'Количество тренировок за выбранный период':'Время тренировок в минутах',activityChart(m).replace('<div class="st-bin-detail"',legend+'<div class="st-bin-detail"'),toggle,'st-activity-panel');
     const empty=!s.count?`<section class="st-empty"><span>${icon('activity')}</span><h2>${m.scope.length?'В этом периоде пока тихо':'Начни свою историю прогресса'}</h2><p>${m.scope.length?'Выбери другой период, чтобы увидеть предыдущие тренировки.':'Заверши тренировку — здесь появятся твой ритм, нагрузка и динамика результатов.'}</p>${m.scope.length?'<button id="st-show-all">Показать всё время</button>':''}</section>`:'';
-    const extras=s.count?(state.type!=='run'?exercisePanel(series,m,state)+trendsPanel(series,m)+loadPanel(series,m):'')+(state.type==='run'||(state.type==='all'&&runs.count)?runPanel(m):''):'';
+    const extras=s.count?(state.type!=='run'?trendsPanel(series,m)+exercisePanel(series,m,state)+loadPanel(series,m):'')+(state.type==='run'||(state.type==='all'&&runs.count)?runPanel(m):''):'';
     const orphans=DATA.getOrphanExercises(user);
     const orphan=state.type!=='run'&&orphans.length?`<button class="st-orphan" id="s-orphan-btn"><span><b>Упражнения без связи с каталогом: ${orphans.length}</b><small>Привяжи их, чтобы объединить историю прогресса</small></span>${icon('arrow')}</button>`:'';
-    scroll.innerHTML=`<div class="st-dashboard">${hero}${empty}${s.count?stats+'<div class="st-main-grid">'+charts+extras+'</div>':''}${orphan}<details class="st-method"><summary>Как считаются показатели</summary><p>Неделя — последние 7 дней, месяц — 30, три месяца — 90, год — 365, включая сегодня. Сравнение — с предыдущим таким же отрезком до того же времени суток. Частота — число тренировок, делённое на длину периода в неделях; за всё время — от первой тренировки. Время берётся из записанной длительности, а для старых записей — из времени начала и окончания. Тоннаж учитывает только положительный вес выполненных подходов.</p></details></div>`;
+    scroll.innerHTML=`<div class="st-dashboard">${hero}${empty}${m.scope.length?stats+'<div class="st-main-grid">'+charts+extras+'</div>':''}${orphan}${methodsPanel()}</div>`;
+    if(sameView)scroll.querySelectorAll('details').forEach(el=>{el.open=openDetails.includes(el.className);});
     scroll.scrollTop=sameView?scrollTop:0;
     if(sameView && focusAttribute)[...scroll.querySelectorAll(`[${focusAttribute.name}]`)].find(el=>el.getAttribute(focusAttribute.name)===focusAttribute.value)?.focus({preventScroll:true});
     scroll.querySelectorAll('[data-st-activity]').forEach(btn=>btn.addEventListener('click',()=>{activityMode=btn.dataset.stActivity;render(state);}));
     scroll.querySelectorAll('[data-st-graph]').forEach(btn=>btn.addEventListener('click',()=>state.setGraphMode(btn.dataset.stGraph)));
     scroll.querySelectorAll('[data-st-bin]').forEach(btn=>btn.addEventListener('click',()=>{const index=Number(btn.dataset.stBin);selectedActivity=selectedActivity===index?null:index;render(state);}));
     scroll.querySelectorAll('[data-st-exercise]').forEach(btn=>btn.addEventListener('click',()=>{state.setExercise(btn.dataset.stExercise);document.querySelector('.st-ex-panel')?.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});}));
-    scroll.querySelectorAll('[data-st-day]').forEach(btn=>btn.addEventListener('click',()=>{const key=dayKey(Number(btn.dataset.stDay));selectedDay=selectedDay===key?null:key;render(state);}));
-    scroll.querySelectorAll('[data-st-workout]').forEach(btn=>btn.addEventListener('click',()=>{const w=m.current.find(w=>String(w.id)===btn.dataset.stWorkout);if(w)openDetailScreen(w,'stats');}));
+    scroll.querySelectorAll('[data-sf-cell]').forEach(btn=>btn.addEventListener('click',()=>{selectedInterval=selectedInterval===btn.dataset.sfCell?null:btn.dataset.sfCell;calendarExpanded=false;render(state);}));
+    scroll.querySelectorAll('[data-sf-session]').forEach(btn=>btn.addEventListener('click',()=>{const w=m.current.find(w=>String(w.id)===btn.dataset.sfSession);if(w)openDetailScreen(w,'stats');}));
+    scroll.querySelector('.sf-detail-close')?.addEventListener('click',()=>{const previous=selectedInterval;selectedInterval=null;calendarExpanded=false;render(state);scroll.querySelector(`[data-sf-cell="${previous}"]`)?.focus({preventScroll:true});});
+    scroll.querySelector('.sf-calendar-more')?.addEventListener('click',()=>{calendarExpanded=!calendarExpanded;render(state);scroll.querySelector('.sf-calendar-more')?.focus({preventScroll:true});});
     document.getElementById('stats-ex-pick-btn')?.addEventListener('click',()=>openExercisePicker(id=>state.setExercise(id),state.exerciseId));
     document.getElementById('s-orphan-btn')?.addEventListener('click',()=>openOrphanRemapSheet());
     document.getElementById('st-show-all')?.addEventListener('click',()=>state.setPeriod('all'));
