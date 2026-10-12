@@ -81,6 +81,16 @@
     });
     return [...series.values()].map(ex=>({...ex,points:ex.points.sort((a,b)=>a.ts-b.ts)})).sort((a,b)=>b.points.length-a.points.length || a.name.localeCompare(b.name,'ru'));
   }
+  // An explicit catalog choice stays selected even before its first workout.
+  function selectedExercise(series,catalog,id,from) {
+    if(id) {
+      const recorded=series.find(ex=>ex.id===id);
+      if(recorded)return recorded;
+      const definition=catalog.find(ex=>ex.id===id);
+      if(definition)return {...definition,points:[]};
+    }
+    return series.find(ex=>ex.points.some(p=>p.ts>=from))||series[0]||null;
+  }
   function change(value, before) {
     if(before===null || before===undefined || !Number.isFinite(before) || before===0)return null;
     return Math.round((value-before)/Math.abs(before)*100);
@@ -134,13 +144,13 @@
     const strip=mode==='days'&&span===7;
     return {mode,span,from,to,step,cells,strip,offset:mode==='days'&&!strip?(new Date(from).getDay()+6)%7:0,weekdays:strip?cells.map(c=>calendarWeekdays[new Date(c.from).getDay()]):['Пн','Вт','Ср','Чт','Пт','Сб','Вс']};
   }
-  const api={analyze,summarize,exerciseSeries,change,periodRange,duration,paceSeconds,activityBins,calendarBins};
+  const api={analyze,summarize,exerciseSeries,change,periodRange,duration,paceSeconds,activityBins,calendarBins,selectedExercise};
   if(typeof module!=='undefined' && module.exports)module.exports=api;
   if(typeof window==='undefined')return;
   const escape = value => String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const icons={activity:'<path d="M3 12h4l3-7 4 14 3-7h4"/>',clock:'<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>',weight:'<path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/>',run:'<path d="m4 18 5-4 3 2 3 4M7 9l5-3 4 5h4M12 6l-2 7"/><circle cx="16" cy="3" r="1.5"/>',arrow:'<path d="m9 5 7 7-7 7"/>',calendar:'<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/>'};
   const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]||icons.activity}</svg>`;
-  let activityMode='count', selectedInterval=null, selectedActivity=null, viewKey='', calendarExpanded=false;
+  let activityMode='count', selectedInterval=null, selectedActivity=null, viewKey='', calendarExpanded=false, animateCalendarDetail=false;
   let openFocusFilter=null, filterState=null;
   const plural=(n,forms)=>forms[n%100>=11&&n%100<=14?2:n%10===1?0:n%10>=2&&n%10<=4?1:2];
   const trainingWord=n=>plural(n,['тренировка','тренировки','тренировок']);
@@ -214,6 +224,31 @@
   const calendarDate=ts=>new Date(ts).toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric'}).replace('.','');
   const shortDuration=seconds=>seconds>0?Math.round(seconds/60)+' мин':'—';
   const paceLabel=seconds=>seconds>0?`${Math.floor(Math.round(seconds)/60)}:${String(Math.round(seconds)%60).padStart(2,'0')}`:'—';
+  function activityPanel(m) {
+    const legend='<div class="st-legend sf-rhythm-legend"><span><i class="st-dot-strength"></i>Силовые</span><span><i class="st-dot-run"></i>Бег</span></div>';
+    return panel('Ритм тренировок',activityMode==='count'?'Количество тренировок за выбранный период':'Время тренировок в минутах',activityChart(m).replace('<div class="st-bin-detail"',legend+'<div class="st-bin-detail"'),chartToggle('activity',activityMode),'st-activity-panel');
+  }
+  function bindActivity(panel,m) {
+    if(!panel)return;
+    function update(attribute,value) {
+      const scroll=document.getElementById('stats-scroll'),top=scroll.scrollTop;
+      const template=document.createElement('template');template.innerHTML=activityPanel(m);
+      panel.replaceChildren(...template.content.firstElementChild.childNodes);
+      bindActivity(panel,m);scroll.scrollTop=top;
+      [...panel.querySelectorAll(`[${attribute}]`)].find(el=>el.getAttribute(attribute)===value)?.focus({preventScroll:true});
+    }
+    panel.querySelector('[data-st-activity]')?.addEventListener('click',btn=>{activityMode=btn.currentTarget.dataset.stActivity;update('data-sf-chart','activity');});
+    panel.querySelectorAll('[data-st-bin]').forEach(btn=>btn.addEventListener('click',()=>{const index=Number(btn.dataset.stBin);selectedActivity=selectedActivity===index?null:index;update('data-st-bin',String(index));}));
+  }
+  function revealExercisePanel() {
+    requestAnimationFrame(()=>{
+      const screen=document.getElementById('screen-stats'),scroll=document.getElementById('stats-scroll'),target=scroll?.querySelector('.st-ex-panel');
+      if(!screen?.classList.contains('active')||!target)return;
+      const top=scroll.scrollTop+target.getBoundingClientRect().top-scroll.getBoundingClientRect().top;
+      target.querySelector('#stats-ex-pick-btn')?.focus({preventScroll:true});
+      scroll.scrollTo({top:Math.max(0,top),behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+    });
+  }
   function calendarDetails(selected,entries,data,dateSpan) {
     if(!selected)return '';
     const sum=summarize(entries),strength=summarize(entries.filter(w=>w.type==='strength')),run=summarize(entries.filter(w=>w.type==='run'));
@@ -224,7 +259,7 @@
       const metric=running?`${fmt(stats.distance)} км${stats.avgPace?' · '+paceLabel(stats.avgPace)+'/км':''}`:`${fmt(stats.volume/1000)} т · ${stats.sets} ${plural(stats.sets,['подход','подхода','подходов'])}`;
       return `<button type="button" class="sf-session-card" data-sf-session="${escape(w.id)}" data-type="${w.type}"><span class="sf-session-date"><b>${date.getDate()}</b><small>${escape(date.toLocaleDateString('ru-RU',{month:'short'}).replace('.',''))}</small></span><span class="sf-session-info"><small><i></i>${running?'Бег':'Силовая'}<span>${shortDuration(stats.seconds)}</span></small><b>${escape(w.name||'Тренировка')}</b><span>${metric}</span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>`;
     }).join('');
-    return `<section class="sf-calendar-selection"><header class="sf-detail-heading"><div><span>${escape(dateSpan(selected))}</span><h3>${title}</h3></div><button type="button" class="sf-detail-close" aria-label="Закрыть подробности календаря"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M7 17 17 7"/></svg></button></header>${selected.count?`<div class="sf-detail-totals"><div><strong>${sum.count}</strong><span>${plural(sum.count,['тренировка','тренировки','тренировок'])}</span></div><div><strong>${sum.seconds?Math.round(sum.seconds/60):'—'}<small>${sum.seconds?' мин':''}</small></strong><span>в движении</span></div><div><strong>${sum.days}</strong><span>${plural(sum.days,['активный день','активных дня','активных дней'])}</span></div></div><div class="sf-detail-ratio" role="img" aria-label="Силовые: ${selected.strength} (${fmt(ratio)}%). Бег: ${selected.run} (${fmt(100-ratio)}%)"><i style="width:${ratio}%"></i><i style="width:${100-ratio}%"></i></div><div class="sf-detail-types">${selected.strength?`<div><span><i class="st-dot-strength"></i>Силовые <b>${selected.strength}</b></span><strong>${fmt(strength.volume/1000)} <small>т тоннажа</small></strong></div>`:''}${selected.run?`<div><span><i class="st-dot-run"></i>Бег <b>${selected.run}</b></span><strong>${fmt(run.distance)} <small>км дистанции</small></strong></div>`:''}</div><div class="sf-detail-list-heading">Тренировки периода <span>Открой любую →</span></div><div class="sf-session-list">${list}</div>${entries.length>6?`<button type="button" class="sf-calendar-more" data-sf-more="list">${calendarExpanded?'Свернуть список':'Ещё '+(entries.length-6)+' '+plural(entries.length-6,['тренировка','тренировки','тренировок'])}</button>`:''}`:`<div class="sf-detail-empty"><strong>Пауза в расписании</strong><p>За этот ${data.mode==='days'?'день':'период'} тренировок не записано.</p></div>`}</section>`;
+    return `<section class="sf-calendar-selection${animateCalendarDetail?' is-entering':''}"><header class="sf-detail-heading"><div><span>${escape(dateSpan(selected))}</span><h3>${title}</h3></div><button type="button" class="sf-detail-close" aria-label="Закрыть подробности календаря"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M7 17 17 7"/></svg></button></header>${selected.count?`<div class="sf-detail-totals"><div><strong>${sum.count}</strong><span>${plural(sum.count,['тренировка','тренировки','тренировок'])}</span></div><div><strong>${sum.seconds?Math.round(sum.seconds/60):'—'}<small>${sum.seconds?' мин':''}</small></strong><span>в движении</span></div><div><strong>${sum.days}</strong><span>${plural(sum.days,['активный день','активных дня','активных дней'])}</span></div></div><div class="sf-detail-ratio" role="img" aria-label="Силовые: ${selected.strength} (${fmt(ratio)}%). Бег: ${selected.run} (${fmt(100-ratio)}%)"><i style="width:${ratio}%"></i><i style="width:${100-ratio}%"></i></div><div class="sf-detail-types">${selected.strength?`<div><span><i class="st-dot-strength"></i>Силовые <b>${selected.strength}</b></span><strong>${fmt(strength.volume/1000)} <small>т тоннажа</small></strong></div>`:''}${selected.run?`<div><span><i class="st-dot-run"></i>Бег <b>${selected.run}</b></span><strong>${fmt(run.distance)} <small>км дистанции</small></strong></div>`:''}</div><div class="sf-detail-list-heading">Тренировки периода <span>Открой любую →</span></div><div class="sf-session-list">${list}</div>${entries.length>6?`<button type="button" class="sf-calendar-more" data-sf-more="list">${calendarExpanded?'Свернуть список':'Ещё '+(entries.length-6)+' '+plural(entries.length-6,['тренировка','тренировки','тренировок'])}</button>`:''}`:`<div class="sf-detail-empty"><strong>Пауза в расписании</strong><p>За этот ${data.mode==='days'?'день':'период'} тренировок не записано.</p></div>`}</section>`;
   }
   function calendar(m) {
     const data=calendarBins(m),max=Math.max(1,...data.cells.map(c=>c.count));
@@ -259,15 +294,17 @@
     const line=p.map((v,i)=>`${x(i)},${y(vals[i])}`).join(' ');
     return `<svg class="st-progress-svg" viewBox="0 0 320 174" role="img" aria-label="${mode==='volume'?'Тоннаж':'Рабочий вес'}, кг: ${vals.map(fmt).join(', ')}"><defs><linearGradient id="st-chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b7a2ff" stop-opacity=".25"/><stop offset="1" stop-color="#b7a2ff" stop-opacity="0"/></linearGradient></defs>${[low,(low+high)/2,high].filter((v,i,a)=>a.indexOf(v)===i).map(v=>`<path d="M44 ${y(v)}H306" class="st-grid-line"/><text x="2" y="${y(v)+3}" class="st-svg-label">${fmt(v)}</text>`).join('')}<polygon points="${x(0)},146 ${line} ${x(p.length-1)},146" fill="url(#st-chart-fill)"/><polyline points="${line}" class="st-progress-line"/>${p.map((v,i)=>`<circle cx="${x(i)}" cy="${y(vals[i])}" r="${i===p.length-1?4:2.5}" class="st-progress-dot"><title>${date(v.ts)} · ${fmt(vals[i])} кг</title></circle>`).join('')}<text x="44" y="169" class="st-svg-label">${date(p[0].ts)}</text>${p.length>1?`<text x="306" y="169" text-anchor="end" class="st-svg-label">${date(p[p.length-1].ts)}</text>`:''}</svg>${p.length===1?'<p class="st-note">Первая точка. После следующей тренировки появится динамика.</p>':''}`;
   }
-  function exercisePanel(series,m,state) {
-    const inPeriod=series.map(ex=>({...ex,points:ex.points.filter(p=>p.ts>=m.range.from)})).filter(ex=>ex.points.length);
-    let ex=inPeriod.find(ex=>ex.id===state.exerciseId) || series.find(ex=>ex.id===state.exerciseId) || inPeriod[0] || series[0];
-    if(!ex)return panel('Прогресс упражнения','Рабочий вес и выполненный объём','<p class="st-note">Здесь появится прогресс после первой силовой тренировки.</p>','','st-ex-panel st-progress-feature sf-progress-section');
-    state.selectExercise(ex.id);
-    const points=ex.points.filter(p=>p.ts>=m.range.from), mode=state.graphMode, valid=points.filter(p=>mode==='volume'||p.weight!==null), val=p=>mode==='volume'?p.volume:p.weight;
+  function exercisePanel(series,catalog,m,state) {
+    const ex=selectedExercise(series,catalog,state.exerciseId,m.range.from);
+    if(ex)state.selectExercise(ex.id);
+    const points=(ex?.points||[]).filter(p=>p.ts>=m.range.from), mode=state.graphMode, valid=points.filter(p=>mode==='volume'||p.weight!==null), val=p=>mode==='volume'?p.volume:p.weight;
     const first=valid[0],last=valid[valid.length-1], pct=valid.length>=2?change(val(last),val(first)):null;
-    const title=`<button class="st-ex-select" id="stats-ex-pick-btn" aria-label="Выбрать упражнение">${escape(ex.name)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
+    const title=`<button class="st-ex-select" id="stats-ex-pick-btn" aria-label="Выбрать упражнение">${escape(ex?.name||'Выбери упражнение')}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
     const tabs=chartToggle('graph',mode);
+    if(!valid.length) {
+      const message=points.length?'Нет данных по весу за этот период':ex?.points.length?'Нет тренировок за этот период':'Пока нет данных';
+      return panel('Прогресс упражнения','',`${title}<p class="st-ex-empty">${message}</p>`,tabs,'st-ex-panel st-progress-feature sf-progress-section is-empty');
+    }
     return panel('Прогресс упражнения','По выполненным подходам за выбранный период',`${title}<div class="st-ex-summary"><div><strong>${last?fmt(val(last)):'—'}<small>${last?' кг':''}</small></strong><span>${mode==='volume'?'Объём последней тренировки':'Последний рабочий вес'}</span></div><span class="st-change ${pct>0?'positive':''}">${pct===null?'Нужны 2 точки':`${pct>0?'+':''}${pct}%`}</span></div>${progressChart(points,mode)}<div class="st-ex-foot"><span>${points.length} ${trainingWord(points.length)}</span><span>Лучший за период: ${valid.length?fmt(Math.max(...valid.map(val)))+' кг':'—'}</span></div><details class="st-data"><summary>Данные графика</summary>${points.map(p=>`<div><span>${date(p.ts)}</span><b>${val(p)===null?'—':fmt(val(p))+' кг'}</b></div>`).join('')}</details>`,tabs,'st-ex-panel st-progress-feature sf-progress-section');
   }
   function trendsPanel(series,m) {
@@ -306,26 +343,23 @@
     const headline={all:'Твой прогресс',strength:'Твои силовые',run:'Твой бег'}[state.type];
     const hero=`<section class="st-hero"><div class="st-eyebrow">${periodNames[state.period]} · ${state.type==='run'?'БЕГ':state.type==='strength'?'СИЛОВЫЕ':'ВСЕ ТРЕНИРОВКИ'}</div><h1>${headline}</h1><div class="st-focus-lead">${state.type==='run'?'Дистанция, темп и ритм тренировок':series.length?'От тренировки к тренировке — в цифрах':'Твоя активность за выбранный период'}</div><div class="st-focus-total"><strong>${s.count}</strong><span>${state.type==='run'?runWord(s.count):trainingWord(s.count)}</span>${delta(s.count,m.prior.count,m)}</div></section>`;
     const stats=`<div class="st-metrics">${metric('Время тренировок',time(s.seconds),'',s.timed?`${time(s.avgSeconds)} в среднем`:'Длительность пока не записана','clock')}${metric('Регулярность',fmt(m.perWeek),'в неделю',`${s.days} активных дней за период`,'activity')}${state.type==='run'?metric('Дистанция',fmt(s.distance),'км',delta(s.distance,m.prior.distance,m),'run'):metric('Тоннаж',fmt(s.volume/1000),'т',delta(s.volume,m.prior.volume,m),'weight')}${state.type==='run'?metric('Средний темп',pace(s.avgPace),'мин/км','С учётом дистанции пробежек','clock'):metric('Выполнено',s.sets,'подходов',`${fmt(s.reps)} повторов за период`,'weight')}</div>`;
-    const toggle=chartToggle('activity',activityMode);
-    const legend='<div class="st-legend sf-rhythm-legend"><span><i class="st-dot-strength"></i>Силовые</span><span><i class="st-dot-run"></i>Бег</span></div>';
-    const charts=calendar(m)+panel('Ритм тренировок',activityMode==='count'?'Количество тренировок за выбранный период':'Время тренировок в минутах',activityChart(m).replace('<div class="st-bin-detail"',legend+'<div class="st-bin-detail"'),toggle,'st-activity-panel');
+    const charts=calendar(m)+activityPanel(m);
     const empty=!s.count?`<section class="st-empty"><span>${icon('activity')}</span><h2>${m.scope.length?'В этом периоде пока тихо':'Начни свою историю прогресса'}</h2><p>${m.scope.length?'Выбери другой период, чтобы увидеть предыдущие тренировки.':'Заверши тренировку — здесь появятся твой ритм, нагрузка и динамика результатов.'}</p>${m.scope.length?'<button id="st-show-all">Показать всё время</button>':''}</section>`:'';
-    const extras=s.count?(state.type!=='run'?trendsPanel(series,m)+exercisePanel(series,m,state)+loadPanel(series,m):'')+(state.type==='run'||(state.type==='all'&&runs.count)?runPanel(m):''):'';
+    const extras=s.count?(state.type!=='run'?trendsPanel(series,m)+exercisePanel(series,catalog,m,state)+loadPanel(series,m):'')+(state.type==='run'||(state.type==='all'&&runs.count)?runPanel(m):''):'';
     const orphans=DATA.getOrphanExercises(user);
     const orphan=state.type!=='run'&&orphans.length?`<button class="st-orphan" id="s-orphan-btn"><span><b>Упражнения без связи с каталогом: ${orphans.length}</b><small>Привяжи их, чтобы объединить историю прогресса</small></span>${icon('arrow')}</button>`:'';
     scroll.innerHTML=`<div class="st-dashboard">${hero}${empty}${m.scope.length?stats+'<div class="st-main-grid">'+charts+extras+'</div>':''}${orphan}${methodsPanel()}</div>`;
     if(sameView)scroll.querySelectorAll('details').forEach(el=>{el.open=openDetails.includes(el.className);});
     scroll.scrollTop=sameView?scrollTop:0;
     if(sameView && focusAttribute)[...scroll.querySelectorAll(`[${focusAttribute.name}]`)].find(el=>el.getAttribute(focusAttribute.name)===focusAttribute.value)?.focus({preventScroll:true});
-    scroll.querySelectorAll('[data-st-activity]').forEach(btn=>btn.addEventListener('click',()=>{activityMode=btn.dataset.stActivity;render(state);}));
+    bindActivity(scroll.querySelector('.st-activity-panel'),m);
     scroll.querySelectorAll('[data-st-graph]').forEach(btn=>btn.addEventListener('click',()=>state.setGraphMode(btn.dataset.stGraph)));
-    scroll.querySelectorAll('[data-st-bin]').forEach(btn=>btn.addEventListener('click',()=>{const index=Number(btn.dataset.stBin);selectedActivity=selectedActivity===index?null:index;render(state);}));
-    scroll.querySelectorAll('[data-st-exercise]').forEach(btn=>btn.addEventListener('click',()=>{state.setExercise(btn.dataset.stExercise);document.querySelector('.st-ex-panel')?.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});}));
-    scroll.querySelectorAll('[data-sf-cell]').forEach(btn=>btn.addEventListener('click',()=>{selectedInterval=selectedInterval===btn.dataset.sfCell?null:btn.dataset.sfCell;calendarExpanded=false;render(state);}));
+    scroll.querySelectorAll('[data-st-exercise]').forEach(btn=>btn.addEventListener('click',()=>{state.setExercise(btn.dataset.stExercise);revealExercisePanel();}));
+    scroll.querySelectorAll('[data-sf-cell]').forEach(btn=>btn.addEventListener('click',()=>{selectedInterval=selectedInterval===btn.dataset.sfCell?null:btn.dataset.sfCell;calendarExpanded=false;animateCalendarDetail=!!selectedInterval;render(state);animateCalendarDetail=false;}));
     scroll.querySelectorAll('[data-sf-session]').forEach(btn=>btn.addEventListener('click',()=>{const w=m.current.find(w=>String(w.id)===btn.dataset.sfSession);if(w)openDetailScreen(w,'stats');}));
     scroll.querySelector('.sf-detail-close')?.addEventListener('click',()=>{const previous=selectedInterval;selectedInterval=null;calendarExpanded=false;render(state);scroll.querySelector(`[data-sf-cell="${previous}"]`)?.focus({preventScroll:true});});
     scroll.querySelector('.sf-calendar-more')?.addEventListener('click',()=>{calendarExpanded=!calendarExpanded;render(state);scroll.querySelector('.sf-calendar-more')?.focus({preventScroll:true});});
-    document.getElementById('stats-ex-pick-btn')?.addEventListener('click',()=>openExercisePicker(id=>state.setExercise(id),state.exerciseId));
+    document.getElementById('stats-ex-pick-btn')?.addEventListener('click',()=>openExercisePicker(id=>{state.setExercise(id);revealExercisePanel();},state.exerciseId));
     document.getElementById('s-orphan-btn')?.addEventListener('click',()=>openOrphanRemapSheet());
     document.getElementById('st-show-all')?.addEventListener('click',()=>state.setPeriod('all'));
   }

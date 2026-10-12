@@ -41,6 +41,7 @@
       $('workout-coverage-pin').addEventListener('click',()=>{const v=view();if (!v)return;if(!v.expanded){v.expanded=true;renderCoverage();saveWorkoutState();}const scroll=$('workout-scroll'),box=$('workout-coverage');scroll.scrollTo({top:scroll.scrollTop+box.getBoundingClientRect().top-scroll.getBoundingClientRect().top-10,behavior:reducedMotion()?'instant':'smooth'});});
       $('workout-coverage-body').addEventListener('click',event=>{
         const button=event.target.closest('[data-aw]'),v=view();if(!button||!v)return;
+        const viewport=captureViewport($('workout-coverage-body'),button);
         if(button.dataset.aw==='list')v.list=!v.list;
         else if(button.dataset.aw==='movement')v.selected=v.selected===button.dataset.movement?null:button.dataset.movement;
         else if(button.dataset.aw==='add'){
@@ -51,8 +52,8 @@
           const ex=current()?.exercises[Number(button.dataset.index)],block=[...$('workout-scroll').querySelectorAll('.ex-block')].find(b=>b._workoutExercise===ex);
           const scroll=$('workout-scroll');if(block)scroll.scrollTo({top:scroll.scrollTop+block.getBoundingClientRect().top-scroll.getBoundingClientRect().top-76,behavior:reducedMotion()?'instant':'smooth'});return;
         }
-        const movement=button.dataset.movement;renderCoverage();saveWorkoutState();
-        if(movement){const buttons=[...$('workout-coverage-body').querySelectorAll('[data-aw="movement"]')];buttons.find(b=>b.dataset.movement===movement&&b.getClientRects().length)?.focus({preventScroll:true});}
+        renderCoverage();saveWorkoutState();
+        restoreViewport(viewport);
       });
       $('workout-coverage-body').addEventListener('keydown',event=>{if(event.target.matches('g[data-aw]')&&['Enter',' '].includes(event.key)){event.preventDefault();event.target.dispatchEvent(new MouseEvent('click',{bubbles:true}));}});
       $('workout-scroll').addEventListener('scroll',updatePin,{passive:true});
@@ -139,6 +140,48 @@
     if(!cursors.has(set))cursors.set(set,new Map());
     cursors.get(set).set(input.dataset.metric,{role:input.dataset.role,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection||'none'});
   }
+  // Replacing a focused row can make the browser choose a different scroll anchor.
+  // Remember the acted-on row's screen position, and restore it after layout settles.
+  let viewportRevision=0;
+  function captureViewport(scope,element=document.activeElement) {
+    const scroll=$('workout-scroll');if(!scroll||!element||!scope?.contains(element))return null;
+    const row=element.closest('.set-row'),block=element.closest('.ex-block');
+    const control=['set-done-btn','rpe-btn','add-set-btn','set-note-btn','aw-reps','aw-duration'].find(name=>element.classList.contains(name));
+    return {workout:current(),scrollTop:scroll.scrollTop,top:(row||element).getBoundingClientRect().top,element,
+      exercise:block?._workoutExercise,set:row?._set,index:Number(row?.parentElement.dataset.setIndex),role:element.dataset.role,metric:element.dataset.metric,
+      parameter:element.dataset.parameter,value:element.dataset.value,control,aw:element.dataset.aw,movement:element.dataset.movement,
+      tag:element.tagName,awIndex:element.dataset.aw?[...scope.querySelectorAll('[data-aw]')].filter(el=>el.dataset.aw===element.dataset.aw&&el.tagName===element.tagName&&el.dataset.movement===element.dataset.movement).indexOf(element):0,
+      start:element.selectionStart,end:element.selectionEnd,direction:element.selectionDirection};
+  }
+  function restoreViewport(snapshot) {
+    if(!snapshot)return;
+    const revision=++viewportRevision;
+    requestAnimationFrame(()=>{
+      const scroll=$('workout-scroll');if(revision!==viewportRevision||current()!==snapshot.workout||!scroll)return;
+      const block=[...scroll.querySelectorAll('.ex-block')].find(b=>b._workoutExercise===snapshot.exercise);
+      const rows=block?[...block.querySelectorAll('.set-row')]:[];
+      const row=rows.find(r=>r._set===snapshot.set)||rows.find(r=>r._set===snapshot.exercise?.sets[Math.min(snapshot.index,snapshot.exercise.sets.length-1)]);
+      let target=snapshot.element.isConnected?snapshot.element:null;
+      if(!target&&snapshot.aw){
+        const matches=[...$('workout-coverage-body').querySelectorAll('[data-aw]')].filter(el=>el.dataset.aw===snapshot.aw&&el.tagName===snapshot.tag&&(snapshot.movement==null||el.dataset.movement===snapshot.movement));
+        target=matches[snapshot.awIndex]||matches[0];
+      }
+      if(!target&&snapshot.parameter)target=[...(block?.querySelectorAll('[data-parameter]')||[])].find(el=>el.dataset.parameter===snapshot.parameter&&el.dataset.value===snapshot.value);
+      if(!target&&snapshot.role)target=row?.querySelector(`[data-role="${snapshot.role}"]`)||row?.querySelector('[data-role="quantity"]');
+      if(!target&&snapshot.control)target=(row||block)?.querySelector('.'+snapshot.control);
+      if(!target&&block)target=block.querySelector('.add-set-btn');
+      scroll.scrollTop=snapshot.scrollTop;
+      // A mode switch can deliberately focus a different part of the same time cell.
+      const active=document.activeElement,activeRow=active?.closest('.set-row');
+      if(target&&(!activeRow||activeRow._set!==snapshot.set)&&!target.hidden)target.focus({preventScroll:true});
+      const focused=document.activeElement;
+      if(snapshot.role&&focused?.dataset.role===snapshot.role&&focused.dataset.metric===snapshot.metric&&snapshot.start!=null)
+        focused.setSelectionRange(Math.min(snapshot.start,focused.value.length),Math.min(snapshot.end,focused.value.length),snapshot.direction||'none');
+      scroll.scrollTop=snapshot.scrollTop;
+      const anchor=row||target;
+      if(anchor)scroll.scrollTop+=anchor.getBoundingClientRect().top-snapshot.top;
+    });
+  }
   function hideTools(block=$('workout-scroll')) {
     block?.querySelectorAll('[data-cell-tools]').forEach(b=>b.hidden=true);
     block?.querySelectorAll('[data-cell-normal]').forEach(b=>b.hidden=false);
@@ -168,6 +211,7 @@
   }
   function renderSets(block,ex) {
     const body=block.querySelector('.sets-body');if(!body)return;
+    const viewport=captureViewport(block);
     block.querySelector('.set-measurement-label').textContent=ex.metric==='time'?'Время':'Повт.';
     const old=C.previous(history(),ex),oldGroups=old?.groups||[],groups=C.groups(ex);
     body.innerHTML='';
@@ -265,6 +309,7 @@
     for(const oldBlock of observedBlocks)if(!oldBlock.isConnected){observer?.unobserve(oldBlock);observedBlocks.delete(oldBlock);}
     observer?.observe(block);observedBlocks.add(block);
     requestAnimationFrame(()=>{body.querySelectorAll('.set-group').forEach(layoutDropTree);positionTimer();});
+    restoreViewport(viewport);
   }
   function layoutAllDrops() { $('workout-scroll')?.querySelectorAll('.set-group').forEach(layoutDropTree); }
   function layoutDropTree(group) {
@@ -287,5 +332,5 @@
     const end=()=>{if(start===null)return;start=null;surface.style.transition='transform .2s ease';if(dy>50){closeRpePicker();surface.style.transform='';}else surface.style.transform='';};
     surface.addEventListener('pointerup',end);surface.addEventListener('pointercancel',end);
   }
-  window.WorkoutUI={icon,initialize,ownsCurrent,renderCoverage,updatePin,positionTimer,currentRecord,recordHtml,refreshRecord,decorateRpeButton,renderSets,layoutDropTree,wireRpeSheet,hideTools};
+  window.WorkoutUI={icon,initialize,ownsCurrent,captureViewport,restoreViewport,renderCoverage,updatePin,positionTimer,currentRecord,recordHtml,refreshRecord,decorateRpeButton,renderSets,layoutDropTree,wireRpeSheet,hideTools};
 })();

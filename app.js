@@ -4745,6 +4745,7 @@ function _clearGroupIntent() {
 
 function renderExerciseList() {
   const scroll = $("workout-scroll");
+  const viewport = WorkoutUI.captureViewport(scroll);
   exitExEditMode();          // любой перерендер сбрасывает режим редактирования
   const addBtn = scroll.querySelector(".add-ex-btn");
   // Удаляем старые блоки
@@ -4942,6 +4943,7 @@ function renderExerciseList() {
   // чтобы линия группы следила за их высотой (добавленный подход, заметка).
   applySupersetVisuals();
   observeSupersetLayout();
+  WorkoutUI.restoreViewport(viewport);
 }
 
 // lastWorkout передаёт renderExerciseList (уже посчитан один раз на рендер);

@@ -205,7 +205,7 @@
 
 .sf-rhythm-legend>span:last-child { margin-left:0;color:inherit; }
 
-.sf-calendar-selection { margin-top:18px;padding:17px 14px 14px;border:1px solid #bc89a331;border-radius:18px;background:radial-gradient(ellipse at 0 0,#b36d8d19,transparent 65%),linear-gradient(140deg,#352330,#251d29);animation:sfDetailReveal 230ms ease; }
+.sf-calendar-selection { margin-top:18px;padding:17px 14px 14px;border:1px solid #bc89a331;border-radius:18px;background:radial-gradient(ellipse at 0 0,#b36d8d19,transparent 65%),linear-gradient(140deg,#352330,#251d29); }
 .sf-detail-heading { display:flex;align-items:center;justify-content:space-between;gap:10px; }
 .sf-detail-heading>div>span { display:block;font-size:9px;color:#b79baa;line-height:1.6; }
 .sf-detail-heading h3 { margin:5px 0 0;font-family:Georgia,serif;font-size:22px;font-weight:400;color:#f0dce8;letter-spacing:-.5px; }
@@ -252,3 +252,12 @@
  .st-progress-feature .st-data { grid-column:2;grid-row:4;margin:0; }
 }
 @media(max-width:359px) { #screen-stats .st-hero h1 { font-size:41px; }#screen-stats .st-progress-feature { padding:18px 14px; } }
+
+.sf-calendar-selection.is-entering { animation:sfDetailReveal 230ms ease; }
+#screen-stats .st-ex-empty { margin:16px 0 0;color:#b99dac;font-size:12px;line-height:1.6; }
+#screen-stats .st-ex-panel.is-empty .st-panel-heading p:empty { display:none; }
+@media(min-width:700px) { #screen-stats .st-progress-feature.is-empty { display:block; }.st-ex-panel.is-empty .st-ex-select { max-width:480px; } }
+@media(prefers-reduced-motion:reduce) { .sf-calendar-selection.is-entering { animation:none; } }
+/* A hidden overflow container can still scroll when a descendant is focused.
+   Statistics scrolls inside #stats-scroll; its outer frame must stay fixed. */
+.app:has(> #screen-stats.active) { overflow:clip; }
