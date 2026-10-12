@@ -3760,7 +3760,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .reference-name-link { flex:1; min-width:0; color:inherit; text-align:left; font:inherit; line-height:1.4; }
 .reference-header-heading { flex:1; min-width:0; }
 /* Shared purple palette and continuous header fade. */
-:is(#screen-exercises,#screen-exercise-reference,#screen-templates,#screen-stats) {
+:is(#screen-exercises,#screen-exercise-reference,#screen-templates,#screen-stats,#screen-history) {
   --movement-page:#0d0c18; --movement-top:#251d3b; --movement-header:#453664;
   --movement-text:#f2f2f7; --movement-muted:#aaa6bc; --movement-line:#73608f; --movement-accent:#b9aeff;
   --movement-circle:#14141f; --movement-node:#29213e; --movement-node-border:#6c558a; --movement-node-text:#d7c7ff;
@@ -3782,20 +3782,25 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   --movement-tabs:#0b1b21; --movement-selected:#2b4b51; --movement-card:#101e26; --movement-card-border:#2c4b55;
   --movement-number-stroke:#8abebd;
 }
-:is(#screen-exercises,#screen-exercise-reference,#screen-templates,#screen-stats) .exercises-header { background:transparent; border:0; }
-/* Templates and statistics inherit the movement page's purple surfaces. */
-:is(#screen-templates,#screen-stats) {
+:is(#screen-exercises,#screen-exercise-reference,#screen-templates,#screen-stats,#screen-history) .exercises-header { background:transparent; border:0; }
+/* Templates, statistics and history inherit the movement page's purple surfaces. */
+:is(#screen-templates,#screen-stats,#screen-history) {
   --panel:#171421; --panel-raised:var(--movement-chip); --panel-hi:var(--movement-group);
   --border-subtle:var(--movement-card-border); --border-strong:var(--movement-target-border);
   --text-primary:var(--movement-text);
 }
-:is(#templates-back-btn,#stats-back-btn) { width:38px; height:38px; min-width:38px; padding:0; display:grid; place-items:center; border:0; border-radius:50%; background:var(--movement-circle); color:var(--movement-accent); }
-:is(#templates-back-btn,#stats-back-btn) svg { width:18px; height:18px; }
+:is(#templates-back-btn,#stats-back-btn,#history-back-btn) { width:38px; height:38px; min-width:38px; padding:0; display:grid; place-items:center; border:0; border-radius:50%; background:var(--movement-circle); color:var(--movement-accent); }
+:is(#templates-back-btn,#stats-back-btn,#history-back-btn) svg { width:18px; height:18px; }
 #screen-templates .tpl-filter-btn { background:var(--movement-chip); border-color:var(--movement-card-border); }
 #screen-templates .tpl-header-add { background:var(--movement-accent); color:var(--movement-circle); }
 #screen-templates :is(.tpl-add-menu,.tpl-filter-menu) { background:var(--panel-raised); }
 #screen-templates :is(.tpl-add-menu-item,.tpl-menu-item):active { background:var(--panel-hi); }
-#screen-stats .history-filters-row { background:transparent; border:0; }
+:is(#screen-stats,#screen-history) .history-filters-row { background:transparent; border:0; }
+#screen-history { --bg-base:var(--movement-card); }
+#screen-history .exercises-header { position:relative; z-index:5; }
+#screen-history .exercises-header-top { gap:10px; }
+#screen-history .exercises-header-title { min-width:0; }
+@media(max-width:359px) { #screen-history .exercises-header-title { font-size:20px; } }
 :is(#screen-exercises,#screen-exercise-reference) .exercise-library-body { background:transparent; border-radius:0; }
 :is(#screen-exercises,#screen-exercise-reference):has(> .exercise-library-tabs:not([hidden])) { --library-chrome-bottom:color-mix(in srgb,var(--movement-header) 65%,var(--movement-top)); background:linear-gradient(180deg,var(--movement-header),var(--library-chrome-bottom) var(--movement-header-end,calc(var(--safe-top) + 68px)),var(--library-chrome-bottom)); }
 :is(#screen-exercises,#screen-exercise-reference):has(> .exercise-library-tabs:not([hidden])) .exercise-library-body { background:linear-gradient(180deg,var(--movement-top),color-mix(in srgb,var(--movement-top) 40%,var(--movement-page)) 36px,color-mix(in srgb,var(--movement-top) 10%,var(--movement-page)) 80px,var(--movement-page) 140px); border-radius:0 16px 0 0; }
@@ -4293,6 +4298,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 </style>
 <link rel="stylesheet" href="exercise-pages.css">
 <link rel="stylesheet" href="workout.css">
+<link rel="stylesheet" href="workout-history.css">
 <link rel="stylesheet" href="statistics.css">
 </head>
 <body>
@@ -4661,15 +4667,15 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   <section id="screen-history" class="screen screen-exercises slide-right">
     <div class="exercises-header">
       <div class="exercises-header-top">
-        <button class="btn-chip" id="history-back-btn">
+        <button class="btn-chip" id="history-back-btn" aria-label="Назад">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
         </button>
         <div class="exercises-header-title">История</div>
+        <div class="sf-controls" id="history-filters-row">
+          <div class="sf-filter-anchor" id="history-type-dd"></div>
+          <div class="sf-filter-anchor" id="history-period-dd"></div>
+        </div>
       </div>
-    </div>
-    <div class="history-filters-row" id="history-filters-row">
-      <div class="history-dd" id="history-type-dd"></div>
-      <div class="history-dd" id="history-period-dd"></div>
     </div>
     <div class="exercises-scroll" id="history-screen-list"></div>
   </section>
@@ -4944,7 +4950,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   <!-- ===== ЭКРАН: детальный просмотр тренировки ===== -->
   <section id="screen-detail" class="screen screen-detail slide-right">
     <div class="detail-screen-header">
-      <button class="btn-chip" id="detail-back-btn">
+      <button class="btn-chip" id="detail-back-btn" aria-label="Назад к истории">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
       </button>
       <div id="detail-screen-icon" class="detail-screen-icon">
@@ -4954,11 +4960,13 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
           <line x1="8.6" y1="12" x2="15.4" y2="12"/>
         </svg>
       </div>
-      <div style="flex:1;min-width:0;">
+      <span class="wd-header-context">История тренировки</span>
+      <div class="wd-header-title" style="flex:1;min-width:0;">
         <div class="detail-screen-title" id="detail-screen-title">Тренировка</div>
         <div class="detail-screen-meta" id="detail-screen-meta"></div>
       </div>
-      <button class="btn-chip" id="detail-edit-btn" title="Редактировать">
+      <span class="wd-duration" id="detail-duration"></span>
+      <button class="btn-chip" id="detail-edit-btn" title="Редактировать" aria-label="Редактировать тренировку">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
       </button>
     </div>

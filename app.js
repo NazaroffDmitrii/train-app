@@ -3072,6 +3072,7 @@ const HISTORY_PERIODS = [
   ["all",   "Всё время", null],
   ["week",  "Неделя",    7],
   ["month", "Месяц",     30],
+  ["3month", "90 дней",  90],
   ["year",  "Год",       365],
 ];
 
@@ -3086,6 +3087,7 @@ function historyPeriodMatch(w, key) {
 }
 
 function initHistoryScreen() {
+  _historyOpenFilter = null;
   _historyFilter = "all";
   _historyPeriod = "all";
   renderHistoryScreen();
@@ -3098,58 +3100,83 @@ function historyMonthLabel(ts) {
   return `${HISTORY_MONTHS_RU[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-// Сборка одного фильтра-дропдауна (Все ▾ / период ▾) в контейнере container.
-function buildHistoryDropdown(container, options, currentKey, onSelect) {
-  const cur = options.find(o => o.key === currentKey) || options[0];
-  container.classList.add("history-dd");
-  container.innerHTML = `
-    <button class="history-dd-btn" type="button">
-      <span class="history-dd-label">${cur.label}</span>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-    </button>
-    <div class="history-dd-menu">
-      ${options.map(o => `<button class="history-dd-opt${o.key === currentKey ? " active" : ""}" data-key="${o.key}" type="button">
-        <span>${o.label}</span>${o.count != null ? `<span class="history-dd-count">${o.count}</span>` : ""}
-      </button>`).join("")}
-    </div>`;
-  container.querySelector(".history-dd-btn").addEventListener("click", e => {
-    e.stopPropagation();
-    const wasOpen = container.classList.contains("open");
-    document.querySelectorAll(".history-dd.open").forEach(d => d.classList.remove("open"));
-    if (!wasOpen) container.classList.add("open");
+// Use the same capsule surfaces and compact labels as the statistics controls.
+let _historyOpenFilter = null;
+function updateHistoryFilterExpansion() {
+  const controls = $("history-filters-row");
+  controls.querySelectorAll('[data-hf-trigger]').forEach(button =>
+    button.setAttribute('aria-expanded', String(_historyOpenFilter === button.dataset.hfTrigger)));
+  controls.querySelectorAll('[data-hf-menu]').forEach(menu => {
+    const open = _historyOpenFilter === menu.dataset.hfMenu;
+    menu.dataset.open = String(open);
+    menu.setAttribute('aria-hidden', String(!open));
+    menu.inert = !open;
+    const shell = menu.closest('.sf-filter-shell');
+    shell.dataset.open = String(open);
+    shell.style.height = `${open ? 38 + menu.scrollHeight : 38}px`;
   });
-  container.querySelectorAll(".history-dd-opt").forEach(opt => {
-    opt.addEventListener("click", e => {
-      e.stopPropagation();
-      container.classList.remove("open");
-      onSelect(opt.dataset.key);
+}
+function buildHistoryFilter(container, kind, options, currentKey, onSelect) {
+  const menuId = `history-${kind}-options`;
+  const selected = options.find(option => option.key === currentKey) || options[0];
+  if (!container.querySelector('[data-hf-trigger]')) {
+    container.innerHTML = `<div class="sf-filter-shell"><button type="button" class="sf-circle sf-circle--${kind}" data-hf-trigger="${kind}" aria-controls="${menuId}"></button><div id="${menuId}" class="sf-options sf-options--${kind}" data-hf-menu="${kind}" role="group" aria-label="${kind === 'type' ? 'Тип тренировок' : 'Период истории'}">${options.map(option => `<button type="button" data-hf-value="${option.key}"${kind === 'period' ? ` data-sf-period="${option.key}"` : ''}>${option.short}</button>`).join('')}</div></div>`;
+    container.querySelector('[data-hf-trigger]').addEventListener('click', () => {
+      _historyOpenFilter = _historyOpenFilter === kind ? null : kind;
+      updateHistoryFilterExpansion();
     });
+    container.querySelectorAll('[data-hf-value]').forEach(button => button.addEventListener('click', () => {
+      _historyOpenFilter = null;
+      updateHistoryFilterExpansion();
+      onSelect(button.dataset.hfValue);
+      container.querySelector('[data-hf-trigger]').focus({preventScroll:true});
+    }));
+  }
+  const trigger = container.querySelector('[data-hf-trigger]');
+  trigger.textContent = selected.short;
+  trigger.setAttribute('aria-label', `${kind === 'type' ? 'Тип тренировок' : 'Период'}: ${selected.label}`);
+  trigger.title = selected.label;
+  container.querySelectorAll('[data-hf-value]').forEach(button => {
+    const option = options.find(option => option.key === button.dataset.hfValue);
+    const label = option.label + (option.count != null ? `: ${option.count}` : '');
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.setAttribute('aria-pressed', String(option.key === currentKey));
   });
+  updateHistoryFilterExpansion();
 }
-
-// Глобально закрываем открытые дропдауны по клику вне их.
-if (!window._historyDdCloserBound) {
-  window._historyDdCloserBound = true;
-  document.addEventListener("click", () => {
-    document.querySelectorAll(".history-dd.open").forEach(d => d.classList.remove("open"));
-  });
-}
+document.addEventListener('pointerdown', event => {
+  if (_historyOpenFilter && !$("history-filters-row").contains(event.target)) {
+    _historyOpenFilter = null;
+    updateHistoryFilterExpansion();
+  }
+}, true);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && _historyOpenFilter) {
+    const kind = _historyOpenFilter;
+    _historyOpenFilter = null;
+    updateHistoryFilterExpansion();
+    $("history-filters-row").querySelector(`[data-hf-trigger="${kind}"]`).focus({preventScroll:true});
+    event.preventDefault();
+  }
+});
 
 function renderHistoryScreen() {
   const userId = DATA.getCurrentUser();
   const all = DATA.getWorkoutHistory(userId);
 
-  // Фильтр по типу — дропдаун «Все ▾» (счётчики в пределах выбранного периода).
+  // Тип тренировок: компактная капсула со счётчиками в доступных названиях.
   const inPeriod = all.filter(w => historyPeriodMatch(w, _historyPeriod));
-  const typeOpts = [["all", "Все"], ["strength", "Силовые"], ["run", "Пробежки"]].map(([key, label]) =>
-    ({ key, label, count: inPeriod.filter(w => historyTypeMatch(w, key)).length }));
-  buildHistoryDropdown($("history-type-dd"), typeOpts, _historyFilter, key => {
+  const typeOpts = [["all", "Все", "Все тренировки"], ["strength", "Сил", "Силовые"], ["run", "Бег", "Пробежки"]].map(([key, short, label]) =>
+    ({ key, short, label, count: inPeriod.filter(w => historyTypeMatch(w, key)).length }));
+  buildHistoryFilter($("history-type-dd"), "type", typeOpts, _historyFilter, key => {
     _historyFilter = key; renderHistoryScreen();
   });
 
-  // Фильтр по периоду — дропдаун «Месяц ▾».
-  const periodOpts = HISTORY_PERIODS.map(([key, label]) => ({ key, label }));
-  buildHistoryDropdown($("history-period-dd"), periodOpts, _historyPeriod, key => {
+  // Периоды и короткие подписи совпадают с фильтром статистики.
+  const periodShort = {week:"7 д", month:"30 д", "3month":"90 д", year:"Год", all:"∞"};
+  const periodOpts = [...HISTORY_PERIODS.slice(1), HISTORY_PERIODS[0]].map(([key, label]) => ({key, label, short:periodShort[key]}));
+  buildHistoryFilter($("history-period-dd"), "period", periodOpts, _historyPeriod, key => {
     _historyPeriod = key; renderHistoryScreen();
   });
 
@@ -8050,9 +8077,9 @@ function renderExerciseReference() {
 }
 // Anchor the fade to the header's actual height, including wrapped titles and safe areas.
 if (window.ResizeObserver) {
-  document.querySelectorAll('#screen-exercises, #screen-exercise-reference, #screen-templates, #screen-stats').forEach(screen => {
+  document.querySelectorAll('#screen-exercises, #screen-exercise-reference, #screen-templates, #screen-stats, #screen-history').forEach(screen => {
     new ResizeObserver(([entry]) => screen.style.setProperty('--movement-header-end',`${entry.target.offsetHeight}px`))
-      .observe(screen.querySelector('.exercises-header'));
+      .observe(screen.querySelector('.exercises-header'), {box:'border-box'});
   });
 }
 $('screen-exercise-reference').addEventListener('click', async event => {
@@ -9504,6 +9531,9 @@ let _detailReturnScreen = "menu";
 function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = null, screenOptions = {}) {
   _detailReturnScreen = returnScreen;
   const isRun = workout.type === "run";
+  $("screen-detail").classList.toggle("history-strength", !isRun);
+  $("screen-detail").querySelectorAll(".wd-record-dialog").forEach(dialog => { dialog.close(); dialog.remove(); });
+  $("detail-duration").textContent = !isRun && workout.durationSec ? formatDuration(workout.durationSec) : "—";
 
   // Цвет шапки совпадает с цветом карточки в истории (фиолетовый / зелёный).
   const headerEl = $("detail-screen-icon").closest(".detail-screen-header");
@@ -9514,7 +9544,9 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
 
   $("detail-screen-title").textContent = workout.name || (isRun ? "Пробежка" : "Силовая");
   const filledByTrainer = workout.createdBy && workout.createdBy !== DATA.getCurrentUser() && !workout._migrated;
-  $("detail-screen-meta").textContent = fmtDate(workout.startedAt) + (filledByTrainer ? " · внесено тренером" : "");
+  const started = new Date(workout.startedAt);
+  const startTime = !isRun && Number.isFinite(started.getTime()) ? " · " + started.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+  $("detail-screen-meta").textContent = fmtDate(workout.startedAt) + startTime + (filledByTrainer ? " · внесено тренером" : "");
 
   const body = $("detail-screen-body");
 
@@ -9540,112 +9572,14 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
     `;
     $("save-as-template-btn").addEventListener("click", () => openSaveAsTemplateModal(workout));
   } else {
-    const userId    = DATA.getCurrentUser();
-    const exercises = DATA.getVisibleExercises(userId);
-    const records   = DATA.getRecords(userId);
-    const allEx     = workout.exercises || [];
-    const totalSets = allEx.reduce((n, ex) => n + ex.sets.filter(s => s.done).length, 0);
-    const totalVol  = allEx.reduce((v, ex) => v + ex.sets.reduce((a, s) => a + (s.done ? setVolume(s) : 0), 0), 0);
-
-    // Длительность в компактном виде: до часа «52 мин», от часа «1:04 ч».
-    const statTimeHTML = (sec) => {
-      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
-      return h > 0
-        ? `<span class="wd-stat-num">${h}:${String(m).padStart(2, "0")}</span> <span class="wd-stat-unit">ч</span>`
-        : `<span class="wd-stat-num">${m}</span> <span class="wd-stat-unit">мин</span>`;
-    };
-    const dash = `<span class="wd-stat-num">—</span>`;
-    // RPE-светофор: 0–6 — есть запас (зелёный), 7–8 — тяжело (оранжевый),
-    // 9–10 — почти до отказа (красный). Оранжевый, а не янтарь, чтобы не
-    // сливаться с золотом рекорда.
-    const rpeClass = (v) => v >= 9 ? "hi" : v >= 7 ? "mid" : "lo";
-    // Подход считается рекордным, если его вес×повторы совпадают с текущим
-    // личным максимумом по весу для этого упражнения (вес может быть
-    // отрицательным — упражнения с помощью, см. applySetToRecord).
-    const isPrSet = (rec, s) => !!rec && rec.maxWeight != null && !s.dropSet && s.weight === rec.maxWeight && s.reps === rec.repsAtMaxWeight;
-    // Компактная дата для стрелок навигации по истории упражнения («12 июн»).
-    const shortDate = (ts) => new Date(ts).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-    const chevron = (dir) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${dir === "prev" ? '<polyline points="15 18 9 12 15 6"/>' : '<polyline points="9 18 15 12 9 6"/>'}</svg>`;
-
-    body.innerHTML = `
-      <div class="wd-statgrid">
-        <div class="wd-stat"><div class="wd-stat-val"><span class="wd-stat-num">${allEx.length}</span></div><div class="wd-stat-label">Упражнения</div></div>
-        <div class="wd-stat"><div class="wd-stat-val"><span class="wd-stat-num">${totalSets}</span></div><div class="wd-stat-label">Подходы</div></div>
-        <div class="wd-stat"><div class="wd-stat-val">${totalVol ? `<span class="wd-stat-num">${totalVol.toLocaleString("ru-RU")}</span> <span class="wd-stat-unit">кг</span>` : dash}</div><div class="wd-stat-label">Тоннаж</div></div>
-        <div class="wd-stat"><div class="wd-stat-val">${workout.durationSec ? statTimeHTML(workout.durationSec) : dash}</div><div class="wd-stat-label">Время</div></div>
-      </div>
-      ${allEx.map((ex, exIdx) => {
-        const known    = exercises.find(e => e.id === ex.exerciseId);
-        const exDef    = known || { name: ex.name || "Упражнение недоступно" };
-        const isOrphan = !known;   // упражнение удалено из базы — есть только в истории
-        // Суперсет (только для чтения): подряд идущие блоки с общим supersetId.
-        const ssId       = ex.supersetId || null;
-        const ssPrev     = !!ssId && allEx[exIdx - 1] && allEx[exIdx - 1].supersetId === ssId;
-        const ssNext     = !!ssId && allEx[exIdx + 1] && allEx[exIdx + 1].supersetId === ssId;
-        const ssClass    = ssId ? ` wd-ss${ssPrev ? "" : " wd-ss-first"}${ssNext ? "" : " wd-ss-last"}` : "";
-        const doneSets = ex.sets.filter(s => s.done);
-        const rec      = records[ex.exerciseId];
-        const exVol    = doneSets.reduce((v, s) => v + setVolume(s), 0);
-        const hasPr    = doneSets.some(s => isPrSet(rec, s));
-        // Тоннаж-рекорд: максимальный объём за одну тренировку для упражнения.
-        const volPr    = !!rec && exVol > 0 && exVol >= (rec.maxVolume || 0);
-        const anyRpe   = doneSets.some(s => s.rpe);
-        // Рекорд подсвечиваем только у ПЕРВОГО подхода с рекордным весом:
-        // если следующие подходы повторяют тот же вес — это уже не рекорд.
-        let prShown    = false;
-        // Номер — только у обычных подходов; дроп-сет и так виден по отступу
-        // (см. .wd-set-drop), как и на экране тренировки.
-        let mainNum = 0;
-        const setLabels = doneSets.map(s => { if (s.dropSet) return ""; mainNum++; return `${mainNum}`; });
-        // Соседние тренировки с этим упражнением — для перехода по его истории
-        // (назад к прошлому выполнению / вперёд к следующему).
-        const prevW = DATA.adjacentWorkoutForExercise(userId, ex.exerciseId, workout.startedAt, "prev");
-        const nextW = DATA.adjacentWorkoutForExercise(userId, ex.exerciseId, workout.startedAt, "next");
-        return `<div class="wd-ex${ssClass}" data-ex-id="${ex.exerciseId}">
-          <div class="wd-ex-head">
-            <span class="wd-ex-name${isOrphan ? " orphan" : ""}">${escHtml(exDef.name)}</span>
-            ${doneSets.length ? `<span class="wd-ex-meta${volPr ? " pr" : ""}">${exVol.toLocaleString("ru-RU")} кг</span>` : ""}
-            ${hasPr ? `<span class="wd-ex-star" title="Личный рекорд">★</span>` : ""}
-          </div>
-          ${executionSummaryHtml(ex)}
-          ${doneSets.length ? `
-            <div class="wd-cols">
-              <span class="wd-col-idx">#</span>
-              <span class="wd-col">кг</span>
-              <span class="wd-col">${doneSets.every(s=>s.metric === "time") ? "время" : doneSets.some(s=>s.metric === "time") ? "повт / время" : "повт"}</span>
-              ${anyRpe ? `<span class="wd-col wd-col-rpe">rpe</span>` : ""}
-            </div>
-            <div class="wd-sets">
-              ${doneSets.map((s, i) => {
-                const pr = !prShown && isPrSet(rec, s);
-                if (pr) prShown = true;
-                return `<div class="wd-set${s.dropSet ? " wd-set-drop" : ""}">
-                  <span class="wd-set-num">${setLabels[i]}</span>
-                  <div class="wd-cell${pr ? " pr" : ""}">${pr ? "★ " : ""}${s.weight || "—"}</div>
-                  <div class="wd-cell">${s.metric === "time" ? WorkoutCore.formatTime(s.durationSec) : s.reps}</div>
-                  ${anyRpe ? `<div class="wd-cell wd-rpe ${s.rpe ? rpeClass(s.rpe) : "none"}">${s.rpe || "—"}</div>` : ""}
-                </div>`;
-              }).join("")}
-            </div>` : `<div class="wd-empty">Нет выполненных подходов</div>`}
-          ${isOrphan ? `<button class="wd-ex-remap" data-remap-id="${escHtml(ex.exerciseId)}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Заменить упражнение</button>` : ""}
-          ${(prevW || nextW) ? `
-            <div class="wd-ex-nav">
-              ${prevW
-                ? `<button class="wd-ex-nav-btn" data-ex-id="${ex.exerciseId}" data-nav="prev" title="Прошлое выполнение — ${escHtml(fmtDate(prevW.startedAt))}">${chevron("prev")}<span>${escHtml(shortDate(prevW.startedAt))}</span></button>`
-                : `<span class="wd-ex-nav-btn disabled">${chevron("prev")}<span>—</span></span>`}
-              ${nextW
-                ? `<button class="wd-ex-nav-btn" data-ex-id="${ex.exerciseId}" data-nav="next" title="Следующее выполнение — ${escHtml(fmtDate(nextW.startedAt))}"><span>${escHtml(shortDate(nextW.startedAt))}</span>${chevron("next")}</button>`
-                : `<span class="wd-ex-nav-btn disabled"><span>—</span>${chevron("next")}</span>`}
-            </div>` : ""}
-        </div>`;
-      }).join("")}
-      <button class="wd-add-btn" id="save-as-template-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Добавить в шаблоны
-      </button>
-    `;
+    const userId = DATA.getCurrentUser();
+    const historyData = WorkoutHistoryUI.model(workout, {
+      exercises: DATA.getVisibleExercises(userId), records: DATA.getRecords(userId),
+      history: DATA.getWorkoutHistory(userId),
+      adjacent: (id, direction) => DATA.adjacentWorkoutForExercise(userId, id, workout.startedAt, direction),
+    });
+    body.innerHTML = WorkoutHistoryUI.render(historyData, fmtDate);
+    WorkoutHistoryUI.wireRecords(body, historyData);
 
     $("save-as-template-btn").addEventListener("click", () => openSaveAsTemplateModal(workout));
 
@@ -9686,7 +9620,7 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
 
   // Спайны суперсетов в детали — после раскладки экрана; повтор в след. кадре на
   // случай неточного первого замера до осадки шрифтов/лейаута (см. layoutSupersetSpines).
-  requestAnimationFrame(() => { layoutHistorySpines(); requestAnimationFrame(layoutHistorySpines); });
+  requestAnimationFrame(() => { layoutHistorySpines(); WorkoutHistoryUI.layoutTrees(body); requestAnimationFrame(layoutHistorySpines); });
 
   // Открыли деталь ради конкретного упражнения (тап по бейджу-рекорду на экране
   // тренировки) — подматываем список прямо к нему и коротко подсвечиваем, чтобы
@@ -9694,7 +9628,7 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
   // центрирует карточку в прокручиваемом теле детали.
   if (scrollToExerciseId) {
     requestAnimationFrame(() => {
-      const target = body.querySelector(`.wd-ex[data-ex-id="${scrollToExerciseId}"]`);
+      const target = [...body.querySelectorAll(".wd-ex")].find(card => card.dataset.exId === scrollToExerciseId);
       if (target) {
         // НЕ scrollIntoView: на iOS-standalone он прокручивает и внешний
         // контейнер (документ), утягивая шапку под часы статус-бара. Двигаем
