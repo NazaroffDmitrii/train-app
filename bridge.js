@@ -70,6 +70,7 @@ const Bridge = (() => {
     deleteWorkout:       DATA.deleteWorkout.bind(DATA),
     saveWorkoutHistory: DATA.saveWorkoutHistory.bind(DATA),
     saveOwnExercises:   DATA.saveOwnExercises.bind(DATA),
+    saveLibraryVersion: DATA.saveLibraryVersion?.bind(DATA),
     saveHiddenIds:      DATA.saveHiddenIds.bind(DATA),
     saveAllCategories:  DATA.saveAllCategories.bind(DATA),
     saveCategoryColors: DATA.saveCategoryColors.bind(DATA),
@@ -89,6 +90,7 @@ const Bridge = (() => {
   // в облако как «правки пользователя».
   window.__origSetters = {
     saveOwnExercises:   _orig.saveOwnExercises,
+    saveLibraryVersion: _orig.saveLibraryVersion,
     saveTemplates:      _orig.saveTemplates,
     saveExerciseGroups: _orig.saveExerciseGroups,
     saveAllCategories:  _orig.saveAllCategories,
@@ -122,8 +124,9 @@ const Bridge = (() => {
     }, PUSH_DEBOUNCE_MS));
   }
 
-  ["saveOwnExercises", "saveHiddenIds", "saveAllCategories", "saveCategoryColors", "saveExerciseOrder", "saveTemplates",
+  ["saveLibraryVersion", "saveOwnExercises", "saveHiddenIds", "saveAllCategories", "saveCategoryColors", "saveExerciseOrder", "saveTemplates",
    "saveExerciseGroups", "saveOwnMuscles", "saveHiddenMuscleIds", "saveOwnMovements", "saveHiddenMovementIds"]
+    .filter(name => _orig[name])
     .forEach(name => {
       DATA[name] = function (userId, ...rest) {
         const r = _orig[name](userId, ...rest);
@@ -303,21 +306,6 @@ const Bridge = (() => {
     }
     DATA.recomputeRecords(userId);
 
-    // Общий справочник Атласа (мышцы/движения/группы/связи/упражнения) из
-    // реляционных таблиц. Подменяет локальный ATLAS (кэш + оффлайн-фолбэк на
-    // atlas-seed.js). Не критичен для входа — останется кэш/сид,
-    // но UI покажет предупреждение о неполной синхронизации.
-    // Если содержимое изменилось (админ правил базу с другого устройства) —
-    // просим приложение перерисовать открытый экран.
-    progress('atlas');
-    try {
-      const rows = await DB.getAtlas();
-      if (rows && Array.isArray(rows.muscles) && rows.muscles.length) {
-        const changed = DATA.setAtlasFromRows(rows);
-        if (changed && typeof window.onAtlasUpdated === "function") window.onAtlasUpdated();
-      }
-    } catch (e) { warnings.push(e); if (e && typeof e === 'object' && !e.syncStage) e.syncStage = 'atlas'; console.warn("Bridge.hydrate: atlas", e); }
-
     // «Мелкое» состояние — через пер-сущностный движок: слияние по строкам с
     // облаком (или первичное перенятие при миграции устройства). Ошибку не
     // глотаем молча — пробрасываем наверх, чтобы bootAuthAware показал тост
@@ -328,7 +316,30 @@ const Bridge = (() => {
     // дефолтного набора (см. DATA.ensureExercisesSeeded). Кроме случая, когда
     // облако ещё не опубликовано (awaiting-publish) — там ничего не меняли.
     if (res.mode === "merge" || res.mode === "adopted") DATA.markExercisesSeeded(userId);
+    if (Auth.userId() !== owner || Auth.contextChanged?.() || (DATA.getCurrentUser && DATA.getCurrentUser() !== userId)) throw Error('Профиль изменился во время загрузки');
+    // Adopt personal copies before freezing the legacy library or replacing
+    // the cached catalog. A new device must not publish its seed over cloud data.
+    if (['merge','adopted','awaiting-publish','local-pending'].includes(res.mode)) DATA.migrateExerciseLibrary?.(userId);
+    progress('atlas');
+    try { await refreshAtlas(); }
+    catch (e) { warnings.push(e); if (e && typeof e === 'object' && !e.syncStage) e.syncStage = 'atlas'; }
     return { ...res, warnings };
+  }
+
+  let atlasRequest = null;
+  async function refreshAtlas() {
+    if (atlasRequest) return atlasRequest;
+    const owner = Auth.userId(), profile = DATA.getCurrentUser();
+    if (!owner || Auth.contextChanged()) return false;
+    const revision = DATA.atlasRevision?.();
+    atlasRequest = (async () => {
+      const rows = await DB.getAtlas();
+      if (Auth.userId() !== owner || Auth.contextChanged() || DATA.getCurrentUser() !== profile || DATA.atlasRevision?.() !== revision) return false;
+      const changed = DATA.setAtlasFromRows(rows);
+      if (changed && typeof window.onAtlasUpdated === 'function') window.onAtlasUpdated();
+      return changed;
+    })();
+    try { return await atlasRequest; } finally { atlasRequest = null; }
   }
 
   /* ----- ограничение локального следа -----
@@ -363,7 +374,7 @@ const Bridge = (() => {
   }
 
   return {
-    hydrate, reset, ensureAuthProfileId, evictOtherProfiles, replayWorkoutJournal,
+    hydrate, refreshAtlas, reset, ensureAuthProfileId, evictOtherProfiles, replayWorkoutJournal,
     get authProfileId() { return authProfileId; },
   };
 })();
@@ -382,3 +393,16 @@ window.addEventListener("online", () => {
     }
   } catch (e) { console.warn("online sync", e); }
 });
+
+// Catalog refresh is independent of personal state and workout synchronization.
+(() => {
+  if (typeof document === 'undefined') return;
+  const refresh = () => {
+    if (document.visibilityState === 'hidden' || !navigator.onLine || !Auth.isSignedIn()) return;
+    Bridge.refreshAtlas().catch(error => console.warn('Обновление каталога:', error));
+  };
+  window.addEventListener('online', refresh);
+  window.addEventListener('focus', refresh);
+  document.addEventListener('visibilitychange', refresh);
+  setInterval(refresh, 60000);
+})();

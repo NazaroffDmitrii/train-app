@@ -203,3 +203,7 @@
 .xe .xd-remove{width:36px;height:36px;min-width:36px;margin-left:auto}
 .xe .xd-remove-sheet{--xd-card:var(--xe-card);--xd-border:var(--xe-border);--xd-muted:var(--xe-muted);--xd-inner:#241e30;--xd-accent:var(--xe-accent);--xd-page:#0e0c17}
 .xd-carousel-track.is-dragging{scroll-snap-type:none;scroll-behavior:auto}
+
+.xd-catalog-update { margin: 12px 0 20px; padding: 14px 16px; border: 1px solid var(--accent, #b9aeff); border-radius: 16px; }
+.xd-catalog-update p { margin: 0 0 12px; font-size: 13px; line-height: 1.5; }
+.xd-sheet button + button { margin-top: 8px; }

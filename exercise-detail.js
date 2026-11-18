@@ -75,7 +75,7 @@ const ExerciseDescriptions = (() => {
    const screen=options.container||$('screen-exercise-detail');screen.querySelector('[data-xd-remove]')?.remove();
    const catalog=options.catalog??_exdCatalog;
    if(options.previewExercise||catalog&&!DATA.isAdmin())return;
-   const userId=DATA.getCurrentUser(),owner=Auth.userId(),shared=DATA.DEFAULT_EXERCISES.some(item=>item.id===ex.id);
+   const userId=DATA.getCurrentUser(),owner=Auth.userId(),shared=!!ex.catalogSource||DATA.DEFAULT_EXERCISES.some(item=>item.id===ex.id);
    const current=()=>owner===Auth.userId()&&userId===DATA.getCurrentUser()&&!Auth.contextChanged()&&(!catalog||DATA.isAdmin());
    const leave=()=>{options.onRemoved?.();renderExercisesList(exercisesSearch.value);if($('screen-exercise-detail').classList.contains('active')&&_detailExerciseId===ex.id&&_exdCatalog===catalog)goBackScreen(returnScreen,{keepFilter:true,resumeConstructor:returnScreen==='constructor'});else if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();};
    const label=catalog?'Удалить из каталога':shared?'Убрать из моих':'Удалить упражнение';
@@ -84,7 +84,7 @@ const ExerciseDescriptions = (() => {
    button.onclick=()=>{
      if(!current()||options.isCurrent&&!options.isCurrent())return;
      const dialog=document.createElement('dialog');dialog.className='xd-sheet xd-remove-sheet';
-     dialog.innerHTML=`<h2>${label}?</h2><p>«${escHtml(ex.name)}» ${catalog?'будет удалено из общего каталога.':shared?'исчезнет из «Моих»; в каталоге оно останется.':'можно будет восстановить в «Недавно удалённых» в течение 7 дней.'}</p><p class="xd-editor-error" role="alert" hidden></p><div class="xd-remove-actions"><button type="button" data-cancel>Отмена</button><button type="button" data-remove-confirm>${label}</button></div>`;
+     dialog.innerHTML=`<h2>${label}?</h2><p>«${escHtml(ex.name)}» ${catalog?'будет удалено из общего каталога.':shared?'исчезнет из «Моих». История тренировок сохранится.':'можно будет восстановить в «Недавно удалённых» в течение 7 дней.'}</p><p class="xd-editor-error" role="alert" hidden></p><div class="xd-remove-actions"><button type="button" data-cancel>Отмена</button><button type="button" data-remove-confirm>${label}</button></div>`;
      dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());screen.append(dialog);dialog.showModal();
      dialog.querySelector('[data-remove-confirm]').onclick=async event=>{
        if(!current()||options.isCurrent&&!options.isCurrent()){dialog.close();return;}const confirm=event.currentTarget;confirm.disabled=true;
@@ -116,7 +116,7 @@ const ExerciseDescriptions = (() => {
    const changeSource=scope=>{
      if(!scope||scope===(catalog?'catalog':'mine'))return;
      const found=(scope==='catalog'?DATA.DEFAULT_EXERCISES:DATA.getVisibleExercises(userId)).find(item=>item.id===ex.id);
-     if(!found){sheet('В «Моих» пока нет','Добавьте упражнение из каталога в «Мои», чтобы открыть его в своей библиотеке.');return;}
+     if(!found){if(scope==='catalog')sheet('В каталоге больше нет','Оригинал недоступен. Ваша личная копия сохранена.');else sheet('В «Моих» пока нет','Добавьте упражнение из каталога в «Мои», чтобы открыть его в своей библиотеке.');return;}
      setReferenceLibraryScope(scope);openExerciseDetail(ex.id,returnScreen,{scope});
      document.querySelector('.xd-source [aria-selected="true"]')?.focus();
    };
@@ -203,6 +203,29 @@ const ExerciseDescriptions = (() => {
    header.querySelector('.xd-hero')?.remove();header.append(hero);
    const membershipButton=hero.querySelector('.xd-membership');if(membershipButton)header.querySelector('.detail-screen-header').insertBefore(membershipButton,$('exd-edit-btn'));
    const inner=document.createElement('div');inner.className='xd-scroll-inner';inner.append(...(media?[media]:[]),...(tree.querySelector('.xd-section')?[tree]:[]),...links);body.replaceChildren(inner);
+   if(!catalog&&!options.previewExercise&&DATA.catalogUpdateAvailable(userId,ex.id)){
+     const notice=document.createElement('section');notice.className='xd-catalog-update';
+     notice.innerHTML='<p><b>В каталоге есть обновление</b><br>Ваша версия сохранена. Можно оставить её или заменить версией из каталога.</p><button type="button" class="btn-chip">Посмотреть обновление</button>';
+     notice.querySelector('button').onclick=()=>{
+       const owner=Auth.userId(),source=DATA.atlasExerciseById(ex.catalogSource.id);
+       if(!source)return;
+       const dialog=document.createElement('dialog');dialog.className='xd-sheet';
+       dialog.innerHTML=`<h2>Обновить упражнение?</h2><p>Версия из каталога: ${escHtml(source.name)}. Название, описание, группа и параметры вашей копии будут заменены. История тренировок сохранится.</p><button type="button" data-review>Открыть версию каталога</button><button type="button" data-update>Обновить мою копию</button><button type="button" data-keep>Оставить текущую</button>`;
+       screen.append(dialog);dialog.addEventListener('close',()=>dialog.remove());
+       dialog.querySelector('[data-keep]').onclick=()=>dialog.close();
+       dialog.querySelector('[data-review]').onclick=()=>{dialog.close();openExerciseDetail(source.id,returnScreen,{scope:'catalog'});};
+       dialog.querySelector('[data-update]').onclick=()=>{
+         if(owner!==Auth.userId()||userId!==DATA.getCurrentUser()||Auth.contextChanged())return;
+         try{
+           if(!DATA.refreshExerciseFromCatalog(userId,ex.id))return;
+           _executionDrafts.delete(executionDraftKey(userId,ex.id));
+           dialog.close();openExerciseDetail(ex.id,returnScreen,{scope:'mine'});
+         }catch(error){showToast(error.message);}
+       };
+       dialog.showModal();
+     };
+     inner.prepend(notice);
+   }
    body.scrollTop=0;body.querySelectorAll('.exd-video-btn').forEach(link=>{link.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>Открыть материал';});
  }
  window.ExerciseDetailPage={decorate,mountRemoval};

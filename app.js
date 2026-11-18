@@ -145,6 +145,7 @@ const DATA = (() => {
   // из bridge.js при входе (myProfile.is_admin). Обычный пользователь правит
   // только свой оверлей (own/hidden).
   let _isAdmin = false;
+  let _atlasRevision = 0;
 
   // роль новой модели ({muscle,bundle}[]) → строка «Мышца (пучок), …» для легаси-рендера
   function _rolesToStr(arr) {
@@ -239,6 +240,7 @@ const DATA = (() => {
     EXERCISE_CATEGORIES = ATLAS.groups.slice();
   }
   rebuildAtlasDerived();
+  const LEGACY_EXERCISES = JSON.parse(JSON.stringify(DEFAULT_EXERCISES));
 
   // id старых 18 дефолтов — при миграции их копии сносим из личного списка
   // (полная замена базы, см. решение пользователя). Личные e_own_* сохраняются.
@@ -361,11 +363,16 @@ const DATA = (() => {
     // === Справочник Атласа (для подвкладок Мышцы/Движения/Группы и конструктора) ===
     // Подменить справочник данными из БД (DB.getAtlas → строки 5 таблиц).
     // Возвращает true, если содержимое изменилось (для решения перерисовать).
-    setAtlasFromRows(rows) { return this.setAtlas(rowsToAtlas(rows)); },
+    atlasRevision() { return _atlasRevision; },
+    setAtlasFromRows(rows) {
+      if (!rows || !["groups","muscles","movements","links","exercises"].every(k => Array.isArray(rows[k]))) throw Error("Неполный ответ каталога");
+      return this.setAtlas(rowsToAtlas(rows));
+    },
     setAtlas(atlasObj) {
-      if (!atlasObj || !Array.isArray(atlasObj.muscles) || !atlasObj.muscles.length) return false;
+      if (!atlasObj || !["groups","muscles","categories","muscleCategoryLinks","exercises"].every(k => Array.isArray(atlasObj[k]))) throw Error("Неполный ответ каталога");
       const json = JSON.stringify(atlasObj);
-      const prev = (() => { try { return localStorage.getItem(ATLAS_CACHE_KEY); } catch { return null; } })();
+      const prev = JSON.stringify(ATLAS);
+      _atlasRevision++;
       ATLAS = atlasObj;
       rebuildAtlasDerived();
       try { localStorage.setItem(ATLAS_CACHE_KEY, json); } catch {}
@@ -390,6 +397,7 @@ const DATA = (() => {
     atlasSnapshot() { return JSON.parse(JSON.stringify(ATLAS)); },
     commitAtlas(atlasObj) {
       if (!atlasObj || !Array.isArray(atlasObj.muscles)) return;
+      _atlasRevision++;
       ATLAS = atlasObj;
       rebuildAtlasDerived();
       try { localStorage.setItem(ATLAS_CACHE_KEY, JSON.stringify(atlasObj)); } catch {}
@@ -450,28 +458,88 @@ const DATA = (() => {
 
     // Личные упражнения пользователя
     getOwnExercises(userId) { return ls(`train_own_exercises_${userId}`, []); },
-    saveOwnExercises(userId, list) { lsSet(`train_own_exercises_${userId}`, list); },
+    saveOwnExercises(userId, list) { if (!lsSet(`train_own_exercises_${userId}`, list)) throw Error("Не удалось сохранить личные упражнения"); return true; },
 
     // Группы упражнений (варианты одного движения: жим штанги/гантелей/в
     // тренажёре и т.п.) — личная сущность, [{id, name}]. Членство хранится
     // на самом упражнении (ex.groupId), а не списком id здесь — состав
     // группы вычисляется на лету (см. resolveDisplayItems), поэтому «роспуск»
     // группы при ≤1 видимом участнике не требует явной чистки реестра.
+    getCatalogExerciseGroups() {
+      return [...new Set(DEFAULT_EXERCISES.map(e => e.groupName).filter(Boolean))]
+        .map(name => ({id:`shared:${name}`,name}));
+    },
     getExerciseGroups(userId) {
       const personal = ls(`train_exercise_groups_${userId}`, []);
-      const shared = [...new Set(DEFAULT_EXERCISES.map(e => e.groupName).filter(Boolean))]
-        .map(name => ({id:`shared:${name}`,name}));
-      return [...shared.filter(g => !personal.some(p => p.id === g.id)), ...personal];
+      const copies = this.getOwnExercises(userId);
+      const shared = this.getLibraryVersion(userId) ? copies.filter(e => e.groupId && e.groupName)
+        .map(e => ({id:e.groupId,name:e.groupName})) : this.getCatalogExerciseGroups();
+      return [...new Map([...shared, ...personal].map(g => [g.id,g])).values()];
     },
-    getCatalogExercises(userId) {
-      const own = new Map(this.getOwnExercises(userId).map(e => [e.id,e]));
-      const groups = new Map(this.getExerciseGroups(userId).map(g => [g.id,g.name]));
-      const sharedNames = new Set(DEFAULT_EXERCISES.map(e => e.groupName).filter(Boolean));
-      return DEFAULT_EXERCISES.map(e => {
-        if (e.groupName !== undefined) return e;
-        const id = own.get(e.id)?.groupId || null, name = groups.get(id);
-        return {...e,groupId:sharedNames.has(name) ? `shared:${name}` : id};
+    getCatalogExercises() { return DEFAULT_EXERCISES; },
+    getLibraryVersion(userId) { return ls(`train_library_version_${userId}`, 0); },
+    saveLibraryVersion(userId, version) {
+      if (!lsSet(`train_library_version_${userId}`, version)) throw Error('Не удалось сохранить состояние библиотеки');
+    },
+    catalogFingerprint(ex) {
+      const canonical = value => Array.isArray(value) ? value.map(canonical)
+        : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => [k,canonical(value[k])])) : value;
+      const {owner, catalogSource, ...content} = ex;
+      // Compact non-security content fingerprint; avoid storing a second full
+      // exercise description inside every personal copy (localStorage quota).
+      const text = JSON.stringify(canonical(content));
+      let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+      for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        h1 = Math.imul(h1 ^ code, 2654435761);
+        h2 = Math.imul(h2 ^ code, 1597334677);
+      }
+      h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+      h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+      return `v1:${text.length}:${(h1 >>> 0).toString(16)}:${(h2 >>> 0).toString(16)}`;
+    },
+    copyCatalogExercise(userId, base) {
+      const copy = JSON.parse(JSON.stringify(base));
+      copy.owner = userId;
+      // Reusing a personally renamed group must not rename its other members.
+      const groups = this.getExerciseGroups(userId);
+      if (copy.groupId && groups.some(g => g.id === copy.groupId && g.name !== copy.groupName)) {
+        let suffix = 0, id = `snapshot:${copy.groupId}`;
+        while (groups.some(g => g.id === id && g.name !== copy.groupName)) id = `snapshot:${copy.groupId}:${++suffix}`;
+        copy.groupId = id;
+      }
+      copy.catalogSource = {id:base.id, fingerprint:this.catalogFingerprint(base)};
+      return copy;
+    },
+    // One-time conversion, after cloud adoption. IDs stay stable for workout history.
+    migrateExerciseLibrary(userId) {
+      if (this.getLibraryVersion(userId)) return false;
+      this.ensureExercisesSeeded(userId);
+      const own = this.getOwnExercises(userId), ids = new Set(own.map(e => e.id));
+      const hidden = new Set(this.getHiddenIds(userId));
+      const copies = own.map(ex => {
+        const base = ATLAS_BY_ID.get(ex.id);
+        return base && !ex.catalogSource ? {...ex,catalogSource:{id:base.id,fingerprint:this.catalogFingerprint(base)}} : ex;
       });
+      for (const base of LEGACY_EXERCISES) {
+        if (!ids.has(base.id) && !hidden.has(base.id)) copies.push(this.copyCatalogExercise(userId,base));
+      }
+      this.saveOwnExercises(userId,copies);
+      this.saveLibraryVersion(userId,1);
+      return true;
+    },
+    catalogUpdateAvailable(userId, exerciseId) {
+      const ex = this.getOwnExercises(userId).find(e => e.id === exerciseId);
+      const base = ex && ATLAS_BY_ID.get(ex.catalogSource?.id);
+      return !!base && ex.catalogSource.fingerprint !== this.catalogFingerprint(base);
+    },
+    refreshExerciseFromCatalog(userId, exerciseId) {
+      const list = this.getOwnExercises(userId), ex = list.find(e => e.id === exerciseId);
+      const base = ex && ATLAS_BY_ID.get(ex.catalogSource?.id);
+      if (!base) return false;
+      const copy = {...this.copyCatalogExercise(userId,base),id:exerciseId};
+      this.saveOwnExercises(userId,list.map(e => e.id === exerciseId ? copy : e));
+      return true;
     },
     saveExerciseGroups(userId, list) { lsSet(`train_exercise_groups_${userId}`, list); },
 
@@ -539,14 +607,14 @@ const DATA = (() => {
     // ВСЕМИ участниками (не только совпавшими: пользователь ищет по одному
     // варианту, а видеть должен все). Группа с <2 видимых участников
     // деградирует до обычных строк (это и есть «авто-роспуск»).
-    resolveDisplayItems(userId, exercises, query) {
+    resolveDisplayItems(userId, exercises, query, scope = "mine") {
       const q = (query || "").trim().toLowerCase();
       const matches = s => !q || (s || "").toLowerCase().includes(q);
-      const groupsById = new Map(this.getExerciseGroups(userId).map(g => [g.id, g]));
+      const groupsById = new Map((scope === "catalog" ? this.getCatalogExerciseGroups() : this.getExerciseGroups(userId)).map(g => [g.id, g]));
       // Порядок вариантов внутри группы — из общего пользовательского порядка
       // (тот же список, что и для верхнего уровня: id участников лежат в нём
       // сразу после своего group:<id>, см. saveExOrder). Нет в порядке — по имени.
-      const order = this.getExerciseOrder(userId);
+      const order = scope === "catalog" ? DEFAULT_EXERCISES.map(e => e.id) : this.getExerciseOrder(userId);
       const memberSort = (a, b) => {
         if (order) {
           const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
@@ -662,20 +730,15 @@ const DATA = (() => {
     getHiddenIds(userId) { return ls(`train_hidden_${userId}`, []); },
     saveHiddenIds(userId, list) { lsSet(`train_hidden_${userId}`, list); },
 
-    // Полный список упражнений пользователя = read-only база Атласа + личный
-    // override-слой (copy-on-write). Правило слияния:
-    //   • личное упражнение с id базового (exNNN) перекрывает базовое (это его правка);
-    //   • скрытые id (getHiddenIds) выпадают и из базы, и из override;
-    //   • чисто личные (e_own_*) добавляются сверху.
-    // База в личный список НЕ копируется — snapshot синхронизации не раздувается.
+    // Personal exercises are snapshots. Before the first cloud pull, keep the
+    // legacy view read-only so a fresh device cannot overwrite remote copies.
     getVisibleExercises(userId) {
       this.ensureExercisesSeeded(userId);
-      const own = this.getOwnExercises(userId);
+      if (!_dataAccount && !this.getLibraryVersion(userId)) this.migrateExerciseLibrary(userId);
+      const own = this.getOwnExercises(userId), hidden = new Set(this.getHiddenIds(userId));
+      if (this.getLibraryVersion(userId)) return own.filter(e => !hidden.has(e.id));
       const ownIds = new Set(own.map(e => e.id));
-      const hidden = new Set(this.getHiddenIds(userId));
-      const base = DEFAULT_EXERCISES.filter(e => !ownIds.has(e.id) && !hidden.has(e.id));
-      const ownVisible = own.filter(e => !hidden.has(e.id));
-      return [...base, ...ownVisible];
+      return [...LEGACY_EXERCISES.filter(e => !ownIds.has(e.id)), ...own].filter(e => !hidden.has(e.id));
     },
 
     // Разовая миграция на базу «Атлас»: сносит копии старых 18 дефолтов из личного
@@ -714,7 +777,7 @@ const DATA = (() => {
       const toList = this.getOwnExercises(toUserId);
       const nameLow = ex.name.toLowerCase().trim();
       if (toList.some(e => e.name.toLowerCase().trim() === nameLow)) return "duplicate";
-      const copy = { ...ex, id: `e_own_${toUserId}_${Date.now()}`, owner: toUserId };
+      const copy = { ...JSON.parse(JSON.stringify(ex)), id: `e_own_${toUserId}_${Date.now()}`, owner: toUserId };
       this.saveOwnExercises(toUserId, [...toList, copy]);
       return "shared";
     },
@@ -742,17 +805,15 @@ const DATA = (() => {
       return ex;
     },
 
-    // Редактирование. Личное правится на месте; базовое (атлас) правится через
-    // copy-on-write — создаётся личная копия с тем же id, которая перекрывает базу
-    // при слиянии (getVisibleExercises). Так синхронизируется только правка, не вся база.
+    // Edit a detached personal snapshot. For a legacy selection, first copy
+    // its definition; never share nested objects with the catalog or editor.
     updateOwnExercise(userId, exerciseId, patch) {
-      const list = this.getOwnExercises(userId);
+      const list = JSON.parse(JSON.stringify(this.getOwnExercises(userId)));
       let ex = list.find(e => e.id === exerciseId);
       if (!ex) {
-        const base = ATLAS_BY_ID.get(exerciseId);
+        const base = (!this.getLibraryVersion(userId) && LEGACY_EXERCISES.find(e => e.id === exerciseId)) || ATLAS_BY_ID.get(exerciseId);
         if (!base) return null;
-        ex = JSON.parse(JSON.stringify(base)); // глубокая копия, чтобы не мутировать общий сид
-        ex.owner = userId;
+        ex = this.copyCatalogExercise(userId, base);
         list.push(ex);
       }
       if (patch.name !== undefined) ex.name = patch.name.trim();
@@ -767,7 +828,7 @@ const DATA = (() => {
       // Полный редактор (#6): patch.atlas — богатая модель целиком. Мержим в
       // ex.atlas и выводим легаси-поля из неё (muscles-строки/steps/groups).
       if (patch.atlas !== undefined) {
-        ex.atlas = Object.assign(ex.atlas || {}, patch.atlas);
+        ex.atlas = Object.assign(ex.atlas || {}, JSON.parse(JSON.stringify(patch.atlas)));
         _deriveLegacyFromAtlas(ex);
       } else if (ex.atlas) {
         // Старый путь (правка отдельных легаси-полей) — отражаем в ex.atlas.
@@ -783,11 +844,14 @@ const DATA = (() => {
     },
 
     // Удаление из списка пользователя. Чисто личное (e_own_*) удаляется совсем.
-    // Базовое (атлас) удалить нельзя — его скрываем у этого пользователя; заодно
-    // убираем его override из личного списка, если был. Восстановление — через undo
+    // Копию каталога скрываем вместе с её личными правками. Повторное добавление
+    // возвращает ту же копию. Восстановление — через undo
     // (снимок own + hidden, см. обработчик свайпа).
     deleteOwnExercise(userId, exerciseId) {
       const list = this.getOwnExercises(userId);
+      if (list.find(e => e.id === exerciseId)?.catalogSource || ATLAS_BY_ID.has(exerciseId)) {
+        this.hideExercise(userId,exerciseId); return;
+      }
       const filtered = list.filter(e => e.id !== exerciseId);
       if (filtered.length !== list.length) this.saveOwnExercises(userId, filtered);
       if (ATLAS_BY_ID.has(exerciseId)) this.hideExercise(userId, exerciseId);
@@ -803,10 +867,13 @@ const DATA = (() => {
       this.saveHiddenIds(userId, hidden);
     },
     unhideExercise(userId, exerciseId) {
+      const list = this.getOwnExercises(userId), base = ATLAS_BY_ID.get(exerciseId);
+      if (base && !list.some(e => e.id === exerciseId)) this.saveOwnExercises(userId,[...list,this.copyCatalogExercise(userId,base)]);
       this.saveHiddenIds(userId, this.getHiddenIds(userId).filter(id => id !== exerciseId));
     },
     isHidden(userId, exerciseId) {
-      return this.getHiddenIds(userId).includes(exerciseId);
+      return this.getHiddenIds(userId).includes(exerciseId)
+        || (!!this.getLibraryVersion(userId) && !this.getOwnExercises(userId).some(e => e.id === exerciseId));
     },
 
     getCurrentUser() { return ls("train_current_user"); },
@@ -5679,8 +5746,8 @@ let _exerciseFilterMode = 0;
 let _exerciseMovementFilter = new Set();
 let _exerciseLastDates = new Map();
 const SVG_EX_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/></svg>';
-function exerciseCategoryColor(userId, name) {
-  return name ? DATA.getCategoryColor(userId, name) : '#9696aa';
+function exerciseCategoryColor(userId, name, catalog = exerciseCatalogSource()) {
+  return name ? (catalog ? DATA.categoryColor(DATA.atlasGroups().indexOf(name)) : DATA.getCategoryColor(userId, name)) : '#9696aa';
 }
 function exerciseMovements(ex) { return ex.atlas?.categories || []; }
 function exerciseLibraryHasTabs() { return !_constructorCatalog || _constructorCatalog.kind === 'picker'; }
@@ -5823,6 +5890,7 @@ function setExerciseLibrary(scope) {
   _exercisesCatFilter = 'all'; _exerciseFilterMode = 0; _exerciseMovementFilter.clear(); _exGroupExpanded.clear();
   exercisesSearch.value = '';
   renderExercisesList(''); exercisesScroll.scrollTop = 0;
+  if (scope === 'catalog' && typeof Bridge !== 'undefined') Bridge.refreshAtlas().catch(() => showToast('Не удалось обновить каталог. Показана сохранённая версия.'));
 }
 $('exercise-library-tabs').addEventListener('click', event => {
   const button = event.target.closest('[data-library]');
@@ -6035,7 +6103,7 @@ function renderMovementsTab(container, query, opts) {
 
 function renderCatTabs(userId, presentCats) {
   const tabsEl = $("ex-cat-tabs");
-  const cats = Array.from(new Set([...DATA.getAllCategories(userId), ...presentCats])).filter(c => !_constructorCatalog || presentCats.includes(c));
+  const cats = Array.from(new Set([...(exerciseCatalogSource() ? DATA.atlasGroups() : DATA.getAllCategories(userId)), ...presentCats])).filter(c => !_constructorCatalog || presentCats.includes(c));
   const tabs = ["all", ...cats];
   tabsEl.innerHTML = tabs.map(c => {
     const active = _exercisesCatFilter === c ? " active" : "";
@@ -6043,7 +6111,7 @@ function renderCatTabs(userId, presentCats) {
       // "Все" — обводка цветом accent (через CSS-переменную)
       return `<button class="ex-cat-tab${active}" data-cat="all" style="--tab-color:var(--accent)">Все</button>`;
     }
-    const color = DATA.getCategoryColor(userId, c);
+    const color = exerciseCategoryColor(userId, c);
     return `<button class="ex-cat-tab${active}" data-cat="${escHtml(c)}" style="--tab-color:${escHtml(color)}">${escHtml(c)}</button>`;
   }).join("");
   tabsEl.querySelectorAll(".ex-cat-tab").forEach(btn => {
@@ -6081,7 +6149,8 @@ function renderExercisesList(query) {
 
   // Группировка по категориям. Порядок категорий — как в списке пользователя,
   // плюс любые «осиротевшие» (встречаются в упражнениях, но нет в списке).
-  const catOrder = DATA.getAllCategories(userId);
+  const catalog = exerciseCatalogSource();
+  const catOrder = catalog ? DATA.atlasGroups() : DATA.getAllCategories(userId);
   const groups = new Map(); // cat -> [ex]
   tabFiltered.forEach(ex => {
     if (!groups.has(ex.cat)) groups.set(ex.cat, []);
@@ -6093,7 +6162,7 @@ function renderExercisesList(query) {
   ];
 
   const isFiltered = _exercisesCatFilter !== "all";
-  const customOrder = DATA.getExerciseOrder(userId);
+  const customOrder = catalog ? allExs.map(e => e.id) : DATA.getExerciseOrder(userId);
 
   // Пустые категории показываем только на вкладке "Все" и без поиска (для drag-to-category)
   const emptyCats = (!_constructorCatalog && _exerciseLibrary === "mine" && !isFiltered && !q && !_exerciseMovementFilter.size) ? catOrder.filter(c => !groups.has(c)) : [];
@@ -6105,7 +6174,7 @@ function renderExercisesList(query) {
   // Ключ сортировки на уровне отображаемых элементов (а не «сырых»
   // упражнений): группа — это один пользовательский элемент со своей
   // позицией в customOrder ("group:<id>"), как и обычное упражнение.
-  const orderKey = item => item.kind === "group" ? `group:${item.id}` : item.ex.id;
+  const orderKey = item => item.kind === "group" ? (catalog ? item.members[0].id : `group:${item.id}`) : item.ex.id;
   const displayName = item => item.kind === "group" ? item.name : item.ex.name;
 
   const itemsByCat = new Map(); // cat -> display items (для клика по группе после рендера)
@@ -6117,8 +6186,8 @@ function renderExercisesList(query) {
     const accentStyle = ` style="--cat-color:${escHtml(color)};"`;
     // Стабильная база по имени — дальше пересортировываем уже отображаемые
     // элементы (см. orderKey) пользовательским порядком, если он есть.
-    const rawSorted = [...catExs].sort((a, b) => a.name.localeCompare(b.name, "ru"));
-    const items = DATA.resolveDisplayItems(userId, rawSorted, q).sort((a, b) => {
+    const rawSorted = catalog ? catExs : [...catExs].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    const items = DATA.resolveDisplayItems(userId, rawSorted, q, catalog ? "catalog" : "mine").sort((a, b) => {
       if (customOrder) {
         const ia = customOrder.indexOf(orderKey(a)), ib = customOrder.indexOf(orderKey(b));
         if (ia !== -1 || ib !== -1) {
@@ -6149,7 +6218,7 @@ function renderExercisesList(query) {
       // как разворот категории в справочнике (см. .cat-item-wrap.expanded).
       const selectionKey = executionDraftKey(userId, item.id);
       const selectedId = _exerciseVariantSelection.get(selectionKey);
-      const selected = item.members.find(ex => ex.id === selectedId) || [...item.members].sort((a,b) => (_exerciseLastDates.get(b.id) || 0) - (_exerciseLastDates.get(a.id) || 0))[0];
+      const selected = item.members.find(ex => ex.id === selectedId) || (catalog ? item.members[0] : [...item.members].sort((a,b) => (_exerciseLastDates.get(b.id) || 0) - (_exerciseLastDates.get(a.id) || 0))[0]);
       const memberRows = expanded ? item.members.map(ex => memberRowHtml(ex, cat, ex.id === selected.id)).join("") : "";
       const canEdit = !_constructorCatalog && (_exerciseLibrary === 'mine' || DATA.isAdmin());
       const parameters = expanded ? executionControlsHtml(executionForExercise(userId, selected), selected.id) : '';
@@ -6942,7 +7011,7 @@ function openExerciseDetail(exerciseId, returnScreen = "exercises", navigationOp
   _exdReturnScreen = returnScreen;
   exitExerciseEdit();  // всегда открываем деталь в режиме просмотра, не редактирования
 
-  const color = exerciseCategoryColor(userId, ex.cat);
+  const color = exerciseCategoryColor(userId, ex.cat, fromCatalog);
   $('screen-exercise-detail').style.setProperty('--cat-color', color);
   $('screen-exercise-detail').classList.toggle('from-catalog', fromCatalog);
   $('exd-edit-btn').style.display = fromCatalog && !DATA.isAdmin() ? 'none' : '';
@@ -7436,7 +7505,7 @@ async function saveSharedCategory(oldName, newName) {
 function openCatalogGroupForm(groupId) {
   if (!DATA.isAdmin()) return;
   const userId = DATA.getCurrentUser(), owner = Auth.userId();
-  const group = DATA.getExerciseGroups(userId).find(g => g.id === groupId);
+  const group = DATA.getCatalogExerciseGroups().find(g => g.id === groupId);
   const members = DATA.getCatalogExercises(userId).filter(e => e.groupId === groupId);
   if (!group || !members.length) return;
   const bd = document.createElement('div');
@@ -7466,6 +7535,10 @@ function referenceData(scope = _referenceState.scope) {
     muscles: mine ? DATA.refMuscles(userId) : DATA.atlasMuscles(),
     movements: mine ? DATA.refMovements(userId) : DATA.atlasMovements(),
   };
+}
+function referenceCategoryColor(name) {
+  return _referenceState.scope === 'catalog' || ['movements','muscles'].includes(_referenceState.page)
+    ? DATA.categoryColor(DATA.atlasGroups().indexOf(name)) : DATA.getCategoryColor(DATA.getCurrentUser(),name);
 }
 function referenceCanWrite() {
   return _referenceState.scope === 'mine' && _referenceState.userId === DATA.getCurrentUser()
@@ -7765,7 +7838,7 @@ function referenceAction(action, value, label, body, extra = '') {
 function referenceExerciseRows(exercises) {
   return exercises.map(ex => referenceAction('exercise', ex.id, ex.name,
     `<span class="reference-row-copy"><b>${escHtml(ex.name)}</b><small>${escHtml(ex.cat || 'Без группы')}</small></span>${SVG_CHEVRON}`,
-    `class="reference-row reference-tinted" style="--cat-color:${escHtml(exerciseCategoryColor(DATA.getCurrentUser(), ex.cat))}"`)).join('') || '<p class="reference-empty">Пока нет упражнений</p>';
+    `class="reference-row reference-tinted" style="--cat-color:${escHtml(referenceCategoryColor(ex.cat))}"`)).join('') || '<p class="reference-empty">Пока нет упражнений</p>';
 }
 function referenceQuantity(count, one, few, many) {
   return count % 100 >= 11 && count % 100 <= 14 ? many : count % 10 === 1 ? one : count % 10 >= 2 && count % 10 <= 4 ? few : many;
@@ -7831,7 +7904,7 @@ function referenceBrowseGroupHtml(data) {
   const s = _referenceState;
   return referenceBrowseShownGroups(data).map(name => referenceAction('browse-group',name,`${referenceBrowseKind() === 'muscles' ? 'Мышцы' : 'Движения'} группы: ${name || 'Без группы'}`,
     `<span>${escHtml(name || 'Без группы')}</span><small>${data[referenceBrowseKind()].filter(item => (item.group || '') === name).length}</small>`,
-    `class="ref-browse-group-switch${!name.includes(' ') && name.length > 9 ? ' long-word' : ''}" style="--cat-color:${escHtml(DATA.getCategoryColor(DATA.getCurrentUser(),name))}" aria-pressed="${s.browseGroup === name && !s.query.trim()}"`)).join('');
+    `class="ref-browse-group-switch${!name.includes(' ') && name.length > 9 ? ' long-word' : ''}" style="--cat-color:${escHtml(referenceCategoryColor(name))}" aria-pressed="${s.browseGroup === name && !s.query.trim()}"`)).join('');
 }
 function referenceBrowseToolsHtml(data) {
   return `<div class="ref-browse-search-row"><label class="ref-browse-search-box">${referenceIcon('search')}<input id="reference-search" type="search" placeholder="Поиск ${referenceBrowseKind() === 'muscles' ? 'мышцы' : 'движения'}…" aria-label="Поиск ${referenceBrowseKind() === 'muscles' ? 'мышцы' : 'движения'}" autocomplete="off" value="${escHtml(_referenceState.query)}">`
@@ -7881,9 +7954,9 @@ function referenceMovementDeckHtml(data) {
     return referenceAction(muscle ? 'muscle' : 'movement',item.name,`${item.name}, ${type}. Упражнения — мои: ${mine}; каталог: ${n} ${referenceQuantity(n,'упражнение','упражнения','упражнений')}`,
       `<span class="ref-browse-deck-title">${escHtml(item.name)}</span><span class="ref-browse-deck-card-footer"><span class="ref-browse-deck-card-kind ${muscle ? item.visible ? 'base' : 'optional' : type === 'База' ? 'base' : 'optional'}">${type}</span>${groupLabel}</span>`
         + referenceBrowseExerciseSummary(mine,n),
-      `class="ref-browse-deck-motion${shapes[i] ? ' long' : ''}" style="--cat-color:${escHtml(DATA.getCategoryColor(DATA.getCurrentUser(),item.group))}"`);
+      `class="ref-browse-deck-motion${shapes[i] ? ' long' : ''}" style="--cat-color:${escHtml(referenceCategoryColor(item.group))}"`);
   }).join('');
-  const total = q ? items.length : all.length, tone = group !== null ? DATA.getCategoryColor(DATA.getCurrentUser(),group) : 'var(--movement-accent)';
+  const total = q ? items.length : all.length, tone = group !== null ? referenceCategoryColor(group) : 'var(--movement-accent)';
   const empty = q || s.browseType !== 'all' ? '<b>Ничего не найдено</b><span>Попробуйте другое название или тип.</span>' + referenceAction('browse-reset','','Сбросить фильтры','Сбросить фильтры') : `<b>Пока нет ${muscle ? 'мышц' : 'движений'}</b><span>В этой группе ещё нет элементов справочника.</span>`;
   return `<section class="ref-browse-group-deck" style="--deck-color:${escHtml(tone)}"><div class="ref-browse-deck-banner"><div><small>${q ? 'Результаты поиска' : muscle ? 'Мышцы группы' : 'Движения группы'}</small><h2>${escHtml(q ? 'Поиск' : group === null ? 'Все группы' : group || 'Без группы')}</h2></div><span class="ref-browse-deck-summary"><b>${total}</b><small>${muscle ? referenceQuantity(total,'мышца','мышцы','мышц') : referenceQuantity(total,'движение','движения','движений')}</small></span></div>`
     + `<div class="ref-browse-deck-body"><div class="ref-browse-deck-types" role="group" aria-label="${muscle ? 'Расположение мышцы' : 'Тип движения'}">${tabs}</div><div class="ref-browse-deck-grid">${cards || `<div class="ref-browse-empty">${empty}</div>`}</div></div></section>`;
@@ -7935,7 +8008,7 @@ function referenceGroupListHtml(data) {
     if (editable && s.editGroup) controls = referenceAction(muscle ? 'star' : 'base',item.id,muscle ? `Видимая мышца: ${item.name}` : `Базовое движение: ${item.name}`,
       muscle ? referenceIcon('star') : active ? 'База' : 'Опция', `class="reference-badge${active ? ' on' : ''}" aria-pressed="${active}"`)
       + referenceAction('remove-'+kind,item.id,`Убрать из группы: ${item.name}`,referenceIcon('minus'),'class="reference-icon-button"');
-    return {name:item.name,count:counts.get(item.name)||0,action:muscle ? 'muscle' : 'movement',value:item.name,color:DATA.getCategoryColor(DATA.getCurrentUser(),s.name),controls};
+    return {name:item.name,count:counts.get(item.name)||0,action:muscle ? 'muscle' : 'movement',value:item.name,color:referenceCategoryColor(s.name),controls};
   });
   return referenceMosaicHtml(items,editable ? {action:'picker',value:kind,label:muscle ? 'Добавить мышцы' : 'Добавить движения'} : null,true) + referenceGroupPickerHtml(data,kind);
 }
@@ -7979,7 +8052,7 @@ function referenceListHtml(data) {
   if (s.page === 'groups') {
     const counts = new Map();
     data.exercises.forEach(ex => counts.set(ex.cat,(counts.get(ex.cat)||0)+1));
-    return referenceMosaicHtml(data.groups.map(name => ({name,count:counts.get(name)||0,action:'group',value:name,color:DATA.getCategoryColor(DATA.getCurrentUser(),name)})),
+    return referenceMosaicHtml(data.groups.map(name => ({name,count:counts.get(name)||0,action:'group',value:name,color:referenceCategoryColor(name)})),
       referenceEditable() ? {action:'new-group',value:'',label:'Новая группа'} : null);
   }
   return referenceMovementDeckHtml(data);
@@ -8001,7 +8074,7 @@ function renderExerciseReference() {
   screen.classList.toggle('reference-movements-page',s.page === 'movements');
   screen.classList.toggle('reference-browse-page',['movements','muscles'].includes(s.page));
   screen.classList.toggle('reference-group-page',s.page === 'group');
-  if (s.page === 'group') screen.style.setProperty('--cat-color',DATA.getCategoryColor(DATA.getCurrentUser(),s.name));
+  if (s.page === 'group') screen.style.setProperty('--cat-color',referenceCategoryColor(s.name));
   else screen.style.removeProperty('--cat-color');
   const summary = $('exercise-reference-summary');
   summary.hidden = !['groups','movements','muscles'].includes(s.page);
@@ -11111,6 +11184,17 @@ if ("serviceWorker" in navigator) {
 window.onAtlasUpdated = function () {
   if (screenExercises && screenExercises.classList.contains("active")) {
     try { renderExercisesList(exercisesSearch.value); } catch {}
+  }
+  if (SCREENS.exerciseReference?.classList.contains('active')) {
+    try { renderExerciseReference(); } catch {}
+  }
+  if ($('screen-exercise-detail')?.classList.contains('active') && _exdReturnScreen !== 'workout'
+      && !document.querySelector('.xe, .xd-sheet[open]')) {
+    try {
+      const scroll = $('exd-body').scrollTop;
+      if (openExerciseDetail(_detailExerciseId,_exdReturnScreen,{scope:_exdCatalog ? 'catalog' : 'mine'}) === false && _exdCatalog) goBackScreen(_exdReturnScreen,{keepFilter:true});
+      else $('exd-body').scrollTop = scroll;
+    } catch {}
   }
   if (screenMenu && screenMenu.classList.contains("active")) {
     try { refreshMenu(); } catch {}

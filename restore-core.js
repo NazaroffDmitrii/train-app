@@ -51,7 +51,13 @@ const RestoreCore = (() => {
       const rows=Object.entries(hidden).filter(([field])=>selected.has(field)).flatMap(([field,kind])=>values[field].map(ref_id=>({user_id:user,kind,ref_id,deleted:false})));
       entities("user_hidden",rows,row=>row.kind+":"+row.ref_id,row=>({user_id:user,kind:row.kind,ref_id:row.ref_id,deleted:true}),row=>selectedKinds.has(row.kind));
     }
-    if(selected.has("ex_order"))entities("user_ordering",[{user_id:user,ordered_ids:values.ex_order}],()=>"ordering",null);
+    if(selected.has("ex_order") || selected.has("library_version")) {
+      const previous=rowsFor("user_ordering")[0];
+      const version=Math.max(values.library_version || 0,previous?.library_version || 0);
+      const ordered_ids=selected.has("ex_order") ? values.ex_order : previous?.ordered_ids || values.ex_order || [];
+      entities("user_ordering",[{user_id:user,ordered_ids,...(version ? {library_version:version} : {})}],()=>"ordering",null);
+      values.library_version=version;selected.add("library_version");
+    }
     if(selected.has("history")){
       const existing=rowsFor("workouts"),byId=new Map(existing.map(row=>[row.id,row]));
       const ids=new Set(values.history.map(workout=>workout.id));
@@ -90,7 +96,7 @@ const RestoreCore = (() => {
       ...Object.entries(tables).filter(([field])=>selected.has(field)).map(([,table])=>table),
       ...(["categories","custom_categories","category_colors"].some(field=>selected.has(field))?["user_categories"]:[]),
       ...(Object.keys(hidden).some(field=>selected.has(field))?["user_hidden"]:[]),
-      ...(selected.has("ex_order")?["user_ordering"]:[]),...(selected.has("history")?["workouts"]:[])
+      ...((selected.has("ex_order")||selected.has("library_version"))?["user_ordering"]:[]),...(selected.has("history")?["workouts"]:[])
     ])];
   }
   function coordinator({storage,outbox,guard}){

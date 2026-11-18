@@ -319,14 +319,25 @@ const DB = (() => {
   // правит администратор перетаскиванием. Личный оверлей пользователя
   // (own_*/hidden_* в user_data) сюда НЕ входит — он мержится на стороне app.js.
   async function getAtlas() {
+    async function readAll(table) {
+      const result = [], seen = new Set();
+      let offset = 0;
+      for (let page = 0; page < 1000; page++) {
+        const rows = await select(table, `select=*&order=id.asc&limit=500&offset=${offset}`);
+        if (!Array.isArray(rows)) throw Error('Неверный ответ каталога');
+        if (!rows.length) return result.sort((a,b) => (a.position ?? 0) - (b.position ?? 0) || a.id.localeCompare(b.id));
+        for (const row of rows) {
+          if (!row.id || seen.has(row.id)) throw Error('Каталог изменился во время загрузки. Повторите обновление.');
+          seen.add(row.id); result.push(row);
+        }
+        offset += rows.length;
+      }
+      throw Error('Превышен размер каталога');
+    }
     const [groups, muscles, movements, links, exercises] = await Promise.all([
-      select("atlas_groups",           "select=*&order=position.asc"),
-      select("atlas_muscles",          "select=*&order=position.asc"),
-      select("atlas_movements",        "select=*&order=position.asc"),
-      select("atlas_muscle_movements", "select=*"),
-      select("atlas_exercises",        "select=*&order=position.asc"),
-    ]);
-    return { groups, muscles, movements, links, exercises };
+      'atlas_groups','atlas_muscles','atlas_movements','atlas_muscle_movements','atlas_exercises',
+    ].map(readAll));
+    return {groups,muscles,movements,links,exercises};
   }
 
   // Запись справочника — пройдёт только у админа (RLS atlas_*_write = is_admin()).

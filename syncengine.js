@@ -143,9 +143,9 @@ const SyncEngine = (() => {
     {
       // Порядок общего списка — единственная строка на профиль (без надгробий).
       table: "user_ordering",
-      collect: uid => { const o = DATA.getExerciseOrder(uid); return o == null ? [] : [{ user_id: uid, ordered_ids: o }]; },
+      collect: uid => { const o = DATA.getExerciseOrder(uid), version = DATA.getLibraryVersion?.(uid) || 0; return o == null && !version ? [] : [{ user_id: uid, ordered_ids: o || [], ...(version ? {library_version:version} : {}) }]; },
       key: () => "ordering",
-      rebuild: (uid, rows) => { if (rows.length && rows[0].ordered_ids !== undefined) DATA_saveOwn(uid, "saveExerciseOrder", rows[0].ordered_ids); },
+      rebuild: (uid, rows) => { if (rows.length && rows[0].ordered_ids !== undefined) DATA_saveOwn(uid, "saveExerciseOrder", rows[0].ordered_ids); if (rows.length && DATA.saveLibraryVersion) DATA_saveOwn(uid, "saveLibraryVersion", rows[0].library_version || 0); },
       tombstone: null, // единственная строка — не удаляем
     },
   ];
@@ -303,7 +303,7 @@ const SyncEngine = (() => {
   function normalizeRow(d, pr) {
     if (d.table === "user_categories") return { user_id: pr.user_id, name: pr.name, color: pr.color ?? null, position: pr.position ?? 0, deleted: false };
     if (d.table === "user_hidden")     return { user_id: pr.user_id, kind: pr.kind, ref_id: pr.ref_id, deleted: false };
-    if (d.table === "user_ordering")   return { user_id: pr.user_id, ordered_ids: pr.ordered_ids };
+    if (d.table === "user_ordering")   return { user_id: pr.user_id, ordered_ids: pr.ordered_ids, ...(pr.library_version ? {library_version:pr.library_version} : {}) };
     return { user_id: pr.user_id, id: pr.id, data: pr.data || {}, position: pr.position ?? 0, deleted: false };
   }
 

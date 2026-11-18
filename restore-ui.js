@@ -1,7 +1,7 @@
 (() => {
   const status=document.getElementById("status"),content=document.getElementById("content");
   let busy=false;
-  const labels={active:"Активная тренировка",history:"История тренировок",workout_index:"Индекс истории (пересчёт)",records:"Рекорды (пересчёт)",own_exercises:"Мои упражнения",templates:"Шаблоны",exercise_groups:"Группы упражнений",categories:"Категории",custom_categories:"Пользовательские категории",category_colors:"Цвета категорий",own_muscles:"Мои мышцы",own_movements:"Мои движения",hidden:"Скрытые упражнения",hidden_muscles:"Скрытые мышцы",hidden_movements:"Скрытые движения",ex_order:"Порядок упражнений",ref_order_muscle:"Порядок мышц",ref_order_movement:"Порядок движений"};
+  const labels={library_version:"Личная библиотека",active:"Активная тренировка",history:"История тренировок",workout_index:"Индекс истории (пересчёт)",records:"Рекорды (пересчёт)",own_exercises:"Мои упражнения",templates:"Шаблоны",exercise_groups:"Группы упражнений",categories:"Категории",custom_categories:"Пользовательские категории",category_colors:"Цвета категорий",own_muscles:"Мои мышцы",own_movements:"Мои движения",hidden:"Скрытые упражнения",hidden_muscles:"Скрытые мышцы",hidden_movements:"Скрытые движения",ex_order:"Порядок упражнений",ref_order_muscle:"Порядок мышц",ref_order_movement:"Порядок движений"};
   const report=text=>{status.textContent=text;};
   const button=(label,action)=>{const element=document.createElement("button");element.type="button";element.textContent=label;element.onclick=async()=>{
     if(busy)return;busy=true;element.disabled=true;try{await action();}catch(error){report(error.message);}finally{busy=false;element.disabled=false;}

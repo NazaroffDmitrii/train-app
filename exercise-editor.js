@@ -22,10 +22,10 @@
   }
   const effective=kind=>contextKey?resolveDescription(kind).value:draft.base[kind];
   const own=kind=>!contextKey||Object.hasOwn(variant(),kind);
-  const groupColor=name=>DATA.getCategoryColor(DATA.getCurrentUser(),name)||'#b9aeff';
+  const groupColor=name=>(editorOptions.catalog?DATA.categoryColor(DATA.atlasGroups().indexOf(name)):DATA.getCategoryColor(DATA.getCurrentUser(),name))||'#b9aeff';
   function fromExercise(ex){
     const a=ex.atlas||{};const snap=executionForExercise(DATA.getCurrentUser(),ex);
-    const all=DATA.getExerciseGroups(DATA.getCurrentUser());
+    const all=editorOptions.catalog?DATA.getCatalogExerciseGroups():DATA.getExerciseGroups(DATA.getCurrentUser());
     return {id:ex.id,name:ex.name,cat:ex.cat||'',level:LEVEL_LABELS[a.level]||a.level||'',format:ex.type==='run'?'run':'strength',variation:a.variationName||'',family:all.find(g=>g.id===ex.groupId)?.name||'',parameters:clone(snap?.executionParameters||a.executionParameters||[]),variants:ExerciseDescriptions.variants(ex),base:ExerciseDescriptions.base(ex),extra:{equipment:a.equipment||'',media:ex.media||'',reference:a.referenceUrl||'',tip:ex.tip||''},original:clone(ex)};
   }
   function newDraft(){return {id:'e_own_'+crypto.randomUUID(),name:'',cat:'',level:'',format:'strength',variation:'',family:'',parameters:[],variants:{},base:{muscles:[],movement:[],technique:'',mistakes:[],features:[],restrictions:''},extra:{equipment:'',media:'',reference:'',tip:''},original:{atlas:{}}};}
@@ -56,6 +56,7 @@
     root?.remove();root=document.createElement('div');root.className='xe'+(editorOptions.catalog?' from-catalog':'');root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-label',pendingNew?'Добавление упражнения':'Редактирование упражнения');root.innerHTML=`
     <header class="xe-header"><div class="xe-toolbar"><button type="button" class="xe-icon-button" data-close aria-label="Выйти из редактора">${icon('back')}</button><h1>${pendingNew?'Добавление упражнения':'Редактирование'}</h1></div><div class="xe-editor-hero"><label class="xe-sr-only" for="xe-name">Название упражнения</label><textarea id="xe-name" form="xe-form" class="xe-name" rows="1" placeholder="Название упражнения" maxlength="180">${E(draft.name)}</textarea><p class="xe-error" data-name-error hidden>Введите название упражнения.</p><div class="xe-hero-meta"><button class="xe-select xe-group-button" style="--group-color:${groupColor(draft.cat)}" type="button" data-pick="cat" aria-label="Выбрать группу">${icon('groups')}<span>${E(draft.cat||'Группа')}</span>${icon('down')}</button><input type="hidden" id="xe-level" value="${E(draft.level)}"><button class="xe-type-button" type="button" data-level aria-label="Тип упражнения"><span>${E(draft.level||'Тип упражнения')}</span>${icon('down')}</button></div><p class="xe-error" data-cat-error hidden>Выберите группу.</p><p class="xe-error" data-level-error hidden>Выберите тип упражнения.</p></div></header>
     <main class="xe-body"><form class="xe-form" id="xe-form" novalidate>
+      <section class="xe-section">${field("Группа вариаций","xe-family",draft.family,"Например, жим лёжа")}<p class="xe-note">Одинаковое название объединяет упражнения в одну группу вариаций.</p></section>
       <section class="xe-section" id="xe-parameters"><details class="xe-disclosure" data-parameters><summary>${icon('parameters')}<span class="xe-summary-title">Параметры выполнения</span><span class="xe-summary-count" data-param-count>${draft.parameters.length?quantity(draft.parameters.length,['параметр','параметра','параметров']):'Не заданы'}</span>${icon('down')}</summary><div class="xe-disclosure-body"><p class="xe-note">Задайте то, что можно менять при выполнении: угол, хват, рукоятку.</p><div data-parameter-rows>${paramsHtml()}</div><div class="xe-presets"><button type="button" data-preset="angle">+ Угол скамьи</button><button type="button" data-preset="grip">+ Ширина хвата</button><button type="button" data-preset="custom">+ Свой параметр</button></div><p class="xe-error" data-param-error hidden></p></div></details></section>
       <section class="xe-section" id="xe-links"><div class="xe-context">${icon('parameters')}<div><b>${contextKey?E(context.map(v=>v.value).join(' · ')):'Общее описание'}</b><p>${contextKey?'Меняйте только отличающиеся разделы. Остальные остаются общими.':'Содержимое для всех значений параметров, если не заданы отдельные отличия.'}</p></div><button type="button" data-context>${contextKey?'Сменить':'Добавить отличия'}</button></div>${section('movement',movesHtml())}${section('muscles',musclesHtml())}</section>
       <section class="xe-section" id="xe-description"><h2 class="xe-heading">Описание упражнения<small>${contextKey?E(context.map(v=>v.value).join(' · ')):'Общее'}</small></h2>${section('technique',`<p class="xe-note">Каждый пункт — с новой строки. На странице появится нумерация.</p>${field('Текст техники','xe-technique',effective('technique'),'Опишите выполнение упражнения',true)}`)}${section('mistakes',errorsHtml())}${section('features',featuresHtml())}${section('restrictions',field('Полный текст ограничений','xe-restrictions',effective('restrictions'),'Укажите ограничения, если они есть',true))}</section>
@@ -85,7 +86,7 @@
     form.onsubmit=event=>{event.preventDefault();save();};root.onkeydown=event=>{if(event.key==='Tab'){const targets=[...root.querySelectorAll('button,input,textarea,select,summary')].filter(el=>!el.disabled&&el.type!=='hidden'&&el.getClientRects().length&&!el.closest('[inert]'));const first=targets[0],last=targets.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}if(event.key==='Escape'&&!document.querySelector('dialog[open]')){event.preventDefault();closeEditor();}};
   }
   function collect(){
-    if(!form)return;const value=id=>root.querySelector('#'+id)?.value||'';draft.name=value('xe-name');draft.level=value('xe-level');if(pendingNew)draft.format='strength';for(const [key,id] of [['media','xe-media'],['tip','xe-tip']])draft.extra[key]=value(id);
+    if(!form)return;const value=id=>root.querySelector('#'+id)?.value||'';draft.name=value('xe-name');draft.family=value('xe-family');draft.level=value('xe-level');if(pendingNew)draft.format='strength';for(const [key,id] of [['media','xe-media'],['tip','xe-tip']])draft.extra[key]=value(id);
     form.querySelectorAll('[data-param-row]').forEach((row,n)=>{draft.parameters[n].name=row.querySelector('[data-param-name]').value;const next=[...row.querySelectorAll('[data-param-value]')].map(input=>input.value);next.forEach((value,j)=>{const old=draft.parameters[n].options[j];if(old&&old!==value)renameCondition(draft.parameters[n].id,old,value);});draft.parameters[n].options=next;});
     for(const kind of Object.keys(titles)){if(!own(kind))continue;const dest=contextKey?variant():draft.base;
       if(kind==='technique')dest[kind]=value('xe-technique');if(kind==='restrictions')dest[kind]=value('xe-restrictions');
@@ -159,9 +160,9 @@
     const payload={name:ex.name,type:ex.type,cat:ex.cat,media:ex.media,tip:ex.tip,atlas:ex.atlas};
     try{
       let id=draft.id;
-      if(editorOptions.catalog){if(!DATA.isAdmin())return;if(pendingNew)id='ae_'+crypto.randomUUID();await saveSharedExercises([{id,patch:payload,create:pendingNew,...(pendingNew&&editorOptions.groupName?{groupName:editorOptions.groupName}:{})}]);}
-      else if(pendingNew){id=DATA.addExercise(editorUser,{...payload,groupId:editorOptions.groupId||null}).id;if(editorOptions.groupName)DATA.setExerciseGroupByName(editorUser,id,editorOptions.groupName);SyncQueue.push('exercise:create',{id,name:ex.name});}
-      else{const updated=DATA.updateOwnExercise(editorUser,id,payload);if(!updated)throw Error('Упражнение больше недоступно');SyncQueue.push('exercise:update',{id});}
+      if(editorOptions.catalog){if(!DATA.isAdmin())return;if(pendingNew)id='ae_'+crypto.randomUUID();await saveSharedExercises([{id,patch:payload,create:pendingNew,groupName:draft.family}]);}
+      else if(pendingNew){id=DATA.addExercise(editorUser,{...payload,groupId:editorOptions.groupId||null}).id;if(draft.family.trim())DATA.setExerciseGroupByName(editorUser,id,draft.family);SyncQueue.push('exercise:create',{id,name:ex.name});}
+      else{const updated=DATA.updateOwnExercise(editorUser,id,payload);if(!updated)throw Error('Упражнение больше недоступно');if(draft.family!==fromExercise(seed).family)DATA.setExerciseGroupByName(editorUser,id,draft.family);SyncQueue.push('exercise:update',{id});}
       if(!validContext()){dispose();return;}
       _executionDrafts.set(executionDraftKey(editorUser,id),executionSnapshot(ex.atlas.executionParameters,context));
       const wasNew=pendingNew,onCreated=editorOptions.onCreated;dirty=false;dispose();showToast(wasNew?'Упражнение добавлено':'Упражнение обновлено');
@@ -178,7 +179,7 @@
     dispose();editorOptions={...options};editorOwner=Auth.userId();editorUser=user;
     const active=Object.entries(SCREENS).find(([,element])=>element.classList.contains('active'))?.[0]||'exercises';
     editorReturn={screen:active,exerciseId:_detailExerciseId,returnScreen:_exdReturnScreen,scope:_exdCatalog?'catalog':'mine'};
-    seed=ex;pendingNew=!ex;context=[];contextKey='';draft=ex?fromExercise(ex):newDraft();if(!ex){draft.cat=options.cat||'';draft.parameters=clone(options.parameters||[]);}
+    seed=ex;pendingNew=!ex;context=[];contextKey='';draft=ex?fromExercise(ex):newDraft();if(!ex){draft.cat=options.cat||'';draft.family=options.groupName||'';draft.parameters=clone(options.parameters||[]);}
     baseline=serialized(draft);dirty=false;render();
     if(options.focus==='parameters')root.querySelector('[data-parameters]').open=true;
   }

@@ -1,4 +1,4 @@
-const BACKUP_FIELDS = ["active", "history", "workout_index", "records", "own_exercises", "templates", "exercise_groups", "categories", "custom_categories", "category_colors", "own_muscles", "own_movements", "hidden", "hidden_muscles", "hidden_movements", "ex_order", "ref_order_muscle", "ref_order_movement"];
+const BACKUP_FIELDS = ["library_version","active", "history", "workout_index", "records", "own_exercises", "templates", "exercise_groups", "categories", "custom_categories", "category_colors", "own_muscles", "own_movements", "hidden", "hidden_muscles", "hidden_movements", "ex_order", "ref_order_muscle", "ref_order_movement"];
 const IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 
 function validateImportSection(field, value) {
@@ -137,7 +137,9 @@ function prepareUserImport(text, userId) {
     if (typeof raw !== "string") throw new Error("Значения копии должны быть JSON-строками");
     const value = JSON.parse(raw);
     const field = BACKUP_FIELDS.find(field => key === `train_${field}_${userId}`);
-    if (["records", "category_colors"].includes(field)) {
+    if (field === "library_version") {
+      if (!Number.isSafeInteger(value) || value < 0 || value > 1) throw new Error("Некорректная версия библиотеки");
+    } else if (["records", "category_colors"].includes(field)) {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Ожидался словарь: " + field);
     } else if (field === "active") {
       if (value !== null && (typeof value !== "object" || Array.isArray(value) || typeof value.id !== "string")) throw new Error("Некорректная активная тренировка");
