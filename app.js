@@ -7475,6 +7475,14 @@ async function saveSharedExercises(changes) {
   }
   await commitSharedAtlas(next,[['saveAtlasExercises',rows]]);
 }
+async function saveCatalogVariation(parentId, id, patch) {
+  const parent = DATA.atlasExerciseById(parentId);
+  if (!parent) throw Error('Исходное упражнение больше не доступно в каталоге');
+  const groupName = parent.groupName || parent.name;
+  const changes = [{id, create:true, groupName, patch:{...patch, cat:parent.cat}}];
+  if (!parent.groupName) changes.unshift({id:parentId, groupName});
+  await saveSharedExercises(changes);
+}
 async function saveSharedReference(kind, item, patch) {
   const next = DATA.atlasSnapshot(), muscle = kind === 'muscles';
   const collection = muscle ? next.muscles : next.categories;
@@ -9494,7 +9502,7 @@ function canCreateExerciseFromList() {
   if (_exListEditMode) return false;
   const context = _constructorCatalog;
   return context ? context.owner === Auth.userId() && context.profile === DATA.getCurrentUser() && !Auth.contextChanged()
-    : !exerciseCatalogSource();
+    : !exerciseCatalogSource() || DATA.isAdmin();
 }
 
 function finishCreatedExerciseSelection(context, id) {
@@ -9520,7 +9528,7 @@ function openNewExerciseFromList() {
   openExerciseForm(null, context ? {
     isCurrent: () => _constructorCatalog === context && canCreateExerciseFromList(),
     onCreated: id => finishCreatedExerciseSelection(context, id),
-  } : {});
+  } : {catalog:exerciseCatalogSource()});
 }
 
 /* — Форма добавления / редактирования личного упражнения — */

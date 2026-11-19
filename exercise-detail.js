@@ -134,7 +134,23 @@ const ExerciseDescriptions = (() => {
     if(relation.changed)section.querySelector('.xd-content')?.classList.add('xd-dependent-fragment');
     if(relation.conflict){const note=document.createElement('p');note.className='ex-form-hint';note.textContent='Для этого сочетания показано общее описание: отличия требуют уточнения.';section.querySelector('.xd-content')?.prepend(note);}
    });
-   if(snapshot.executionParameters.length)tree.append(wrap('Параметры выполнения',[parameters(ex,catalog,returnScreen,options)],'parameters',index++));tree.append(execution);
+   const catalogAdmin = catalog && DATA.isAdmin() && !options.previewExercise && !_constructorCatalog && returnScreen !== 'workout';
+   const parameterNodes = snapshot.executionParameters.length ? [parameters(ex,catalog,returnScreen,options)] : [];
+   if (catalogAdmin) {
+     const edit = document.createElement('button');
+     edit.type = 'button'; edit.className = 'btn-chip';
+     edit.textContent = parameterNodes.length ? 'Настроить параметры' : 'Добавить параметр';
+     edit.onclick = () => openExerciseForm(ex.id,{catalog:true,focus:'parameters'});
+     parameterNodes.push(edit);
+   }
+   if (parameterNodes.length) tree.append(wrap('Параметры выполнения',parameterNodes,'parameters',index++));
+   if (catalogAdmin) {
+     const add = document.createElement('button');
+     add.type = 'button'; add.className = 'btn-chip'; add.textContent = 'Добавить вариацию';
+     add.onclick = () => openExerciseForm(null,{catalog:true,variationOf:ex.id});
+     tree.append(wrap('Вариации',[add],'features',index++));
+   }
+   tree.append(execution);
    const moves=exerciseMovements(resolved.exercise);
    if(moves.length){const links=document.createElement('div');links.innerHTML=moves.map(name=>`<button class="xd-movement-link" type="button" data-reference-kind="movement" data-reference-name="${escHtml(name)}"><span>${escHtml(name)}</span>${chevron}</button>`).join('');execution.append(wrap('Движения',[links],'movement',index++));}
    cards.forEach(card=>{

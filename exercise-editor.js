@@ -63,6 +63,11 @@
       <section class="xe-section" id="xe-extra"><details class="xe-disclosure" data-extra><summary>${icon('link')}<span class="xe-summary-title">Дополнительно</span><span class="xe-summary-count">Необязательно</span>${icon('down')}</summary><div class="xe-disclosure-body">${field('Материалы · ссылка','xe-media',draft.extra.media,'Фото, видео, документ или другая ссылка')}${field('Дополнительно','xe-tip',draft.extra.tip,'Любая дополнительная информация',true)}</div></details></section>
     </form></main><footer class="xe-footer"><div class="xe-footer-inner"><span class="xe-status"></span><div class="xe-footer-actions"><button class="xe-preview-button" type="button" data-preview aria-label="Предпросмотр упражнения">${icon('eye')}<span>Предпросмотр</span></button><button class="xe-save" type="button" data-save>${icon('check')}<span>${pendingNew?'Добавить':'Сохранить'}</span></button></div></div><p class="xe-error" data-general-error hidden></p></footer>`;
     document.body.append(root);
+    if(editorOptions.variationOf){
+      root.querySelector('h1').textContent='Новая вариация';
+      root.querySelector('#xe-family').readOnly=true;
+      root.querySelector('[data-pick="cat"]').disabled=true;
+    }
     if(!pendingNew){const editor=root;ExerciseDetailPage.mountRemoval(seed,editorReturn.screen==='exerciseDetail'?editorReturn.returnScreen:editorReturn.screen,{container:editor,catalog:!!editorOptions.catalog,isCurrent:()=>root===editor&&editor.isConnected&&validContext(),onRemoved:()=>{dirty=false;dispose();}});}
     form=root.querySelector('form');root.querySelector('.xe-body').scrollTop=scroll;grow(root.querySelector('#xe-name'));touch();
     const changed=()=>{if(!validContext()){dispose();return;}collect();touch();for(const [id,key] of [['xe-name','name'],['xe-level','level']])if(draft[key].trim()){root.querySelector(`[data-${key}-error]`).hidden=true;root.querySelector('#'+id).classList.remove('xe-invalid');}};
@@ -86,7 +91,7 @@
     form.onsubmit=event=>{event.preventDefault();save();};root.onkeydown=event=>{if(event.key==='Tab'){const targets=[...root.querySelectorAll('button,input,textarea,select,summary')].filter(el=>!el.disabled&&el.type!=='hidden'&&el.getClientRects().length&&!el.closest('[inert]'));const first=targets[0],last=targets.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}if(event.key==='Escape'&&!document.querySelector('dialog[open]')){event.preventDefault();closeEditor();}};
   }
   function collect(){
-    if(!form)return;const value=id=>root.querySelector('#'+id)?.value||'';draft.name=value('xe-name');draft.family=value('xe-family');draft.level=value('xe-level');if(pendingNew)draft.format='strength';for(const [key,id] of [['media','xe-media'],['tip','xe-tip']])draft.extra[key]=value(id);
+    if(!form)return;const value=id=>root.querySelector('#'+id)?.value||'';draft.name=value('xe-name');draft.family=value('xe-family');draft.level=value('xe-level');if(pendingNew&&!editorOptions.variationOf)draft.format='strength';for(const [key,id] of [['media','xe-media'],['tip','xe-tip']])draft.extra[key]=value(id);
     form.querySelectorAll('[data-param-row]').forEach((row,n)=>{draft.parameters[n].name=row.querySelector('[data-param-name]').value;const next=[...row.querySelectorAll('[data-param-value]')].map(input=>input.value);next.forEach((value,j)=>{const old=draft.parameters[n].options[j];if(old&&old!==value)renameCondition(draft.parameters[n].id,old,value);});draft.parameters[n].options=next;});
     for(const kind of Object.keys(titles)){if(!own(kind))continue;const dest=contextKey?variant():draft.base;
       if(kind==='technique')dest[kind]=value('xe-technique');if(kind==='restrictions')dest[kind]=value('xe-restrictions');
@@ -160,7 +165,12 @@
     const payload={name:ex.name,type:ex.type,cat:ex.cat,media:ex.media,tip:ex.tip,atlas:ex.atlas};
     try{
       let id=draft.id;
-      if(editorOptions.catalog){if(!DATA.isAdmin())return;if(pendingNew)id='ae_'+crypto.randomUUID();await saveSharedExercises([{id,patch:payload,create:pendingNew,groupName:draft.family}]);}
+      if(editorOptions.catalog){
+        if(!DATA.isAdmin())return;
+        if(pendingNew)id='ae_'+crypto.randomUUID();
+        if(editorOptions.variationOf) await saveCatalogVariation(editorOptions.variationOf,id,payload);
+        else await saveSharedExercises([{id,patch:payload,create:pendingNew,groupName:draft.family}]);
+      }
       else if(pendingNew){id=DATA.addExercise(editorUser,{...payload,groupId:editorOptions.groupId||null}).id;if(draft.family.trim())DATA.setExerciseGroupByName(editorUser,id,draft.family);SyncQueue.push('exercise:create',{id,name:ex.name});}
       else{const updated=DATA.updateOwnExercise(editorUser,id,payload);if(!updated)throw Error('Упражнение больше недоступно');if(draft.family!==fromExercise(seed).family)DATA.setExerciseGroupByName(editorUser,id,draft.family);SyncQueue.push('exercise:update',{id});}
       if(!validContext()){dispose();return;}
@@ -180,6 +190,14 @@
     const active=Object.entries(SCREENS).find(([,element])=>element.classList.contains('active'))?.[0]||'exercises';
     editorReturn={screen:active,exerciseId:_detailExerciseId,returnScreen:_exdReturnScreen,scope:_exdCatalog?'catalog':'mine'};
     seed=ex;pendingNew=!ex;context=[];contextKey='';draft=ex?fromExercise(ex):newDraft();if(!ex){draft.cat=options.cat||'';draft.family=options.groupName||'';draft.parameters=clone(options.parameters||[]);}
+    if(options.catalog && options.variationOf){
+      const parent=source.find(item=>item.id===options.variationOf);
+      if(!parent)return;
+      const id=draft.id;
+      draft=fromExercise(parent);
+      draft.id=id; draft.name=''; draft.family=parent.groupName || parent.name;
+      draft.original.atlas.variationName='';
+    }
     baseline=serialized(draft);dirty=false;render();
     if(options.focus==='parameters')root.querySelector('[data-parameters]').open=true;
   }
