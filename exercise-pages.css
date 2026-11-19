@@ -201,6 +201,7 @@
 .xd-membership[aria-pressed=true] svg{opacity:1}
 #screen-exercise-detail.xd-view .xd-membership + #exd-edit-btn{margin-left:0}
 .xe .xd-remove{width:36px;height:36px;min-width:36px;margin-left:auto}
+#screen-exercises .xd-remove-sheet{--xd-card:var(--panel);--xd-border:var(--border-strong);--xd-inner:var(--panel-hi);--xd-muted:var(--text-secondary)}
 .xe .xd-remove-sheet{--xd-card:var(--xe-card);--xd-border:var(--xe-border);--xd-muted:var(--xe-muted);--xd-inner:#241e30;--xd-accent:var(--xe-accent);--xd-page:#0e0c17}
 .xd-carousel-track.is-dragging{scroll-snap-type:none;scroll-behavior:auto}
 

@@ -25,7 +25,7 @@
   const groupColor=name=>(editorOptions.catalog?DATA.categoryColor(DATA.atlasGroups().indexOf(name)):DATA.getCategoryColor(DATA.getCurrentUser(),name))||'#b9aeff';
   function fromExercise(ex){
     const a=ex.atlas||{};const snap=executionForExercise(DATA.getCurrentUser(),ex);
-    const all=editorOptions.catalog?DATA.getCatalogExerciseGroups():DATA.getExerciseGroups(DATA.getCurrentUser());
+    const all=DATA.libraryGroups(DATA.getCurrentUser(),editorOptions.catalog);
     return {id:ex.id,name:ex.name,cat:ex.cat||'',level:LEVEL_LABELS[a.level]||a.level||'',format:ex.type==='run'?'run':'strength',variation:a.variationName||'',family:all.find(g=>g.id===ex.groupId)?.name||'',parameters:clone(snap?.executionParameters||a.executionParameters||[]),variants:ExerciseDescriptions.variants(ex),base:ExerciseDescriptions.base(ex),extra:{equipment:a.equipment||'',media:ex.media||'',reference:a.referenceUrl||'',tip:ex.tip||''},original:clone(ex)};
   }
   function newDraft(){return {id:'e_own_'+crypto.randomUUID(),name:'',cat:'',level:'',format:'strength',variation:'',family:'',parameters:[],variants:{},base:{muscles:[],movement:[],technique:'',mistakes:[],features:[],restrictions:''},extra:{equipment:'',media:'',reference:'',tip:''},original:{atlas:{}}};}
@@ -165,13 +165,13 @@
     const payload={name:ex.name,type:ex.type,cat:ex.cat,media:ex.media,tip:ex.tip,atlas:ex.atlas};
     try{
       let id=draft.id;
-      if(editorOptions.catalog){
-        if(!DATA.isAdmin())return;
+      if(editorOptions.variationOf){
+        id=await saveExerciseVariation(editorUser,!!editorOptions.catalog,editorOptions.variationOf,payload);
+      }else if(editorOptions.catalog){
         if(pendingNew)id='ae_'+crypto.randomUUID();
-        if(editorOptions.variationOf) await saveCatalogVariation(editorOptions.variationOf,id,payload);
-        else await saveSharedExercises([{id,patch:payload,create:pendingNew,groupName:draft.family}]);
+        await saveSharedExercises([{id,patch:payload,create:pendingNew,groupName:draft.family}]);
       }
-      else if(pendingNew){id=DATA.addExercise(editorUser,{...payload,groupId:editorOptions.groupId||null}).id;if(draft.family.trim())DATA.setExerciseGroupByName(editorUser,id,draft.family);SyncQueue.push('exercise:create',{id,name:ex.name});}
+      else if(pendingNew){id=DATA.addExercise(editorUser,payload).id;if(draft.family.trim())DATA.setExerciseGroupByName(editorUser,id,draft.family);SyncQueue.push('exercise:create',{id,name:ex.name});}
       else{const updated=DATA.updateOwnExercise(editorUser,id,payload);if(!updated)throw Error('Упражнение больше недоступно');if(draft.family!==fromExercise(seed).family)DATA.setExerciseGroupByName(editorUser,id,draft.family);SyncQueue.push('exercise:update',{id});}
       if(!validContext()){dispose();return;}
       _executionDrafts.set(executionDraftKey(editorUser,id),executionSnapshot(ex.atlas.executionParameters,context));
@@ -184,18 +184,18 @@
   }
   function closeEditor(){collect();const close=()=>{const {screen,exerciseId,returnScreen,scope}=editorReturn;dispose();if(screen==='exerciseDetail'&&exerciseId)openExerciseDetail(exerciseId,returnScreen,{scope});};if(dirty)confirm('Выйти без сохранения?','Несохранённые изменения формы будут сброшены.',close);else close();}
   function open(exerciseId,options={}){
-    if(options.catalog&&!DATA.isAdmin())return;
-    const user=DATA.getCurrentUser(),source=options.catalog?DATA.getCatalogExercises(user):DATA.getVisibleExercises(user),ex=exerciseId?source.find(e=>e.id===exerciseId):null;if(exerciseId&&!ex)return;
+    if(!canEditExerciseLibrary(options.catalog))return;
+    const user=DATA.getCurrentUser(),source=DATA.libraryExercises(user,options.catalog),ex=exerciseId?source.find(e=>e.id===exerciseId):null;if(exerciseId&&!ex)return;
     dispose();editorOptions={...options};editorOwner=Auth.userId();editorUser=user;
     const active=Object.entries(SCREENS).find(([,element])=>element.classList.contains('active'))?.[0]||'exercises';
     editorReturn={screen:active,exerciseId:_detailExerciseId,returnScreen:_exdReturnScreen,scope:_exdCatalog?'catalog':'mine'};
-    seed=ex;pendingNew=!ex;context=[];contextKey='';draft=ex?fromExercise(ex):newDraft();if(!ex){draft.cat=options.cat||'';draft.family=options.groupName||'';draft.parameters=clone(options.parameters||[]);}
-    if(options.catalog && options.variationOf){
+    seed=ex;pendingNew=!ex;context=[];contextKey='';draft=ex?fromExercise(ex):newDraft();if(!ex)draft.cat=options.cat||'';
+    if(options.variationOf){
       const parent=source.find(item=>item.id===options.variationOf);
       if(!parent)return;
       const id=draft.id;
       draft=fromExercise(parent);
-      draft.id=id; draft.name=''; draft.family=parent.groupName || parent.name;
+      draft.id=id; draft.name=''; draft.family ||= DATA.newVariationGroupName(user,!!options.catalog,parent.name);
       draft.original.atlas.variationName='';
     }
     baseline=serialized(draft);dirty=false;render();

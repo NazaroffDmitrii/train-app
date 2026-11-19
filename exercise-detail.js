@@ -71,41 +71,58 @@ const ExerciseDescriptions = (() => {
     const body=$('exd-body'),scroll=body.scrollTop;openExerciseDetail(ex.id,returnScreen,{scope:catalog?'catalog':'mine'});body.scrollTop=scroll;
    });return host;
  }
+ function removalLabel(ex,catalog){
+   if(catalog)return 'Удалить из каталога';
+   return ex.catalogSource||DATA.atlasExerciseById(ex.id)?'Убрать из моих':'Удалить упражнение';
+ }
  function mountRemoval(ex,returnScreen,options={}){
-   const screen=options.container||$('screen-exercise-detail');screen.querySelector('[data-xd-remove]')?.remove();
-   const catalog=options.catalog??_exdCatalog;
-   if(options.previewExercise||catalog&&!DATA.isAdmin())return;
-   const userId=DATA.getCurrentUser(),owner=Auth.userId(),shared=!!ex.catalogSource||DATA.DEFAULT_EXERCISES.some(item=>item.id===ex.id);
-   const current=()=>owner===Auth.userId()&&userId===DATA.getCurrentUser()&&!Auth.contextChanged()&&(!catalog||DATA.isAdmin());
-   const leave=()=>{options.onRemoved?.();renderExercisesList(exercisesSearch.value);if($('screen-exercise-detail').classList.contains('active')&&_detailExerciseId===ex.id&&_exdCatalog===catalog)goBackScreen(returnScreen,{keepFilter:true,resumeConstructor:returnScreen==='constructor'});else if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();};
-   const label=catalog?'Удалить из каталога':shared?'Убрать из моих':'Удалить упражнение';
+   const screen=options.container||$('screen-exercise-detail'),catalog=options.catalog??_exdCatalog;
+   screen.querySelector('[data-xd-remove]')?.remove();
+   if(options.previewExercise||!canEditExerciseLibrary(catalog))return;
+   const label=removalLabel(ex,catalog),owner=Auth.userId(),userId=DATA.getCurrentUser();
    const button=document.createElement('button');button.type='button';button.className='btn-chip xd-remove';button.dataset.xdRemove='';button.setAttribute('aria-label',label);button.title=label;button.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg>';
    screen.querySelector('.xe-toolbar, .detail-screen-header').append(button);
-   button.onclick=()=>{
-     if(!current()||options.isCurrent&&!options.isCurrent())return;
-     const dialog=document.createElement('dialog');dialog.className='xd-sheet xd-remove-sheet';
-     dialog.innerHTML=`<h2>${label}?</h2><p>«${escHtml(ex.name)}» ${catalog?'будет удалено из общего каталога.':shared?'исчезнет из «Моих». История тренировок сохранится.':'можно будет восстановить в «Недавно удалённых» в течение 7 дней.'}</p><p class="xd-editor-error" role="alert" hidden></p><div class="xd-remove-actions"><button type="button" data-cancel>Отмена</button><button type="button" data-remove-confirm>${label}</button></div>`;
-     dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());screen.append(dialog);dialog.showModal();
-     dialog.querySelector('[data-remove-confirm]').onclick=async event=>{
-       if(!current()||options.isCurrent&&!options.isCurrent()){dialog.close();return;}const confirm=event.currentTarget;confirm.disabled=true;
-       try{
-         if(catalog){
-           const next=DATA.atlasSnapshot(),position=next.exercises.findIndex(item=>item.id===ex.id);if(position<0)throw Error('Упражнение уже удалено');const raw=next.exercises.splice(position,1)[0];
-           await commitSharedAtlas(next,[['deleteAtlasExercise',ex.id]]);
-           if(!current()||options.isCurrent&&!options.isCurrent()){dialog.close();return;}dialog.close();leave();
-           showUndoToast('Упражнение удалено из каталога',async()=>{if(!current())return;try{const restore=DATA.atlasSnapshot();if(restore.exercises.some(item=>item.id===raw.id))return;const index=Math.min(position,restore.exercises.length);restore.exercises.splice(index,0,raw);await commitSharedAtlas(restore,[['saveAtlasExercises',[{id:raw.id,name:raw.name,data:raw,position:index}]]]);if(current()){renderExercisesList(exercisesSearch.value);if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();showToast('Восстановлено');}}catch(error){showToast('Не удалось восстановить: '+error.message);}});
-         }else if(shared){
-           DATA.hideExercise(userId,ex.id);dialog.close();leave();showUndoToast('Упражнение убрано из моих',()=>{if(!current())return;DATA.unhideExercise(userId,ex.id);renderExercisesList(exercisesSearch.value);if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();});
-         }else{
-           const own=DATA.getOwnExercises(userId).find(item=>item.id===ex.id);if(!own)throw Error('Упражнение уже удалено');const copy=JSON.parse(JSON.stringify(own));
-           const trashId=Trash.push(userId,{type:'exercise',label:ex.name,sub:'Упражнение',data:{own:copy,exId:ex.id}});DATA.deleteOwnExercise(userId,ex.id);dialog.close();leave();
-           showUndoToast('Упражнение удалено',()=>{if(!current())return;const list=DATA.getOwnExercises(userId);if(!list.some(item=>item.id===ex.id))DATA.saveOwnExercises(userId,[...list,copy]);Trash.remove(userId,trashId);renderExercisesList(exercisesSearch.value);if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();});
-         }
-       }catch(error){const message=dialog.querySelector('.xd-editor-error');message.textContent='Не удалось удалить: '+error.message;message.hidden=false;confirm.disabled=false;}
-     };
+   button.onclick=()=>{if(owner===Auth.userId()&&userId===DATA.getCurrentUser())confirmRemoval(ex,returnScreen,{...options,catalog});};
+ }
+ function confirmRemoval(ex,returnScreen,options){
+   const {catalog}=options,screen=options.container||$('screen-exercise-detail'),label=removalLabel(ex,catalog);
+   const userId=DATA.getCurrentUser(),owner=Auth.userId();
+   const current=()=>owner===Auth.userId()&&userId===DATA.getCurrentUser()&&!Auth.contextChanged()&&canEditExerciseLibrary(catalog);
+   if(!current()||options.isCurrent&&!options.isCurrent())return;
+   const dialog=document.createElement('dialog');dialog.className='xd-sheet xd-remove-sheet';
+   dialog.innerHTML=`<h2>${label}?</h2><p>«${escHtml(ex.name)}» ${catalog?'будет удалено из общего каталога у всех.':ex.catalogSource||DATA.atlasExerciseById(ex.id)?'исчезнет из «Моих». История тренировок сохранится.':'можно будет восстановить в «Недавно удалённых» в течение 7 дней.'}</p><p class="xd-editor-error" role="alert" hidden></p><div class="xd-remove-actions"><button type="button" data-cancel>Отмена</button><button type="button" data-remove-confirm>${label}</button></div>`;
+   dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());screen.append(dialog);dialog.showModal();
+   const refresh=()=>{renderExercisesList(exercisesSearch.value);if(SCREENS.exerciseReference.classList.contains('active'))renderExerciseReference();};
+   dialog.querySelector('[data-remove-confirm]').onclick=async event=>{
+     if(!current()||options.isCurrent&&!options.isCurrent()){dialog.close();return;}
+     const confirm=event.currentTarget;confirm.disabled=true;
+     try{
+       let data;
+       if(catalog){
+         const next=DATA.atlasSnapshot(),positions=atlasExercisePositions(next),index=next.exercises.findIndex(item=>item.id===ex.id);
+         if(index<0)throw Error('Упражнение уже удалено');
+         data={raw:next.exercises.splice(index,1)[0],position:positions[ex.id],owner};
+         delete positions[ex.id];
+         await commitSharedAtlas(next,[['deleteAtlasExercise',ex.id]]);
+       }else{
+         data={own:DATA.getOwnExercises(userId).find(item=>item.id===ex.id),exId:ex.id};
+         DATA.deleteOwnExercise(userId,ex.id);
+         SyncQueue.push('exercise:delete',{id:ex.id});
+       }
+       const trashId=Trash.push(userId,{type:'exercise',label:ex.name,sub:catalog?'Упражнение каталога':'Упражнение',data});
+       dialog.close();
+       if(!current())return;
+       options.onRemoved?.();refresh();
+       if($('screen-exercise-detail').classList.contains('active')&&_detailExerciseId===ex.id&&_exdCatalog===catalog)goBackScreen(returnScreen,{keepFilter:true,resumeConstructor:returnScreen==='constructor'});
+       showUndoToast(catalog?'Упражнение удалено из каталога':'Упражнение убрано из моих',async()=>{
+         if(!current())return;
+         if(await restoreFromTrash(userId,trashId)){if(current())refresh();}
+         else showToast('Не удалось восстановить упражнение');
+       });
+     }catch(error){const message=dialog.querySelector('.xd-editor-error');message.textContent='Не удалось удалить: '+error.message;message.hidden=false;confirm.disabled=false;}
    };
  }
- function decorate(ex,returnScreen,options={}){
+ function decorate(ex,returnScreen,options,snapshot,resolved){
    const screen=$('screen-exercise-detail'),body=$('exd-body'),catalog=_exdCatalog,a=ex.atlas||{},userId=DATA.getCurrentUser();
    screen.classList.add('xd-view');screen.querySelector('[data-xd-remove]')?.remove();$('exd-title').textContent='Упражнение';
    document.querySelector('.xd-source')?.remove();
@@ -115,7 +132,7 @@ const ExerciseDescriptions = (() => {
 
    const changeSource=scope=>{
      if(!scope||scope===(catalog?'catalog':'mine'))return;
-     const found=(scope==='catalog'?DATA.DEFAULT_EXERCISES:DATA.getVisibleExercises(userId)).find(item=>item.id===ex.id);
+     const found=DATA.libraryExercises(userId,scope==='catalog').find(item=>item.id===ex.id);
      if(!found){if(scope==='catalog')sheet('В каталоге больше нет','Оригинал недоступен. Ваша личная копия сохранена.');else sheet('В «Моих» пока нет','Добавьте упражнение из каталога в «Мои», чтобы открыть его в своей библиотеке.');return;}
      setReferenceLibraryScope(scope);openExerciseDetail(ex.id,returnScreen,{scope});
      document.querySelector('.xd-source [aria-selected="true"]')?.focus();
@@ -127,27 +144,26 @@ const ExerciseDescriptions = (() => {
    const cards=[...body.querySelectorAll(':scope > .exd-card')],media=body.querySelector(':scope > .exd-media'),links=[...body.querySelectorAll(':scope > a.exd-video-btn')].filter(link=>link.getAttribute('href')===(ex.media||'').trim());
    const tree=document.createElement('div');tree.className='xd-tree';let index=0;
    const execution=document.createElement('div');execution.className='xd-execution-group xd-variant-description';execution.setAttribute('aria-label','Описание выполнения: движения, мышцы, техника, ошибки, особенности и ограничения');
-   const snapshot=options.executionSnapshot||executionForExercise(userId,ex),resolved=ExerciseDescriptions.resolve(ex,snapshot);
    const updateMarks=()=>execution.querySelectorAll('.xd-section').forEach(section=>{
     const relation=resolved.sections[section.dataset.sectionKind],host=section.querySelector('.xd-section-parameters');if(!relation||!host)return;
     const values=relation.conditions.map(([id,value])=>({name:snapshot.executionParameters.find(p=>p.id===id)?.name||'',value}));host.hidden=!values.length;host.innerHTML=values.map(v=>`<span class="xd-parameter-mark">${escHtml(v.value)}</span>`).join('');host.title=values.map(v=>v.name+': '+v.value).join(' · ');host.setAttribute('aria-label',host.title);
     if(relation.changed)section.querySelector('.xd-content')?.classList.add('xd-dependent-fragment');
     if(relation.conflict){const note=document.createElement('p');note.className='ex-form-hint';note.textContent='Для этого сочетания показано общее описание: отличия требуют уточнения.';section.querySelector('.xd-content')?.prepend(note);}
    });
-   const catalogAdmin = catalog && DATA.isAdmin() && !options.previewExercise && !_constructorCatalog && returnScreen !== 'workout';
+   const canEdit = canEditExerciseLibrary(catalog) && !options.previewExercise && !_constructorCatalog && returnScreen !== 'workout';
    const parameterNodes = snapshot.executionParameters.length ? [parameters(ex,catalog,returnScreen,options)] : [];
-   if (catalogAdmin) {
+   if (canEdit) {
      const edit = document.createElement('button');
      edit.type = 'button'; edit.className = 'btn-chip';
      edit.textContent = parameterNodes.length ? 'Настроить параметры' : 'Добавить параметр';
-     edit.onclick = () => openExerciseForm(ex.id,{catalog:true,focus:'parameters'});
+     edit.onclick = () => openExerciseForm(ex.id,{catalog,focus:'parameters'});
      parameterNodes.push(edit);
    }
    if (parameterNodes.length) tree.append(wrap('Параметры выполнения',parameterNodes,'parameters',index++));
-   if (catalogAdmin) {
+   if (canEdit) {
      const add = document.createElement('button');
      add.type = 'button'; add.className = 'btn-chip'; add.textContent = 'Добавить вариацию';
-     add.onclick = () => openExerciseForm(null,{catalog:true,variationOf:ex.id});
+     add.onclick = () => openExerciseForm(null,{catalog,variationOf:ex.id});
      tree.append(wrap('Вариации',[add],'features',index++));
    }
    tree.append(execution);
@@ -156,9 +172,7 @@ const ExerciseDescriptions = (() => {
    cards.forEach(card=>{
      const labels=[...card.querySelectorAll('.exd-section-label')];
      let title=labels[0]?.textContent.trim()||'',icon='features';
-     if(card.classList.contains('execution-detail')){
-       return;
-     }else if(card.querySelector('.exd-muscle-role'))icon='muscles';
+     if(card.querySelector('.exd-muscle-role'))icon='muscles';
      else if(card.querySelector('.exd-step'))icon='technique';
      else if(card.querySelector('.exd-mistake'))icon='mistakes';
      else if(card.querySelector('.exd-warn')){title='Ограничения';icon='restrictions';}
@@ -190,7 +204,7 @@ const ExerciseDescriptions = (() => {
          carousel(content,'Типичные ошибки');
        }else if(title==='Особенности упражнения'){
          section.classList.add('xd-features-section');const content=section.querySelector('.xd-content');content.classList.add('xd-features-content');
-         content.replaceChildren();for(const text of ExerciseDescriptions.resolve(ex,snapshot).sections.features.value.filter(text=>text.trim())){const item=document.createElement('article');item.className='xd-feature-item';item.innerHTML=`<p class="xd-feature-detail">${escHtml(text)}</p>`;content.append(item);}
+         content.replaceChildren();for(const text of resolved.sections.features.value.filter(text=>text.trim())){const item=document.createElement('article');item.className='xd-feature-item';item.innerHTML=`<p class="xd-feature-detail">${escHtml(text)}</p>`;content.append(item);}
          carousel(content,'Особенности упражнения');
        }else if(title==='Ограничения'){
          section.classList.add('xd-restrictions-section');section.querySelector('.xd-content').classList.add('xd-restrictions-content');
@@ -244,5 +258,5 @@ const ExerciseDescriptions = (() => {
    }
    body.scrollTop=0;body.querySelectorAll('.exd-video-btn').forEach(link=>{link.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>Открыть материал';});
  }
- window.ExerciseDetailPage={decorate,mountRemoval};
+ window.ExerciseDetailPage={decorate,mountRemoval,confirmRemoval};
 })();
