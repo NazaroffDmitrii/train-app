@@ -36,7 +36,7 @@ const ExerciseDescriptions = (() => {
  if(new URLSearchParams(location.search).has("__exercise_design"))return;
  const chevron='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>';
  const down='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
- const icons={movement:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',muscles:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',technique:'<path d="M9 5h11M9 12h11M9 19h11M3 5h1M3 12h1M3 19h1"/>',mistakes:'<path d="m12 3 10 18H2L12 3ZM12 9v5M12 17v1"/>',features:'<path d="M9 18h6M9 21h6M8 14a6 6 0 1 1 8 0l-1 3H9l-1-3Z"/>',restrictions:'<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3ZM12 8v5M12 16v1"/>',parameters:'<path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/>'};
+ const icons={history:'<path d="M3 12a9 9 0 1 0 3-6L3 9m0-5v5h5m4-2v5l3 2"/>',movement:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',muscles:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',technique:'<path d="M9 5h11M9 12h11M9 19h11M3 5h1M3 12h1M3 19h1"/>',mistakes:'<path d="m12 3 10 18H2L12 3ZM12 9v5M12 17v1"/>',features:'<path d="M9 18h6M9 21h6M8 14a6 6 0 1 1 8 0l-1 3H9l-1-3Z"/>',restrictions:'<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3ZM12 8v5M12 16v1"/>',parameters:'<path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/>'};
  const sheet=(title,text)=>{
    document.querySelector('.xd-sheet')?.remove();
    const dialog=document.createElement('dialog');dialog.className='xd-sheet';
@@ -214,6 +214,26 @@ const ExerciseDescriptions = (() => {
        execution.append(section);
      }
    });
+   if(!options.previewExercise){
+     const sessions=DATA.getWorkoutHistory(userId).filter(w=>w.type==='strength' && !w.deleted &&
+       w.exercises?.some(entry=>entry.exerciseId===ex.id && entry.sets?.some(WorkoutCore.performed)));
+     const list=document.createElement('div');
+     function showSessions(all){
+       list.replaceChildren();
+       for(const workout of all?sessions:sessions.slice(0,3)){
+         const button=document.createElement('button');button.type='button';button.className='xd-movement-link xd-session';
+         button.innerHTML=`<span>${escHtml(workout.name || 'Силовая тренировка')}<small>${escHtml(fmtDate(workout.startedAt))}</small></span>${chevron}`;
+         button.onclick=()=>openDetailScreen(workout,'exerciseDetail',ex.id);
+         list.append(button);
+       }
+       if(!sessions.length)list.textContent='Пока нет выполнений';
+       if(sessions.length>3){
+         const more=document.createElement('button');more.type='button';more.className='btn-chip';
+         more.textContent=all?'Свернуть':`Посмотреть все (${sessions.length})`;more.onclick=()=>showSessions(!all);list.append(more);
+       }
+     }
+     showSessions(false);tree.append(wrap('Последние тренировки',[list],'history',index++));
+   }
    updateMarks();
    if(options.previewExercise)execution.querySelectorAll('[data-reference-kind]').forEach(button=>button.disabled=true);
    if(!execution.children.length)execution.remove();

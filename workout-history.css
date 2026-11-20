@@ -81,3 +81,7 @@
   #screen-detail.history-strength .detail-screen-body{padding-inline:max(14px,calc((100% - 640px) / 2))}
   #screen-detail.history-strength .wd-spine{left:calc(max(14px,(100% - 640px) / 2) + 3px)}
 }
+
+.wd-coverage{--aw-line:var(--wh-line);--aw-link:var(--wh-link);--aw-raised:var(--wh-raised);--aw-muted:var(--wh-muted);background:var(--wh-panel);border:1px solid var(--wh-line);border-radius:15px;padding:12px 14px;margin-bottom:14px}
+.wd-coverage summary{cursor:pointer;font-weight:600}.wd-coverage summary small{color:var(--wh-muted);margin-left:6px}
+.wd-coverage ol{padding-left:24px;font-size:13px}.wd-coverage li{padding:4px 0}.wd-coverage li b{float:right}.wd-coverage>small{color:var(--wh-muted)}

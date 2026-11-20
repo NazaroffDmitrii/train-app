@@ -556,6 +556,7 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 .launcher-selection--strength-cards .launcher-detail-card { padding:12px 15px; }
 .launcher-history-cards { display:flex; flex-direction:column; gap:9px; }
 .launcher-card-top { display:flex; align-items:center; gap:8px; }
+.launcher-detail-card:not(.is-open) .launcher-card-top h3 {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .launcher-card-top h3 { flex:1; min-width:0; margin:0; font-size:17px; line-height:1.25; font-weight:650; }
 .launcher-card-chevron { flex:none; width:32px; height:32px; margin:-6px -6px -6px 0; padding:6px; display:grid; place-items:center; color:#8a8a9c; border-radius:50%; transition:transform .2s ease, background .15s ease; }
 .launcher-card-chevron:active { background:rgba(255,255,255,.06); }
@@ -808,6 +809,7 @@ button.launcher-empty-state:active { transform:scale(.99); border-color:var(--se
 }
 .history-item-body { flex: 1; min-width: 0; }
 .history-item-label { display: block; font-size: 14.5px; font-weight: 600; }
+#history-body .history-item-label, #history-body .history-item-meta { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .history-item-meta { display: block; font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
 .history-item-trainer-tag { color: var(--accent-bright); }
 .history-item-right { flex: none; text-align: right; }
@@ -4517,14 +4519,15 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
       </div>
     </div>
 
-    <div class="aw-coverage-pin" id="workout-coverage-pin" aria-hidden="true" inert><section class="aw-coverage"><button type="button" class="aw-cover-toggle" aria-label="Вернуться к базовым движениям"><span class="aw-cover-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M21 12a9 9 0 1 1-9-9M18 12a6 6 0 1 1-6-6M12 12l9-9"/></svg></span><span class="aw-cover-copy"><b>Базовые движения</b><small id="workout-pin-count">Выполнено 0 движений</small></span><span class="aw-chevron">⌄</span></button></section></div>
+    <div class="aw-coverage-pin" id="workout-coverage-pin" aria-hidden="true" inert><section class="aw-coverage"><button type="button" class="aw-cover-toggle" aria-label="Вернуться к движениям тренировки"><span class="aw-cover-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M21 12a9 9 0 1 1-9-9M18 12a6 6 0 1 1-6-6M12 12l9-9"/></svg></span><span class="aw-cover-copy"><b>Движения тренировки</b><small id="workout-pin-count">Выполнено 0 движений</small></span><span class="aw-chevron">⌄</span></button></section></div>
     <div class="workout-scroll" id="workout-scroll">
       <div class="summary-bar" id="summary-bar">
         <div class="sum-item"><div class="sum-num" id="sum-exercises">0</div><div class="sum-label">упражнений</div></div>
         <div class="sum-item"><div class="sum-num" id="sum-sets">0</div><div class="sum-label">подходов ✓</div></div>
         <div class="sum-item"><div class="sum-num" id="sum-volume">0</div><div class="sum-label">кг объём</div></div>
       </div>
-      <section class="aw-coverage" id="workout-coverage"><div id="workout-coverage-preview"><button type="button" class="aw-cover-toggle" id="workout-coverage-toggle" aria-expanded="false"><span class="aw-cover-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M21 12a9 9 0 1 1-9-9M18 12a6 6 0 1 1-6-6M12 12l9-9"/></svg></span><span class="aw-cover-copy"><b>Базовые движения</b><small id="workout-coverage-count">Выполнено 0 движений</small></span><span class="aw-chevron" id="workout-coverage-chevron">⌄</span></button></div><div class="aw-coverage-body" id="workout-coverage-body" hidden></div></section>
+      <section class="aw-coverage" id="workout-coverage"><div id="workout-coverage-preview"><button type="button" class="aw-cover-toggle" id="workout-coverage-toggle" aria-expanded="false"><span class="aw-cover-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M21 12a9 9 0 1 1-9-9M18 12a6 6 0 1 1-6-6M12 12l9-9"/></svg></span><span class="aw-cover-copy"><b>Движения тренировки</b><small id="workout-coverage-count">Выполнено 0 движений</small></span><span class="aw-chevron" id="workout-coverage-chevron">⌄</span></button></div><div class="aw-coverage-body" id="workout-coverage-body" hidden></div></section>
+      <div id="workout-template-changes" hidden></div>
       <button class="add-ex-btn" id="add-ex-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Добавить упражнение
