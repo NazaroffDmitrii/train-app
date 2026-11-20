@@ -16,10 +16,6 @@
   }
   function model(workout, context) {
     const earlier=(context.history || []).filter(w=>w.id!==workout.id && Number(w.startedAt)<=Number(workout.startedAt)), cache=new Map();
-    const definitions=context.exercises || [];
-    const baseline=workout.templateBaseline || (context.template && C.templateSnapshot(context.template.exercises,definitions));
-    const changes=C.templateChanges(workout,baseline,true);
-    const coverage=C.coverage(workout,definitions,context.movements);
     const exercises=(workout.exercises || []).map((ex,index) => {
       const known=(context.exercises || []).find(def=>def.id===ex.exerciseId), done=(ex.sets || []).filter(set=>set.done), seen=new Set();
       const rows=done.map(set => {
@@ -51,7 +47,7 @@
         volumePr:!!rec&&volume>0&&volume>=Number(rec.maxVolume || 0),
         previous:context.adjacent?.(ex.exerciseId,'prev'),next:context.adjacent?.(ex.exerciseId,'next')};
     });
-    return {workout,exercises,changes,coverage,sets:exercises.reduce((n,ex)=>n+ex.rows.length,0),volume:exercises.reduce((n,ex)=>n+ex.volume,0)};
+    return {workout,exercises,sets:exercises.reduce((n,ex)=>n+ex.rows.length,0),volume:exercises.reduce((n,ex)=>n+ex.volume,0)};
   }
   const effortClass = rpe => rpe>=9?'hi':rpe>=7?'mid':'lo';
   function rowHtml(row, index, exIndex, groupIndex, drop=false) {
@@ -61,26 +57,14 @@
     if(drop)return `<div class="wd-drop-row">${row.rpe?`<div class="wd-drop-effort wd-rpe ${effortClass(row.rpe)}" aria-label="Усилие дроп-сета RPE ${row.rpe}"><small>RPE</small>${row.rpe}</div>`:''}<div class="wd-cell wd-drop-weight">${number(set.weight)}</div><div class="wd-cell wd-drop-quantity" aria-label="${row.metric==='time'?'Время':'Повторения'}">${qty}</div></div>${row.changedExecution?`<div class="wd-row-execution">${execution(row.execution)}</div>`:''}`;
     return `<div class="wd-set"><span class="wd-set-num">${index}</span>${value(Number(set.weight)===0?'—':number(set.weight),row.pr&&row.kind==='weight','weight')}${value(qty,row.pr&&row.kind!=='weight',row.kind)}<div class="wd-cell wd-rpe ${row.rpe?effortClass(row.rpe):'none'}" aria-label="Усилие подхода RPE ${row.rpe || 'не указано'}">${row.rpe || '—'}</div></div>${row.changedExecution?`<div class="wd-row-execution">${execution(row.execution)}</div>`:''}`;
   }
-  function templateSummary({marks,removed}) {
-    const changed=marks.filter(labels=>labels.length).length;
-    if(!changed && !removed.length)return '';
-    const list=removed.map(ex=>{
-      const params=(ex.executionValues || []).map(v=>v.value).join(' · ');
-      return `<li>${esc(ex.name)}${params?' · '+esc(params):''}</li>`;
-    }).join('');
-    return `<aside class="template-removed"><b>Отличия от шаблона</b>${changed?`<div>Упражнений с пометками: ${changed}</div>`:''}${list?`<div>Убрано из тренировки</div><ul>${list}</ul>`:''}</aside>`;
-  }
-  function render(data, fmtDate, radar) {
-    const rows=data.coverage;
-    const chart=radar && rows.length ? `<details class="wd-coverage"><summary>Движения тренировки <small>${rows.filter(m=>m.count>0).length} из ${rows.length}</small></summary><div class="aw-radar">${radar(rows,360)}</div><ol>${rows.map(m=>`<li><span>${esc(m.name)}${m.type!=='База'?' <small class="aw-option-key">Опция</small>':''}</span><b>${m.count}</b></li>`).join('')}</ol><small>Количество выполненных основных подходов</small></details>` : '';
-
-    return `<div class="wd-statgrid"><div class="wd-stat"><strong>${data.exercises.length}</strong><small>упражнений</small></div><div class="wd-stat"><strong>${data.sets}</strong><small>подходов</small></div><div class="wd-stat"><strong>${number(data.volume)}</strong><small>кг объём</small></div></div>${chart}${templateSummary(data.changes)}${data.exercises.map(entry=>{
+  function render(data, fmtDate) {
+    return `<div class="wd-statgrid"><div class="wd-stat"><strong>${data.exercises.length}</strong><small>упражнений</small></div><div class="wd-stat"><strong>${data.sets}</strong><small>подходов</small></div><div class="wd-stat"><strong>${number(data.volume)}</strong><small>кг объём</small></div></div>${data.exercises.map(entry=>{
       const {ex,index,groups,previous,next}=entry,ssId=ex.supersetId,ssPrev=ssId&&data.exercises[index-1]?.ex.supersetId===ssId,ssNext=ssId&&data.exercises[index+1]?.ex.supersetId===ssId;
       const ss=ssId?` wd-ss${ssPrev?'':' wd-ss-first'}${ssNext?'':' wd-ss-last'}`:'';
       const metrics=new Set(entry.rows.map(row=>row.metric)),metric=metrics.size>1?'Повт. / время':metrics.has('time')?'Время':'Повт.';
       const nav=(target,dir)=>target?`<button type="button" class="wd-ex-nav-btn" data-ex-id="${esc(ex.exerciseId)}" data-nav="${dir}" aria-label="${dir==='prev'?'Прошлое':'Следующее'} выполнение — ${esc(fmtDate(target.startedAt))}">${dir==='prev'?icon('prev'):''}<span>${esc(new Date(target.startedAt).toLocaleDateString('ru-RU',{day:'numeric',month:'short'}))}</span>${dir==='next'?icon('next'):''}</button>`:`<button type="button" class="wd-ex-nav-btn" disabled aria-label="${dir==='prev'?'Нет прошлого':'Нет следующего'} выполнения">${dir==='prev'?icon('prev'):''}<span>—</span>${dir==='next'?icon('next'):''}</button>`;
       let main=0;
-      return `<section class="wd-ex${ss}" data-ex-id="${esc(ex.exerciseId)}" aria-label="${esc(entry.name)}"><div class="wd-ex-head"><h3 class="wd-ex-name${entry.orphan?' orphan':''}">${esc(entry.name)}</h3>${entry.volume>0?(entry.volumePr?`<button type="button" class="wd-ex-meta pr" data-history-record="volume" data-ex-index="${index}" aria-label="Рекорд объёма ${number(entry.volume)} кг">${icon('volume')}${number(entry.volume)} кг</button>`:`<span class="wd-ex-meta">${number(entry.volume)} кг</span>`):''}</div>${data.changes.marks[index].length?`<small class="template-marks">${esc(data.changes.marks[index].join(' · '))}</small>`:''}${(ex.executionValues || []).length?`<div class="wd-execution">${execution(ex)}</div>`:''}${groups.length?`<div class="wd-cols"><span>№</span><span>Кг</span><span>${metric}</span><span>RPE</span></div><div class="wd-sets">${groups.map((group,g)=>`<div class="wd-set-group">${rowHtml(group.main,group.orphan?'—':++main,index,g)}${group.drops.length?`<div class="wd-drop-tree">${group.drops.map(row=>rowHtml(row,0,index,g,true)).join('')}</div>`:''}</div>`).join('')}</div>`:`<div class="wd-empty">Нет выполненных подходов</div>`}${typeof ex.note==='string'&&ex.note.trim()?`<div class="wd-note">${icon('note')}<span>${esc(ex.note)}</span></div>`:''}${entry.orphan?`<button type="button" class="wd-ex-remap" data-remap-id="${esc(ex.exerciseId)}">${icon('remap')}Заменить упражнение</button>`:''}${previous||next?`<nav class="wd-ex-nav" aria-label="Соседние тренировки с упражнением">${nav(previous,'prev')}${nav(next,'next')}</nav>`:''}</section>`;
+      return `<section class="wd-ex${ss}" data-ex-id="${esc(ex.exerciseId)}" aria-label="${esc(entry.name)}"><div class="wd-ex-head"><h3 class="wd-ex-name${entry.orphan?' orphan':''}">${esc(entry.name)}</h3>${entry.volume>0?(entry.volumePr?`<button type="button" class="wd-ex-meta pr" data-history-record="volume" data-ex-index="${index}" aria-label="Рекорд объёма ${number(entry.volume)} кг">${icon('volume')}${number(entry.volume)} кг</button>`:`<span class="wd-ex-meta">${number(entry.volume)} кг</span>`):''}</div>${(ex.executionValues || []).length?`<div class="wd-execution">${execution(ex)}</div>`:''}${groups.length?`<div class="wd-cols"><span>№</span><span>Кг</span><span>${metric}</span><span>RPE</span></div><div class="wd-sets">${groups.map((group,g)=>`<div class="wd-set-group">${rowHtml(group.main,group.orphan?'—':++main,index,g)}${group.drops.length?`<div class="wd-drop-tree">${group.drops.map(row=>rowHtml(row,0,index,g,true)).join('')}</div>`:''}</div>`).join('')}</div>`:`<div class="wd-empty">Нет выполненных подходов</div>`}${typeof ex.note==='string'&&ex.note.trim()?`<div class="wd-note">${icon('note')}<span>${esc(ex.note)}</span></div>`:''}${entry.orphan?`<button type="button" class="wd-ex-remap" data-remap-id="${esc(ex.exerciseId)}">${icon('remap')}Заменить упражнение</button>`:''}${previous||next?`<nav class="wd-ex-nav" aria-label="Соседние тренировки с упражнением">${nav(previous,'prev')}${nav(next,'next')}</nav>`:''}</section>`;
     }).join('')}<button type="button" class="wd-add-btn" id="save-as-template-btn">${icon('plus')}Добавить в шаблоны</button>`;
   }
   function wireRecords(body,data) {
@@ -113,6 +97,6 @@
       tree.style.setProperty('--wd-trunk-bottom',Math.max(0,treeRect.bottom-cellRect.top-cellRect.height/2)+'px');
     });
   }
-  const api={model,render,templateSummary,wireRecords,layoutTrees};
+  const api={model,render,wireRecords,layoutTrees};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.WorkoutHistoryUI=api;
 })(typeof window!=='undefined'?window:globalThis);

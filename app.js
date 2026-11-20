@@ -30,11 +30,6 @@ function executionSnapshot(parameters, values = []) {
 function copyExecutionSnapshot(source) {
   return Array.isArray(source?.executionParameters) ? executionSnapshot(source.executionParameters, source.executionValues) : {};
 }
-function exerciseMovementNames(definition,snapshot) {
-  if(definition?.atlas?.executionDescriptions && typeof ExerciseDescriptions!=='undefined')
-    return ExerciseDescriptions.resolve(definition,snapshot).sections.movement.value.slice();
-  return [...(definition?.atlas?.categories || [])];
-}
 const _executionDrafts = new Map();
 const _exerciseVariantSelection = new Map();
 function executionDraftKey(userId, exerciseId) {
@@ -1042,7 +1037,7 @@ const DATA = (() => {
       const newName = newEx ? newEx.name : null;
       let changed = 0;
       const hist = this.getWorkoutHistory(userId);
-      hist.forEach(w => [...(w.exercises || []),...(w.templateBaseline || [])].forEach(ex => {
+      hist.forEach(w => (w.exercises || []).forEach(ex => {
         if (ex.exerciseId === oldId) { ex.exerciseId = newId; if (newName) ex.name = newName; changed++; }
       }));
       if (changed) { this.saveWorkoutHistory(userId, hist); this.recomputeRecords(userId); }
@@ -1287,9 +1282,6 @@ const DATA = (() => {
       const w = hist.find(x => x.id === workoutId);
       if (!w) return false;
       w.templateId = templateId;
-      const template=this.getTemplate(userId,templateId);
-      if(w.type==='run' && template)w.runBaseline=runTemplateValues(template);
-      if(w.type==='strength' && template)w.templateBaseline=WorkoutCore.templateSnapshot(template.exercises,this.getVisibleExercises(userId));
       if (name) w.name = name;
       this.saveWorkoutHistory(userId, hist);
       return true;
@@ -1333,7 +1325,6 @@ const DATA = (() => {
           id: `w_${crypto.randomUUID()}`,
           type: "run",
           templateId: tpl.id,
-          runBaseline:runTemplateValues(tpl),
           name: tpl.name || "Пробежка",
           startedAt: Date.now(),
           exercises: [],
@@ -1359,7 +1350,7 @@ const DATA = (() => {
         // (placeholder) значения берём из прошлой тренировки с этим
         // упражнением — ровно как при ручном добавлении (addExerciseToWorkout),
         // чтобы старт из шаблона ничем не отличался от обычного старта.
-        exercises: tpl.exercises.map((ex,templateIndex) => {
+        exercises: tpl.exercises.map(ex => {
           const lastW = this.getLastWorkoutForExercise(userId, ex.exerciseId);
           const lastEx = lastW ? lastW.exercises.find(e => e.exerciseId === ex.exerciseId) : null;
           const lastSets = lastEx ? lastEx.sets.filter(s => s.done && (s.weight || s.reps)) : [];
@@ -1370,7 +1361,7 @@ const DATA = (() => {
           const metric=this.getExerciseMetric(userId,ex.exerciseId);
           const seeded=typeof WorkoutCore !== 'undefined' ? WorkoutCore.seed(this.getWorkoutHistory(userId),{exerciseId:ex.exerciseId,...snapshot},metric) : sets;
           return {
-            metric, templateIndex, movements:exerciseMovementNames(exerciseById.get(ex.exerciseId),snapshot),
+            metric, movements:[...(exerciseById.get(ex.exerciseId)?.atlas?.categories || [])],
             exerciseId: ex.exerciseId,
             ...snapshot,
             supersetId: ex.supersetId || null,   // связки суперсета из шаблона
@@ -1379,8 +1370,6 @@ const DATA = (() => {
           };
         }),
       };
-      if(typeof WorkoutCore!=='undefined')workout.templateBaseline=WorkoutCore.templateSnapshot(
-        workout.exercises.map((ex,i)=>({...ex,sets:tpl.exercises[i].sets})),[...exerciseById.values()]);
       if (!this.saveActiveWorkout(userId, workout)) throw Error('Не удалось сохранить черновик.');
       return workout;
     },
@@ -4773,7 +4762,6 @@ function applySupersetVisuals() {
   const scroll = $("workout-scroll");
   const blocks = [...scroll.querySelectorAll(".ex-block")];
   const arr = _workout.exercises || [];
-  updateTemplateChanges(blocks);
   blocks.forEach((b, i) => {
     const ex = arr[i]; if (!ex) return;
     b.classList.toggle("ss-member", !!ex.supersetId);   // отступ вправо под спайн
@@ -4933,7 +4921,6 @@ function renderExerciseList() {
         <span class="ex-block-name" title="${escHtml(exDef.name)}">${escHtml(exDef.name)}</span>
         ${prChip}
       </div>
-      <small class="template-marks" hidden></small>
       ${executionControlsHtml(Array.isArray(ex.executionParameters) ? ex : executionSnapshot(exDef.atlas?.executionParameters), ex.exerciseId)}
       <div class="ex-divider"></div>
       <div class="sets-table">
@@ -4946,7 +4933,6 @@ function renderExerciseList() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Добавить подход
         </button>
-        <button type="button" class="set-note-btn ex-movements-edit" aria-label="Движения упражнения ${escHtml(exDef.name)}" title="Движения упражнения">${WorkoutUI.icon('radar')}</button>
         <button class="set-note-btn ${ex.note ? "has-note" : ""}" title="Заметка">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L13 14l-4 1 1-4 6.5-6.5z"/></svg>
         </button>
@@ -4963,8 +4949,8 @@ function renderExerciseList() {
     scroll.insertBefore(block, addBtn);
     wireExecutionControls(block, () => Array.isArray(ex.executionParameters) ? ex : executionSnapshot(exDef.atlas?.executionParameters), snapshot => {
       if (!_workout?.exercises.includes(ex)) return;
-      Object.assign(ex,snapshot); if(!ex.customMovements)ex.movements=exerciseMovementNames(exDef,snapshot); delete ex._noteOpen; delete ex._noteDismissed; saveWorkoutState();
-      const y = scroll.scrollTop; renderExerciseList(); WorkoutUI.renderCoverage(); scroll.scrollTop = y;
+      Object.assign(ex,snapshot); delete ex._noteOpen; delete ex._noteDismissed; saveWorkoutState();
+      const y = scroll.scrollTop; renderExerciseList(); scroll.scrollTop = y;
     });
 
     // Render sets
@@ -5004,8 +4990,7 @@ function renderExerciseList() {
         // Replacement deliberately assigns the preserved rows to the new exercise.
         ex.sets.forEach(set => Object.assign(set,copyExecutionSnapshot(ex)));
         if (newEx) ex.name = newEx.name;
-        delete ex.customMovements;ex.movements=exerciseMovementNames(newEx,ex);
-        ex.sets.forEach(set=>{if(set.done)set.movements=[...ex.movements];});
+        ex.movements=[...(newEx?.atlas?.categories || [])];
         WorkoutCore.chooseMetric(ex,DATA.getExerciseMetric(userId,newId));
         saveWorkoutState();
         renderExerciseList();     // сбрасывает режим правки и перерисовывает
@@ -5069,8 +5054,7 @@ function renderExerciseList() {
     }
 
     // Note toggle
-    block.querySelector(".ex-movements-edit").onclick=()=>WorkoutUI.configureMovements(ex);
-    const noteBtn   = block.querySelector(".set-note-btn:not(.ex-movements-edit)");
+    const noteBtn   = block.querySelector(".set-note-btn");
     const noteInput = block.querySelector(".set-note-input");
     noteInput.hidden = !noteOpen;
     noteBtn.addEventListener("click", () => {
@@ -5167,17 +5151,6 @@ function wireSetRowSwipe(wrap, row, onDelete, tEl = row) {
   }, true);
 }
 
-function updateTemplateChanges(blocks=$('workout-scroll').querySelectorAll('.ex-block')) {
-  const changes=WorkoutCore.templateChanges(_workout,_workout.templateBaseline);
-  const summary=$('workout-template-changes');
-  summary.innerHTML=WorkoutHistoryUI.templateSummary(changes);
-  summary.hidden=!summary.firstElementChild;
-  blocks.forEach((block,i)=>{
-    const mark=block.querySelector('.template-marks');
-    mark.textContent=(changes.marks[i] || []).join(' · ');
-    mark.hidden=!mark.textContent;
-  });
-}
 function updateSummaryBar() {
   const exs = (_workout && _workout.exercises) || [];
   const doneSets = exs.reduce((n, ex) => n + ex.sets.filter(s => WorkoutCore.performed(s) && !s.dropSet).length, 0);
@@ -5188,7 +5161,6 @@ function updateSummaryBar() {
   // Контент мог изменить высоту (добавили/удалили подход/упражнение) — если идёт
   // отдых, пересчитать положение пилюли.
   if (!$("rest-timer").hidden) positionRestTimer();
-  if(_workout?.templateBaseline)updateTemplateChanges();
   WorkoutUI.renderCoverage();
 }
 
@@ -5219,8 +5191,7 @@ function addExerciseToWorkout(exerciseId) {
   const userId=DATA.getCurrentUser(),definition=DATA.getVisibleExercises(userId).find(e=>e.id===exerciseId);
   if(!definition)return;
   const metric=DATA.getExerciseMetric(userId,exerciseId);
-  const exercise={exerciseId,name:definition.name,metric,...executionForExercise(userId,definition)};
-  exercise.movements=exerciseMovementNames(definition,exercise);
+  const exercise={exerciseId,name:definition.name,metric,movements:[...(definition.atlas?.categories || [])],...executionForExercise(userId,definition)};
   exercise.sets=WorkoutCore.seed(DATA.getWorkoutHistory(userId),exercise,metric);
   _workout.exercises.push(exercise);
   saveWorkoutState();renderExerciseList();updateSummaryBar();
@@ -5292,17 +5263,6 @@ let _runPrev  = null;
 const _runTabData = { easy: null, long: null, hard: null };
 
 const RUN_TYPE_NAMES = { easy: "Лёгкая пробежка", long: "Длинная пробежка", hard: "Тяжёлая пробежка" };
-
-function runTemplateValues(run) {
-  const duration=run.duration ? parseDurationToSec(run.duration) : Number(run.durationSec);
-  return {runType:RUN_TYPE_NAMES[run.runType || 'easy'],distance:Number(run.distance) || null,
-    duration:duration ? formatDuration(duration) : null,pace:run.pace || null,cadence:Number(run.cadence) || null,heartRate:Number(run.heartRate) || null};
-}
-function runTemplateMark(baseline,key,value) {
-  if(!baseline || baseline[key]===value)return '';
-  if(baseline[key]==null)return 'Добавлено';
-  return (value==null?'Убрано · ':'')+'В шаблоне: '+baseline[key];
-}
 
 // --- Duration helpers (split HH:MM:SS) ---
 function getRunDurSec() {
@@ -5414,16 +5374,6 @@ function updateRunHighlights() {
   const curDist    = parseFloat($("run-distance")?.value);
   const curCad     = parseInt($("run-cadence")?.value)  || 0;
   const curHR      = parseInt($("run-hr")?.value)       || 0;
-
-  const values=runTemplateValues({runType:activeRunType(),durationSec:getRunDurSec(),distance:curDist,pace:curPaceSec?curPaceTxt:null,cadence:curCad,heartRate:curHR});
-  for(const [id,key] of [['dur','duration'],['dist','distance'],['pace','pace'],['cad','cadence'],['hr','heartRate']]){
-    const field=$('run-field-'+id),mark=runTemplateMark(_run?.runBaseline,key,values[key]);
-    if(mark)field.dataset.templateMark=mark;else delete field.dataset.templateMark;
-  }
-  document.querySelectorAll('.run-type-tab').forEach(tab=>{
-    const mark=tab.classList.contains('active') && runTemplateMark(_run?.runBaseline,'runType',values.runType);
-    if(mark)tab.dataset.templateMark=mark;else delete tab.dataset.templateMark;
-  });
 
   const b = _runBests;  // all-time bests (gold)
   const p = _runPrev;   // previous run (green)
@@ -5557,10 +5507,6 @@ $("run-hr").addEventListener("input", updateRunHighlights);
 function initRunScreen({ resume = false } = {}) {
   const userId = DATA.getCurrentUser();
   _run = DATA.getActiveWorkout(userId);
-  if(_run?.templateId && !_run.runBaseline){
-    const template=DATA.getTemplate(userId,_run.templateId);
-    if(template)_run.runBaseline=runTemplateValues(template);
-  }
 
   if (!resume) {
     // Fresh start — clear all per-tab drafts
@@ -9678,23 +9624,18 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
   const body = $("detail-screen-body");
 
   if (isRun) {
-    const template=workout.templateId && !workout.runBaseline && DATA.getTemplate(DATA.getCurrentUser(),workout.templateId);
-    const baseline=workout.runBaseline || (template && runTemplateValues(template)), values=runTemplateValues(workout);
-    const stats=[
-      ['distance','Дистанция',' км'],['pace','Темп',' мин/км'],['heartRate','Пульс ср.',' уд/мин'],['cadence','Каденс',' шаг/мин'],
-      ['duration','Время',''],['runType','Тип пробежки','']
-    ].flatMap(([key,label,unit])=>{
-      const value=values[key],mark=runTemplateMark(baseline,key,value);
-      if(!mark && (value==null || ['duration','runType'].includes(key)))return [];
-      return [{num:value==null?'—':value+unit,label,mark}];
-    });
+    const stats = [
+      workout.distance  ? { num: `${workout.distance} км`,  label: "Дистанция" } : null,
+      workout.pace      ? { num: `${workout.pace} мин/км`,  label: "Темп"       } : null,
+      workout.heartRate ? { num: `${workout.heartRate}`,     label: "Пульс ср."  } : null,
+      workout.cadence   ? { num: `${workout.cadence}`,       label: "Каденс"     } : null,
+    ].filter(Boolean);
 
     body.innerHTML = `
       <div class="detail-stats">${stats.map(s => `
         <div class="detail-stat">
           <div class="detail-stat-num">${escHtml(s.num)}</div>
           <div class="detail-stat-label">${s.label}</div>
-          ${s.mark?`<small class="template-marks">${escHtml(s.mark)}</small>`: ""}
         </div>`).join("")}
       </div>
       <button class="wd-add-btn" id="save-as-template-btn">
@@ -9708,11 +9649,9 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
     const historyData = WorkoutHistoryUI.model(workout, {
       exercises: DATA.getVisibleExercises(userId), records: DATA.getRecords(userId),
       history: DATA.getWorkoutHistory(userId),
-      movements:DATA.refMovements(userId),
-      template:workout.templateId && !workout.templateBaseline ? DATA.getTemplate(userId,workout.templateId) : null,
       adjacent: (id, direction) => DATA.adjacentWorkoutForExercise(userId, id, workout.startedAt, direction),
     });
-    body.innerHTML = WorkoutHistoryUI.render(historyData,fmtDate,WorkoutUI.radarHtml);
+    body.innerHTML = WorkoutHistoryUI.render(historyData, fmtDate);
     WorkoutHistoryUI.wireRecords(body, historyData);
 
     $("save-as-template-btn").addEventListener("click", () => openSaveAsTemplateModal(workout));

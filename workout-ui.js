@@ -17,7 +17,7 @@
   const history = () => DATA.getWorkoutHistory(DATA.getCurrentUser());
   const cursors = new WeakMap();
   const owners = new WeakMap();
-  let wired = false, observer = null;
+  let wired = false, observer = null, drawing = false;
   const observedBlocks=new Set();
   function view() {
     const workout = current();
@@ -31,12 +31,7 @@
       if(!ex.name && definition)ex.name=definition.name;
       if (!Array.isArray(ex.executionParameters)) Object.assign(ex,executionSnapshot(definition?.atlas?.executionParameters,ex.executionValues));
       C.prepare(ex,DATA.getExerciseMetric(user,ex.exerciseId));
-      if (!ex.movements && definition) ex.movements=exerciseMovementNames(definition,ex);
-    }
-    workout.movementCatalog ||= DATA.refMovements(user).map(({name,type})=>({name,type}));
-    if(workout.templateId && !workout.templateBaseline){
-      const template=DATA.getTemplate(user,workout.templateId);
-      if(template)workout.templateBaseline=C.templateSnapshot(template.exercises,definitions);
+      if (!ex.movements && definition) ex.movements=[...(definition.atlas?.categories || [])];
     }
     $('screen-workout').classList.toggle('aw-history-editor',!!editing);
     if (!wired) {
@@ -47,12 +42,11 @@
       $('workout-coverage-body').addEventListener('click',event=>{
         const button=event.target.closest('[data-aw]'),v=view();if(!button||!v)return;
         const viewport=captureViewport($('workout-coverage-body'),button);
-        if(button.dataset.aw==='configure'){configureMovements();return;}
         if(button.dataset.aw==='list')v.list=!v.list;
         else if(button.dataset.aw==='movement')v.selected=v.selected===button.dataset.movement?null:button.dataset.movement;
         else if(button.dataset.aw==='add'){
           const movement=button.dataset.movement;
-          openExercisePicker(addExerciseToWorkout,null,{canSelect:id=>{const user=DATA.getCurrentUser(),def=DATA.libraryExercises(user,false).find(ex=>ex.id===id) || DATA.libraryExercises(user,true).find(ex=>ex.id===id);return exerciseMovementNames(def,executionForExercise(user,def)).includes(movement);}});
+          openExercisePicker(addExerciseToWorkout,null,{canSelect:id=>DATA.getVisibleExercises(DATA.getCurrentUser()).find(ex=>ex.id===id)?.atlas?.categories?.includes(movement)});
           return;
         }else if(button.dataset.aw==='jump'){
           const ex=current()?.exercises[Number(button.dataset.index)],block=[...$('workout-scroll').querySelectorAll('.ex-block')].find(b=>b._workoutExercise===ex);
@@ -63,9 +57,9 @@
       });
       $('workout-coverage-body').addEventListener('keydown',event=>{if(event.target.matches('g[data-aw]')&&['Enter',' '].includes(event.key)){event.preventDefault();event.target.dispatchEvent(new MouseEvent('click',{bubbles:true}));}});
       $('workout-scroll').addEventListener('scroll',updatePin,{passive:true});
-      observer=new ResizeObserver(()=>{positionTimer();updatePin();layoutAllDrops();});
+      observer=new ResizeObserver(()=>{positionTimer();updatePin();layoutAllDrops();if(!drawing&&view()?.expanded)drawRadar();});
       observer.observe($('screen-workout'));observer.observe($('workout-coverage'));observer.observe($('workout-coverage-preview'));
-      window.addEventListener('resize',()=>{positionTimer();updatePin();layoutAllDrops();});
+      window.addEventListener('resize',()=>{positionTimer();updatePin();layoutAllDrops();drawRadar();});
     }
     renderCoverage();
   }
@@ -74,52 +68,14 @@
     const owner=workout && owners.get(workout);
     return !owner || DATA.getCurrentUser()===owner.user && (typeof Auth==='undefined' || Auth.userId()===owner.account && !Auth.contextChanged?.());
   }
+  function movements() {return DATA.refMovements(DATA.getCurrentUser()).filter(m=>m.type==='База');}
   function coverageModel() {
-    const definitions=DATA.getVisibleExercises(DATA.getCurrentUser());
-    const rows=C.coverage(current(),definitions,current().movementCatalog);
-    return {rows,definitions,counts:rows.map(m=>m.count)};
-  }
-  function configureMovements(exercise=null){
-    const workout=current(), byName=new Map(workout.movementCatalog.map(m=>[m.name,m]));
-    DATA.refMovements(DATA.getCurrentUser()).forEach(m=>{if(!byName.has(m.name))byName.set(m.name,{name:m.name,type:m.type});});
-    const visible=new Set(exercise ? exercise.movements : coverageModel().rows.map(m=>m.name));
-    for(const name of visible)if(!byName.has(name))byName.set(name,{name,type:'Опция'});
-    const catalog=[...byName.values()], title=exercise?'Движения упражнения':'Движения самопроверки';
-    const dialog=document.createElement('dialog');
-    dialog.className='xe-dialog aw-movement-dialog';
-    dialog.setAttribute('aria-label',title);
-    dialog.innerHTML=`<h2>${title}</h2><div class="aw-movement-options">${catalog.map((m,i)=>`<label><input type="checkbox" value="${i}" ${visible.has(m.name)?'checked':''}><span>${escHtml(m.name)}</span><small>${m.type==='База'?'База':'Опция'}</small></label>`).join('')}</div><div class="xe-dialog-footer"><button type="button" data-cancel>Отмена</button><button type="button" data-save>Готово</button></div>`;
-    $('screen-workout').append(dialog);
-    dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
-    dialog.querySelector('[data-save]').onclick=()=>{
-      if(current()===workout && ownsCurrent(workout)){
-        const inputs=[...dialog.querySelectorAll('input')];
-        workout.movementCatalog=catalog;
-        if(exercise){
-          const chosen=inputs.filter(input=>input.checked).map(input=>catalog[Number(input.value)].name);
-          if(inputs.some(input=>input.checked!==visible.has(catalog[Number(input.value)].name))){
-            exercise.movements=chosen;exercise.customMovements=true;
-            for(const set of exercise.sets)if(set.done)set.movements=[...chosen];
-          }
-        }else{
-          const extra=new Set(workout.extraMovements), hidden=new Set(workout.hiddenMovements);
-          inputs.forEach(input=>{
-            const {name,type}=catalog[Number(input.value)];
-            if(input.checked===visible.has(name))return;
-            if(input.checked){hidden.delete(name);if(type!=='База')extra.add(name);}
-            else{hidden.add(name);extra.delete(name);}
-          });
-          workout.extraMovements=[...extra];workout.hiddenMovements=[...hidden];
-        }
-        saveWorkoutState();renderCoverage();
-      }
-      dialog.close();
-    };
-    dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();
+    const rows=movements(),definitions=DATA.getVisibleExercises(DATA.getCurrentUser());
+    return {rows,definitions,counts:C.movementCounts(current()?.exercises,definitions,rows.map(m=>m.name))};
   }
   function movementHtml(row,index,count,definitions,expanded) {
-    const related=(current()?.exercises || []).map((ex,i)=>({ex,i})).filter(({ex})=>(ex.movements||definitions.find(d=>d.id===ex.exerciseId)?.atlas?.categories||[]).includes(row.name) || ex.sets?.some(set=>C.performed(set) && !set.dropSet && set.movements?.includes(row.name)));
-    return `<div class="aw-movement-item${row.type==='База'?'':' aw-optional'}${expanded?' is-selected':''}"><button type="button" class="aw-movement-row${count?' complete':''}" data-aw="movement" data-movement="${escHtml(row.name)}" aria-expanded="${expanded}"><span>${index+1}</span><span>${escHtml(row.name)}</span><span>${count?count+' ✓':'—'}</span></button>${expanded?`<div class="aw-movement-choice"><small>${count?count+' основных подходов выполнено':'Ещё не выполнено'}</small>${related.map(({ex,i})=>`<button type="button" class="aw-movement-exercise" data-aw="jump" data-index="${i}">${escHtml(definitions.find(d=>d.id===ex.exerciseId)?.name||ex.name||'Упражнение')} ${icon('down')}</button>`).join('')}<button type="button" class="aw-choose-exercise" data-aw="add" data-movement="${escHtml(row.name)}">${icon('plus')}Выбрать упражнение</button></div>`:''}</div>`;
+    const related=(current()?.exercises || []).map((ex,i)=>({ex,i})).filter(({ex})=>(definitions.find(d=>d.id===ex.exerciseId)?.atlas?.categories||ex.movements||[]).includes(row.name));
+    return `<div class="aw-movement-item${expanded?' is-selected':''}"><button type="button" class="aw-movement-row${count?' complete':''}" data-aw="movement" data-movement="${escHtml(row.name)}" aria-expanded="${expanded}"><span>${index+1}</span><span>${escHtml(row.name)}</span><span>${count?count+' ✓':'—'}</span></button>${expanded?`<div class="aw-movement-choice"><small>${count?count+' основных подходов выполнено':'Ещё не выполнено'}</small>${related.map(({ex,i})=>`<button type="button" class="aw-movement-exercise" data-aw="jump" data-index="${i}">${escHtml(definitions.find(d=>d.id===ex.exerciseId)?.name||ex.name||'Упражнение')} ${icon('down')}</button>`).join('')}<button type="button" class="aw-choose-exercise" data-aw="add" data-movement="${escHtml(row.name)}">${icon('plus')}Выбрать упражнение</button></div>`:''}</div>`;
   }
   function renderCoverage() {
     if (!$('workout-coverage')||!current())return;
@@ -135,16 +91,19 @@
     if(v.expanded){
       const selected=rows.findIndex(r=>r.name===v.selected);
       const listButton=`<button type="button" class="aw-list-toggle" data-aw="list" aria-expanded="${v.list}">${v.list?'Скрыть список':'Показать списком'}${icon(v.list?'up':'down')}</button>`;
-      body.innerHTML=`<div class="aw-radar" id="workout-radar" ${rows.length?'':'hidden'}>${radarHtml(rows,360,v.selected,true)}</div><div class="aw-radar-legend"><span>Основные подходы${rows.some(m=>m.type!=='База')?' · <b class="aw-option-key">Опции</b>':''}</span><span>0–${Math.max(1,...counts)} подх.</span></div>${!v.list&&selected>=0?movementHtml(rows[selected],selected,counts[selected],definitions,true):''}${listButton}<button type="button" class="aw-list-toggle" data-aw="configure">Настроить движения</button>${v.list?`<div class="aw-movement-list">${rows.map((row,i)=>movementHtml(row,i,counts[i],definitions,i===selected)).join('')}</div>${listButton}`:''}`;
+      body.innerHTML=`<div class="aw-radar" id="workout-radar"></div><div class="aw-radar-legend"><span>Выполненные основные подходы</span><span>0–${Math.max(1,...counts)} подх.</span></div>${!v.list&&selected>=0?movementHtml(rows[selected],selected,counts[selected],definitions,true):''}${listButton}${v.list?`<div class="aw-movement-list">${rows.map((row,i)=>movementHtml(row,i,counts[i],definitions,i===selected)).join('')}</div>${listButton}`:''}`;
+      drawRadar();
     }else body.innerHTML='';
     requestAnimationFrame(updatePin);
   }
-  function radarHtml(rows,width,selection,interactive=false){
-    if(!rows.length)return '';
-    const counts=rows.map(m=>m.count);
+  function drawRadar() {
+    const node=$('workout-radar');if(!node||!view()?.expanded||!view()?.enabled)return;
+    const {rows,counts}=coverageModel(),width=node.clientWidth;if(!width||!rows.length)return;
     const center=width/2,radius=Math.max(38,center-38),max=Math.max(1,...counts);
     const point=(i,r)=>{const a=i*2*Math.PI/rows.length-Math.PI/2;return [center+Math.cos(a)*r,center+Math.sin(a)*r];};
-    return `<svg viewBox="0 0 ${width} ${width}" class="aw-radar-svg" role="group" aria-label="Выполненные подходы по движениям"><title>Подходы по движениям</title>${[.33,.66,1].map(f=>`<polygon class="aw-radar-grid" points="${rows.map((_,i)=>point(i,radius*f).join(',')).join(' ')}"/>`).join('')}${rows.map((_,i)=>`<path class="aw-radar-grid" d="M${center},${center}L${point(i,radius).join(',')}"/>`).join('')}<polygon class="aw-radar-area" points="${counts.map((n,i)=>point(i,n/max*radius).join(',')).join(' ')}"/>${rows.map((row,i)=>{const [x,y]=point(i,radius+22),[dx,dy]=point(i,counts[i]/max*radius),selected=selection===row.name,optional=row.type!=='База'?' aw-optional':'';return `${counts[i]?`<circle class="aw-radar-dot${optional}" cx="${dx}" cy="${dy}" r="3.5"/>`:''}<g class="${optional.trim()}" ${interactive?`data-aw="movement" data-movement="${escHtml(row.name)}" role="button" tabindex="0" aria-pressed="${selected}"`:'role="img"'} aria-label="${escHtml(row.name)}: ${counts[i]} выполненных подходов"><circle class="aw-radar-index${selected?' selected':''}" cx="${x}" cy="${y}" r="13"/><text x="${x}" y="${y+4}" text-anchor="middle">${i+1}</text><circle class="aw-radar-hit" cx="${x}" cy="${y}" r="20"/></g>`;}).join('')}</svg>`;
+    drawing=true;
+    node.innerHTML=`<svg viewBox="0 0 ${width} ${width}" class="aw-radar-svg" role="group" aria-label="Выполненные подходы по базовым движениям"><title>Базовые движения</title>${[.33,.66,1].map(f=>`<polygon class="aw-radar-grid" points="${rows.map((_,i)=>point(i,radius*f).join(',')).join(' ')}"/>`).join('')}${rows.map((_,i)=>`<path class="aw-radar-grid" d="M${center},${center}L${point(i,radius).join(',')}"/>`).join('')}<polygon class="aw-radar-area" points="${counts.map((n,i)=>point(i,n/max*radius).join(',')).join(' ')}"/>${rows.map((row,i)=>{const [x,y]=point(i,radius+22),[dx,dy]=point(i,counts[i]/max*radius),selected=view().selected===row.name;return `${counts[i]?`<circle class="aw-radar-dot" cx="${dx}" cy="${dy}" r="3.5"/>`:''}<g data-aw="movement" data-movement="${escHtml(row.name)}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${escHtml(row.name)}: ${counts[i]} выполненных подходов"><circle class="aw-radar-index${selected?' selected':''}" cx="${x}" cy="${y}" r="13"/><text x="${x}" y="${y+4}" text-anchor="middle">${i+1}</text><circle class="aw-radar-hit" cx="${x}" cy="${y}" r="20"/></g>`;}).join('')}</svg>`;
+    drawing=false;
   }
   function updatePin() {
     const root=$('screen-workout'),pin=$('workout-coverage-pin'),box=$('workout-coverage'),scroll=$('workout-scroll');
@@ -378,5 +337,5 @@
     const end=()=>{if(start===null)return;start=null;surface.style.transition='transform .2s ease';if(dy>50){closeRpePicker();surface.style.transform='';}else surface.style.transform='';};
     surface.addEventListener('pointerup',end);surface.addEventListener('pointercancel',end);
   }
-  window.WorkoutUI={icon,radarHtml,configureMovements,initialize,ownsCurrent,captureViewport,restoreViewport,renderCoverage,updatePin,positionTimer,currentRecord,recordHtml,refreshRecord,decorateRpeButton,renderSets,layoutDropTree,wireRpeSheet,hideTools};
+  window.WorkoutUI={icon,initialize,ownsCurrent,captureViewport,restoreViewport,renderCoverage,updatePin,positionTimer,currentRecord,recordHtml,refreshRecord,decorateRpeButton,renderSets,layoutDropTree,wireRpeSheet,hideTools};
 })();

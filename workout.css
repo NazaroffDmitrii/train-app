@@ -74,18 +74,3 @@
 #rpe-backdrop .bottom-sheet{padding:10px 18px calc(16px + var(--safe-bottom));border-radius:20px 20px 0 0}#rpe-backdrop .bottom-sheet-handle{margin-bottom:12px;touch-action:none}#rpe-backdrop .bottom-sheet-title{font-size:16px;font-weight:500;margin-bottom:12px;touch-action:none}#rpe-backdrop .rpe-grid{grid-template-columns:repeat(5,minmax(0,1fr));width:100%;gap:0;border:1px solid var(--border-strong);border-radius:12px;overflow:hidden}#rpe-backdrop .rpe-option{width:100%;min-width:0;height:48px;aspect-ratio:auto;margin:0;font-size:16px;font-weight:500;border:0;border-right:1px solid var(--border-strong);border-radius:0}#rpe-backdrop .rpe-option:nth-child(5n){border-right:0}#rpe-backdrop .rpe-option:nth-child(n+6){border-top:1px solid var(--border-strong)}#rpe-backdrop .rpe-option.selected{background:var(--accent-soft);color:var(--accent-bright)}#rpe-backdrop .rpe-hint{min-height:16px;margin-top:10px;font-size:11px}
 @media(max-width:350px){#screen-workout .workout-header{padding-left:14px;padding-right:14px}#screen-workout .workout-name-input{font-size:18px}#screen-workout .workout-scroll{padding-left:10px;padding-right:10px}#screen-workout .sets-header,#screen-workout .set-row{grid-template-columns:20px minmax(0,1.1fr) minmax(0,.9fr) 38px 38px;gap:4px}#screen-workout .rpe-btn,#screen-workout .set-done-btn,#screen-workout .aw-cell-tool{width:38px}#screen-workout .execution-option{padding:5px 4px;font-size:11px}.aw-coverage-pin{left:10px;right:10px}}
 @media(prefers-reduced-motion:reduce){#screen-workout .rest-pill,#screen-workout .rest-orb,#screen-workout .rest-skip,.aw-coverage-pin{transition:none}}
-
-.aw-radar{aspect-ratio:1}
-.aw-radar-dot.aw-optional{fill:#f0bb77}
-.aw-optional .aw-radar-index{stroke:#f0bb77}
-.aw-option-key,.aw-optional .aw-movement-row>span:first-child{color:#f0bb77}
-.aw-movement-dialog h2{font-size:18px;margin:0 0 12px}
-.aw-movement-options{max-height:52dvh;overflow:auto}
-.aw-movement-options label{display:flex;align-items:center;gap:10px;padding:10px 2px;font-size:14px}
-.aw-movement-options small{margin-left:auto;color:var(--text-secondary)}
-.aw-movement-options input{width:18px;height:18px;accent-color:var(--aw-link)}
-.template-marks{display:block;color:#c5b6ff;margin:0 14px 8px;font-size:12px}
-.template-removed{padding:12px 14px;margin:10px 0;border:1px solid var(--border-subtle);border-radius:14px;color:var(--text-secondary);font-size:13px}
-.template-removed ul{margin:6px 0 0;padding-left:18px}
-
-#screen-run [data-template-mark]::after{content:attr(data-template-mark);display:block;position:static;color:var(--text-secondary);font-size:11px;line-height:1.4;margin-top:5px;text-transform:none}

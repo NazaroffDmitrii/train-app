@@ -118,7 +118,7 @@
     const value = input[metric === 'time' ? 'durationSec' : 'reps'] ?? (compatible ? quantity(old) : null);
     const weight = input.weight ?? (compatible ? numeric(old.weight) : 0) ?? 0;
     if (!Number.isFinite(weight) || !Number.isSafeInteger(value) || value <= 0) throw Error(metric === 'time' ? 'Укажи время подхода' : 'Укажи количество повторений');
-    return {weight,metric,...(Array.isArray(exercise.movements)?{movements:[...exercise.movements]}:{}),reps:metric === 'reps' ? value : 0,...(metric === 'time' ? {durationSec:value} : {}),
+    return {weight,metric,reps:metric === 'reps' ? value : 0,...(metric === 'time' ? {durationSec:value} : {}),
       rpe:effort(set.rpe) || (compatible ? effort(old.rpe) : 0),
       executionParameters:clone(exercise.executionParameters || []),executionValues:clone(exercise.executionValues || [])};
   }
@@ -182,69 +182,13 @@
     const byId = new Map(definitions.map(ex => [ex.id,ex]));
     const counts = new Map(names.map(name => [name,0]));
     for (const ex of exercises || []) {
-      const def = byId.get(ex.exerciseId), movements = ex.movements || def?.atlas?.categories || [];
-      for(const set of ex.sets || []){
-        if(!performed(set) || set.dropSet)continue;
-        new Set(set.movements || movements).forEach(name=>{if(counts.has(name))counts.set(name,counts.get(name)+1);});
-      }
+      const def = byId.get(ex.exerciseId), movements = def?.atlas?.categories || ex.movements || [];
+      const completed = (ex.sets || []).filter(s => performed(s) && !s.dropSet).length;
+      new Set(movements).forEach(name => {if (counts.has(name)) counts.set(name,counts.get(name)+completed);});
     }
     return [...counts.values()];
   }
-  function coverage(workout, definitions, catalog) {
-    const byName=new Map((workout.movementCatalog || catalog || []).map(m=>[m.name,m]));
-    for(const ex of workout.exercises || []) {
-      for(const name of ex.movements || []) if(!byName.has(name)) byName.set(name,{name,type:'Опция'});
-    }
-    const rows=[...byName.values()], counts=movementCounts(workout.exercises,definitions,rows.map(m=>m.name));
-    return rows.map((m,i)=>({...m,count:counts[i]})).filter(m=>
-      !workout.hiddenMovements?.includes(m.name) && (m.type==='База' || m.count>0 || workout.extraMovements?.includes(m.name)));
-  }
-  function templateSnapshot(exercises, definitions) {
-    return exercises.map(ex=>({exerciseId:ex.exerciseId, name:ex.name || definitions.find(d=>d.id===ex.exerciseId)?.name || 'Упражнение недоступно',
-      executionValues:clone(ex.executionValues || []),supersetId:ex.supersetId || null,
-      targets:(ex.sets || []).map(set=>({weight:numeric(set.weight),reps:numeric(set.reps)}))}));
-  }
-  function templateChanges(workout, baseline, completed=false) {
-    const entries=workout.exercises || [], marks=entries.map(()=>[]), removed=[];
-    if(!baseline)return {marks,removed};
-    const remaining=new Set(baseline.map((_,i)=>i));
-    const matches=entries.map(ex=>{
-      const i=ex.templateIndex;
-      if(remaining.has(i) && ex.exerciseId===baseline[i].exerciseId){remaining.delete(i);return i;}
-      return -1;
-    });
-    entries.forEach((ex,i)=>{
-      if(matches[i]>=0)return;
-      const candidates=[...remaining].filter(j=>baseline[j].exerciseId===ex.exerciseId);
-      const j=candidates.find(j=>executionKey(baseline[j])===executionKey(ex)) ?? candidates[0];
-      if(j==null){marks[i].push('Добавлено');return;}
-      matches[i]=j;remaining.delete(j);
-    });
-    const order=matches.filter(j=>j>=0).sort((a,b)=>a-b);
-    let position=0;
-    matches.forEach((j,i)=>{
-      if(j<0)return;
-      if(j!==order[position++])marks[i].push('Изменён порядок');
-      if(executionKey(entries[i])!==executionKey(baseline[j]))marks[i].push('Изменены параметры');
-      if((entries[i].supersetId || null)!==baseline[j].supersetId)marks[i].push('Изменён суперсет');
-      const targets=baseline[j].targets, sets=entries[i].sets || [];
-      const count=completed ? sets.filter(performed).length : sets.length;
-      if(completed && !count)marks[i].push('Не выполнено');
-      if(!targets?.length)return;
-      if(count!==targets.length)marks[i].push(`Подходов: ${count}, в шаблоне ${targets.length}`);
-      sets.forEach((set,k)=>{
-        const target=targets[k];
-        if(!target || !performed(set))return;
-        const original=[];
-        if(target.weight!=null && numeric(set.weight)!==target.weight)original.push(target.weight+' кг');
-        if(target.reps>0 && (mode(set)!=='reps' || quantity(set)!==target.reps))original.push(target.reps+' повт.');
-        if(original.length)marks[i].push(`Подход ${k+1}: в шаблоне ${original.join(' × ')}`);
-      });
-    });
-    remaining.forEach(j=>removed.push(baseline[j]));
-    return {marks,removed};
-  }
-  const api = {numeric,effort,mode,quantity,performed,volume,formatTime,parseTime,executionKey,setKey,groups,previous,previousNote,record,blank,draft,prepare,seed,chooseMetric,children,commit,uncheck,addDrop,remove,finalize,ghostGroup,coverage,templateSnapshot,templateChanges,movementCounts};
+  const api = {numeric,effort,mode,quantity,performed,volume,formatTime,parseTime,executionKey,setKey,groups,previous,previousNote,record,blank,draft,prepare,seed,chooseMetric,children,commit,uncheck,addDrop,remove,finalize,ghostGroup,movementCounts};
   if (typeof module !== 'undefined' && module.exports) module.exports=api;
   if (typeof window !== 'undefined') window.WorkoutCore=api;
 })();
