@@ -3821,7 +3821,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-exercises :is(.ex-cat-tab,.exercise-movement-tabs button) { background:var(--movement-chip); color:var(--movement-chip-text); }
 #screen-exercises :is(.ex-cat-tab,.exercise-movement-tabs button).active { background:var(--movement-target); color:var(--movement-target-text); box-shadow:inset 0 0 0 1px var(--movement-target-border); }
 #screen-exercises :is(.exercise-ago,.exercise-more,.exercise-variants-label,.ex-group-name,.ex-row-chevron,.ex-row-group-badge) { color:var(--movement-muted); }
-#screen-exercises.library-catalog .ex-row:has(> .exercise-library-add) { padding-inline-end:51px; min-height:44px; }
+#screen-exercises.library-catalog .ex-row:has(> .exercise-library-add) { --bookmark-clearance:38px; min-height:44px; }
+#screen-exercises.library-catalog .ex-row:has(> .exercise-library-add) > .ex-row-body { padding-inline-end:var(--bookmark-clearance); }
 #screen-exercises .exercise-library-add {
   position:absolute; top:-1px; right:2px; width:44px; height:44px;
   display:grid; justify-items:center; align-items:start; padding:0; border:0;
