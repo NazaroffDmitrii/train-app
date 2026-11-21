@@ -130,7 +130,7 @@
 /* The shared purple header fades into the plum background. */
 #screen-stats {
  --movement-accent:#b9aeff;
- background:linear-gradient(180deg,var(--movement-header),var(--movement-top) var(--movement-header-end,70px),color-mix(in srgb,var(--movement-top) 50%,transparent) calc(var(--movement-header-end,70px) + 75px),transparent calc(var(--movement-header-end,70px) + 220px)),radial-gradient(ellipse at 80% 15%,#70405860,transparent 60%),#1d131c!important;
+ background:var(--plum-background)!important;
 }
 #screen-stats .exercises-header-title { color:var(--movement-text); }
 #screen-stats #stats-back-btn { background:var(--movement-circle);color:var(--movement-accent); }

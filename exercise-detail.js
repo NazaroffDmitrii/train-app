@@ -247,7 +247,7 @@ const ExerciseDescriptions = (() => {
      _referenceTrail=[{screen:'screen-exercise-detail',state:{..._referenceState},exerciseId:ex.id,returnScreen,scroll:body.scrollTop}];
      _referenceState={page:'group',name:ex.cat,scope:_exerciseLibrary,query:'',sort:'count-desc',picker:null,scrollTop:0,owner:Auth.userId(),userId};goToScreen('exerciseReference');
    };}
-   if(catalog&&!options.previewExercise){const button=hero.querySelector('.xd-membership');button.setAttribute('aria-pressed',String(included));button.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg>`;button.setAttribute('aria-label',included?'Убрать из моих':'Добавить в мои');button.title=included?'Убрать из моих':'Добавить в мои';button.onclick=()=>{toggleExerciseLibrary(ex.id);openExerciseDetail(ex.id,returnScreen,{scope:'catalog'});};}
+   if(catalog&&!options.previewExercise){const button=hero.querySelector('.xd-membership');button.setAttribute('aria-pressed',String(included));button.innerHTML=exerciseMembershipIcon(included);button.setAttribute('aria-label',included?'Убрать из моих':'Добавить в мои');button.title=included?'Убрать из моих':'Добавить в мои';button.onclick=()=>{toggleExerciseLibrary(ex.id);openExerciseDetail(ex.id,returnScreen,{scope:'catalog'});};}
    let header=screen.querySelector('.xd-fixed-header');
    if(!header){header=document.createElement('header');header.className='xd-fixed-header';const toolbar=screen.querySelector('.detail-screen-header');screen.prepend(header);header.append(toolbar);}
    header.querySelector('.xd-hero')?.remove();header.append(hero);

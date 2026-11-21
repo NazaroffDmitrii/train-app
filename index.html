@@ -3609,8 +3609,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #exercises-scroll .ex-category-panel > .ex-row-wrap { margin:0 0 6px; padding:0; border:0; border-radius:14px; background:transparent; }
 #exercises-scroll .ex-row { border:1px solid #ffffff0f; border-radius:14px; padding:12px 13px; background:linear-gradient(110deg,color-mix(in srgb,var(--cat-color) 10%,transparent),#ffffff04),#15151e; gap:8px; }
 #exercises-scroll .ex-row-name { display:block; font-size:15px; font-weight:500; line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.exercise-moves { display:flex; align-items:center; gap:5px; margin-top:7px; min-width:0; }
-.exercise-move { min-width:0; display:flex; align-items:center; gap:5px; padding:3px 9px; border-radius:9px; background:color-mix(in srgb,var(--cat-color,#a99cf5) 14%,transparent); color:color-mix(in srgb,var(--cat-color,#a99cf5) 50%,#eee); font-size:11.5px; line-height:1.4; }
+.exercise-moves { --exercise-move-text:color-mix(in srgb,var(--cat-color,#a99cf5) 50%,#eee); display:flex; align-items:center; gap:5px; margin-top:7px; min-width:0; }
+.exercise-move { min-width:0; display:flex; align-items:center; gap:5px; padding:3px 9px; border-radius:9px; background:color-mix(in srgb,var(--cat-color,#a99cf5) 14%,transparent); color:var(--exercise-move-text); font-size:11.5px; line-height:1.4; }
 .exercise-move svg { width:13px; height:13px; flex:none; }
 .exercise-move > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .exercise-more { flex:none; border:1px solid #ffffff24; border-radius:9px; font-size:11.5px; color:#9a9aae; padding:2px 7px; }
@@ -3632,9 +3632,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .exercise-moves.expanded { display:flex; flex-direction:column; align-items:stretch; }
 .exercise-moves.expanded .exercise-move { padding:0; background:none; font-size:12px; }
 .exercise-moves.expanded .exercise-move > span { white-space:normal; }
-.exercise-library-add { width:32px; height:32px; border-radius:50%; flex:none; border:1px solid color-mix(in srgb,var(--cat-color,#a99cf5) 55%,transparent); color:color-mix(in srgb,var(--cat-color,#a99cf5) 50%,#fff); display:flex; align-items:center; justify-content:center; }
-.exercise-library-add svg { width:17px; height:17px; }
-.exercise-library-add.added { color:#5fb892; border-color:#2a4a3c; }
 .library-catalog .ex-row:not(.ex-row-group) > .ex-row-chevron { display:none; }
 #exercises-scroll.ex-list-editing > .ex-row-wrap { padding:0; margin-bottom:6px; border:0; border-radius:14px; }
 #exercises-scroll.ex-list-editing .exercise-moves, #exercises-scroll.ex-list-editing .exercise-ago { display:none; }
@@ -3775,14 +3772,17 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   --text-secondary:var(--movement-chip-text); --text-tertiary:var(--movement-muted);
   background:linear-gradient(180deg,var(--movement-header),var(--movement-top) var(--movement-header-end,calc(var(--safe-top) + 100px)),color-mix(in srgb,var(--movement-top) 40%,var(--movement-page)) calc(var(--movement-header-end,calc(var(--safe-top) + 100px)) + 36px),color-mix(in srgb,var(--movement-top) 10%,var(--movement-page)) calc(var(--movement-header-end,calc(var(--safe-top) + 100px)) + 80px),var(--movement-page) calc(var(--movement-header-end,calc(var(--safe-top) + 100px)) + 140px));
 }
+#screen-stats {
+  --plum-background:linear-gradient(180deg,var(--movement-header),var(--movement-top) var(--movement-header-end,70px),color-mix(in srgb,var(--movement-top) 50%,transparent) calc(var(--movement-header-end,70px) + 75px),transparent calc(var(--movement-header-end,70px) + 220px)),radial-gradient(ellipse at 80% 15%,#70405860,transparent 60%),#1d131c;
+}
 :is(#screen-exercises,#screen-exercise-reference).library-catalog {
-  --movement-page:#0a141a; --movement-top:#172f36; --movement-header:#2c565a;
-  --movement-muted:#a2b9bd; --movement-line:#56848e; --movement-accent:#a8dedb;
-  --movement-circle:#101e24; --movement-node:#203c41; --movement-node-border:#497780; --movement-node-text:#bce6e4;
-  --movement-chip:#192b32; --movement-chip-text:#c1d8db; --movement-group:#20373e; --movement-group-text:#cee6e6;
-  --movement-target:#254347; --movement-target-border:#3e666b; --movement-target-text:#e1f3f1;
-  --movement-tabs:#0b1b21; --movement-selected:#2b4b51; --movement-card:#101e26; --movement-card-border:#2c4b55;
-  --movement-number-stroke:#8abebd;
+  --movement-page:#140d13; --movement-top:#321e2b; --movement-header:#60364e;
+  --movement-text:#f8f0f3; --movement-muted:#b8a4af; --movement-line:#8e627c; --movement-accent:#efb4cd;
+  --movement-circle:#21131c; --movement-node:#3a2231; --movement-node-border:#85556f; --movement-node-text:#f5c9dc;
+  --movement-chip:#2b1d27; --movement-chip-text:#ddc8d1; --movement-group:#382431; --movement-group-text:#ecd0dd;
+  --movement-target:#482938; --movement-target-border:#664253; --movement-target-text:#ffe4ef;
+  --movement-tabs:#100a0f; --movement-selected:#362832; --movement-card:#1c111a; --movement-card-border:#46313e;
+  --movement-number-stroke:#bd94aa;
 }
 :is(#screen-exercises,#screen-exercise-reference,#screen-templates,#screen-stats,#screen-history) .exercises-header { background:transparent; border:0; }
 /* Templates, statistics and history inherit the movement page's purple surfaces. */
@@ -3814,29 +3814,26 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 :is(#screen-exercises,#screen-exercise-reference) .exercise-library-tabs button.active:last-child::before { left:-16px; width:16px; height:16px; background:radial-gradient(circle at 0 0,transparent 16px,var(--movement-top) 16.5px); }
 :is(#screen-exercises,#screen-exercise-reference) :is(#exercises-back-btn,#exercise-reference-back) { background:var(--movement-circle); color:var(--movement-accent); }
 #screen-exercises .exercises-search { background-color:var(--movement-circle); border-color:var(--movement-card-border); color:var(--movement-text); }
-/* Прямые переходы: панель прокручивается вместе со списком упражнений. */
-.exercise-reference-panel { padding:2px 0 17px; }
-.exercise-reference-panel-title { margin:0 2px 9px; color:var(--movement-muted); font-size:10px; line-height:1.3; font-weight:500; letter-spacing:.15px; }
-.exercise-reference-panel-links { display:flex; padding:4px; border:1px solid color-mix(in srgb,var(--movement-accent) 18%,transparent); border-radius:16px; background:linear-gradient(120deg,var(--movement-group),var(--movement-chip)); }
-.exercise-reference-panel-links>button { position:relative; display:flex; align-items:center; justify-content:center; flex:1; min-width:0; min-height:40px; padding:9px 4px; border:0; border-radius:11px; background:transparent; color:var(--movement-group-text); font-size:12px; line-height:1.25; font-weight:550; text-align:center; }
-.exercise-reference-panel-links>button+button::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:1px; background:#ffffff14; }
-.exercise-reference-panel-links>button:focus-visible { outline:2px solid var(--movement-accent); outline-offset:1px; }
-.exercise-reference-panel-links>button:active { background:color-mix(in srgb,var(--movement-accent) 15%,transparent); }
-@media (hover:hover) and (pointer:fine) { .exercise-reference-panel-links>button:hover { background:color-mix(in srgb,var(--movement-accent) 9%,transparent); } }
-@media(max-width:340px) { .exercise-reference-panel-links>button { font-size:11px; } }
 #screen-exercises .exercises-search::placeholder { color:var(--movement-muted); }
-#screen-exercises .exercises-search:focus { border-color:var(--movement-accent); }
-#screen-exercises .exercise-filter-btn { background:var(--movement-group); color:var(--movement-accent); }
-#screen-exercises .exercise-filter-btn.active { background:var(--movement-target); color:var(--movement-target-text); }
+#screen-exercises .exercises-search:focus { border-color:var(--movement-card-border); box-shadow:none; outline:none; }
+#screen-exercises .exercise-filter-btn { background:var(--movement-circle); border:1px solid var(--movement-card-border); color:var(--movement-accent); }
 #screen-exercises .exercises-add-btn { background:var(--movement-accent); color:var(--movement-circle); }
 #screen-exercises :is(.ex-cat-tab,.exercise-movement-tabs button) { background:var(--movement-chip); color:var(--movement-chip-text); }
 #screen-exercises :is(.ex-cat-tab,.exercise-movement-tabs button).active { background:var(--movement-target); color:var(--movement-target-text); box-shadow:inset 0 0 0 1px var(--movement-target-border); }
 #screen-exercises :is(.exercise-ago,.exercise-more,.exercise-variants-label,.ex-group-name,.ex-row-chevron,.ex-row-group-badge) { color:var(--movement-muted); }
-#screen-exercises .exercise-library-add { border-color:var(--movement-node-border); color:var(--movement-accent); background:var(--movement-card); }
-#screen-exercises .exercise-library-add.added { border-color:var(--movement-accent); color:var(--movement-circle); background:var(--movement-accent); }
+#screen-exercises.library-catalog .ex-row:has(> .exercise-library-add) { padding-inline-end:51px; min-height:44px; }
+#screen-exercises .exercise-library-add {
+  position:absolute; top:-1px; right:2px; width:44px; height:44px;
+  display:grid; justify-items:center; align-items:start; padding:0; border:0;
+  border-radius:0 0 9px 9px; background:transparent;
+  color:color-mix(in srgb,var(--movement-muted) 72%,var(--movement-card));
+}
+#screen-exercises .exercise-library-add svg { display:block; width:15px; height:auto; pointer-events:none; }
+#screen-exercises .exercise-library-add[aria-pressed=true] { color:color-mix(in srgb,var(--movement-muted) 85%,var(--movement-card)); }
+#screen-exercises .exercise-library-add:focus-visible { outline:2px solid var(--movement-accent); outline-offset:-3px; }
 #screen-exercises .ex-category-panel { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 12%,transparent),transparent 60%),var(--movement-card); border-color:var(--movement-card-border); }
-#screen-exercises :is(.ex-row,.ex-row-wrap-group.expanded) { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) 28%,var(--movement-card-border)); }
-#screen-exercises .ex-row-wrap-group:not(.expanded) > .ex-row-group { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) 28%,var(--movement-card-border)); }
+#screen-exercises :is(.ex-row,.ex-row-wrap-group.expanded) { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) var(--category-border-tint,28%),var(--movement-card-border)); }
+#screen-exercises .ex-row-wrap-group:not(.expanded) > .ex-row-group { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) var(--category-border-tint,28%),var(--movement-card-border)); }
 #screen-exercises .expanded > .ex-row-group { background:transparent; border:0; }
 #screen-exercises .ex-row-wrap-nested .ex-row { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 18%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent)),var(--movement-chip); }
 #screen-exercises .constructor-catalog-footer { background:var(--movement-circle); border-color:var(--movement-card-border); }
@@ -3847,7 +3844,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-exercises .constructor-catalog-modes button { color:var(--movement-muted); }
 #screen-exercises .constructor-catalog-modes .selected { background:var(--movement-selected); color:var(--movement-text); }
 #screen-exercise-reference .reference-row:not(.reference-tinted) { background:var(--movement-card); border-color:var(--movement-card-border); }
-#screen-exercise-reference .reference-tinted { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) 28%,var(--movement-card-border)); }
+#screen-exercise-reference .reference-tinted { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) var(--category-border-tint,28%),var(--movement-card-border)); }
 #screen-exercise-reference :is(.reference-note,.reference-row-copy small,.reference-count,.reference-row > svg,.reference-label,.reference-section-title,.reference-empty,.reference-icon-button) { color:var(--movement-muted); }
 #screen-exercise-reference .reference-hub-icon { background:var(--movement-node); color:var(--movement-accent); }
 #screen-exercise-reference :is(.reference-field,.reference-picker,.reference-badge:not(.on)) { background:var(--movement-chip); color:var(--movement-chip-text); }
@@ -4620,7 +4617,25 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
         <button class="btn-chip" id="exercises-back-btn" aria-label="Назад">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
         </button>
-        <div class="exercises-header-title">Упражнения</div>
+        <div class="exercise-list-heading">
+          <div class="exercises-header-title">Упражнения</div>
+          <div class="exercise-library-caption" id="exercise-library-caption">Моя библиотека</div>
+        </div>
+        <div class="ex-nav-anchor" id="exercise-section-nav" hidden>
+          <button type="button" class="ex-nav-trigger" id="exercise-section-trigger" aria-controls="exercise-section-options" aria-expanded="false" aria-label="Выбрать раздел"><span class="ex-nav-mark" aria-hidden="true"></span></button>
+          <div class="ex-nav-shell">
+            <div class="ex-nav-sheet">
+              <div class="ex-nav-title" aria-hidden="true">Разделы</div>
+              <div class="ex-nav-options" id="exercise-section-options" role="group" aria-label="Разделы упражнений" inert>
+                <button type="button" data-ex-section="mine" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 21 6-4 6 4V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2z"/></svg><span class="ex-nav-label">Мои</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
+                <button type="button" data-ex-section="catalog" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5c-3-2-7-2-10-1v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Zm0 0v15"/></svg><span class="ex-nav-label">Каталог</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
+                <button type="button" data-ex-section="groups" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span class="ex-nav-label">Группы</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
+                <button type="button" data-ex-section="movements" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/></svg><span class="ex-nav-label">Движения</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
+                <button type="button" data-ex-section="muscles" aria-pressed="false"><span class="ex-nav-muscle" aria-hidden="true"></span><span class="ex-nav-label">Мышцы</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="exercise-library-tabs" id="exercise-library-tabs" role="tablist" aria-label="Упражнения">
@@ -4631,16 +4646,26 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     <div id="constructor-catalog-context" class="constructor-catalog-context" hidden></div>
     <div class="exercises-search-wrap">
       <input class="exercises-search" id="exercises-search" placeholder="Поиск" aria-label="Поиск упражнения" type="search">
-      <button type="button" class="exercise-filter-btn" id="exercise-filter-btn" aria-label="Фильтры: группы" title="Фильтры: группы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
       <button type="button" class="exercises-add-btn" id="exercises-add-btn" title="Создать упражнение" aria-label="Создать упражнение">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
+      <button type="button" class="exercise-filter-btn" id="exercise-filter-btn" aria-label="Фильтры: группы" title="Фильтры: группы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
     </div>
-    <div class="ex-cat-tabs-wrap">
-      <div class="ex-cat-tabs" id="ex-cat-tabs"></div>
-
+    <div class="exercise-filter-rail">
+      <div class="exercise-quick-options" role="group" aria-label="Параметры списка">
+        <button type="button" data-list-option="recent" aria-label="Выполненные недавно" title="Выполненные недавно" aria-pressed="false" hidden><svg aria-hidden="true" stroke="currentColor" stroke-linejoin="round" stroke-linecap="round" stroke-width="1.5" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.3"/><path d="M10 5.4v5l3 2"/></svg></button>
+        <button type="button" data-list-option="membership" data-membership-mode="all" aria-label="Принадлежность к библиотеке: все упражнения" hidden>
+          <svg aria-hidden="true" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.5">
+            <path class="bookmark-half" d="M1.25.7H8v13.8l-6.75 3.9z" fill="currentColor" stroke="none"/>
+            <path class="bookmark-outline" d="M1.25.7h13.5v17.7L8 14.5l-6.75 3.9z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="ex-cat-tabs-wrap">
+        <div class="ex-cat-tabs" id="ex-cat-tabs"></div>
+      </div>
+      <div class="exercise-movement-tabs" id="exercise-movement-tabs" hidden></div>
     </div>
-    <div class="exercise-movement-tabs" id="exercise-movement-tabs" hidden></div>
     <div class="exercises-scroll" id="exercises-scroll"></div>
     <button class="exercises-float-done" id="exercises-done-btn">Готово</button>
     </div>

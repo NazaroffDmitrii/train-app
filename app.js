@@ -2808,6 +2808,7 @@ function goBackScreen(fallback = "menu", opts = {}) {
 }
 
 function goToScreen(name, opts = {}) {
+  if (exerciseSectionShell.classList.contains('open')) setExerciseMenuOpen(false);
   if (name !== "exerciseReference") cancelMovementRemovals();
   // Формы редактирования никогда не должны быть местом, куда можно "вернуться
   // назад" — если экран меняется, пока форма открыта, закрываем её сразу
@@ -2862,7 +2863,16 @@ function goToScreen(name, opts = {}) {
   if (name === "menu")     { refreshMenu(); requestAnimationFrame(() => requestAnimationFrame(() => window.restartStartNeonAnimation?.())); }
   if (name === "workout")  { if (!opts.resumeSelection) initWorkoutScreen(opts); }
   if (name === "run")      { initRunScreen(opts); }
-  if (name === "exercises") { if (opts.keepFilter) { renderExercisesList(exercisesSearch.value); if (_constructorCatalog) exercisesScroll.scrollTop = _constructorCatalog.scrollTop || 0; } else initExercisesScreen(); }
+  if (name === "exercises") { if (opts.keepFilter) { renderExercisesList(exercisesSearch.value); if (_constructorCatalog) exercisesScroll.scrollTop = _constructorCatalog.scrollTop || 0; } else { exerciseLibraryViews.clear(); initExercisesScreen(); } }
+  if (name === "exercises" && fromName === "detail" && opts.keepFilter && _exerciseSessionReturn) {
+    const saved = _exerciseSessionReturn;
+    exercisesScroll.querySelectorAll('[data-more-moves]').forEach(b => {
+      const row = b.closest('.ex-row');
+      if (saved.expanded.includes(row.dataset.groupId || row.dataset.id)) b.click();
+    });
+    exercisesScroll.scrollTop = saved.scroll;
+  }
+  if (name !== "detail") _exerciseSessionReturn = null;
   if (name === "exerciseReference") renderExerciseReference();
   if (name === "history")  { initHistoryScreen(); }
   if (name === "stats")    { if (!opts.resumeSelection) initStatsScreen(); }
@@ -5788,6 +5798,8 @@ const SVG_EX_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 function exerciseCategoryColor(userId, name, catalog = exerciseCatalogSource()) {
   return name ? (catalog ? DATA.categoryColor(DATA.atlasGroups().indexOf(name)) : DATA.getCategoryColor(userId, name)) : '#9696aa';
 }
+let _performedOnly = false;
+let _exerciseListOption = '';
 function exerciseMovements(ex) { return ex.atlas?.categories || []; }
 function exerciseLibraryHasTabs() { return !_constructorCatalog || _constructorCatalog.kind === 'picker'; }
 function exerciseCatalogSource() { return exerciseLibraryHasTabs() && _exerciseLibrary === 'catalog'; }
@@ -5795,7 +5807,15 @@ function canEditExerciseLibrary(catalog) { return !catalog || DATA.isAdmin(); }
 function exerciseMovementHtml(ex, expanded = false) {
   const moves = exerciseMovements(ex);
   if (!moves.length) return '';
-  return `<span class="exercise-moves${expanded ? ' expanded' : ''}">${(expanded ? moves : moves.slice(0, 1)).map(m => `<button type="button" class="exercise-move" data-reference-kind="movement" data-reference-name="${escHtml(m)}" title="${escHtml(m)}">${SVG_EX_TARGET}<span>${escHtml(m)}</span></button>`).join('')}${!expanded && moves.length > 1 ? `<span class="exercise-more">+${moves.length - 1}</span>` : ''}</span>`;
+  const compact = !expanded && moves.length > 1;
+  const visible = compact && _constructorCatalog ? moves.slice(0, 1) : moves;
+  const buttons = visible.map((m, i) => `<button type="button" class="exercise-move"${compact && i ? ' hidden' : ''} data-reference-kind="movement" data-reference-name="${escHtml(m)}" title="${escHtml(m)}">${SVG_EX_TARGET}<span>${escHtml(m)}</span></button>`).join('');
+  let more = '';
+  if (compact) {
+    const count = moves.length - 1;
+    more = _constructorCatalog ? `<span class="exercise-more">+${count}</span>` : `<button type="button" class="exercise-more" data-more-moves="${count}" aria-expanded="false" aria-label="Показать остальные движения (+${count})"><span aria-hidden="true">+${count}</span></button>`;
+  }
+  return `<span class="exercise-moves${expanded ? ' expanded' : ''}">${buttons}${more}</span>`;
 }
 function exerciseAgo(id) {
   const ts = _exerciseLastDates.get(id);
@@ -5803,10 +5823,22 @@ function exerciseAgo(id) {
   const days = Math.max(0, Math.floor((Date.now() - ts) / 86400000));
   return days === 0 ? 'Сегодня' : days === 1 ? 'Вчера' : days < 30 ? `${days} дн. назад` : new Date(ts).toLocaleDateString('ru-RU', {day:'numeric', month:'short'});
 }
+function exerciseSessionLink(id) {
+  if (_constructorCatalog) return '';
+  const ts = _exerciseLastDates.get(id);
+  if (!ts) return '';
+  const last = new Date(ts);
+  const year = last.getFullYear() === new Date().getFullYear() ? undefined : 'numeric';
+  const date = last.toLocaleDateString('ru-RU', {day:'numeric', month:'short', year});
+  return `<button type="button" class="exercise-session-link" data-last-session="${escHtml(id)}" aria-label="Открыть тренировку за ${escHtml(date)}" title="Последнее выполнение: ${escHtml(date)}">${escHtml(date)}</button>`;
+}
+function exerciseMembershipIcon(added) {
+  return `<svg viewBox="0 0 16 20" fill="${added ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M1.25.7h13.5v17.7L8 14.5l-6.75 3.9z"/></svg>`;
+}
 function exerciseLibraryButton(ex) {
   if (_constructorCatalog || _exerciseLibrary !== 'catalog') return '';
   const added = !DATA.isHidden(DATA.getCurrentUser(), ex.id);
-  return `<button type="button" class="exercise-library-add${added ? ' added' : ''}" data-library-add="${escHtml(ex.id)}" aria-pressed="${added}" aria-label="${added ? 'Убрать из моих' : 'Добавить в мои'}: ${escHtml(ex.name)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="${added ? 'm5 12 4 4L19 6' : 'M12 5v14M5 12h14'}"/></svg></button>`;
+  return `<button type="button" class="exercise-library-add${added ? ' added' : ''}" data-library-add="${escHtml(ex.id)}" aria-pressed="${added}" aria-label="${added ? 'Убрать из моих' : 'Добавить в мои'}: ${escHtml(ex.name)}">${exerciseMembershipIcon(added)}</button>`;
 }
 function toggleExerciseLibrary(id) {
   const userId = DATA.getCurrentUser();
@@ -5894,12 +5926,31 @@ function openExecutionParameterForm(exerciseId, catalog, groupId = null) {
     finally { button.disabled = false; }
   };
 }
+function syncLibraryFilterIcons(options, catalog, recent, membership) {
+  const clock = options.querySelector('[data-list-option="recent"]');
+  clock.hidden = false;
+  clock.setAttribute('aria-pressed', String(recent));
+  const bookmark = options.querySelector('[data-list-option="membership"]');
+  bookmark.hidden = !catalog;
+  bookmark.dataset.membershipMode = membership || 'all';
+  const label = membership === 'added' ? 'В моих' : membership === 'unadded' ? 'Не в моих' : 'Все упражнения';
+  bookmark.setAttribute('aria-label', 'Принадлежность к библиотеке: ' + label);
+}
 function syncExerciseLibraryUI(allExs) {
   const catalog = exerciseCatalogSource();
   $('screen-exercises').classList.toggle('library-catalog', catalog);
-  $('exercise-library-tabs').hidden = !exerciseLibraryHasTabs();
+  const screen = $('screen-exercises');
+  $('exercise-library-tabs').hidden = _constructorCatalog?.kind !== 'picker';
+  if (!_constructorCatalog) {
+    screen.querySelector('.exercises-header-title').textContent = catalog ? 'Каталог' : 'Упражнения';
+    $('exercise-library-caption').textContent = catalog ? 'Общая библиотека' : 'Моя библиотека';
+  }
+  syncExerciseSectionMenu(screen, _constructorCatalog || _exListEditMode ? null : _exerciseLibrary);
   $('exercise-filter-btn').hidden = !exerciseLibraryHasTabs();
   $('exercises-add-btn').hidden = !canCreateExerciseFromList();
+  const options = screen.querySelector('.exercise-quick-options');
+  options.hidden = !!_constructorCatalog || _exListEditMode;
+  syncLibraryFilterIcons(options, catalog, _performedOnly, _exerciseListOption);
   exercisesSearch.placeholder = catalog ? 'Поиск по каталогу' : 'Поиск';
   document.querySelectorAll('[data-library]').forEach(b => {
     b.classList.toggle('active', b.dataset.library === _exerciseLibrary);
@@ -5915,7 +5966,7 @@ function syncExerciseLibraryUI(allExs) {
   panel.hidden = mode === 0;
   const moves = [...new Set(allExs.flatMap(exerciseMovements))];
   panel.innerHTML = `<button type="button" class="${!_exerciseMovementFilter.size ? 'active' : ''}" data-movement="">Все движения</button>` + moves.map(m => `<button type="button" title="${escHtml(m)}" class="${_exerciseMovementFilter.has(m) ? 'active' : ''}" data-movement="${escHtml(m)}">${escHtml(m)}</button>`).join('');
-  panel.querySelectorAll('button').forEach(b => b.onclick = () => {
+  panel.querySelectorAll('[data-movement]').forEach(b => b.onclick = () => {
     const m = b.dataset.movement;
     if (!m) _exerciseMovementFilter.clear();
     else if (_exerciseMovementFilter.has(m)) _exerciseMovementFilter.delete(m);
@@ -5923,18 +5974,30 @@ function syncExerciseLibraryUI(allExs) {
     renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = 0;
   });
 }
-function setExerciseLibrary(scope) {
+function setExerciseLibrary(scope, saved = null) {
   if (!['mine','catalog'].includes(scope) || scope === _exerciseLibrary || !exerciseLibraryHasTabs()) return;
   exitExListEditMode();
   setReferenceLibraryScope(scope);
-  _exercisesCatFilter = 'all'; _exerciseFilterMode = 0; _exerciseMovementFilter.clear(); _exGroupExpanded.clear();
-  exercisesSearch.value = '';
-  renderExercisesList(''); exercisesScroll.scrollTop = 0;
+  _performedOnly = !!saved?.performedOnly;
+  _exerciseListOption = saved?.listOption || '';
+  _exercisesCatFilter = saved?.category || 'all'; _exerciseFilterMode = saved?.mode || 0;
+  _exerciseMovementFilter = new Set(saved?.movements); _exGroupExpanded = new Set(saved?.expanded);
+  exercisesSearch.value = saved?.query || '';
+  renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = saved?.scroll || 0;
   if (scope === 'catalog' && typeof Bridge !== 'undefined') Bridge.refreshAtlas().catch(() => showToast('Не удалось обновить каталог. Показана сохранённая версия.'));
 }
 $('exercise-library-tabs').addEventListener('click', event => {
   const button = event.target.closest('[data-library]');
   if (button) setExerciseLibrary(button.dataset.library);
+});
+$('screen-exercises').addEventListener('click', event => {
+  const button = event.target.closest('[data-list-option]');
+  if (!button || _exListEditMode || _constructorCatalog) return;
+  if (button.dataset.listOption === 'recent') _performedOnly = !_performedOnly;
+  else _exerciseListOption = {'':'added', added:'unadded', unadded:''}[_exerciseListOption];
+  renderExercisesList(exercisesSearch.value);
+  exercisesScroll.scrollTop = 0;
+  if (!event.detail) $('screen-exercises').querySelector(`[data-list-option="${button.dataset.listOption}"]`)?.focus({preventScroll:true});
 });
 $('exercise-filter-btn').addEventListener('click', () => {
   _exerciseFilterMode = (_exerciseFilterMode + 1) % 3;
@@ -5966,6 +6029,8 @@ const LEVEL_LABELS = { global: "Глобальное", regional: "Региона
 const LOAD_LABELS = { weighted: "С отягощением", bodyweight: "Свой вес" };
 
 function initExercisesScreen() {
+  _exerciseListOption = '';
+  _performedOnly = false;
   exercisesSearch.value = "";
   _exerciseFilterMode = 0;
   _exerciseMovementFilter.clear();
@@ -5984,12 +6049,81 @@ function initExercisesScreen() {
 
 $("exercises-back-btn").addEventListener("click", () => { if (_constructorCatalog) { closeConstructorExerciseCatalog(); return; } exitExListEditMode(); goBackScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
-// Прямые переходы из панели в начале обычного списка упражнений.
-exercisesScroll.addEventListener('click', event => {
-  const button = event.target.closest('[data-exercise-reference]');
-  if (!button || _constructorCatalog || _exListEditMode || Date.now() < _exerciseScrollClickUntil) return;
-  event.preventDefault(); event.stopPropagation();
-  openExerciseReference(button.dataset.exerciseReference);
+const exerciseSectionNav = $('exercise-section-nav');
+const exerciseSectionTrigger = $('exercise-section-trigger');
+const exerciseSectionOptions = $('exercise-section-options');
+const exerciseSectionShell = exerciseSectionNav.querySelector('.ex-nav-shell');
+const exerciseLibraryViews = new Map();
+
+function setExerciseMenuOpen(open) {
+  exerciseSectionTrigger.setAttribute('aria-expanded', String(open));
+  exerciseSectionTrigger.setAttribute('aria-label', open ? 'Закрыть меню разделов' : 'Выбрать раздел');
+  exerciseSectionOptions.inert = !open;
+  if (open) {
+    const sheet = exerciseSectionNav.querySelector('.ex-nav-sheet');
+    exerciseSectionShell.style.setProperty('--menu-content-height', sheet.offsetHeight + 'px');
+  }
+  exerciseSectionShell.classList.toggle('open', open);
+}
+
+function syncExerciseSectionMenu(screen, section) {
+  if (!screen.classList.contains('active')) return;
+  const header = screen.querySelector('.exercises-header-top');
+  const previous = exerciseSectionNav.closest('.screen');
+  if (previous !== screen) {
+    previous?.classList.remove('with-section-menu');
+    header.append(exerciseSectionNav);
+  }
+  screen.classList.toggle('with-section-menu', !!section);
+  exerciseSectionNav.hidden = !section;
+  if (!section || previous !== screen) setExerciseMenuOpen(false);
+  for (const option of exerciseSectionOptions.children) {
+    option.setAttribute('aria-pressed', String(option.dataset.exSection === section));
+  }
+}
+
+function chooseExerciseSection(section) {
+  const fromReference = SCREENS.exerciseReference.classList.contains('active');
+  if (section === 'mine' || section === 'catalog') {
+    if (fromReference) referenceBack();
+    if (section !== _exerciseLibrary) {
+      const owner = Auth.userId(), profile = DATA.getCurrentUser();
+      exerciseLibraryViews.set(_exerciseLibrary, {
+        owner, profile, performedOnly:_performedOnly, listOption:_exerciseListOption, query:exercisesSearch.value, category:_exercisesCatFilter, mode:_exerciseFilterMode,
+        movements:[..._exerciseMovementFilter], expanded:[..._exGroupExpanded], scroll:exercisesScroll.scrollTop,
+      });
+      const saved = exerciseLibraryViews.get(section);
+      setExerciseLibrary(section, saved?.owner === owner && saved?.profile === profile ? saved : null);
+    }
+  } else if (!fromReference || section !== _referenceState.page) {
+    openExerciseReference(section, fromReference);
+  }
+}
+
+exerciseSectionTrigger.addEventListener('click', event => {
+  const open = !exerciseSectionShell.classList.contains('open');
+  setExerciseMenuOpen(open);
+  if (open && event.detail === 0) exerciseSectionOptions.querySelector('[aria-pressed="true"]')?.focus({preventScroll:true});
+});
+exerciseSectionOptions.addEventListener('click', event => {
+  const option = event.target.closest('[data-ex-section]');
+  if (!option) return;
+  setExerciseMenuOpen(false);
+  chooseExerciseSection(option.dataset.exSection);
+  exerciseSectionTrigger.focus({preventScroll:true});
+});
+document.addEventListener('pointerdown', event => {
+  if (exerciseSectionShell.classList.contains('open') && !exerciseSectionNav.contains(event.target)) setExerciseMenuOpen(false);
+}, true);
+exerciseSectionNav.addEventListener('focusout', event => {
+  if (event.relatedTarget && !exerciseSectionNav.contains(event.relatedTarget)) setExerciseMenuOpen(false);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && exerciseSectionShell.classList.contains('open')) {
+    event.preventDefault();
+    setExerciseMenuOpen(false);
+    exerciseSectionTrigger.focus({preventScroll:true});
+  }
 });
 
 // Порядок групп для справочника: как у пользователя (getAllCategories), но только
@@ -6025,8 +6159,9 @@ function memberRowHtml(ex, cat, selected = false) {
       <div class="ex-row tappable" data-id="${escHtml(ex.id)}">
         <span class="ex-row-body">
           <button type="button" class="ex-row-name variant-select" data-variant-select="${escHtml(ex.id)}" data-variant-open="${escHtml(ex.id)}" aria-pressed="${selected}">${escHtml(label)}</button>
+          ${exerciseSessionLink(ex.id)}
         </span>
-        <span class="exercise-ago">${_exerciseLibrary === "mine" && !_constructorCatalog ? exerciseAgo(ex.id) : ""}</span><button type="button" class="variant-open" data-variant-open="${escHtml(ex.id)}" aria-label="Открыть: ${escHtml(ex.name)}">${arrow}</button>${constructorCatalogAddHtml(ex)}${exerciseLibraryButton(ex)}
+        <button type="button" class="variant-open" data-variant-open="${escHtml(ex.id)}" aria-label="Открыть: ${escHtml(ex.name)}">${arrow}</button>${constructorCatalogAddHtml(ex)}${exerciseLibraryButton(ex)}
       </div>
     </div>`;
 }
@@ -6155,7 +6290,7 @@ function renderCatTabs(userId, presentCats) {
     const color = exerciseCategoryColor(userId, c);
     return `<button class="ex-cat-tab${active}" data-cat="${escHtml(c)}" style="--tab-color:${escHtml(color)}">${escHtml(c)}</button>`;
   }).join("");
-  tabsEl.querySelectorAll(".ex-cat-tab").forEach(btn => {
+  tabsEl.querySelectorAll("[data-cat]").forEach(btn => {
     btn.addEventListener("click", () => {
       _exercisesCatFilter = btn.dataset.cat;
       renderExercisesList(exercisesSearch.value);
@@ -6177,10 +6312,16 @@ function renderExercisesList(query) {
   const canEdit = !_constructorCatalog && canEditExerciseLibrary(catalog);
   const allExs = DATA.libraryExercises(userId,catalog).filter(e => !_constructorCatalog || _constructorCatalog.canSelect(e.id,_constructorCatalog.filterMode));
 
+  const lastSessions = new Map();
   _exerciseLastDates = new Map();
-  DATA.getWorkoutHistory(userId).forEach(w => (w.exercises || []).forEach(e => {
-    if (w.startedAt > (_exerciseLastDates.get(e.exerciseId) || 0)) _exerciseLastDates.set(e.exerciseId, w.startedAt);
-  }));
+  for (const workout of DATA.getWorkoutHistory(userId)) {
+    if (workout.deleted || workout.type === 'run' || !workout.startedAt) continue;
+    for (const entry of workout.exercises || []) {
+      if (lastSessions.has(entry.exerciseId) || !entry.sets?.some(WorkoutCore.performed)) continue;
+      lastSessions.set(entry.exerciseId, workout);
+      _exerciseLastDates.set(entry.exerciseId, workout.startedAt);
+    }
+  }
   syncExerciseLibraryUI(allExs);
   renderCatTabs(userId, Array.from(new Set(allExs.map(e => e.cat))));
 
@@ -6188,7 +6329,10 @@ function renderExercisesList(query) {
   // должен учитывать группы упражнений (см. DATA.resolveDisplayItems) —
   // если запрос совпал с ОДНИМ вариантом, показать нужно всю группу целиком,
   // а не только совпавшего участника, поэтому query нельзя резать здесь.
-  const tabFiltered = allExs.filter(e => _exercisesCatFilter === "all" || e.cat === _exercisesCatFilter).filter(e => !exerciseLibraryHasTabs() || !_exerciseMovementFilter.size || exerciseMovements(e).some(m => _exerciseMovementFilter.has(m)));
+  const listOption = _constructorCatalog || _exListEditMode ? '' : _exerciseListOption;
+  const membershipFilter = catalog && (listOption === 'unadded' || listOption === 'added');
+  const datedOnly = !_constructorCatalog && !_exListEditMode && _performedOnly;
+  const tabFiltered = allExs.filter(e => !datedOnly || lastSessions.has(e.id)).filter(e => !membershipFilter || DATA.isHidden(userId, e.id) === (listOption === 'unadded')).filter(e => _exercisesCatFilter === "all" || e.cat === _exercisesCatFilter).filter(e => !exerciseLibraryHasTabs() || !_exerciseMovementFilter.size || exerciseMovements(e).some(m => _exerciseMovementFilter.has(m)));
 
   // Группировка по категориям. Порядок категорий — как в списке пользователя,
   // плюс любые «осиротевшие» (встречаются в упражнениях, но нет в списке).
@@ -6207,7 +6351,7 @@ function renderExercisesList(query) {
   const customOrder = DATA.libraryOrder(userId,catalog);
 
   // Пустые категории показываем только на вкладке "Все" и без поиска (для drag-to-category)
-  const emptyCats = (!_constructorCatalog && !isFiltered && !q && !_exerciseMovementFilter.size) ? catOrder.filter(c => !groups.has(c)) : [];
+  const emptyCats = (!datedOnly && !membershipFilter && !_constructorCatalog && !isFiltered && !q && !_exerciseMovementFilter.size) ? catOrder.filter(c => !groups.has(c)) : [];
   const allOrderedCats = [...orderedCats, ...emptyCats];
 
   if (_exListEditMode) exercisesScroll.classList.add("ex-list-editing");
@@ -6220,8 +6364,7 @@ function renderExercisesList(query) {
   const displayName = item => item.kind === "group" ? item.name : item.ex.name;
 
   let visibleItems = 0;
-  const referencePanel = !_constructorCatalog && !_exListEditMode ? `<nav class="exercise-reference-panel" aria-label="Справочники"><div class="exercise-reference-panel-title">Справочники</div><div class="exercise-reference-panel-links"><button type="button" data-exercise-reference="groups" aria-label="Открыть группы">Группы</button><button type="button" data-exercise-reference="movements" aria-label="Открыть движения">Движения</button><button type="button" data-exercise-reference="muscles" aria-label="Открыть мышцы">Мышцы</button></div></nav>` : '';
-  exercisesScroll.innerHTML = referencePanel + allOrderedCats.map(cat => {
+  exercisesScroll.innerHTML = allOrderedCats.map(cat => {
     const color = exerciseCategoryColor(userId, cat);
     const catExs = groups.get(cat) || [];
     const isEmpty = catExs.length === 0;
@@ -6240,9 +6383,17 @@ function renderExercisesList(query) {
       }
       return displayName(a).localeCompare(displayName(b), "ru");
     });
+    if (datedOnly) {
+      const lastDate = ex => _exerciseLastDates.get(ex.id);
+      for (const item of items) {
+        if (item.kind === 'group') item.members.sort((a, b) => lastDate(b) - lastDate(a));
+      }
+      const itemDate = item => lastDate(item.kind === 'group' ? item.members[0] : item.ex);
+      items.sort((a, b) => itemDate(b) - itemDate(a));
+    }
     visibleItems += items.length;
     if (!isEmpty && !items.length) return "";
-    const rows = items.map(item => {
+    function renderItem(item) {
       if (item.kind !== "group") return `
         <div class="ex-row-wrap" data-id="${escHtml(item.ex.id)}" data-cat="${escHtml(cat)}" style="--cat-color:${escHtml(color)}">
           <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
@@ -6250,8 +6401,9 @@ function renderExercisesList(query) {
           <div class="ex-row tappable" data-id="${escHtml(item.ex.id)}"${accentStyle}>
             <span class="ex-row-body">
               <span class="ex-row-name">${escHtml(item.ex.name)}</span>${exerciseMovementHtml(item.ex)}
+              ${exerciseSessionLink(item.ex.id)}
             </span>
-            <span class="exercise-ago">${_exerciseLibrary === "mine" && !_constructorCatalog ? exerciseAgo(item.ex.id) : ""}</span><span class="ex-row-chevron">${SVG_CHEVRON}</span>${constructorCatalogAddHtml(item.ex)}${exerciseLibraryButton(item.ex)}
+            <span class="ex-row-chevron">${SVG_CHEVRON}</span>${constructorCatalogAddHtml(item.ex)}${exerciseLibraryButton(item.ex)}
           </div>
         </div>`;
       const expanded = _exGroupExpanded.has(item.id);
@@ -6261,6 +6413,7 @@ function renderExercisesList(query) {
       const selectionKey = executionDraftKey(userId, item.id);
       const selectedId = _exerciseVariantSelection.get(selectionKey);
       const selected = item.members.find(ex => ex.id === selectedId) || (catalog ? item.members[0] : [...item.members].sort((a,b) => (_exerciseLastDates.get(b.id) || 0) - (_exerciseLastDates.get(a.id) || 0))[0]);
+      const lastMember = item.members.reduce((latest, ex) => (_exerciseLastDates.get(ex.id) || 0) > (_exerciseLastDates.get(latest.id) || 0) ? ex : latest);
       const memberRows = expanded ? item.members.map(ex => memberRowHtml(ex, cat, ex.id === selected.id)).join("") : "";
       const parameters = expanded ? executionControlsHtml(executionForExercise(userId, selected), selected.id) : '';
       return `
@@ -6269,13 +6422,15 @@ function renderExercisesList(query) {
         <div class="ex-row ex-row-group tappable" data-group-id="${escHtml(item.id)}"${accentStyle}>
           <span class="ex-row-body">
             <span class="ex-row-name">${escHtml(item.name)}</span>${exerciseMovementHtml({atlas:{categories:[...new Set(item.members.flatMap(exerciseMovements))]}}, expanded)}
+            ${exerciseSessionLink(lastMember.id)}
           </span>
           <span class="ex-row-group-badge" title="Вариации: ${item.members.length}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg></span>
           <span class="ex-row-chevron ex-row-chevron-group">${SVG_CHEVRON}</span>
         </div>
         <div class="ex-row-group-members">${expanded ? `<div class="exercise-variants-heading"><span>Вариации</span>${canEdit ? `<button type="button" data-add-variation="${escHtml(selected.id)}">+ Вариация</button>` : ''}</div>` : ''}${memberRows}${parameters}${expanded && canEdit ? `<button type="button" class="execution-configure" data-configure-execution="${escHtml(selected.id)}" data-execution-group="${escHtml(item.id)}">${parameters ? 'Настроить параметры' : '+ Параметр выполнения'}</button>` : ''}${expanded && canEdit ? `<button type="button" class="reference-add" data-edit-group="${escHtml(item.id)}">Изменить группу</button>` : ''}</div>
       </div>`;
-    }).join("");
+    }
+    const rows = items.map(renderItem).join('');
     const header = `
       <div class="ex-group${isEmpty ? " ex-group-empty" : ""}" data-cat="${escHtml(cat)}" style="--cat-color:${escHtml(color)}">
         <span class="ex-group-dot" style="background:${escHtml(color)}"></span>
@@ -6286,10 +6441,28 @@ function renderExercisesList(query) {
   }).join("");
 
   if (!visibleItems) {
-    exercisesScroll.innerHTML = referencePanel + `<p class="empty-state">${!q && _exercisesCatFilter === 'all' && !_exerciseMovementFilter.size && !_constructorCatalog && _exerciseLibrary === 'mine' ? 'Здесь будут ваши упражнения. Выберите их во вкладке «Каталог».' : 'Ничего не найдено'}</p>`;
+    exercisesScroll.innerHTML = `<p class="empty-state">${datedOnly ? 'Нет выполненных упражнений для выбранных условий.' : membershipFilter && !q && _exercisesCatFilter === 'all' && !_exerciseMovementFilter.size ? (listOption === 'added' ? 'В «Моих» пока нет упражнений из каталога.' : 'Все упражнения каталога уже в «Моих».') : !q && _exercisesCatFilter === 'all' && !_exerciseMovementFilter.size && !_constructorCatalog && _exerciseLibrary === 'mine' ? 'Здесь будут ваши упражнения. Выберите их в разделе «Каталог».' : 'Ничего не найдено'}</p>`;
     return;
   }
 
+  exercisesScroll.querySelectorAll('[data-last-session]').forEach(button => button.onclick = event => {
+    event.stopPropagation();
+    const id = button.dataset.lastSession;
+    const workout = lastSessions.get(id);
+    if (!workout || DATA.getCurrentUser() !== userId) return;
+    _exerciseSessionReturn = {
+      scroll:exercisesScroll.scrollTop,
+      expanded:[...exercisesScroll.querySelectorAll('[data-more-moves][aria-expanded="true"]')].map(b => b.closest('.ex-row')).map(row => row.dataset.groupId || row.dataset.id)
+    };
+    openDetailScreen(workout, 'exercises', id);
+  });
+  exercisesScroll.querySelectorAll('[data-more-moves]').forEach(button => button.onclick = event => {
+    event.stopPropagation();
+    const open = button.getAttribute('aria-expanded') === 'false';
+    button.parentElement.querySelectorAll('.exercise-move:not(:first-child)').forEach(move => move.hidden = !open);
+    button.setAttribute('aria-expanded', String(open));
+    button.setAttribute('aria-label', open ? 'Свернуть движения' : `Показать остальные движения (+${button.dataset.moreMoves})`);
+  });
   exercisesScroll.querySelectorAll('[data-library-add]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
     toggleExerciseLibrary(button.dataset.libraryAdd);
@@ -6516,6 +6689,9 @@ function wireExRowSwipe(wrap, userId, catalog) {
 function enterExListEditMode() {
   if (_exListEditMode) return;
   _exListEditMode = true;
+  syncExerciseSectionMenu(screenExercises, null);
+  screenExercises.querySelector('.exercise-quick-options').hidden = true;
+  if (_exerciseListOption || _performedOnly) renderExercisesList(exercisesSearch.value);
   // Unwrap without rebuilding nodes: active pointer and drag handlers survive.
   exercisesScroll.querySelectorAll(':scope > .ex-category-panel').forEach(panel => panel.replaceWith(...panel.childNodes));
   haptic(22);
@@ -7754,11 +7930,11 @@ document.addEventListener('click', event => {
   openReferenceDetail(button.dataset.referenceKind,button.dataset.referenceName);
 },true);
 
-function openExerciseReference(page = 'hub') {
+function openExerciseReference(page = 'hub', replaceRoot = false) {
   if (!['hub','groups','movements','muscles'].includes(page) || _constructorCatalog) return;
   const scroll = exercisesScroll.scrollTop;
   exitExListEditMode();
-  _referenceTrail = [{screen:'screen-exercises',state:{..._referenceState},scroll}];
+  if (!replaceRoot) _referenceTrail = [{screen:'screen-exercises',state:{..._referenceState},scroll}];
   _referenceState = {page, scope:_exerciseLibrary, name:'', query:'', sort:'count-desc', picker:null, scrollTop:0, owner:Auth.userId(), userId:DATA.getCurrentUser()};
   goToScreen('exerciseReference');
 }
@@ -8054,6 +8230,9 @@ function renderExerciseReference() {
   const titles = {hub:'Справочники',groups:'Группы',movements:'Движения',muscles:'Мышцы',group:s.name,movement:s.name,muscle:s.name};
   $('exercise-reference-title').textContent = titles[s.page];
   const screen = $('screen-exercise-reference');
+  const rootList = ['groups','movements','muscles'].includes(s.page)
+    && !_constructorCatalog && _referenceTrail.length === 1 && _referenceTrail[0].screen === 'screen-exercises';
+  syncExerciseSectionMenu(screen, rootList ? s.page : null);
   screen.classList.toggle('library-catalog', tree ? (s.exerciseScope || s.scope) === 'catalog' : !mine);
   screen.classList.toggle('reference-leaf', leaf);
   screen.classList.toggle('reference-groups-page',s.page === 'groups');
@@ -9601,6 +9780,7 @@ $("exd-edit-cancel").addEventListener("click", () => openExerciseDetail(_detailE
    Screen: detail view (просмотр тренировки из истории)
    ========================================================================== */
 let _detailReturnScreen = "menu";
+let _exerciseSessionReturn = null;
 function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = null, screenOptions = {}) {
   _detailReturnScreen = returnScreen;
   const isRun = workout.type === "run";
@@ -9801,7 +9981,7 @@ function saveEditedWorkout(workout, userId, screenOptions = {}) {
   return true;
 }
 
-$("detail-back-btn").addEventListener("click", () => goBackScreen(_detailReturnScreen));
+$("detail-back-btn").addEventListener("click", () => goBackScreen(_detailReturnScreen, {keepFilter:_detailReturnScreen === "exercises"}));
 
 /* Statistics state stays in the app; rendering and calculations live in statistics.js. */
 let _statsPeriod = "month";
