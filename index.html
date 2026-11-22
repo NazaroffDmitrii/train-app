@@ -3633,8 +3633,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .exercise-moves.expanded .exercise-move { padding:0; background:none; font-size:12px; }
 .exercise-moves.expanded .exercise-move > span { white-space:normal; }
 .library-catalog .ex-row:not(.ex-row-group) > .ex-row-chevron { display:none; }
-#exercises-scroll.ex-list-editing > .ex-row-wrap { padding:0; margin-bottom:6px; border:0; border-radius:14px; }
-#exercises-scroll.ex-list-editing .exercise-moves, #exercises-scroll.ex-list-editing .exercise-ago { display:none; }
 #screen-exercises button:focus-visible { outline:2px solid #a99cf5; outline-offset:2px; }
 .exercise-library-body { flex:1; min-height:0; display:flex; flex-direction:column; background:linear-gradient(180deg,var(--library-top),var(--library-bottom) 75%); border-radius:0 16px 0 0; }
 .library-catalog .exercise-library-body { border-radius:16px 0 0 0; }
@@ -3642,7 +3640,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .exercise-library-tabs { touch-action:pan-y; }
 .exercise-movement-tabs, #ex-cat-tabs { touch-action:pan-x; cursor:grab; overscroll-behavior-x:contain; }
 .exercise-movement-tabs.drag-scrolling, #ex-cat-tabs.drag-scrolling { cursor:grabbing; }
-#exercises-scroll.ex-list-editing > .ex-group { padding:12px 4px 8px; }
 /* Detail: movement banner, metadata tiles, and separate reading cards. */
 #screen-exercise-detail { background:linear-gradient(180deg,color-mix(in srgb,var(--cat-color,#a99cf5) 20%,#11111b),#0d0c18 60%); }
 #screen-exercise-detail .detail-screen-header { padding:calc(var(--safe-top) + 16px) 12px 14px; background:transparent; border:0; gap:12px; align-items:center; }
@@ -3775,7 +3772,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-stats {
   --plum-background:linear-gradient(180deg,var(--movement-header),var(--movement-top) var(--movement-header-end,70px),color-mix(in srgb,var(--movement-top) 50%,transparent) calc(var(--movement-header-end,70px) + 75px),transparent calc(var(--movement-header-end,70px) + 220px)),radial-gradient(ellipse at 80% 15%,#70405860,transparent 60%),#1d131c;
 }
-:is(#screen-exercises,#screen-exercise-reference).library-catalog {
+:is(#screen-exercises,#screen-exercise-reference).library-catalog,
+#screen-exercise-detail.xd-view.from-catalog {
   --movement-page:#140d13; --movement-top:#321e2b; --movement-header:#60364e;
   --movement-text:#f8f0f3; --movement-muted:#b8a4af; --movement-line:#8e627c; --movement-accent:#efb4cd;
   --movement-circle:#21131c; --movement-node:#3a2231; --movement-node-border:#85556f; --movement-node-text:#f5c9dc;
@@ -4028,7 +4026,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .execution-apply-group { display:flex; align-items:center; gap:8px; color:#b5b5c8; font-size:13px; margin:14px 0; }
 .execution-apply-group input { appearance:auto; -webkit-appearance:checkbox; width:17px; height:17px; flex:none; accent-color:#8271db; }
 .execution-option:focus-visible, .variant-open:focus-visible, .variant-select:focus-visible { outline:2px solid #a99cf5; outline-offset:2px; }
-#exercises-scroll.ex-list-editing .execution-controls, #exercises-scroll.ex-list-editing .execution-configure, #exercises-scroll.ex-list-editing .exercise-variants-heading button { display:none; }
 @media(max-width:360px) { .ex-row-wrap-nested .exercise-ago { max-width:46px; white-space:normal; text-align:right; } }
 
 /* Group mosaics share the category palette with the exercise library. */
@@ -4632,7 +4629,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
                 <button type="button" data-ex-section="catalog" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5c-3-2-7-2-10-1v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Zm0 0v15"/></svg><span class="ex-nav-label">Каталог</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
                 <button type="button" data-ex-section="groups" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span class="ex-nav-label">Группы</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
                 <button type="button" data-ex-section="movements" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/></svg><span class="ex-nav-label">Движения</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
-                <button type="button" data-ex-section="muscles" aria-pressed="false"><span class="ex-nav-muscle" aria-hidden="true"></span><span class="ex-nav-label">Мышцы</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
+                <button type="button" data-ex-section="muscles" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.409 13.017A5 5 0 0 1 22 15c0 3.866-4 7-9 7-4.077 0-8.153-.82-10.371-2.462-.426-.316-.631-.832-.62-1.362C2.118 12.723 2.627 2 10 2a3 3 0 0 1 3 3 2 2 0 0 1-2 2c-1.105 0-1.64-.444-2-1"/><path d="M15 14a5 5 0 0 0-7.584 2M9.964 6.825C8.019 7.977 9.5 13 8 15"/></svg><span class="ex-nav-label">Мышцы</span><span class="ex-nav-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></button>
               </div>
             </div>
           </div>
@@ -4668,7 +4665,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
       <div class="exercise-movement-tabs" id="exercise-movement-tabs" hidden></div>
     </div>
     <div class="exercises-scroll" id="exercises-scroll"></div>
-    <button class="exercises-float-done" id="exercises-done-btn">Готово</button>
     </div>
   <div id="constructor-catalog-footer" class="constructor-catalog-footer" hidden><span>Нажми на название для подробностей, на + для добавления</span><button type="button" id="constructor-catalog-done">Готово</button></div>
   </section>

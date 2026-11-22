@@ -5945,11 +5945,11 @@ function syncExerciseLibraryUI(allExs) {
     screen.querySelector('.exercises-header-title').textContent = catalog ? 'Каталог' : 'Упражнения';
     $('exercise-library-caption').textContent = catalog ? 'Общая библиотека' : 'Моя библиотека';
   }
-  syncExerciseSectionMenu(screen, _constructorCatalog || _exListEditMode ? null : _exerciseLibrary);
+  syncExerciseSectionMenu(screen, _constructorCatalog ? null : _exerciseLibrary);
   $('exercise-filter-btn').hidden = !exerciseLibraryHasTabs();
   $('exercises-add-btn').hidden = !canCreateExerciseFromList();
   const options = screen.querySelector('.exercise-quick-options');
-  options.hidden = !!_constructorCatalog || _exListEditMode;
+  options.hidden = !!_constructorCatalog;
   syncLibraryFilterIcons(options, catalog, _performedOnly, _exerciseListOption);
   exercisesSearch.placeholder = catalog ? 'Поиск по каталогу' : 'Поиск';
   document.querySelectorAll('[data-library]').forEach(b => {
@@ -5992,7 +5992,7 @@ $('exercise-library-tabs').addEventListener('click', event => {
 });
 $('screen-exercises').addEventListener('click', event => {
   const button = event.target.closest('[data-list-option]');
-  if (!button || _exListEditMode || _constructorCatalog) return;
+  if (!button || _constructorCatalog) return;
   if (button.dataset.listOption === 'recent') _performedOnly = !_performedOnly;
   else _exerciseListOption = {'':'added', added:'unadded', unadded:''}[_exerciseListOption];
   renderExercisesList(exercisesSearch.value);
@@ -6039,7 +6039,7 @@ function initExercisesScreen() {
   _exListEditMode = false;
   _exGroupExpanded = new Set();
   exercisesSearch.placeholder = "Поиск упражнения…";
-  const doneBtn = $("exercises-done-btn"); if (doneBtn) doneBtn.classList.remove("visible");
+  $("exercises-back-btn")?.setAttribute("aria-label", "Назад");
   const addBtn  = $("exercises-add-btn");  if (addBtn)  addBtn.hidden  = false;
   exercisesScroll.scrollTop = 0;
   const userId = DATA.getCurrentUser();
@@ -6047,7 +6047,7 @@ function initExercisesScreen() {
   renderExercisesList("");
 }
 
-$("exercises-back-btn").addEventListener("click", () => { if (_constructorCatalog) { closeConstructorExerciseCatalog(); return; } exitExListEditMode(); goBackScreen("menu"); });
+$("exercises-back-btn").addEventListener("click", () => { if (_constructorCatalog) { closeConstructorExerciseCatalog(); return; } if (_exListEditMode) { exitExListEditMode(); return; } goBackScreen("menu"); });
 exercisesSearch.addEventListener("input", () => renderExercisesList(exercisesSearch.value));
 const exerciseSectionNav = $('exercise-section-nav');
 const exerciseSectionTrigger = $('exercise-section-trigger');
@@ -6285,7 +6285,7 @@ function renderCatTabs(userId, presentCats) {
     const active = _exercisesCatFilter === c ? " active" : "";
     if (c === "all") {
       // "Все" — обводка цветом accent (через CSS-переменную)
-      return `<button class="ex-cat-tab${active}" data-cat="all" style="--tab-color:var(--accent)">Все</button>`;
+      return `<button class="ex-cat-tab${active}" data-cat="all" style="--tab-color:var(--accent)">Все группы</button>`;
     }
     const color = exerciseCategoryColor(userId, c);
     return `<button class="ex-cat-tab${active}" data-cat="${escHtml(c)}" style="--tab-color:${escHtml(color)}">${escHtml(c)}</button>`;
@@ -6329,9 +6329,9 @@ function renderExercisesList(query) {
   // должен учитывать группы упражнений (см. DATA.resolveDisplayItems) —
   // если запрос совпал с ОДНИМ вариантом, показать нужно всю группу целиком,
   // а не только совпавшего участника, поэтому query нельзя резать здесь.
-  const listOption = _constructorCatalog || _exListEditMode ? '' : _exerciseListOption;
+  const listOption = _constructorCatalog ? '' : _exerciseListOption;
   const membershipFilter = catalog && (listOption === 'unadded' || listOption === 'added');
-  const datedOnly = !_constructorCatalog && !_exListEditMode && _performedOnly;
+  const datedOnly = !_constructorCatalog && _performedOnly;
   const tabFiltered = allExs.filter(e => !datedOnly || lastSessions.has(e.id)).filter(e => !membershipFilter || DATA.isHidden(userId, e.id) === (listOption === 'unadded')).filter(e => _exercisesCatFilter === "all" || e.cat === _exercisesCatFilter).filter(e => !exerciseLibraryHasTabs() || !_exerciseMovementFilter.size || exerciseMovements(e).some(m => _exerciseMovementFilter.has(m)));
 
   // Группировка по категориям. Порядок категорий — как в списке пользователя,
@@ -6437,7 +6437,7 @@ function renderExercisesList(query) {
         <span class="ex-group-name">${escHtml(cat || "Без группы")}</span>
         ${!isEmpty ? `<span class="ex-group-count">${_constructorCatalog ? items.reduce((n,it)=>n+(it.kind === "group" ? it.members.length : 1),0) : catExs.length}</span>` : ""}
       </div>`;
-    return _exListEditMode ? header + rows : `<section class="ex-category-panel" style="--cat-color:${escHtml(color)}" aria-label="${escHtml(cat)}">${header}${rows}</section>`;
+    return `<section class="ex-category-panel" style="--cat-color:${escHtml(color)}" aria-label="${escHtml(cat)}">${header}${rows}</section>`;
   }).join("");
 
   if (!visibleItems) {
@@ -6504,7 +6504,7 @@ function renderExercisesList(query) {
       }
       // В режиме правки строка только переставляется; имя меняется свайпом
       // вправо → форма (как у мышц/движений). Инлайн-переименование убрано.
-      if (_exListEditMode) return;
+      if (_exListEditMode) { exitExListEditMode(); return; }
       if (_constructorCatalog) _constructorCatalog.scrollTop = exercisesScroll.scrollTop;
       openExerciseDetail(row.dataset.id);
     });
@@ -6541,7 +6541,10 @@ function renderExercisesList(query) {
     return; // В режиме выбора жесты редактирования библиотеки не нужны.
   }
 
-  if (!canEdit) return;
+  if (!canEdit) {
+    exercisesScroll.querySelectorAll('.ex-row-wrap').forEach(wireExRowGesture);
+    return;
+  }
   exercisesScroll.querySelectorAll('[data-edit-group]').forEach(button => button.addEventListener('click',event => {
     event.stopPropagation(); openGroupForm(button.dataset.editGroup);
   }));
@@ -6689,30 +6692,17 @@ function wireExRowSwipe(wrap, userId, catalog) {
 function enterExListEditMode() {
   if (_exListEditMode) return;
   _exListEditMode = true;
-  syncExerciseSectionMenu(screenExercises, null);
-  screenExercises.querySelector('.exercise-quick-options').hidden = true;
-  if (_exerciseListOption || _performedOnly) renderExercisesList(exercisesSearch.value);
-  // Unwrap without rebuilding nodes: active pointer and drag handlers survive.
-  exercisesScroll.querySelectorAll(':scope > .ex-category-panel').forEach(panel => panel.replaceWith(...panel.childNodes));
   haptic(22);
   exercisesScroll.classList.add("ex-list-editing");
-  const doneBtn = $("exercises-done-btn");
-  const addBtn  = $("exercises-add-btn");
-  if (doneBtn) doneBtn.classList.add("visible");
-  if (addBtn)  addBtn.hidden = true;
+  $("exercises-back-btn").setAttribute("aria-label", "Завершить перестановку");
 }
 
 function exitExListEditMode() {
   if (!_exListEditMode) return;
   _exListEditMode = false;
   exercisesScroll.classList.remove("ex-list-editing");
-  const doneBtn = $("exercises-done-btn");
-  const addBtn  = $("exercises-add-btn");
-  if (doneBtn) doneBtn.classList.remove("visible");
-  if (addBtn)  addBtn.hidden = false;
+  $("exercises-back-btn").setAttribute("aria-label", "Назад");
   if (_exListDrag) endExDrag(true);
-  const y = exercisesScroll.scrollTop;
-  renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = y;
 }
 
 // A collapsed group keeps its members in their current library order.
@@ -6720,10 +6710,8 @@ function exerciseRowsOrder(userId, catalog, category) {
   const previous = DATA.libraryOrder(userId,catalog) || [], exercises = DATA.libraryExercises(userId,catalog);
   const rank = new Map(previous.map((id,i) => [id,i]));
   const ids = [];
-  let cat = null;
-  for (const row of exercisesScroll.children) {
-    if (row.matches('.ex-group')) { cat = row.dataset.cat; continue; }
-    if (category !== undefined && category !== cat) continue;
+  for (const row of exercisesScroll.querySelectorAll(':scope > .ex-category-panel > .ex-row-wrap')) {
+    if (category !== undefined && category !== row.parentElement.querySelector('.ex-group').dataset.cat) continue;
     if (row.matches('.ex-row-wrap[data-id]')) ids.push(row.dataset.id);
     else if (row.matches('.ex-row-wrap-group')) {
       const {groupId} = row.dataset;
@@ -6741,21 +6729,29 @@ function exerciseRowsOrder(userId, catalog, category) {
 }
 
 function wireExRowGesture(wrap) {
-  let holdTimer = null, sx = 0, sy = 0, moved = false, dragStarted = false;
+  let holdTimer = null, sx = 0, sy = 0, moved = false, holdConsumed = false;
+  let lastTouchEnd = -Infinity;
   const DELAY = () => _exListEditMode ? 150 : 430;
   const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
 
   const begin = (x, y, target) => {
     if (_savingExerciseDrop || !wrap.isConnected) return;
+    holdConsumed = false;
     if (target && target.closest("button:not(.variant-select)")) return;
-    moved = false; dragStarted = false; sx = x; sy = y;
+    moved = false; sx = x; sy = y;
     clearHold();
     _cancelExerciseHold = clearHold;
     holdTimer = setTimeout(() => {
       holdTimer = null;
-      if (moved || !wrap.isConnected || !screenExercises.classList.contains("active") || !canEditExerciseLibrary(exerciseCatalogSource())) return;
+      if (moved || !wrap.isConnected || !screenExercises.classList.contains("active")) return;
+      holdConsumed = true;
+      if (!canEditExerciseLibrary(exerciseCatalogSource())) {
+        if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          wrap.animate([{rotate:'0deg'}, {rotate:'-.6deg'}, {rotate:'.6deg'}, {rotate:'0deg'}], 300);
+        }
+        return;
+      }
       if (!_exListEditMode) { enterExListEditMode(); return; }
-      dragStarted = true;
       // Вариант внутри группы стартует ПРЯМО В ГРУППЕ (не вынимается сразу) —
       // так его можно двигать внутри; вынос наружу происходит только если
       // увести палец за пределы группы (см. moveExDrag).
@@ -6783,10 +6779,10 @@ function wireExRowGesture(wrap) {
   const nested = () => wrap.classList.contains("ex-row-wrap-nested");
   wrap.addEventListener("touchstart", e => { if (nested()) e.stopPropagation(); const t = e.touches[0]; begin(t.clientX, t.clientY, e.target); }, { passive: true });
   wrap.addEventListener("touchmove",  e => { if (nested()) e.stopPropagation(); const t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
-  wrap.addEventListener("touchend",   e => { if (nested()) e.stopPropagation(); finish(); });
+  wrap.addEventListener("touchend",   e => { lastTouchEnd = e.timeStamp; if (nested()) e.stopPropagation(); finish(); });
   wrap.addEventListener("touchcancel", () => { clearHold(); if (_exListDrag?.wrap === wrap) endExDrag(true); });
   wrap.addEventListener("mousedown", e => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.sourceCapabilities?.firesTouchEvents || (holdConsumed && e.timeStamp - lastTouchEnd < 700)) return;
     if (nested()) e.stopPropagation();
     begin(e.clientX,e.clientY,e.target);
     if (!holdTimer) return;
@@ -6803,7 +6799,7 @@ function wireExRowGesture(wrap) {
     window.addEventListener('blur',stop);
   });
   wrap.addEventListener("click", e => {
-    if (dragStarted) { e.stopPropagation(); dragStarted = false; }
+    if (holdConsumed) { e.preventDefault(); e.stopPropagation(); holdConsumed = false; }
   }, true);
 }
 
@@ -6928,14 +6924,17 @@ function moveExDrag(pointerY) {
       container.insertBefore(wrap, insertBefore);
     }
   } else {
-    if (wrap.parentElement !== exercisesScroll) wrap.classList.remove("ex-row-wrap-nested");
+    const panels = [...exercisesScroll.querySelectorAll(':scope > .ex-category-panel')];
+    const panel = panels.find(candidate => center < candidate.getBoundingClientRect().bottom) || panels.at(-1);
+    if (!panel) return;
+    wrap.classList.remove("ex-row-wrap-nested");
 
     // Слияние (dwell) — только на верхнем уровне. Цель: другое упражнение
     // (создать новую группу) или свёрнутая группа (открыть её вживую). Раскрытые
     // группы обрабатываются вставкой внутрь (см. ветку intoGroup выше).
     let mergeTarget = null;
     if (!isGroupDrag) {
-      for (const child of exercisesScroll.children) {
+      for (const child of panel.children) {
         if (child === wrap) continue;
         const isEx = child.matches(".ex-row-wrap[data-id]");
         const isCollapsedGroup = child.matches(".ex-row-wrap-group[data-group-id]") && !child.classList.contains("expanded");
@@ -6948,13 +6947,13 @@ function moveExDrag(pointerY) {
 
     if (!mergeTarget) {
       let insertBeforeEl = null;
-      for (const child of exercisesScroll.children) {
-        if (child === wrap) continue;
+      for (const child of panel.children) {
+        if (child === wrap || !child.matches(".ex-row-wrap")) continue;
         const r = child.getBoundingClientRect();
         if (r.top + r.height / 2 > center) { insertBeforeEl = child; break; }
       }
-      if (wrap.parentElement !== exercisesScroll || insertBeforeEl !== wrap.nextElementSibling) {
-        exercisesScroll.insertBefore(wrap, insertBeforeEl); // null → в конец
+      if (wrap.parentElement !== panel || insertBeforeEl !== wrap.nextElementSibling) {
+        panel.insertBefore(wrap, insertBeforeEl); // null → в конец
       }
     }
   }
@@ -7067,7 +7066,7 @@ async function endExDrag(cancelled = false) {
   if (merge && !merge.armed) {
     const rect = merge.target.getBoundingClientRect();
     const below = d.pointerY - d.grabDy + wrap.offsetHeight / 2 >= rect.top + rect.height / 2;
-    exercisesScroll.insertBefore(wrap,below ? merge.target.nextElementSibling : merge.target);
+    merge.target.parentElement.insertBefore(wrap,below ? merge.target.nextElementSibling : merge.target);
   }
   _savingExerciseDrop = true;
   try {
@@ -7078,7 +7077,7 @@ async function endExDrag(cancelled = false) {
   } finally { _savingExerciseDrop = false; }
 }
 
-$("exercises-done-btn").addEventListener("click", exitExListEditMode);
+
 
 /* — Экран деталей упражнения: медиа, рабочие мышцы, техника, действия — */
 let _detailExerciseId = null;

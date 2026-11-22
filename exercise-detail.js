@@ -141,7 +141,7 @@ const ExerciseDescriptions = (() => {
    tabs.onkeydown=event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();changeSource(catalog?'mine':'catalog');}};
    $('exd-edit-btn').style.display=options.previewExercise||catalog&&!DATA.isAdmin()?'none':'';
    $('exd-edit-btn').onclick=null;
-   const cards=[...body.querySelectorAll(':scope > .exd-card')],media=body.querySelector(':scope > .exd-media'),links=[...body.querySelectorAll(':scope > a.exd-video-btn')].filter(link=>link.getAttribute('href')===(ex.media||'').trim());
+   const cards=[...body.querySelectorAll(':scope > .exd-card')],media=body.querySelector(':scope > .exd-media'),links=[...body.querySelectorAll(':scope > a.exd-video-btn')];
    const tree=document.createElement('div');tree.className='xd-tree';let index=0;
    const execution=document.createElement('div');execution.className='xd-execution-group xd-variant-description';execution.setAttribute('aria-label','Описание выполнения: движения, мышцы, техника, ошибки, особенности и ограничения');
    const updateMarks=()=>execution.querySelectorAll('.xd-section').forEach(section=>{
@@ -152,19 +152,25 @@ const ExerciseDescriptions = (() => {
    });
    const canEdit = canEditExerciseLibrary(catalog) && !options.previewExercise && !_constructorCatalog && returnScreen !== 'workout';
    const parameterNodes = snapshot.executionParameters.length ? [parameters(ex,catalog,returnScreen,options)] : [];
-   if (canEdit) {
+   if (canEdit && parameterNodes.length) {
      const edit = document.createElement('button');
      edit.type = 'button'; edit.className = 'btn-chip';
-     edit.textContent = parameterNodes.length ? 'Настроить параметры' : 'Добавить параметр';
+     edit.textContent = 'Настроить параметры';
      edit.onclick = () => openExerciseForm(ex.id,{catalog,focus:'parameters'});
      parameterNodes.push(edit);
    }
    if (parameterNodes.length) tree.append(wrap('Параметры выполнения',parameterNodes,'parameters',index++));
-   if (canEdit) {
-     const add = document.createElement('button');
-     add.type = 'button'; add.className = 'btn-chip'; add.textContent = 'Добавить вариацию';
-     add.onclick = () => openExerciseForm(null,{catalog,variationOf:ex.id});
-     tree.append(wrap('Вариации',[add],'features',index++));
+   const variations = ex.groupId ? DATA.libraryExercises(userId,catalog).filter(item=>item.groupId===ex.groupId && item.id!==ex.id) : [];
+   if (variations.length) {
+     const list=document.createElement('div');
+     for (const variation of variations) {
+       const link=document.createElement('button');link.type='button';link.className='xd-movement-link';
+       link.innerHTML=`<span>${escHtml(variation.atlas?.variationName || variation.name)}</span>${chevron}`;
+       link.disabled=!!options.previewExercise || returnScreen==='workout';
+       link.onclick=()=>openExerciseDetail(variation.id,returnScreen,{scope:catalog?'catalog':'mine'});
+       list.append(link);
+     }
+     tree.append(wrap('Вариации',[list],'features',index++));
    }
    tree.append(execution);
    const moves=exerciseMovements(resolved.exercise);
@@ -226,13 +232,12 @@ const ExerciseDescriptions = (() => {
          button.onclick=()=>openDetailScreen(workout,'exerciseDetail',ex.id);
          list.append(button);
        }
-       if(!sessions.length)list.textContent='Пока нет выполнений';
        if(sessions.length>3){
          const more=document.createElement('button');more.type='button';more.className='btn-chip';
          more.textContent=all?'Свернуть':`Посмотреть все (${sessions.length})`;more.onclick=()=>showSessions(!all);list.append(more);
        }
      }
-     showSessions(false);tree.append(wrap('Последние тренировки',[list],'history',index++));
+     if(sessions.length){showSessions(false);tree.append(wrap('Последние тренировки',[list],'history',index++));}
    }
    updateMarks();
    if(options.previewExercise)execution.querySelectorAll('[data-reference-kind]').forEach(button=>button.disabled=true);
@@ -253,6 +258,10 @@ const ExerciseDescriptions = (() => {
    header.querySelector('.xd-hero')?.remove();header.append(hero);
    const membershipButton=hero.querySelector('.xd-membership');if(membershipButton)header.querySelector('.detail-screen-header').insertBefore(membershipButton,$('exd-edit-btn'));
    const inner=document.createElement('div');inner.className='xd-scroll-inner';inner.append(...(media?[media]:[]),...(tree.querySelector('.xd-section')?[tree]:[]),...links);body.replaceChildren(inner);
+   if(canEdit){
+     const add=document.createElement('button');add.type='button';add.className='btn-chip';add.textContent='Добавить вариацию';
+     add.onclick=()=>openExerciseForm(null,{catalog,variationOf:ex.id});inner.append(add);
+   }
    if(!catalog&&!options.previewExercise&&DATA.catalogUpdateAvailable(userId,ex.id)){
      const notice=document.createElement('section');notice.className='xd-catalog-update';
      notice.innerHTML='<p><b>В каталоге есть обновление</b><br>Ваша версия сохранена. Можно оставить её или заменить версией из каталога.</p><button type="button" class="btn-chip">Посмотреть обновление</button>';
