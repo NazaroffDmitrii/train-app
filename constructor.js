@@ -693,9 +693,9 @@
         (mode==='any' || e.categories.some(n=>original.categories.includes(n)));
     };
     window.openConstructorExerciseCatalog({
-      single:true, initialSelectedId:item.exId, title:'Замена упражнения', subtitle:original.name,
+      initialSelectedId:item.exId, title:'Замена упражнения', subtitle:original.name,
       modes:[{id:'analog',label:'Аналоги · '+exercises.filter(e=>e.id!==item.exId && canSelect(e.id)).length},{id:'any',label:'Любое упражнение'}],
-      canSelect, isSelected:id=>id===item.exId,
+      canSelect,
       onConfirm:id=>valid() && replacePlanItem(item,id),
     });
   }
@@ -956,17 +956,16 @@
       window.openConstructorExerciseCatalog({
         title: 'Добавить упражнение', subtitle: movement,
         modes: [{id:'movement',label:'По движению'},{id:'any',label:'Любое упражнение'}],
-        canSelect: (id,mode='movement') => { const e = exById(id); return !!e && available(e) && (mode==='any' || e.categories.includes(movement)); },
-        isSelected: id => workout.days.some(d => d.items.some(it => it.exId === id)),
-        onSelect: (id,mode='movement') => valid() && addMovementExercise(mode==='any' ? null : movement, id),
+        canSelect: (id,mode='movement') => { const e = exById(id); return !!e && available(e) && (mode==='any' || e.categories.includes(movement)) && !workout.days.some(d=>d.items.some(it=>it.exId===id)); },
+        onConfirm: (id,mode='movement') => valid() && addMovementExercise(mode==='any' ? null : movement, id),
       });
       return;
     }
     const day = activeDay(), context = { ...draftContext }, sessionRevision = _sessionRevision;
     window.openConstructorExerciseCatalog({
-      canSelect: id => { const e = exById(id); return !!e && available(e) && (!movement || e.categories.includes(movement)); },
-      isSelected: id => day.items.some(it => it.exId === id),
-      onSelect: id => {
+      title:'Добавить упражнение',
+      canSelect: id => { const e = exById(id); return !!e && available(e) && !day.items.some(it=>it.exId===id); },
+      onConfirm: id => {
         if (sessionRevision !== _sessionRevision || context.owner !== Auth.userId() || context.profile !== DATA.getCurrentUser()) return false;
         const e = exById(id);
         if (!e || !available(e) || (movement && !e.categories.includes(movement)) || day.items.some(it => it.exId === id)) return false;

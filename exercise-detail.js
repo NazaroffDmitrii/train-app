@@ -124,6 +124,14 @@ const ExerciseDescriptions = (() => {
  }
  function decorate(ex,returnScreen,options,snapshot,resolved){
    const screen=$('screen-exercise-detail'),body=$('exd-body'),catalog=_exdCatalog,a=ex.atlas||{},userId=DATA.getCurrentUser();
+   screen.querySelector('.xd-pick-footer')?.remove();
+   const picker=_constructorCatalog;
+   if(picker && !options.previewExercise && returnScreen==='exercises' && picker.selectedId===ex.id){
+     const footer=document.createElement('footer');footer.className='xd-pick-footer';
+     const button=document.createElement('button');button.type='button';button.textContent='Выбрать и продолжить';
+     button.onclick=()=>{if(_constructorCatalog===picker && picker.selectedId===ex.id)confirmExerciseSelection();};
+     footer.append(button);screen.append(footer);
+   }
    screen.classList.add('xd-view');screen.querySelector('[data-xd-remove]')?.remove();$('exd-title').textContent='Упражнение';
    document.querySelector('.xd-source')?.remove();
    document.querySelectorAll('.xd-membership').forEach(button=>button.remove());

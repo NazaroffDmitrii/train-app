@@ -2817,8 +2817,9 @@ function goToScreen(name, opts = {}) {
   if (name !== "menu" && window.resetWorkoutLauncher) window.resetWorkoutLauncher();
 
   const fromName = activeScreenName();
-  window.CONSTRUCTOR?.onNavigate(name, !!_constructorCatalog && name === "exercises");
-  if (typeof _constructorCatalog !== "undefined" && _constructorCatalog && !(name==="detail" && _detailReturnScreen==="exerciseDetail") && !["exercises", "exerciseDetail", "muscleDetail", "exerciseReference"].includes(name)) {
+  const pickingHistory=!!_constructorCatalog && name==="detail" && ["exercises","exerciseDetail"].includes(_detailReturnScreen);
+  window.CONSTRUCTOR?.onNavigate(name, !!_constructorCatalog && (name==="exercises" || pickingHistory));
+  if (typeof _constructorCatalog !== "undefined" && _constructorCatalog && !pickingHistory && !["exercises", "exerciseDetail", "muscleDetail", "exerciseReference"].includes(name)) {
     _constructorCatalog = null;
     syncConstructorCatalogUI();
   }
@@ -2864,8 +2865,8 @@ function goToScreen(name, opts = {}) {
   if (name === "workout")  { if (!opts.resumeSelection) initWorkoutScreen(opts); }
   if (name === "run")      { initRunScreen(opts); }
   if (name === "exercises") { if (opts.keepFilter) { renderExercisesList(exercisesSearch.value); if (_constructorCatalog) exercisesScroll.scrollTop = _constructorCatalog.scrollTop || 0; } else { exerciseLibraryViews.clear(); initExercisesScreen(); } }
-  if (name === "exercises" && fromName === "detail" && opts.keepFilter && _exerciseSessionReturn) {
-    const saved = _exerciseSessionReturn;
+  if (name === "exercises" && opts.keepFilter && (fromName === "detail" && _exerciseSessionReturn || fromName === "exerciseDetail" && _constructorCatalog?.expandedMoves)) {
+    const saved = fromName === 'detail' ? _exerciseSessionReturn : {expanded:_constructorCatalog.expandedMoves,scroll:_constructorCatalog.scrollTop};
     exercisesScroll.querySelectorAll('[data-more-moves]').forEach(b => {
       const row = b.closest('.ex-row');
       if (saved.expanded.includes(row.dataset.groupId || row.dataset.id)) b.click();
@@ -5181,8 +5182,8 @@ $("add-ex-btn").addEventListener("click", () => openExercisePicker(addExerciseTo
 function openExercisePicker(onSelect, selectedId, options = {}) {
   const callback = onSelect || addExerciseToWorkout;
   openConstructorExerciseCatalog({
-    kind:'picker', single:true, title:'Упражнения', subtitle:'Выбор упражнения',
-    confirmLabel:options.confirmLabel || (selectedId ? 'Заменить упражнение' : 'Выбрать упражнение'),
+    kind:'picker', title:selectedId ? 'Замена упражнения' : 'Выбор упражнения',
+    onReturn:options.onReturn,
     initialSelectedId:selectedId || null,
     returnScreen:activeScreenName() || 'menu', backStack:[..._screenBackStack],
     canSelect:options.canSelect || (() => true),
@@ -5640,63 +5641,20 @@ const exerciseFormCatGroup  = $("exercise-form-cat-group");
 
 // Режим выбора для конструктора использует тот же каталог, фильтры и группы.
 let _constructorCatalog = null;
-function setupConstructorCatalogDrag(scroll) {
-  let drag = null, suppressClickUntil = 0;
-  scroll.addEventListener('pointerdown', event => {
-    if (!_constructorCatalog || event.pointerType !== 'mouse' || event.button !== 0 || event.isPrimary === false) return;
-    drag = {id:event.pointerId,x:event.clientX,y:event.clientY,top:scroll.scrollTop,engaged:false};
-  });
-  scroll.addEventListener('pointermove', event => {
-    if (!drag || event.pointerId !== drag.id) return;
-    const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
-    if (!drag.engaged) {
-      if (Math.max(Math.abs(dx),Math.abs(dy)) < 8) return;
-      if (Math.abs(dx) > Math.abs(dy)) { drag=null; return; }
-      drag.engaged=true;
-      scroll.classList.add('catalog-dragging');
-      scroll.setPointerCapture?.(event.pointerId);
-    }
-    if (event.cancelable) event.preventDefault();
-    scroll.scrollTop=drag.top-dy;
-  }, {passive:false});
-  const finish = event => {
-    if (!drag || event.pointerId !== drag.id) return;
-    const previous=drag;drag=null;
-    if (!previous.engaged) return;
-    suppressClickUntil=Date.now()+400;
-    scroll.classList.remove('catalog-dragging');
-    if (scroll.hasPointerCapture?.(previous.id)) scroll.releasePointerCapture(previous.id);
-  };
-  scroll.addEventListener('pointerup',finish);
-  scroll.addEventListener('pointercancel',finish);
-  scroll.addEventListener('lostpointercapture',finish);
-  scroll.addEventListener('pointerleave',()=>{if(drag && !drag.engaged)drag=null;});
-  scroll.addEventListener('click',event=>{
-    if(Date.now()<suppressClickUntil){event.preventDefault();event.stopImmediatePropagation();}
-  },true);
-}
-setupConstructorCatalogDrag(exercisesScroll);
 function syncConstructorCatalogUI() {
   const active = !!_constructorCatalog, context = _constructorCatalog;
   const screen=$('screen-exercises');
   screen.classList.toggle('constructor-catalog',active);
-  screen.classList.toggle('constructor-replacement',!!context?.single);
-  screen.classList.toggle('exercise-selection',context?.kind === 'picker');
-  screen.querySelector('.exercises-header-title').textContent=(context?.single ? context.subtitle : context?.title) || 'Упражнения';
-  $('exercises-add-btn').hidden=!canCreateExerciseFromList();
-  $('constructor-catalog-footer').hidden=!active;
-  const subtitle=context?.single ? '' : context?.subtitle;
+  const subtitle=context?.modes ? context.subtitle : '';
   const controls=$('constructor-catalog-context');controls.hidden=!context?.modes && !subtitle;
   if(context?.modes) {
     controls.innerHTML=`${subtitle?`<p>${escHtml(subtitle)}</p>`:''}<div class="constructor-catalog-modes">${context.modes.map(m=>`<button type="button" data-catalog-mode="${escHtml(m.id)}" aria-pressed="${context.filterMode===m.id}" class="${context.filterMode===m.id?'selected':''}">${escHtml(m.label)}</button>`).join('')}</div>`;
     controls.querySelectorAll('[data-catalog-mode]').forEach(b=>b.onclick=()=>{context.filterMode=b.dataset.catalogMode;_exercisesCatFilter='all';renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=0;});
   } else controls.innerHTML=subtitle?`<p>${escHtml(subtitle)}</p>`:'';
-  $('constructor-catalog-footer').querySelector('span').textContent=context?.single?'Выбери упражнение кружком слева. Шеврон открывает подробности.':'Нажми на кружок для добавления, на шеврон — для подробностей';
-  const done=$('constructor-catalog-done');done.textContent=context?.confirmLabel || (context?.single?'Заменить упражнение':'Готово');
-  done.disabled=!!context?.single && (!context.selectedId || context.selectedId===context.initialSelectedId);
+
 }
 function openConstructorExerciseCatalog(options) {
-  _constructorCatalog = { ...options, filterMode:options.modes?.[0]?.id, selectedId:options.initialSelectedId || null, owner: Auth.userId(), profile: DATA.getCurrentUser(), scrollTop: 0 };
+  _constructorCatalog = { backStack:[..._screenBackStack], ...options, revealSelected:!!options.initialSelectedId, filterMode:options.modes?.[0]?.id, selectedId:options.initialSelectedId || null, owner: Auth.userId(), profile: DATA.getCurrentUser(), scrollTop: 0 };
   goToScreen('exercises');
 }
 function closeConstructorExerciseCatalog() {
@@ -5704,32 +5662,77 @@ function closeConstructorExerciseCatalog() {
   if (_constructorCatalog.kind === 'picker') {
     return finishExerciseSelection(_constructorCatalog);
   }
-  consumePreviousScreen('constructor');
+  const context = _constructorCatalog;
+  _constructorCatalog = null;
+  _screenBackStack.splice(0,_screenBackStack.length,...context.backStack);
   goToScreen('constructor', { navigation:'back', resumeConstructor:true });
 }
 function finishExerciseSelection(context, navigate = true) {
   _constructorCatalog = null;
   _screenBackStack.splice(0,_screenBackStack.length,...context.backStack);
-  if (navigate) goToScreen(context.returnScreen,{navigation:'back',resumeSelection:true});
+  if (navigate) {
+    if (context.onReturn) context.onReturn();
+    else goToScreen(context.returnScreen,{navigation:'back',resumeSelection:true});
+  }
 }
-function constructorCatalogAddHtml(ex) {
+function exercisePickTarget(ex) {
   if (!_constructorCatalog) return '';
-  const selected=_constructorCatalog.single ? _constructorCatalog.selectedId===ex.id : _constructorCatalog.isSelected(ex.id);
-  return `<button type="button" class="constructor-catalog-add${selected?' selected':''}" data-constructor-add="${escHtml(ex.id)}" aria-pressed="${selected}" aria-label="${selected?'Выбрано':_constructorCatalog.single?'Выбрать':'Добавить'}: ${escHtml(ex.name)}" ${selected&&!_constructorCatalog.single?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${selected?'<path d="m5 12 4 4L19 6"/>':''}</svg></button>`;
+  return `<button type="button" class="exercise-pick-target" aria-label="Выбрать: ${escHtml(ex.name)}" aria-pressed="${_constructorCatalog.selectedId===ex.id}"></button>`;
 }
+
+function showExerciseSelection() {
+  const context = _constructorCatalog;
+  if (!context) return;
+  const previous = exercisesScroll.querySelector('.exercise-pick-selected');
+  previous?.classList.remove('exercise-pick-selected');
+  previous?.querySelector('.exercise-pick-actions')?.remove();
+  previous?.querySelector('.exercise-pick-target')?.setAttribute('aria-pressed','false');
+  if (!context.selectedId) return;
+  const wrap = exercisesScroll.querySelector(`.ex-row-wrap[data-id="${CSS.escape(context.selectedId)}"]`);
+  if (!wrap) return;
+  wrap.classList.add('exercise-pick-selected');
+  wrap.querySelector('.exercise-pick-target').setAttribute('aria-pressed','true');
+  wrap.insertAdjacentHTML('beforeend','<div class="exercise-pick-actions"><button type="button" data-pick-description>Описание</button><button type="button" data-pick-continue>Продолжить <span aria-hidden="true">→</span></button></div>');
+}
+
 function confirmExerciseSelection() {
   const c=_constructorCatalog;
-  if(!c || c.owner!==Auth.userId() || c.profile!==DATA.getCurrentUser() || Auth.contextChanged())return;
-  if(c.single && (!c.selectedId || c.selectedId===c.initialSelectedId || !c.canSelect(c.selectedId,c.filterMode)))return;
-  const currentScreen = activeScreenName();
-  if(c.single && c.onConfirm(c.selectedId) === false)return;
-  if(c.kind === 'picker') {
-    finishExerciseSelection(c,activeScreenName() === currentScreen);
-    return;
-  }
-  closeConstructorExerciseCatalog();
+  if (!c || c.owner!==Auth.userId() || c.profile!==DATA.getCurrentUser() || Auth.contextChanged()) return;
+  if (!c.selectedId || !c.canSelect(c.selectedId,c.filterMode)) return;
+  if (c.selectedId===c.initialSelectedId) { closeConstructorExerciseCatalog(); return; }
+  const currentScreen=activeScreenName();
+  if (c.onConfirm(c.selectedId,c.filterMode)===false) return;
+  if (c.kind==='picker') finishExerciseSelection(c,activeScreenName()===currentScreen);
+  else closeConstructorExerciseCatalog();
 }
-$('constructor-catalog-done').addEventListener('click',confirmExerciseSelection);
+
+exercisesScroll.addEventListener('click', event=>{
+  const context=_constructorCatalog, button=event.target.closest('.exercise-pick-target,[data-pick-description],[data-pick-continue]');
+  if (!context || !button || context.owner!==Auth.userId() || context.profile!==DATA.getCurrentUser() || Auth.contextChanged()) return;
+  const id=button.closest('.ex-row-wrap[data-id]').dataset.id;
+  if (!context.canSelect(id,context.filterMode)) return;
+  if (button.matches('.exercise-pick-target')) {
+    context.selectedId=id;context.revealSelected=false;
+    const group=button.closest('.ex-row-wrap-group');
+    if (group) {
+      _exerciseVariantSelection.set(executionDraftKey(context.profile,group.dataset.groupId),id);
+      const y=exercisesScroll.scrollTop;renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=y;
+      exercisesScroll.querySelector(`.ex-row[data-id="${CSS.escape(id)}"] .exercise-pick-target`)?.focus({preventScroll:true});
+    } else showExerciseSelection();
+    const actions=exercisesScroll.querySelector('.exercise-pick-actions');
+    if(actions) {
+      const overflow=actions.getBoundingClientRect().bottom-exercisesScroll.getBoundingClientRect().bottom;
+      if(overflow>0) exercisesScroll.scrollTop+=overflow+4;
+    }
+  } else if (context.selectedId===id) {
+    if (button.hasAttribute('data-pick-continue')) confirmExerciseSelection();
+    else {
+      context.scrollTop=exercisesScroll.scrollTop;
+      context.expandedMoves=[...exercisesScroll.querySelectorAll('[data-more-moves][aria-expanded="true"]')].map(b=>b.closest('.ex-row')).map(row=>row.dataset.groupId || row.dataset.id);
+      openExerciseDetail(id);
+    }
+  }
+});
 
 // Native touch/trackpad scrolling plus mouse dragging; a drag never opens a row.
 let _exerciseScrollClickUntil = 0;
@@ -5781,7 +5784,7 @@ function setupExerciseDragScroll(element, axis, enabled = () => true) {
     element.scrollLeft = next;
   },{passive:false});
 }
-setupExerciseDragScroll(exercisesScroll,'y',()=>!_constructorCatalog && !_exListEditMode);
+setupExerciseDragScroll(exercisesScroll,'y',()=>!_exListEditMode);
 setupExerciseDragScroll($('ex-cat-tabs'),'x');
 setupExerciseDragScroll($('exercise-movement-tabs'),'x');
 setupExerciseDragScroll($('exercise-reference-content'),'y');
@@ -5801,19 +5804,17 @@ function exerciseCategoryColor(userId, name, catalog = exerciseCatalogSource()) 
 let _performedOnly = false;
 let _exerciseListOption = '';
 function exerciseMovements(ex) { return ex.atlas?.categories || []; }
-function exerciseLibraryHasTabs() { return !_constructorCatalog || _constructorCatalog.kind === 'picker'; }
-function exerciseCatalogSource() { return exerciseLibraryHasTabs() && _exerciseLibrary === 'catalog'; }
+function exerciseCatalogSource() { return _exerciseLibrary === 'catalog'; }
 function canEditExerciseLibrary(catalog) { return !catalog || DATA.isAdmin(); }
 function exerciseMovementHtml(ex, expanded = false) {
   const moves = exerciseMovements(ex);
   if (!moves.length) return '';
   const compact = !expanded && moves.length > 1;
-  const visible = compact && _constructorCatalog ? moves.slice(0, 1) : moves;
-  const buttons = visible.map((m, i) => `<button type="button" class="exercise-move"${compact && i ? ' hidden' : ''} data-reference-kind="movement" data-reference-name="${escHtml(m)}" title="${escHtml(m)}">${SVG_EX_TARGET}<span>${escHtml(m)}</span></button>`).join('');
+  const buttons = moves.map((m, i) => `<button type="button" class="exercise-move"${compact && i ? ' hidden' : ''} data-reference-kind="movement" data-reference-name="${escHtml(m)}" title="${escHtml(m)}">${SVG_EX_TARGET}<span>${escHtml(m)}</span></button>`).join('');
   let more = '';
   if (compact) {
     const count = moves.length - 1;
-    more = _constructorCatalog ? `<span class="exercise-more">+${count}</span>` : `<button type="button" class="exercise-more" data-more-moves="${count}" aria-expanded="false" aria-label="Показать остальные движения (+${count})"><span aria-hidden="true">+${count}</span></button>`;
+    more = `<button type="button" class="exercise-more" data-more-moves="${count}" aria-expanded="false" aria-label="Показать остальные движения (+${count})"><span aria-hidden="true">+${count}</span></button>`;
   }
   return `<span class="exercise-moves${expanded ? ' expanded' : ''}">${buttons}${more}</span>`;
 }
@@ -5824,7 +5825,6 @@ function exerciseAgo(id) {
   return days === 0 ? 'Сегодня' : days === 1 ? 'Вчера' : days < 30 ? `${days} дн. назад` : new Date(ts).toLocaleDateString('ru-RU', {day:'numeric', month:'short'});
 }
 function exerciseSessionLink(id) {
-  if (_constructorCatalog) return '';
   const ts = _exerciseLastDates.get(id);
   if (!ts) return '';
   const last = new Date(ts);
@@ -5836,7 +5836,7 @@ function exerciseMembershipIcon(added) {
   return `<svg viewBox="0 0 16 20" fill="${added ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M1.25.7h13.5v17.7L8 14.5l-6.75 3.9z"/></svg>`;
 }
 function exerciseLibraryButton(ex) {
-  if (_constructorCatalog || _exerciseLibrary !== 'catalog') return '';
+  if (_exerciseLibrary !== 'catalog') return '';
   const added = !DATA.isHidden(DATA.getCurrentUser(), ex.id);
   return `<button type="button" class="exercise-library-add${added ? ' added' : ''}" data-library-add="${escHtml(ex.id)}" aria-pressed="${added}" aria-label="${added ? 'Убрать из моих' : 'Добавить в мои'}: ${escHtml(ex.name)}">${exerciseMembershipIcon(added)}</button>`;
 }
@@ -5940,23 +5940,14 @@ function syncExerciseLibraryUI(allExs) {
   const catalog = exerciseCatalogSource();
   $('screen-exercises').classList.toggle('library-catalog', catalog);
   const screen = $('screen-exercises');
-  $('exercise-library-tabs').hidden = _constructorCatalog?.kind !== 'picker';
-  if (!_constructorCatalog) {
-    screen.querySelector('.exercises-header-title').textContent = catalog ? 'Каталог' : 'Упражнения';
-    $('exercise-library-caption').textContent = catalog ? 'Общая библиотека' : 'Моя библиотека';
-  }
-  syncExerciseSectionMenu(screen, _constructorCatalog ? null : _exerciseLibrary);
-  $('exercise-filter-btn').hidden = !exerciseLibraryHasTabs();
+  screen.querySelector('.exercises-header-title').textContent = _constructorCatalog?.title || (_constructorCatalog ? 'Выбор упражнения' : catalog ? 'Каталог' : 'Упражнения');
+  $('exercise-library-caption').textContent = catalog ? 'Общая библиотека' : 'Моя библиотека';
+  syncExerciseSectionMenu(screen, _exerciseLibrary);
   $('exercises-add-btn').hidden = !canCreateExerciseFromList();
   const options = screen.querySelector('.exercise-quick-options');
-  options.hidden = !!_constructorCatalog;
   syncLibraryFilterIcons(options, catalog, _performedOnly, _exerciseListOption);
   exercisesSearch.placeholder = catalog ? 'Поиск по каталогу' : 'Поиск';
-  document.querySelectorAll('[data-library]').forEach(b => {
-    b.classList.toggle('active', b.dataset.library === _exerciseLibrary);
-    b.setAttribute('aria-selected', String(b.dataset.library === _exerciseLibrary));
-  });
-  const mode = exerciseLibraryHasTabs() ? _exerciseFilterMode : 0;
+  const mode = _exerciseFilterMode;
   $('ex-cat-tabs').parentElement.hidden = mode === 1;
   const filter = $('exercise-filter-btn');
   filter.classList.toggle('active', mode > 0);
@@ -5975,7 +5966,7 @@ function syncExerciseLibraryUI(allExs) {
   });
 }
 function setExerciseLibrary(scope, saved = null) {
-  if (!['mine','catalog'].includes(scope) || scope === _exerciseLibrary || !exerciseLibraryHasTabs()) return;
+  if (!['mine','catalog'].includes(scope) || scope === _exerciseLibrary) return;
   exitExListEditMode();
   setReferenceLibraryScope(scope);
   _performedOnly = !!saved?.performedOnly;
@@ -5986,13 +5977,9 @@ function setExerciseLibrary(scope, saved = null) {
   renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = saved?.scroll || 0;
   if (scope === 'catalog' && typeof Bridge !== 'undefined') Bridge.refreshAtlas().catch(() => showToast('Не удалось обновить каталог. Показана сохранённая версия.'));
 }
-$('exercise-library-tabs').addEventListener('click', event => {
-  const button = event.target.closest('[data-library]');
-  if (button) setExerciseLibrary(button.dataset.library);
-});
 $('screen-exercises').addEventListener('click', event => {
   const button = event.target.closest('[data-list-option]');
-  if (!button || _constructorCatalog) return;
+  if (!button) return;
   if (button.dataset.listOption === 'recent') _performedOnly = !_performedOnly;
   else _exerciseListOption = {'':'added', added:'unadded', unadded:''}[_exerciseListOption];
   renderExercisesList(exercisesSearch.value);
@@ -6078,6 +6065,7 @@ function syncExerciseSectionMenu(screen, section) {
   exerciseSectionNav.hidden = !section;
   if (!section || previous !== screen) setExerciseMenuOpen(false);
   for (const option of exerciseSectionOptions.children) {
+    option.hidden = !!_constructorCatalog && !['mine','catalog'].includes(option.dataset.exSection);
     option.setAttribute('aria-pressed', String(option.dataset.exSection === section));
   }
 }
@@ -6153,15 +6141,15 @@ function memberRowHtml(ex, cat, selected = false) {
   const label = ex.atlas?.variationName || ex.name;
   const arrow = SVG_CHEVRON;
   return `
-    <div class="ex-row-wrap ex-row-wrap-nested${selected ? ' variant-selected' : ''}" data-id="${escHtml(ex.id)}" data-cat="${escHtml(cat)}">
+    <div class="ex-row-wrap ex-row-wrap-nested${selected && !_constructorCatalog ? ' variant-selected' : ''}" data-id="${escHtml(ex.id)}" data-cat="${escHtml(cat)}">
       <div class="ex-row-edit-slot">${SVG_REF_EDIT}<span>Изменить</span></div>
       <div class="ex-row-delete">${SVG_DEL_EX} Удалить</div>
       <div class="ex-row tappable" data-id="${escHtml(ex.id)}">
         <span class="ex-row-body">
-          <button type="button" class="ex-row-name variant-select" data-variant-select="${escHtml(ex.id)}" data-variant-open="${escHtml(ex.id)}" aria-pressed="${selected}">${escHtml(label)}</button>
+          ${_constructorCatalog ? `<span class="ex-row-name">${escHtml(label)}</span>` : `<button type="button" class="ex-row-name variant-select" data-variant-select="${escHtml(ex.id)}" data-variant-open="${escHtml(ex.id)}" aria-pressed="${selected}">${escHtml(label)}</button>`}
           ${exerciseSessionLink(ex.id)}
         </span>
-        <button type="button" class="variant-open" data-variant-open="${escHtml(ex.id)}" aria-label="Открыть: ${escHtml(ex.name)}">${arrow}</button>${constructorCatalogAddHtml(ex)}${exerciseLibraryButton(ex)}
+        <button type="button" class="variant-open" data-variant-open="${escHtml(ex.id)}" aria-label="Открыть: ${escHtml(ex.name)}">${arrow}</button>${exercisePickTarget(ex)}${exerciseLibraryButton(ex)}
       </div>
     </div>`;
 }
@@ -6329,10 +6317,10 @@ function renderExercisesList(query) {
   // должен учитывать группы упражнений (см. DATA.resolveDisplayItems) —
   // если запрос совпал с ОДНИМ вариантом, показать нужно всю группу целиком,
   // а не только совпавшего участника, поэтому query нельзя резать здесь.
-  const listOption = _constructorCatalog ? '' : _exerciseListOption;
+  const listOption = _exerciseListOption;
   const membershipFilter = catalog && (listOption === 'unadded' || listOption === 'added');
-  const datedOnly = !_constructorCatalog && _performedOnly;
-  const tabFiltered = allExs.filter(e => !datedOnly || lastSessions.has(e.id)).filter(e => !membershipFilter || DATA.isHidden(userId, e.id) === (listOption === 'unadded')).filter(e => _exercisesCatFilter === "all" || e.cat === _exercisesCatFilter).filter(e => !exerciseLibraryHasTabs() || !_exerciseMovementFilter.size || exerciseMovements(e).some(m => _exerciseMovementFilter.has(m)));
+  const datedOnly = _performedOnly;
+  const tabFiltered = allExs.filter(e => !datedOnly || lastSessions.has(e.id)).filter(e => !membershipFilter || DATA.isHidden(userId, e.id) === (listOption === 'unadded')).filter(e => _exercisesCatFilter === "all" || e.cat === _exercisesCatFilter).filter(e => !_exerciseMovementFilter.size || exerciseMovements(e).some(m => _exerciseMovementFilter.has(m)));
 
   // Группировка по категориям. Порядок категорий — как в списке пользователя,
   // плюс любые «осиротевшие» (встречаются в упражнениях, но нет в списке).
@@ -6403,9 +6391,14 @@ function renderExercisesList(query) {
               <span class="ex-row-name">${escHtml(item.ex.name)}</span>${exerciseMovementHtml(item.ex)}
               ${exerciseSessionLink(item.ex.id)}
             </span>
-            <span class="ex-row-chevron">${SVG_CHEVRON}</span>${constructorCatalogAddHtml(item.ex)}${exerciseLibraryButton(item.ex)}
+            <span class="ex-row-chevron">${SVG_CHEVRON}</span>${exercisePickTarget(item.ex)}${exerciseLibraryButton(item.ex)}
           </div>
         </div>`;
+      if (_constructorCatalog?.revealSelected && item.members.some(ex=>ex.id===_constructorCatalog.selectedId)) {
+        _exGroupExpanded.add(item.id);
+        _exerciseVariantSelection.set(executionDraftKey(userId,item.id),_constructorCatalog.selectedId);
+        _constructorCatalog.revealSelected=false;
+      }
       const expanded = _exGroupExpanded.has(item.id);
       // Раскрытые варианты — вложенные строки упражнения (тот же тап-в-деталь/
       // свайп), но плоские, без своей рамки/пилюли — единая карточка группы,
@@ -6496,7 +6489,7 @@ function renderExercisesList(query) {
   }));
   exercisesScroll.querySelectorAll(".ex-row:not(.ex-row-group)").forEach(row => {
     row.addEventListener("click", () => {
-      if (row.closest(".ex-row-wrap-nested") && !_exListEditMode) {
+      if (row.closest(".ex-row-wrap-nested") && !_exListEditMode && !_constructorCatalog) {
         const groupId = row.closest('[data-group-id]').dataset.groupId;
         _exerciseVariantSelection.set(executionDraftKey(userId,groupId),row.dataset.id);
         const y = exercisesScroll.scrollTop; renderExercisesList(exercisesSearch.value); exercisesScroll.scrollTop = y;
@@ -6505,7 +6498,7 @@ function renderExercisesList(query) {
       // В режиме правки строка только переставляется; имя меняется свайпом
       // вправо → форма (как у мышц/движений). Инлайн-переименование убрано.
       if (_exListEditMode) { exitExListEditMode(); return; }
-      if (_constructorCatalog) _constructorCatalog.scrollTop = exercisesScroll.scrollTop;
+      if (_constructorCatalog) return;
       openExerciseDetail(row.dataset.id);
     });
   });
@@ -6523,21 +6516,7 @@ function renderExercisesList(query) {
   });
 
   if (_constructorCatalog) {
-    exercisesScroll.querySelectorAll('[data-constructor-add]').forEach(button => button.addEventListener('click', event => {
-      event.stopPropagation();
-      const context = _constructorCatalog;
-      if (!context || context.owner !== Auth.userId() || context.profile !== DATA.getCurrentUser()) return;
-      if(context.single) {
-        context.selectedId=button.dataset.constructorAdd;
-        const groupId = button.closest('.ex-row-wrap-group')?.dataset.groupId;
-        if (groupId) _exerciseVariantSelection.set(executionDraftKey(userId,groupId),context.selectedId);
-        const y=exercisesScroll.scrollTop;renderExercisesList(exercisesSearch.value);exercisesScroll.scrollTop=y;
-      } else if (context.onSelect(button.dataset.constructorAdd,context.filterMode)) {
-        const scrollTop = exercisesScroll.scrollTop;
-        renderExercisesList(exercisesSearch.value);
-        exercisesScroll.scrollTop = scrollTop;
-      }
-    }));
+    showExerciseSelection();
     return; // В режиме выбора жесты редактирования библиотеки не нужны.
   }
 
@@ -7911,7 +7890,7 @@ function openReferenceDetail(kind, name) {
   if (!['muscle','movement'].includes(kind)) return;
   const active = document.querySelector('.screen.active')?.id;
   if (active === 'screen-exercise-reference') { referenceNavigate(kind,name); return; }
-  const scope = active === 'screen-exercise-detail' ? (_exdCatalog ? 'catalog' : 'mine') : (exerciseLibraryHasTabs() ? _exerciseLibrary : 'mine');
+  const scope = active === 'screen-exercise-detail' ? (_exdCatalog ? 'catalog' : 'mine') : _exerciseLibrary;
   const frame = {screen:active, state:{..._referenceState},scroll:active === 'screen-exercise-detail' ? $('exd-body').scrollTop : exercisesScroll.scrollTop};
   if (active === 'screen-exercise-detail') Object.assign(frame,{exerciseId:_detailExerciseId,returnScreen:_exdReturnScreen,catalog:_exdCatalog});
   else if (active === 'screen-muscle-detail') Object.assign(frame,{muscleId:_msdMuscleId,returnScreen:_msdReturnScreen});
@@ -9680,7 +9659,8 @@ function finishCreatedExerciseSelection(context, id) {
   const exercise = DATA.getVisibleExercises(context.profile).find(ex => ex.id === id);
   if (!exercise) return;
   const eligible = context.canSelect(id, context.filterMode);
-  if (context.single && eligible) context.selectedId = id;
+  if (eligible) {context.selectedId=id;context.revealSelected=true;}
+  _performedOnly=false;_exerciseListOption='';
   setReferenceLibraryScope('mine');
   _exercisesCatFilter = 'all';
   _exerciseMovementFilter.clear();
@@ -9850,9 +9830,9 @@ function openDetailScreen(workout, returnScreen = "menu", scrollToExerciseId = n
             showToast("Упражнение заменено — записи учтены в статистике");
             renderHistory(userId);
             const updated = DATA.getWorkoutHistory(userId).find(w => w.id === workout.id) || workout;
-            openDetailScreen(updated, _detailReturnScreen);
+            openDetailScreen(updated, returnScreen);
           }
-        }, null);
+        }, null, {onReturn:()=>openDetailScreen(workout,returnScreen,null,{navigation:'back'})});
       });
     });
 
@@ -10047,7 +10027,7 @@ function openOrphanRemapSheet() {
 function openStatsExPicker(exWithHist) {
   const eligible = new Set(exWithHist.map(ex => ex.id));
   openExercisePicker(id => { _statsSelectedExId = id; initStatsScreen(); }, _statsSelectedExId,
-    {canSelect:id => eligible.has(id),confirmLabel:'Выбрать упражнение'});
+    {canSelect:id => eligible.has(id)});
 }
 
 $("stats-back-btn").addEventListener("click", () => goBackScreen("menu"));

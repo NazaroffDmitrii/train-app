@@ -3449,11 +3449,6 @@ button[id$="back-btn"] svg { width: 17px; height: 17px; }
   .sg-movement-sheet h2 { font-size:17px; }
 }
 
-.constructor-catalog-add { flex:none; width:36px; height:36px; margin-left:8px; display:grid; place-items:center; border-radius:12px; background:var(--accent-soft); color:var(--accent-bright); border:1px solid var(--accent); }
-.constructor-catalog-add svg { width:19px; height:19px; }.constructor-catalog-add.selected { background:#123127; border-color:#27684f; color:#4ade9b; }
-.constructor-catalog-footer { flex:none; padding:12px max(16px,calc((100% - 640px)/2)) calc(16px + var(--safe-bottom)); background:var(--panel); border-top:1px solid var(--border-subtle); }
-.constructor-catalog-footer[hidden] { display:none; }.constructor-catalog-footer span { display:block; text-align:center; color:var(--text-tertiary); font-size:12px; margin-bottom:10px; }
-.constructor-catalog-footer button { width:100%; min-height:48px; border-radius:18px; background:var(--accent); color:white; font-size:16px; font-weight:600; }
 .constructor-catalog .ex-row-edit-slot,.constructor-catalog .ex-row-delete { display:none; }
 /* Готовый план v12: радар, дерево движений и карточки по дням. */
 .sg-result .sg-header { grid-template-columns:44px minmax(0,1fr) 44px; gap:0; }
@@ -3565,14 +3560,9 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 .sg .rp-mini .rp-stepper.compact > span { min-width:32px; }.sg .rp-mini .rp-stepper.compact b { font-size:22px; font-weight:600; }.sg .rp-mini .rp-stepper.compact small { font-size:11px; }
 .rp-day-heading { position:static; }
 .constructor-catalog #exercises-scroll { user-select:none; -webkit-user-select:none; }
-.constructor-catalog #exercises-scroll.catalog-dragging { cursor:grabbing; }
-.constructor-replacement .exercises-header-title { min-width:0; font-size:20px; line-height:1.25; overflow-wrap:anywhere; }
 .constructor-catalog-context { flex:none; padding:14px max(16px,calc((100% - 640px)/2)) 0; }
 .constructor-catalog-context[hidden] { display:none; }.constructor-catalog-context p { font-size:18px; font-weight:600; line-height:1.35; color:var(--text-primary); margin:0 0 16px; text-wrap:balance; }
 .constructor-catalog-modes { display:flex; gap:4px; padding:4px; border-radius:16px; background:#1c1c2b; margin-bottom:12px; }.constructor-catalog-modes button { flex:1; padding:10px 4px; border-radius:12px; color:#8b8ba3; font-size:13px; }.constructor-catalog-modes .selected { background:#7b6ee6; color:#fff; }
-.constructor-catalog .constructor-catalog-add { order:-1; width:26px; height:26px; border-radius:50%; margin:0 10px 0 0; border:1.5px solid #55526b; background:transparent; color:#fff; }
-.constructor-catalog .constructor-catalog-add.selected { background:#7b6ee6; border-color:#7b6ee6; opacity:1; }.constructor-catalog .constructor-catalog-add svg { width:17px; height:17px; }
-.constructor-catalog-footer button:disabled { opacity:.35; }
 .template-carousel { user-select:none; -webkit-user-select:none; }.template-carousel.is-dragging { scroll-snap-type:none; cursor:grabbing; scroll-behavior:auto; }
 @media(max-width:360px) { .sg-parameters .sg-readiness-card { padding:13px; }.sg-parameters .sg-readiness-card .sg-readiness-tile { padding:11px 9px; }.sg-readiness-label { font-size:10.5px; gap:5px; }.sg-readiness-card > .sg-label { font-size:13px; margin-inline:0; }.sg-readiness-card > .sg-label b { font-size:10.5px; }.sg .rp-mini .rp-stepper.compact button { width:23px; }.sg .rp-mini .rp-stepper.compact > span { min-width:28px; } }
 
@@ -3636,7 +3626,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-exercises button:focus-visible { outline:2px solid #a99cf5; outline-offset:2px; }
 .exercise-library-body { flex:1; min-height:0; display:flex; flex-direction:column; background:linear-gradient(180deg,var(--library-top),var(--library-bottom) 75%); border-radius:0 16px 0 0; }
 .library-catalog .exercise-library-body { border-radius:16px 0 0 0; }
-.constructor-catalog:not(.exercise-selection) .exercise-library-body { border-radius:0; }
 .exercise-library-tabs { touch-action:pan-y; }
 .exercise-movement-tabs, #ex-cat-tabs { touch-action:pan-x; cursor:grab; overscroll-behavior-x:contain; }
 .exercise-movement-tabs.drag-scrolling, #ex-cat-tabs.drag-scrolling { cursor:grabbing; }
@@ -3835,10 +3824,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
 #screen-exercises .ex-row-wrap-group:not(.expanded) > .ex-row-group { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 22%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent) 75%),var(--movement-card); border-color:color-mix(in srgb,var(--cat-color) var(--category-border-tint,28%),var(--movement-card-border)); }
 #screen-exercises .expanded > .ex-row-group { background:transparent; border:0; }
 #screen-exercises .ex-row-wrap-nested .ex-row { background:linear-gradient(165deg,color-mix(in srgb,var(--cat-color) 18%,transparent),color-mix(in srgb,var(--cat-color) 4%,transparent)),var(--movement-chip); }
-#screen-exercises .constructor-catalog-footer { background:var(--movement-circle); border-color:var(--movement-card-border); }
-#screen-exercises .constructor-catalog-footer button { color:var(--movement-circle); }
-#screen-exercises .constructor-catalog-add { border-color:var(--movement-node-border); color:var(--movement-accent); }
-#screen-exercises .constructor-catalog-add.selected { background:var(--movement-accent); border-color:var(--movement-accent); color:var(--movement-circle); }
 #screen-exercises .constructor-catalog-modes { background:var(--movement-tabs); }
 #screen-exercises .constructor-catalog-modes button { color:var(--movement-muted); }
 #screen-exercises .constructor-catalog-modes .selected { background:var(--movement-selected); color:var(--movement-text); }
@@ -4636,10 +4621,7 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
         </div>
       </div>
     </div>
-    <div class="exercise-library-tabs" id="exercise-library-tabs" role="tablist" aria-label="Упражнения">
-      <button type="button" role="tab" aria-selected="true" class="active" data-library="mine">Мои</button>
-      <button type="button" role="tab" aria-selected="false" data-library="catalog">Каталог</button>
-    </div>
+
     <div class="exercise-library-body">
     <div id="constructor-catalog-context" class="constructor-catalog-context" hidden></div>
     <div class="exercises-search-wrap">
@@ -4666,7 +4648,6 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
     </div>
     <div class="exercises-scroll" id="exercises-scroll"></div>
     </div>
-  <div id="constructor-catalog-footer" class="constructor-catalog-footer" hidden><span>Нажми на название для подробностей, на + для добавления</span><button type="button" id="constructor-catalog-done">Готово</button></div>
   </section>
 
   <section id="screen-exercise-reference" class="screen screen-exercises slide-right">
