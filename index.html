@@ -3762,7 +3762,8 @@ button.btn-chip[id$="back-btn"] svg,#settings-back svg { width:19px; height:19px
   --plum-background:linear-gradient(180deg,var(--movement-header),var(--movement-top) var(--movement-header-end,70px),color-mix(in srgb,var(--movement-top) 50%,transparent) calc(var(--movement-header-end,70px) + 75px),transparent calc(var(--movement-header-end,70px) + 220px)),radial-gradient(ellipse at 80% 15%,#70405860,transparent 60%),#1d131c;
 }
 :is(#screen-exercises,#screen-exercise-reference).library-catalog,
-#screen-exercise-detail.xd-view.from-catalog {
+#screen-exercise-detail.xd-view.from-catalog,
+:is(.xe,.xe-dialog,.xe-preview-ribbon).from-catalog {
   --movement-page:#140d13; --movement-top:#321e2b; --movement-header:#60364e;
   --movement-text:#f8f0f3; --movement-muted:#b8a4af; --movement-line:#8e627c; --movement-accent:#efb4cd;
   --movement-circle:#21131c; --movement-node:#3a2231; --movement-node-border:#85556f; --movement-node-text:#f5c9dc;
