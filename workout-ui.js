@@ -14,7 +14,7 @@
   const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.check}</svg>`;
   const $ = id => document.getElementById(id);
   const current = () => typeof _workout === 'undefined' ? null : _workout;
-  const history = () => DATA.getWorkoutHistory(DATA.getCurrentUser());
+  const history = () => ExerciseDescriptions.history(DATA.getCurrentUser());
   const cursors = new WeakMap();
   const owners = new WeakMap();
   let wired = false, observer = null, drawing = false;
@@ -26,12 +26,15 @@
   function initialize(workout, editing) {
     const user = DATA.getCurrentUser(), definitions = DATA.getVisibleExercises(user);
     owners.set(workout,{user,account:typeof Auth==='undefined'?null:Auth.userId()});
+    const links=ExerciseDescriptions.legacyMap(definitions);
     for (const ex of workout.exercises || []) {
+      if(links.has(ex.exerciseId))Object.assign(ex,ExerciseDescriptions.mapEntry(ex,links));
       const definition = definitions.find(d => d.id === ex.exerciseId);
       if(!ex.name && definition)ex.name=definition.name;
       if (!Array.isArray(ex.executionParameters)) Object.assign(ex,executionSnapshot(definition?.atlas?.executionParameters,ex.executionValues));
       C.prepare(ex,DATA.getExerciseMetric(user,ex.exerciseId));
-      if (!ex.movements && definition) ex.movements=[...(definition.atlas?.categories || [])];
+      if (!ex.movements && definition)ex.movements=ExerciseDescriptions.placement(definition,ex).movements;
+      for(const set of ex.sets)if(set.done&&!set.movements)set.movements=definition&&set.executionValues?.length?ExerciseDescriptions.placement(definition,set).movements:[...(ex.movements||[])];
     }
     $('screen-workout').classList.toggle('aw-history-editor',!!editing);
     if (!wired) {
@@ -46,7 +49,7 @@
         else if(button.dataset.aw==='movement')v.selected=v.selected===button.dataset.movement?null:button.dataset.movement;
         else if(button.dataset.aw==='add'){
           const movement=button.dataset.movement;
-          openExercisePicker(addExerciseToWorkout,null,{canSelect:id=>DATA.getVisibleExercises(DATA.getCurrentUser()).find(ex=>ex.id===id)?.atlas?.categories?.includes(movement)});
+          openExercisePicker(addExerciseToWorkout,null,{movement});
           return;
         }else if(button.dataset.aw==='jump'){
           const ex=current()?.exercises[Number(button.dataset.index)],block=[...$('workout-scroll').querySelectorAll('.ex-block')].find(b=>b._workoutExercise===ex);
@@ -71,11 +74,12 @@
   function movements() {return DATA.refMovements(DATA.getCurrentUser()).filter(m=>m.type==='База');}
   function coverageModel() {
     const rows=movements(),definitions=DATA.getVisibleExercises(DATA.getCurrentUser());
-    return {rows,definitions,counts:C.movementCounts(current()?.exercises,definitions,rows.map(m=>m.name))};
+    const planned=new Set((current()?.exercises||[]).flatMap(ex=>ex.movements||[]));
+    return {rows,definitions,planned,counts:C.movementCounts(current()?.exercises,definitions,rows.map(m=>m.name))};
   }
   function movementHtml(row,index,count,definitions,expanded) {
-    const related=(current()?.exercises || []).map((ex,i)=>({ex,i})).filter(({ex})=>(definitions.find(d=>d.id===ex.exerciseId)?.atlas?.categories||ex.movements||[]).includes(row.name));
-    return `<div class="aw-movement-item${expanded?' is-selected':''}"><button type="button" class="aw-movement-row${count?' complete':''}" data-aw="movement" data-movement="${escHtml(row.name)}" aria-expanded="${expanded}"><span>${index+1}</span><span>${escHtml(row.name)}</span><span>${count?count+' ✓':'—'}</span></button>${expanded?`<div class="aw-movement-choice"><small>${count?count+' основных подходов выполнено':'Ещё не выполнено'}</small>${related.map(({ex,i})=>`<button type="button" class="aw-movement-exercise" data-aw="jump" data-index="${i}">${escHtml(definitions.find(d=>d.id===ex.exerciseId)?.name||ex.name||'Упражнение')} ${icon('down')}</button>`).join('')}<button type="button" class="aw-choose-exercise" data-aw="add" data-movement="${escHtml(row.name)}">${icon('plus')}Выбрать упражнение</button></div>`:''}</div>`;
+    const related=(current()?.exercises || []).map((ex,i)=>({ex,i})).filter(({ex})=>(ex.movements||[]).includes(row.name)||ex.sets.some(s=>C.performed(s)&&!s.dropSet&&s.movements?.includes(row.name)));
+    return `<div class="aw-movement-item${expanded?' is-selected':''}"><button type="button" class="aw-movement-row${count?' complete':''}" data-aw="movement" data-movement="${escHtml(row.name)}" aria-expanded="${expanded}"><span>${index+1}</span><span>${escHtml(row.name)}</span><span>${count?count+' ✓':related.length?'В плане':'—'}</span></button>${expanded?`<div class="aw-movement-choice"><small>${count?count+' основных подходов выполнено':'Ещё не выполнено'}</small>${related.map(({ex,i})=>`<button type="button" class="aw-movement-exercise" data-aw="jump" data-index="${i}">${escHtml(definitions.find(d=>d.id===ex.exerciseId)?.name||ex.name||'Упражнение')} ${icon('down')}</button>`).join('')}<button type="button" class="aw-choose-exercise" data-aw="add" data-movement="${escHtml(row.name)}">${icon('plus')}Выбрать упражнение</button></div>`:''}</div>`;
   }
   function renderCoverage() {
     if (!$('workout-coverage')||!current())return;
@@ -91,18 +95,19 @@
     if(v.expanded){
       const selected=rows.findIndex(r=>r.name===v.selected);
       const listButton=`<button type="button" class="aw-list-toggle" data-aw="list" aria-expanded="${v.list}">${v.list?'Скрыть список':'Показать списком'}${icon(v.list?'up':'down')}</button>`;
-      body.innerHTML=`<div class="aw-radar" id="workout-radar"></div><div class="aw-radar-legend"><span>Выполненные основные подходы</span><span>0–${Math.max(1,...counts)} подх.</span></div>${!v.list&&selected>=0?movementHtml(rows[selected],selected,counts[selected],definitions,true):''}${listButton}${v.list?`<div class="aw-movement-list">${rows.map((row,i)=>movementHtml(row,i,counts[i],definitions,i===selected)).join('')}</div>${listButton}`:''}`;
+      body.innerHTML=`<div class="aw-radar" id="workout-radar"></div><div class="aw-radar-legend"><span>Серый пунктир — в плане</span><span>0–${Math.max(1,...counts)} подх.</span></div>${!v.list&&selected>=0?movementHtml(rows[selected],selected,counts[selected],definitions,true):''}${listButton}${v.list?`<div class="aw-movement-list">${rows.map((row,i)=>movementHtml(row,i,counts[i],definitions,i===selected)).join('')}</div>${listButton}`:''}`;
       drawRadar();
     }else body.innerHTML='';
     requestAnimationFrame(updatePin);
   }
   function drawRadar() {
     const node=$('workout-radar');if(!node||!view()?.expanded||!view()?.enabled)return;
-    const {rows,counts}=coverageModel(),width=node.clientWidth;if(!width||!rows.length)return;
+    const {rows,counts,planned}=coverageModel(),width=node.clientWidth;if(!width||!rows.length)return;
     const center=width/2,radius=Math.max(38,center-38),max=Math.max(1,...counts);
     const point=(i,r)=>{const a=i*2*Math.PI/rows.length-Math.PI/2;return [center+Math.cos(a)*r,center+Math.sin(a)*r];};
     drawing=true;
-    node.innerHTML=`<svg viewBox="0 0 ${width} ${width}" class="aw-radar-svg" role="group" aria-label="Выполненные подходы по базовым движениям"><title>Базовые движения</title>${[.33,.66,1].map(f=>`<polygon class="aw-radar-grid" points="${rows.map((_,i)=>point(i,radius*f).join(',')).join(' ')}"/>`).join('')}${rows.map((_,i)=>`<path class="aw-radar-grid" d="M${center},${center}L${point(i,radius).join(',')}"/>`).join('')}<polygon class="aw-radar-area" points="${counts.map((n,i)=>point(i,n/max*radius).join(',')).join(' ')}"/>${rows.map((row,i)=>{const [x,y]=point(i,radius+22),[dx,dy]=point(i,counts[i]/max*radius),selected=view().selected===row.name;return `${counts[i]?`<circle class="aw-radar-dot" cx="${dx}" cy="${dy}" r="3.5"/>`:''}<g data-aw="movement" data-movement="${escHtml(row.name)}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${escHtml(row.name)}: ${counts[i]} выполненных подходов"><circle class="aw-radar-index${selected?' selected':''}" cx="${x}" cy="${y}" r="13"/><text x="${x}" y="${y+4}" text-anchor="middle">${i+1}</text><circle class="aw-radar-hit" cx="${x}" cy="${y}" r="20"/></g>`;}).join('')}</svg>`;
+    node.innerHTML=`<svg viewBox="0 0 ${width} ${width}" class="aw-radar-svg" role="group" aria-label="Выполненные подходы по базовым движениям"><title>Базовые движения</title>${[.33,.66,1].map(f=>`<polygon class="aw-radar-grid" points="${rows.map((_,i)=>point(i,radius*f).join(',')).join(' ')}"/>`).join('')}${rows.map((row,i)=>`<path class="aw-radar-grid${!counts[i]&&planned.has(row.name)?' aw-radar-planned':''}" d="M${center},${center}L${point(i,radius).join(',')}"/>`).join('')}<polygon class="aw-radar-area" points="${counts.map((n,i)=>point(i,n/max*radius).join(',')).join(' ')}"/>${rows.map((row,i)=>{const [x,y]=point(i,radius+22),[dx,dy]=point(i,counts[i]/max*radius),selected=view().selected===row.name;const [px,py]=point(i,radius);
+      return `${!counts[i]&&planned.has(row.name)?`<circle class="aw-radar-pending" cx="${px}" cy="${py}" r="3.5"/>`:''}${counts[i]?`<circle class="aw-radar-dot" cx="${dx}" cy="${dy}" r="3.5"/>`:''}<g data-aw="movement" data-movement="${escHtml(row.name)}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${escHtml(row.name)}: ${counts[i]} выполненных подходов"><circle class="aw-radar-index${selected?' selected':''}" cx="${x}" cy="${y}" r="13"/><text x="${x}" y="${y+4}" text-anchor="middle">${i+1}</text><circle class="aw-radar-hit" cx="${x}" cy="${y}" r="20"/></g>`;}).join('')}</svg>`;
     drawing=false;
   }
   function updatePin() {
@@ -316,7 +321,23 @@
     requestAnimationFrame(()=>{body.querySelectorAll('.set-group').forEach(layoutDropTree);positionTimer();});
     restoreViewport(viewport);
   }
-  function layoutAllDrops() { $('workout-scroll')?.querySelectorAll('.set-group').forEach(layoutDropTree); }
+  function layoutParameters(scope){
+    scope.querySelectorAll('.aw-params .execution-options,.aw-param-summary').forEach(row=>{
+      const width=row.clientWidth,cells=[...row.children];
+      if(!width||!cells.length)return;
+      const gap=parseFloat(getComputedStyle(row).columnGap)||0;
+      const sizes=cells.map(cell=>{cell.style.flex='0 0 auto';cell.style.width='max-content';return Math.min(width,cell.getBoundingClientRect().width);});
+      let first=0;
+      while(first<cells.length){
+        let end=first+1,widest=sizes[first];
+        while(end<cells.length && Math.max(widest,sizes[end])*(end-first+1)+gap*(end-first)<=width){widest=Math.max(widest,sizes[end]);end++;}
+        const size=Math.floor((width-gap*(end-first-1))/(end-first)*64)/64;
+        for(let i=first;i<end;i++){cells[i].style.width='';cells[i].style.flex='0 0 '+size+'px';}
+        first=end;
+      }
+    });
+  }
+  function layoutAllDrops() { layoutParameters($('workout-scroll')); $('workout-scroll')?.querySelectorAll('.set-group').forEach(layoutDropTree); }
   function layoutDropTree(group) {
     group.querySelectorAll('.set-drop-trunk,.set-drop-branch').forEach(el=>el.remove());
     const main=group.querySelector('.set-row-wrap:not(.set-row-wrap-drop)'),drops=[...group.querySelectorAll('.set-row-wrap-drop')];
@@ -337,5 +358,5 @@
     const end=()=>{if(start===null)return;start=null;surface.style.transition='transform .2s ease';if(dy>50){closeRpePicker();surface.style.transform='';}else surface.style.transform='';};
     surface.addEventListener('pointerup',end);surface.addEventListener('pointercancel',end);
   }
-  window.WorkoutUI={icon,initialize,ownsCurrent,captureViewport,restoreViewport,renderCoverage,updatePin,positionTimer,currentRecord,recordHtml,refreshRecord,decorateRpeButton,renderSets,layoutDropTree,wireRpeSheet,hideTools};
+  window.WorkoutUI={icon,initialize,ownsCurrent,captureViewport,restoreViewport,renderCoverage,layoutParameters,updatePin,positionTimer,currentRecord,recordHtml,refreshRecord,decorateRpeButton,renderSets,layoutDropTree,wireRpeSheet,hideTools};
 })();

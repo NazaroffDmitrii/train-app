@@ -5,7 +5,7 @@
   const clone=value=>JSON.parse(JSON.stringify(value)),E=escHtml;
   const paths={back:'M19 12H5m7-7-7 7 7 7',down:'m6 9 6 6 6-6',plus:'M12 5v14M5 12h14',eye:'M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',groups:'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',parameters:'M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6',muscles:'M3 12h4l3-8 4 16 3-8h4',movement:'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',technique:'M9 5h11M9 12h11M9 19h11M3 5h1M3 12h1M3 19h1',mistakes:'m12 3 10 18H2L12 3ZM12 9v5M12 17v1',lock:'M5 10h14v11H5ZM8 10V6a4 4 0 0 1 8 0v4',features:'M9 18h6M9 21h6M8 14a6 6 0 1 1 8 0l-1 3H9l-1-3Z',restrictions:'m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3ZM12 8v5M12 16v1',check:'m5 12 4 4L19 6',link:'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2'};
   const icon=name=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.features}"/></svg>`;
-  const titles={muscles:'Рабочие мышцы',movement:'Движения',technique:'Техника выполнения',mistakes:'Типичные ошибки',features:'Особенности упражнения',restrictions:'Ограничения'};
+  const titles={groups:'Группы выполнения',muscles:'Рабочие мышцы',movement:'Движения',technique:'Техника выполнения',mistakes:'Типичные ошибки',features:'Особенности упражнения',restrictions:'Ограничения'};
   const roles=[['target','Агонисты'],['synergist','Синергисты'],['stabilizer','Стабилизаторы']];
   let draft,baseline,seed,root,form,context=[],contextKey='',dirty=false,previewEx=null,pendingNew=false;
   let editorOptions={},editorOwner,editorUser,editorReturn,previewReturn;
@@ -15,26 +15,27 @@
   const parameters=()=>draft.parameters;
   const variant=()=>contextKey?(draft.variants[contextKey]||={}):null;
   function resolveDescription(kind){
-    const matches=Object.entries(draft.variants).filter(([key,value])=>Object.hasOwn(value,kind)&&JSON.parse(key).every(([id,value])=>context.some(selected=>selected.id===id&&selected.value===value))).sort((a,b)=>JSON.parse(b[0]).length-JSON.parse(a[0]).length);
-    if(!matches.length)return {value:draft.base[kind],key:'',conflict:false};
-    const best=matches[0],specificity=JSON.parse(best[0]).length,conflict=matches.some(([key,value])=>JSON.parse(key).length===specificity&&JSON.stringify(value[kind])!==JSON.stringify(best[1][kind]));
-    return {value:conflict?draft.base[kind]:best[1][kind],key:conflict?'':best[0],conflict};
+    const base=kind==='groups'?[draft.cat].filter(Boolean):draft.base[kind];
+    if(!contextKey)return {value:base,key:'',conflict:false};
+    const values=ExerciseDescriptions.effectiveValues(executionSnapshot(draft.parameters,context));
+    const result=ExerciseDescriptions.section(base,draft.variants,values,kind);
+    return {...result,key:result.conditions.length?JSON.stringify(result.conditions):''};
   }
-  const effective=kind=>contextKey?resolveDescription(kind).value:draft.base[kind];
+  const effective=kind=>resolveDescription(kind).value;
   const own=kind=>!contextKey||Object.hasOwn(variant(),kind);
   const groupColor=name=>(editorOptions.catalog?DATA.categoryColor(DATA.atlasGroups().indexOf(name)):DATA.getCategoryColor(DATA.getCurrentUser(),name))||'#b9aeff';
   function fromExercise(ex){
     const a=ex.atlas||{};const snap=executionForExercise(DATA.getCurrentUser(),ex);
-    const all=DATA.libraryGroups(DATA.getCurrentUser(),editorOptions.catalog);
-    return {id:ex.id,name:ex.name,cat:ex.cat||'',level:LEVEL_LABELS[a.level]||a.level||'',format:ex.type==='run'?'run':'strength',variation:a.variationName||'',family:all.find(g=>g.id===ex.groupId)?.name||'',parameters:clone(snap?.executionParameters||a.executionParameters||[]),variants:ExerciseDescriptions.variants(ex),base:ExerciseDescriptions.base(ex),extra:{equipment:a.equipment||'',media:ex.media||'',reference:a.referenceUrl||'',tip:ex.tip||''},original:clone(ex)};
+
+    return {id:ex.id,name:ex.name,cat:ex.cat||'',level:LEVEL_LABELS[a.level]||a.level||'',format:ex.type==='run'?'run':'strength',parameters:clone(snap?.executionParameters||a.executionParameters||[]),variants:ExerciseDescriptions.variants(ex),base:ExerciseDescriptions.base(ex),extra:{equipment:a.equipment||'',media:ex.media||'',reference:a.referenceUrl||'',tip:ex.tip||''},original:clone(ex)};
   }
-  function newDraft(){return {id:'e_own_'+crypto.randomUUID(),name:'',cat:'',level:'',format:'strength',variation:'',family:'',parameters:[],variants:{},base:{muscles:[],movement:[],technique:'',mistakes:[],features:[],restrictions:''},extra:{equipment:'',media:'',reference:'',tip:''},original:{atlas:{}}};}
+  function newDraft(){return {id:'e_own_'+crypto.randomUUID(),name:'',cat:'',level:'',format:'strength',parameters:[],variants:{},base:{muscles:[],movement:[],technique:'',mistakes:[],features:[],restrictions:''},extra:{equipment:'',media:'',reference:'',tip:''},original:{atlas:{}}};}
   const serialized=value=>{const copy=clone(value);for(const key of Object.keys(copy.variants))if(!Object.keys(copy.variants[key]).length)delete copy.variants[key];return JSON.stringify(copy);};
   function touch(){dirty=serialized(draft)!==baseline;const status=root?.querySelector('.xe-status');if(status){status.textContent='Изменения не сохранены';status.hidden=!dirty;}}
   function grow(element){if(element.classList.contains('xe-name')){element.style.height='auto';element.style.height=element.scrollHeight+'px';}}
   function field(label,id,value,placeholder='',area=false,extra=''){return `<div class="xe-field"><label class="xe-label ${extra==='xe-fix-input'?'xe-fix-label':''}" for="${id}">${label}</label>${area?`<textarea class="xe-input ${extra}" id="${id}" rows="4" placeholder="${E(placeholder)}">${E(value)}</textarea>`:`<input class="xe-input ${extra}" id="${id}" type="text" placeholder="${E(placeholder)}" value="${E(value)}">`}</div>`;}
   function summary(kind,count){return `${icon(kind)}<span class="xe-summary-title">${E(titles[kind])}</span><span class="xe-summary-count" data-count="${kind}">${E(count)}</span>${icon('down')}`;}
-  function count(kind){const value=effective(kind);if(kind==='muscles')return value.length?quantity(value.length,['мышца','мышцы','мышц']):'Не выбраны';if(kind==='movement')return value.length?quantity(value.length,['движение','движения','движений']):'Не выбраны';if(kind==='mistakes')return value.length?quantity(value.length,['ошибка','ошибки','ошибок']):'Не заполнено';if(kind==='features')return value.length?quantity(value.length,['карточка','карточки','карточек']):'Не заполнено';return value.trim()?'Заполнено':'Не заполнено';}
+  function count(kind){const value=effective(kind);if(kind==='groups')return value.join(' · ')||'Не выбраны';if(kind==='muscles')return value.length?quantity(value.length,['мышца','мышцы','мышц']):'Не выбраны';if(kind==='movement')return value.length?quantity(value.length,['движение','движения','движений']):'Не выбраны';if(kind==='mistakes')return value.length?quantity(value.length,['ошибка','ошибки','ошибок']):'Не заполнено';if(kind==='features')return value.length?quantity(value.length,['карточка','карточки','карточек']):'Не заполнено';return value.trim()?'Заполнено':'Не заполнено';}
   function inheritanceLabel(kind){const result=resolveDescription(kind);return own(kind)?'Своё описание для '+context.map(v=>v.value).join(' · '):result.conflict?'У этого сочетания разные описания. Укажите нужное.':result.key?'Как в описании для '+JSON.parse(result.key).map(pair=>pair[1]).join(' · '):'Как в общем описании';}
   function inherited(kind){if(!contextKey)return '';return `<div class="xe-inheritance"><span>${E(inheritanceLabel(kind))}</span><button type="button" data-inherit="${kind}">${own(kind)?'Убрать отличия':'Изменить для '+E(context.map(v=>v.value).join(' · '))}</button></div>`;}
   function section(kind,content,open=false){return `<details class="xe-disclosure" data-kind="${kind}" ${open?'open':''}><summary>${summary(kind,count(kind))}</summary><div class="xe-disclosure-body">${inherited(kind)}<div data-kind-body="${kind}" ${!own(kind)?'inert':''}>${content}</div></div></details>`;}
@@ -45,10 +46,52 @@
       return `<div class="xe-role-field"><div class="xe-role-heading"><label>${label}</label><button type="button" data-pick="muscles" data-role="${role}">${icon('plus')}Выбрать</button></div>${chosen.length?`<div class="xe-role-selected">${chosen.map(m=>{const bundles=(editorOptions.catalog?DATA.atlasMuscles():DATA.refMuscles(DATA.getCurrentUser())).find(item=>item.name===m.muscle)?.bundles||[];const names=m.bundles?.length?m.bundles:Array.isArray(m.bundles)?m.bundles:m.bundle?[m.bundle]:[];return `<div class="xe-role-muscle"><div><span>${E(m.muscle)}</span>${bundles.length?`<button type="button" data-edit-bundles="${m.index}" aria-label="Пучки мышцы ${E(m.muscle)}">${E(names.length?names.join(' · '):'Вся мышца')}${icon('down')}</button>`:names.length?`<small>${E(names.join(' · '))}</small>`:''}</div><button class="xe-muscle-remove" type="button" data-delete-muscle="${m.index}" aria-label="Убрать ${E(m.muscle)}">×</button></div>`;}).join('')}</div>`:'<p class="xe-role-empty">Мышцы не выбраны</p>'}</div>`;
     }).join('');
   }
+  function legacyChoices(){
+    if(!contextKey)return '';
+    const exercises=DATA.libraryExercises(editorUser,editorOptions.catalog),links=ExerciseDescriptions.legacyMap(exercises);
+    const members=exercises.filter(e=>e.id!==draft.id&&!links.has(e.id)&&!Object.values(ExerciseDescriptions.variants(e)).some(rule=>rule.sources?.length));
+    if(links.has(draft.id))return '';
+    const linked=variant().sources||[];
+    const chips=linked.map(id=>'<span class="xe-tag">'+E(exercises.find(e=>e.id===id)?.name||id)+'<button type="button" data-unlink="'+E(id)+'" aria-label="Снять привязку">×</button></span>').join('');
+    const candidates=members.filter(e=>!Object.values(draft.variants).some(rule=>rule.sources?.includes(e.id)));
+    if(!chips&&!candidates.length)return '';
+    return '<details class="xe-disclosure"><summary>Перенос прежней карточки</summary><div class="xe-disclosure-body">'+chips+
+      (candidates.length?'<label class="xe-field">Прежняя карточка<select data-legacy-source><option value="">Выберите упражнение</option>'+
+      candidates.sort((a,b)=>Number(!!seed?.groupId&&b.groupId===seed.groupId)-Number(!!seed?.groupId&&a.groupId===seed.groupId)||a.name.localeCompare(b.name,'ru')).map(e=>'<option value="'+E(e.id)+'">'+E(e.name)+'</option>').join('')+
+      '</select></label><button type="button" class="btn-chip" data-link-source>Привязать к выполнению</button>':'')+
+      '<p class="xe-note">После сохранения выбранная карточка и её подходы будут относиться к этому выполнению.</p></div></details>';
+  }
+  function linkSource(id){
+    const ex=DATA.libraryExercises(editorUser,editorOptions.catalog).find(item=>item.id===id);if(!ex)return;
+    const rule=variant(),old=ExerciseDescriptions.base(ex);
+    for(const kind of Object.keys(titles))if(!Object.hasOwn(rule,kind)&&JSON.stringify(old[kind])!==JSON.stringify(effective(kind)))rule[kind]=clone(old[kind]);
+    const ids=new Map();
+    for(const p of normalizeExecutionParameters(ex.atlas?.executionParameters)){
+      let dest=draft.parameters.find(other=>other.id===p.id||other.name===p.name);
+      if(!dest){dest=clone(p);draft.parameters.push(dest);}
+      else dest.options=[...new Set([...dest.options,...p.options])];
+      ids.set(p.id,dest.id);
+    }
+    for(const [key,oldRule] of Object.entries(ExerciseDescriptions.variants(ex))){
+      const values=new Map(context.map(v=>[v.id,v.value]));
+      for(const [id,value] of JSON.parse(key))values.set(ids.get(id)||id,value);
+      const target=keyFor([...values].map(([id,value])=>({id,value})));
+      draft.variants[target]={...clone(oldRule),...draft.variants[target]};
+    }
+    rule.sources=[...new Set([...(rule.sources||[]),id])];
+    render(root.querySelector('.xe-body').scrollTop);touch();
+  }
+  function groupsHtml(){
+    const list=editorOptions.catalog?DATA.atlasGroups():DATA.getAllCategories(editorUser);
+    const selected=effective('groups');
+    const defaults=[draft.cat,...Object.entries(draft.variants).filter(([k])=>k!==contextKey).flatMap(([,r])=>r.groups||[])];
+    return [...new Set([...list,...selected])].map(g=>'<button type="button" class="btn-chip" data-execution-group="'+E(g)+'" aria-pressed="'+selected.includes(g)+'">'+E(g)+'</button>').join(' ')+
+      selected.filter(g=>defaults.includes(g)).map(g=>'<label class="xe-field"><span><input type="checkbox" data-prefer-group="'+E(g)+'" '+(variant()?.preferredGroups?.includes(g)?'checked':'')+'> Показывать первым в группе «'+E(g)+'»</span></label>').join('');
+  }
   function movesHtml(){return `<div class="xe-tags">${effective('movement').map((name,n)=>`<span class="xe-tag">${E(name)}<button type="button" data-delete-move="${n}" aria-label="Убрать ${E(name)}">×</button></span>`).join('')}</div><button type="button" class="xe-soft-button" data-pick="movement">${icon('plus')}Выбрать движения</button>`;}
-  function paramsHtml(){return draft.parameters.map((p,n)=>`<div class="xe-param-row" data-param-row><div class="xe-param-title"><input class="xe-input" data-param-name aria-label="Название параметра ${n+1}" placeholder="Название параметра" maxlength="80" value="${E(p.name)}"><div class="xe-row-actions"><button type="button" data-delete-param="${n}" aria-label="Удалить параметр ${n+1}">×</button></div></div><p class="xe-label xe-values-label">Значения</p><div class="xe-param-values">${(p.options.length?p.options:['']).map((value,j)=>`<div class="xe-param-value"><input class="xe-input" data-param-value aria-label="Значение ${j+1} параметра ${n+1}" placeholder="Например, 30°" maxlength="80" value="${E(value)}"><button type="button" data-param="${n}" data-delete-param-value="${j}" aria-label="Удалить значение ${j+1}">×</button></div>`).join('')}</div><button class="xe-add-value" type="button" data-add-param-value="${n}">${icon('plus')}Добавить значение</button></div>`).join('');}
+  function paramsHtml(){return draft.parameters.map((p,n)=>`<div class="xe-param-row" data-param-row><div class="xe-param-title"><input class="xe-input" data-param-name aria-label="Название параметра ${n+1}" placeholder="Название параметра" maxlength="80" value="${E(p.name)}"><div class="xe-row-actions"><button type="button" data-delete-param="${n}" aria-label="Удалить параметр ${n+1}">×</button></div></div><p class="xe-label xe-values-label">Значения</p><div class="xe-param-values">${(p.options.length?p.options:['']).map((value,j)=>`<div class="xe-param-value"><input class="xe-input" data-param-value aria-label="Значение ${j+1} параметра ${n+1}" placeholder="Например, 30°" maxlength="80" value="${E(value)}"><button type="button" data-param="${n}" data-default-value="${j}" aria-label="Базовое значение: ${E(value)}" aria-pressed="${!!value&&p.defaultValue===value}">База</button><button type="button" data-param="${n}" data-delete-param-value="${j}" aria-label="Удалить значение ${j+1}">×</button></div>`).join('')}</div><button class="xe-add-value" type="button" data-add-param-value="${n}">${icon('plus')}Добавить значение</button></div>`).join('');}
   function renameCondition(id,oldValue,newValue){for(const key of Object.keys(draft.variants)){const pairs=JSON.parse(key);if(!pairs.some(pair=>pair[0]===id&&pair[1]===oldValue))continue;const contents=draft.variants[key];delete draft.variants[key];const updated=pairs.map(([pid,value])=>({id:pid,value:pid===id&&value===oldValue?newValue:value}));draft.variants[keyFor(updated)]={...(draft.variants[keyFor(updated)]||{}),...contents};}context.forEach(value=>{if(value.id===id&&value.value===oldValue)value.value=newValue;});contextKey=context.length?keyFor(context):'';}
-  function deleteOption(n,j){const p=draft.parameters[n],value=p.options[j];const keys=Object.keys(draft.variants).filter(key=>JSON.parse(key).some(pair=>pair[0]===p.id&&pair[1]===value));const remove=()=>{p.options.splice(j,1);keys.forEach(key=>delete draft.variants[key]);if(context.some(v=>v.id===p.id&&v.value===value)){context=[];contextKey='';render(root.querySelector('.xe-body').scrollTop);}else refreshParameters();touch();};if(keys.some(key=>Object.keys(draft.variants[key]).length))confirm('Удалить значение?','Отдельное описание для этого значения будет удалено из описания.',remove);else remove();}
+  function deleteOption(n,j){const p=draft.parameters[n],value=p.options[j];const keys=Object.keys(draft.variants).filter(key=>JSON.parse(key).some(pair=>pair[0]===p.id&&pair[1]===value));const remove=()=>{p.options.splice(j,1);if(p.defaultValue===value)delete p.defaultValue;keys.forEach(key=>delete draft.variants[key]);if(context.some(v=>v.id===p.id&&v.value===value)){context=[];contextKey='';render(root.querySelector('.xe-body').scrollTop);}else refreshParameters();touch();};if(keys.some(key=>Object.keys(draft.variants[key]).length))confirm('Удалить значение?','Отдельное описание для этого значения будет удалено из описания.',remove);else remove();}
   function levelDialog(){const d=dialog('Тип упражнения',`<div class="xe-level-options">${['Глобальное','Региональное','Локальное'].map(value=>`<button type="button" data-level-value="${value}" aria-pressed="${draft.level===value}"><span>${value}</span>${draft.level===value?icon('check'):''}</button>`).join('')}</div>`);d.querySelectorAll('[data-level-value]').forEach(button=>button.onclick=()=>{draft.level=button.dataset.levelValue;root.querySelector('#xe-level').value=draft.level;root.querySelector('[data-level] span').textContent=draft.level;root.querySelector('[data-level-error]').hidden=true;touch();d.close();});}
   function bundleDialog(index){const m=effective('muscles')[index],options=(editorOptions.catalog?DATA.atlasMuscles():DATA.refMuscles(DATA.getCurrentUser())).find(item=>item.name===m.muscle)?.bundles||[];let selected=new Set(m.bundles?.length?m.bundles:Array.isArray(m.bundles)?m.bundles:m.bundle?[m.bundle]:[]);const d=dialog(m.muscle,'<p class="xe-note">Выберите всю мышцу или один/несколько пучков.</p><div class="xe-bundle-options"></div><div class="xe-dialog-footer"><button type="button" data-done>Готово</button></div>');const draw=()=>d.querySelector('.xe-bundle-options').innerHTML=['',...new Set([...options,...selected])].map(value=>`<button type="button" class="xe-bundle-option" data-bundle="${E(value)}" aria-pressed="${value?selected.has(value):!selected.size}"><span>${E(value||'Вся мышца')}</span><b>${(value?selected.has(value):!selected.size)?'✓':''}</b></button>`).join('');d.querySelector('.xe-bundle-options').onclick=event=>{const button=event.target.closest('[data-bundle]');if(!button)return;const value=button.dataset.bundle;if(!value)selected.clear();else selected.has(value)?selected.delete(value):selected.add(value);draw();};d.querySelector('[data-done]').onclick=()=>{m.bundles=[...selected];m.bundle=m.bundles.join(' · ');refreshKind('muscles');touch();d.close();};draw();}
 
@@ -56,27 +99,43 @@
     root?.remove();root=document.createElement('div');root.className='xe'+(editorOptions.catalog?' from-catalog':'');root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-label',pendingNew?'Добавление упражнения':'Редактирование упражнения');root.innerHTML=`
     <header class="xe-header"><div class="xe-toolbar"><button type="button" class="xe-icon-button" data-close aria-label="Выйти из редактора">${icon('back')}</button><h1>${pendingNew?'Добавление упражнения':'Редактирование'}</h1></div><div class="xe-editor-hero"><label class="xe-sr-only" for="xe-name">Название упражнения</label><textarea id="xe-name" form="xe-form" class="xe-name" rows="1" placeholder="Название упражнения" maxlength="180">${E(draft.name)}</textarea><p class="xe-error" data-name-error hidden>Введите название упражнения.</p><div class="xe-hero-meta"><button class="xe-select xe-group-button" style="--group-color:${groupColor(draft.cat)}" type="button" data-pick="cat" aria-label="Выбрать группу">${icon('groups')}<span>${E(draft.cat||'Группа')}</span>${icon('down')}</button><input type="hidden" id="xe-level" value="${E(draft.level)}"><button class="xe-type-button" type="button" data-level aria-label="Тип упражнения"><span>${E(draft.level||'Тип упражнения')}</span>${icon('down')}</button></div><p class="xe-error" data-cat-error hidden>Выберите группу.</p><p class="xe-error" data-level-error hidden>Выберите тип упражнения.</p></div></header>
     <main class="xe-body"><form class="xe-form" id="xe-form" novalidate>
-      <section class="xe-section">${field("Группа вариаций","xe-family",draft.family,"Например, жим лёжа")}<p class="xe-note">Одинаковое название объединяет упражнения в одну группу вариаций.</p></section>
       <section class="xe-section" id="xe-parameters"><details class="xe-disclosure" data-parameters><summary>${icon('parameters')}<span class="xe-summary-title">Параметры выполнения</span><span class="xe-summary-count" data-param-count>${draft.parameters.length?quantity(draft.parameters.length,['параметр','параметра','параметров']):'Не заданы'}</span>${icon('down')}</summary><div class="xe-disclosure-body"><p class="xe-note">Задайте то, что можно менять при выполнении: угол, хват, рукоятку.</p><div data-parameter-rows>${paramsHtml()}</div><div class="xe-presets"><button type="button" data-preset="angle">+ Угол скамьи</button><button type="button" data-preset="grip">+ Ширина хвата</button><button type="button" data-preset="custom">+ Свой параметр</button></div><p class="xe-error" data-param-error hidden></p></div></details></section>
-      <section class="xe-section" id="xe-links"><div class="xe-context">${icon('parameters')}<div><b>${contextKey?E(context.map(v=>v.value).join(' · ')):'Общее описание'}</b><p>${contextKey?'Меняйте только отличающиеся разделы. Остальные остаются общими.':'Содержимое для всех значений параметров, если не заданы отдельные отличия.'}</p></div><button type="button" data-context>${contextKey?'Сменить':'Добавить отличия'}</button></div>${section('movement',movesHtml())}${section('muscles',musclesHtml())}</section>
+      <section class="xe-section" id="xe-links"><div class="xe-context">${icon('parameters')}<div><b>${contextKey?E(context.map(v=>v.value).join(' · ')):'Общее описание'}</b><p>${contextKey?'Меняйте только отличающиеся разделы. Остальные остаются общими.':'Содержимое для всех значений параметров, если не заданы отдельные отличия.'}</p></div><button type="button" data-context>${contextKey?'Сменить':'Добавить отличия'}</button></div>${legacyChoices()}${contextKey?section('groups',groupsHtml()):''}${section('movement',movesHtml())}${section('muscles',musclesHtml())}</section>
       <section class="xe-section" id="xe-description"><h2 class="xe-heading">Описание упражнения<small>${contextKey?E(context.map(v=>v.value).join(' · ')):'Общее'}</small></h2>${section('technique',`<p class="xe-note">Каждый пункт — с новой строки. На странице появится нумерация.</p>${field('Текст техники','xe-technique',effective('technique'),'Опишите выполнение упражнения',true)}`)}${section('mistakes',errorsHtml())}${section('features',featuresHtml())}${section('restrictions',field('Полный текст ограничений','xe-restrictions',effective('restrictions'),'Укажите ограничения, если они есть',true))}</section>
       <section class="xe-section" id="xe-extra"><details class="xe-disclosure" data-extra><summary>${icon('link')}<span class="xe-summary-title">Дополнительно</span><span class="xe-summary-count">Необязательно</span>${icon('down')}</summary><div class="xe-disclosure-body">${field('Материалы · ссылка','xe-media',draft.extra.media,'Фото, видео, документ или другая ссылка')}${field('Дополнительно','xe-tip',draft.extra.tip,'Любая дополнительная информация',true)}</div></details></section>
     </form></main><footer class="xe-footer"><div class="xe-footer-inner"><span class="xe-status"></span><div class="xe-footer-actions"><button class="xe-preview-button" type="button" data-preview aria-label="Предпросмотр упражнения">${icon('eye')}<span>Предпросмотр</span></button><button class="xe-save" type="button" data-save>${icon('check')}<span>${pendingNew?'Добавить':'Сохранить'}</span></button></div></div><p class="xe-error" data-general-error hidden></p></footer>`;
     document.body.append(root);
-    if(editorOptions.variationOf){
-      root.querySelector('h1').textContent='Новая вариация';
-      root.querySelector('#xe-family').readOnly=true;
-      root.querySelector('[data-pick="cat"]').disabled=true;
+    if(contextKey){
+      const group=root.querySelector('[data-pick="cat"]');group.disabled=true;group.title='Группа базового выполнения';
+      group.querySelector('span').textContent='База · '+draft.cat;
     }
     if(!pendingNew){const editor=root;ExerciseDetailPage.mountRemoval(seed,editorReturn.screen==='exerciseDetail'?editorReturn.returnScreen:editorReturn.screen,{container:editor,catalog:!!editorOptions.catalog,isCurrent:()=>root===editor&&editor.isConnected&&validContext(),onRemoved:()=>{dirty=false;dispose();}});}
     form=root.querySelector('form');root.querySelector('.xe-body').scrollTop=scroll;grow(root.querySelector('#xe-name'));touch();
     const changed=()=>{if(!validContext()){dispose();return;}collect();touch();for(const [id,key] of [['xe-name','name'],['xe-level','level']])if(draft[key].trim()){root.querySelector(`[data-${key}-error]`).hidden=true;root.querySelector('#'+id).classList.remove('xe-invalid');}};
+    root.addEventListener('change',event=>{
+      const box=event.target.closest('[data-prefer-group]');if(!box||!contextKey)return;
+      for(const rule of Object.values(draft.variants))if(rule.preferredGroups)rule.preferredGroups=rule.preferredGroups.filter(g=>g!==box.dataset.preferGroup);
+      if(box.checked)(variant().preferredGroups||=[]).push(box.dataset.preferGroup);refreshKind('groups');touch();
+    });
     root.addEventListener('input',changed);root.addEventListener('change',changed);
     
     const body=root.querySelector('.xe-body');
     root.onclick=event=>{if(!validContext()){dispose();return;}const button=event.target.closest('button');if(!button)return;
       if(button.hasAttribute('data-pick')){collect();pick(button.dataset.pick,button.dataset.role);}
-      if(button.hasAttribute('data-inherit')){collect();const kind=button.dataset.inherit;if(own(kind))delete variant()[kind];else variant()[kind]=clone(effective(kind));touch();refreshKind(kind);}
+      if(button.hasAttribute('data-inherit')){collect();const kind=button.dataset.inherit;if(own(kind)){delete variant()[kind];if(kind==='groups')delete variant().preferredGroups;}else variant()[kind]=clone(effective(kind));touch();refreshKind(kind);}
+      if(button.hasAttribute('data-link-source')){collect();linkSource(root.querySelector('[data-legacy-source]').value);return;}
+      if(button.hasAttribute('data-unlink')){collect();variant().sources=variant().sources.filter(id=>id!==button.dataset.unlink);render(body.scrollTop);touch();return;}
+      if(button.hasAttribute('data-execution-group')){
+        const g=button.dataset.executionGroup,chosen=effective('groups');
+        variant().groups=chosen.includes(g)?chosen.filter(name=>name!==g):[...chosen,g];
+        if(variant().preferredGroups)variant().preferredGroups=variant().preferredGroups.filter(g=>variant().groups.includes(g));
+        touch();refreshKind('groups');
+      }
+      if(button.hasAttribute('data-default-value')){
+        collect();const p=draft.parameters[Number(button.dataset.param)],v=p.options[Number(button.dataset.defaultValue)];
+        if(v&&p.defaultValue!==v)p.defaultValue=v;else delete p.defaultValue;
+        refreshParameters();touch();
+      }
       if(button.hasAttribute('data-context')){collect();contextDialog();}
       if(button.hasAttribute('data-level'))levelDialog();if(button.hasAttribute('data-edit-bundles')){collect();bundleDialog(Number(button.dataset.editBundles));}if(button.hasAttribute('data-add-param-value')){collect();draft.parameters[Number(button.dataset.addParamValue)].options.push('');refreshParameters();touch();}if(button.hasAttribute('data-delete-param-value')){collect();deleteOption(Number(button.dataset.param),Number(button.dataset.deleteParamValue));}
       if(button.hasAttribute('data-close'))closeEditor();
@@ -91,9 +150,9 @@
     form.onsubmit=event=>{event.preventDefault();save();};root.onkeydown=event=>{if(event.key==='Tab'){const targets=[...root.querySelectorAll('button,input,textarea,select,summary')].filter(el=>!el.disabled&&el.type!=='hidden'&&el.getClientRects().length&&!el.closest('[inert]'));const first=targets[0],last=targets.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}if(event.key==='Escape'&&!document.querySelector('dialog[open]')){event.preventDefault();closeEditor();}};
   }
   function collect(){
-    if(!form)return;const value=id=>root.querySelector('#'+id)?.value||'';draft.name=value('xe-name');draft.family=value('xe-family');draft.level=value('xe-level');if(pendingNew&&!editorOptions.variationOf)draft.format='strength';for(const [key,id] of [['media','xe-media'],['tip','xe-tip']])draft.extra[key]=value(id);
-    form.querySelectorAll('[data-param-row]').forEach((row,n)=>{draft.parameters[n].name=row.querySelector('[data-param-name]').value;const next=[...row.querySelectorAll('[data-param-value]')].map(input=>input.value);next.forEach((value,j)=>{const old=draft.parameters[n].options[j];if(old&&old!==value)renameCondition(draft.parameters[n].id,old,value);});draft.parameters[n].options=next;});
-    for(const kind of Object.keys(titles)){if(!own(kind))continue;const dest=contextKey?variant():draft.base;
+    if(!form)return;const value=id=>root.querySelector('#'+id)?.value||'';draft.name=value('xe-name');draft.level=value('xe-level');if(pendingNew)draft.format='strength';for(const [key,id] of [['media','xe-media'],['tip','xe-tip']])draft.extra[key]=value(id);
+    form.querySelectorAll('[data-param-row]').forEach((row,n)=>{draft.parameters[n].name=row.querySelector('[data-param-name]').value;const next=[...row.querySelectorAll('[data-param-value]')].map(input=>input.value);next.forEach((value,j)=>{const old=draft.parameters[n].options[j];if(old&&old!==value){renameCondition(draft.parameters[n].id,old,value);if(draft.parameters[n].defaultValue===old)draft.parameters[n].defaultValue=value;}});draft.parameters[n].options=next;});
+    for(const kind of Object.keys(titles)){if(!own(kind)||kind==='groups')continue;const dest=contextKey?variant():draft.base;
       if(kind==='technique')dest[kind]=value('xe-technique');if(kind==='restrictions')dest[kind]=value('xe-restrictions');
       if(kind==='mistakes')dest[kind]=[...form.querySelectorAll('[data-entry="mistakes"]')].map((row,n)=>({problem:value('xe-error-'+n),correction:value('xe-fix-'+n)}));
       if(kind==='features')dest[kind]=[...form.querySelectorAll('[data-entry="features"]')].map((row,n)=>value('xe-feature-'+n));
@@ -106,7 +165,7 @@
     if(contextKey)root.querySelectorAll('[data-kind]').forEach(section=>{const span=section.querySelector('.xe-inheritance span'),button=section.querySelector('[data-inherit]');if(span)span.textContent=inheritanceLabel(section.dataset.kind);if(button)button.textContent=own(section.dataset.kind)?'Убрать отличия':'Изменить для '+context.map(v=>v.value).join(' · ');});
   }
   function refreshParameters(){root.querySelector('[data-parameter-rows]').innerHTML=paramsHtml();root.querySelector('[data-param-count]').textContent=draft.parameters.length?quantity(draft.parameters.length,['параметр','параметра','параметров']):'Не заданы';root.querySelector('[data-param-error]').hidden=true;}
-  function refreshKind(kind){const element=root.querySelector(`[data-kind="${kind}"]`),wasOpen=element.open;const contents={movement:movesHtml,muscles:musclesHtml,mistakes:errorsHtml,features:featuresHtml,technique:()=>`<p class="xe-note">Каждый пункт — с новой строки. На странице появится нумерация.</p>${field('Текст техники','xe-technique',effective(kind),'Опишите выполнение упражнения',true)}`,restrictions:()=>field('Полный текст ограничений','xe-restrictions',effective(kind),'Укажите ограничения, если они есть',true)};element.outerHTML=section(kind,contents[kind](),wasOpen);}
+  function refreshKind(kind){const element=root.querySelector(`[data-kind="${kind}"]`),wasOpen=element.open;const contents={groups:groupsHtml,movement:movesHtml,muscles:musclesHtml,mistakes:errorsHtml,features:featuresHtml,technique:()=>`<p class="xe-note">Каждый пункт — с новой строки. На странице появится нумерация.</p>${field('Текст техники','xe-technique',effective(kind),'Опишите выполнение упражнения',true)}`,restrictions:()=>field('Полный текст ограничений','xe-restrictions',effective(kind),'Укажите ограничения, если они есть',true)};element.outerHTML=section(kind,contents[kind](),wasOpen);}
   function mutate(kind,fn){collect();fn(contextKey?variant()[kind]:draft.base[kind]);refreshKind(kind);touch();}
   function dialog(title,html){const element=document.createElement('dialog');element.className='xe-dialog';element.classList.toggle('from-catalog',!!editorOptions.catalog);element.innerHTML=`<div class="xe-dialog-header"><h2>${E(title)}</h2><button type="button" aria-label="Закрыть">×</button></div>${html}`;document.body.append(element);element.querySelector('.xe-dialog-header button').onclick=()=>element.close();element.addEventListener('close',()=>element.remove());element.showModal();return element;}
   function confirm(title,text,callback){const d=dialog(title,`<p class="xe-note">${E(text)}</p><div class="xe-dialog-footer"><button type="button" data-no>Остаться</button><button type="button" data-yes>Продолжить</button></div>`);d.querySelector('[data-no]').onclick=()=>d.close();d.querySelector('[data-yes]').onclick=()=>{d.close();callback();};}
@@ -124,22 +183,33 @@
   function contextDialog(){
     const error=validateParameters();if(error){root.querySelector('[data-parameters]').open=true;const message=root.querySelector('[data-param-error]');message.hidden=false;message.textContent=error;root.querySelector('#xe-parameters').scrollIntoView({block:'start'});return;}
     if(!draft.parameters.length){root.querySelector('[data-parameters]').open=true;root.querySelector('#xe-parameters').scrollIntoView({block:'start'});root.querySelector('[data-preset="custom"]').focus();return;}
-    const d=dialog('Отличия для параметров',`<p class="xe-note">Выберите значение одного или нескольких параметров. Остальные разделы сохранят общее содержимое.</p>${draft.parameters.map((p,n)=>`<div class="xe-field"><label class="xe-label" for="xe-context-${n}">${E(p.name)}</label><select id="xe-context-${n}" data-context-id="${E(p.id)}"><option value="">Любое значение</option>${p.options.map(value=>`<option ${context.some(v=>v.id===p.id&&v.value===value)?'selected':''}>${E(value)}</option>`).join('')}</select></div>`).join('')}<p class="xe-error" data-error hidden></p><div class="xe-dialog-footer"><button type="button" data-base>Общее описание</button><button type="button" data-apply>Открыть описание</button></div>`);
+    const saved=Object.keys(draft.variants).filter(k=>Object.keys(draft.variants[k]).length);
+    const shortcuts=saved.map((key,i)=>'<button type="button" class="btn-chip" data-saved-rule="'+i+'">'+E(JSON.parse(key).map(pair=>pair[1]).join(' · '))+'</button>').join(' ');
+    const d=dialog('Отличия для параметров',`${shortcuts}<p class="xe-note">Выберите значение одного или нескольких параметров. Остальные разделы сохранят общее содержимое.</p>${draft.parameters.map((p,n)=>`<div class="xe-field"><label class="xe-label" for="xe-context-${n}">${E(p.name)}</label><select id="xe-context-${n}" data-context-id="${E(p.id)}"><option value="">Любое значение</option>${p.options.map(value=>`<option ${context.some(v=>v.id===p.id&&v.value===value)?'selected':''}>${E(value)}</option>`).join('')}</select></div>`).join('')}<p class="xe-error" data-error hidden></p><div class="xe-dialog-footer"><button type="button" data-base>Общее описание</button><button type="button" data-apply>Открыть описание</button></div>`);
     const apply=values=>{const scroll=root.querySelector('.xe-body').scrollTop;context=values;contextKey=values.length?keyFor(values):'';if(contextKey&&!draft.variants[contextKey])draft.variants[contextKey]={};d.close();render(scroll);};
+    d.querySelectorAll('[data-saved-rule]').forEach(button=>button.onclick=()=>apply(executionSnapshot(draft.parameters,JSON.parse(saved[Number(button.dataset.savedRule)]).map(([id,value])=>({id,value}))).executionValues));
     d.querySelector('[data-base]').onclick=()=>apply([]);d.querySelector('[data-apply]').onclick=()=>{const values=[...d.querySelectorAll('select')].filter(s=>s.value).map(s=>({id:s.dataset.contextId,name:draft.parameters.find(p=>p.id===s.dataset.contextId).name,value:s.value}));if(!values.length){d.querySelector('[data-error]').hidden=false;d.querySelector('[data-error]').textContent='Выберите значение или вернитесь к общему описанию.';return;}apply(values);};
   }
   function validate(){collect();let first=null;for(const [id,key,message] of [['xe-name','name','Введите название упражнения.'],['xe-level','level','Выберите тип.']]){const invalid=!draft[key].trim();root.querySelector('#'+id).classList.toggle('xe-invalid',invalid);root.querySelector(`[data-${key}-error]`).hidden=!invalid;if(invalid&&!first)first=key==='level'?root.querySelector('[data-level]'):root.querySelector('#'+id);}
     const catInvalid=!draft.cat;root.querySelector('[data-cat-error]').hidden=!catInvalid;root.querySelector('[data-pick="cat"]').classList.toggle('xe-invalid',catInvalid);if(catInvalid&&!first)first=root.querySelector('[data-pick="cat"]');if(first){first.focus();first.scrollIntoView({block:'center'});return false;}
     const parameterError=validateParameters();if(parameterError){const block=root.querySelector('[data-parameters]');block.open=true;const error=root.querySelector('[data-param-error]');error.hidden=false;error.textContent=parameterError;block.scrollIntoView({block:'center'});return false;}
     const general=root.querySelector('[data-general-error]');general.hidden=true;
-    const conflict=contextKey&&Object.keys(titles).find(kind=>resolveDescription(kind).conflict);if(conflict){general.textContent='Для выбранного сочетания нужно уточнить раздел «'+titles[conflict]+'».';general.hidden=false;root.querySelector(`[data-kind="${conflict}"]`).open=true;return false;}
+    if(Object.values(draft.variants).some(rule=>Array.isArray(rule.groups)&&!rule.groups.length)){general.textContent='Выберите группу выполнения или уберите отличие от базовой группы.';general.hidden=false;return false;}
+    const conflict=ExerciseDescriptions.conflictingCombination(draft.variants,draft.parameters);
+    if(conflict){
+      context=conflict.values;contextKey=keyFor(context);
+      render(root.querySelector('.xe-body').scrollTop);
+      const error=root.querySelector('[data-general-error]'),section=root.querySelector('[data-kind="'+conflict.kind+'"]');
+      error.textContent='Уточните раздел «'+titles[conflict.kind]+'» для сочетания '+context.map(v=>v.value).join(' · ')+'.';
+      error.hidden=false;section.open=true;section.scrollIntoView({block:'center'});return false;
+    }
     // Complete pairs only: blank placeholder cards do not leak into the detail page.
     for(const description of [draft.base,...Object.values(draft.variants)])if(description.mistakes?.some(m=>!m.problem.trim()&&m.correction.trim())){general.textContent='Заполните текст ошибки, к которой добавлено исправление.';general.hidden=false;root.querySelector('[data-kind="mistakes"]').open=true;return false;}
     return true;
   }
   function toExercise(){
     const ex=clone(draft.original),a=ex.atlas||={};ex.id=draft.id;ex.name=draft.name.trim();ex.cat=draft.cat;ex.type=draft.format;ex.media=draft.extra.media.trim();ex.tip=draft.extra.tip;
-    a.level=({'Глобальное':'global','Региональное':'regional','Локальное':'local'})[draft.level]||draft.level;a.executionParameters=normalizeExecutionParameters(draft.parameters);a.executionDescriptions={version:1,variants:JSON.parse(serialized(draft)).variants};
+    a.level=({'Глобальное':'global','Региональное':'regional','Локальное':'local'})[draft.level]||draft.level;a.executionParameters=normalizeExecutionParameters(draft.parameters);a.executionDescriptions={...a.executionDescriptions,version:1,variants:JSON.parse(serialized(draft)).variants};
     a.categories=clone(draft.base.movement);for(const [role] of roles)a[role]=draft.base.muscles.filter(m=>m.role===role).map(({role,...m})=>({...clone(m),bundles:clone(m.bundles||[]),bundle:m.bundles?.length?m.bundles.join(' · '):m.bundle||''}));
     a.technique=draft.base.technique.trim();ex.steps=a.technique.split('\n').map(s=>s.trim()).filter(Boolean);a.mistakeDetails=draft.base.mistakes.filter(m=>m.problem.trim()).map(m=>({problem:m.problem.trim(),correction:m.correction.trim()}));a.mistakes=a.mistakeDetails.map(m=>m.problem+(m.correction?' Исправление: '+m.correction:''));
     a.features=draft.base.features.map(t=>t.trim()).filter(Boolean);a.differences=a.features[0]||'';a.extra=a.features.slice(1).join('\n\n');a.contraindications=draft.base.restrictions;a.equipment=draft.extra.equipment;a.referenceUrl=draft.extra.reference;return ex;
@@ -165,14 +235,11 @@
     const payload={name:ex.name,type:ex.type,cat:ex.cat,media:ex.media,tip:ex.tip,atlas:ex.atlas};
     try{
       let id=draft.id;
-      if(editorOptions.variationOf){
-        id=await saveExerciseVariation(editorUser,!!editorOptions.catalog,editorOptions.variationOf,payload);
-      }else if(editorOptions.catalog){
+      if(editorOptions.catalog){
         if(pendingNew)id='ae_'+crypto.randomUUID();
-        await saveSharedExercises([{id,patch:payload,create:pendingNew,groupName:draft.family}]);
-      }
-      else if(pendingNew){id=DATA.addExercise(editorUser,payload).id;if(draft.family.trim())DATA.setExerciseGroupByName(editorUser,id,draft.family);SyncQueue.push('exercise:create',{id,name:ex.name});}
-      else{const updated=DATA.updateOwnExercise(editorUser,id,payload);if(!updated)throw Error('Упражнение больше недоступно');if(draft.family!==fromExercise(seed).family)DATA.setExerciseGroupByName(editorUser,id,draft.family);SyncQueue.push('exercise:update',{id});}
+        await saveSharedExercises([{id,patch:payload,create:pendingNew}]);
+      }else if(pendingNew){id=DATA.addExercise(editorUser,payload).id;SyncQueue.push('exercise:create',{id,name:ex.name});}
+      else{if(!DATA.updateOwnExercise(editorUser,id,payload))throw Error('Упражнение больше недоступно');SyncQueue.push('exercise:update',{id});}
       if(!validContext()){dispose();return;}
       _executionDrafts.set(executionDraftKey(editorUser,id),executionSnapshot(ex.atlas.executionParameters,context));
       const wasNew=pendingNew,onCreated=editorOptions.onCreated;dirty=false;dispose();showToast(wasNew?'Упражнение добавлено':'Упражнение обновлено');
@@ -190,14 +257,6 @@
     const active=Object.entries(SCREENS).find(([,element])=>element.classList.contains('active'))?.[0]||'exercises';
     editorReturn={screen:active,exerciseId:_detailExerciseId,returnScreen:_exdReturnScreen,scope:_exdCatalog?'catalog':'mine'};
     seed=ex;pendingNew=!ex;context=[];contextKey='';draft=ex?fromExercise(ex):newDraft();if(!ex)draft.cat=options.cat||'';
-    if(options.variationOf){
-      const parent=source.find(item=>item.id===options.variationOf);
-      if(!parent)return;
-      const id=draft.id;
-      draft=fromExercise(parent);
-      draft.id=id; draft.name=''; draft.family ||= DATA.newVariationGroupName(user,!!options.catalog,parent.name);
-      draft.original.atlas.variationName='';
-    }
     baseline=serialized(draft);dirty=false;render();
     if(options.focus==='parameters')root.querySelector('[data-parameters]').open=true;
   }

@@ -74,3 +74,32 @@
 #rpe-backdrop .bottom-sheet{padding:10px 18px calc(16px + var(--safe-bottom));border-radius:20px 20px 0 0}#rpe-backdrop .bottom-sheet-handle{margin-bottom:12px;touch-action:none}#rpe-backdrop .bottom-sheet-title{font-size:16px;font-weight:500;margin-bottom:12px;touch-action:none}#rpe-backdrop .rpe-grid{grid-template-columns:repeat(5,minmax(0,1fr));width:100%;gap:0;border:1px solid var(--border-strong);border-radius:12px;overflow:hidden}#rpe-backdrop .rpe-option{width:100%;min-width:0;height:48px;aspect-ratio:auto;margin:0;font-size:16px;font-weight:500;border:0;border-right:1px solid var(--border-strong);border-radius:0}#rpe-backdrop .rpe-option:nth-child(5n){border-right:0}#rpe-backdrop .rpe-option:nth-child(n+6){border-top:1px solid var(--border-strong)}#rpe-backdrop .rpe-option.selected{background:var(--accent-soft);color:var(--accent-bright)}#rpe-backdrop .rpe-hint{min-height:16px;margin-top:10px;font-size:11px}
 @media(max-width:350px){#screen-workout .workout-header{padding-left:14px;padding-right:14px}#screen-workout .workout-name-input{font-size:18px}#screen-workout .workout-scroll{padding-left:10px;padding-right:10px}#screen-workout .sets-header,#screen-workout .set-row{grid-template-columns:20px minmax(0,1.1fr) minmax(0,.9fr) 38px 38px;gap:4px}#screen-workout .rpe-btn,#screen-workout .set-done-btn,#screen-workout .aw-cell-tool{width:38px}#screen-workout .execution-option{padding:5px 4px;font-size:11px}.aw-coverage-pin{left:10px;right:10px}}
 @media(prefers-reduced-motion:reduce){#screen-workout .rest-pill,#screen-workout .rest-orb,#screen-workout .rest-skip,.aw-coverage-pin{transition:none}}
+
+#screen-workout .aw-param-toggle{min-height:40px;width:42px;justify-content:center;border-radius:9px;background:color-mix(in srgb,var(--aw-link) 5%,var(--aw-panel));border:1px solid var(--aw-line);color:var(--aw-link)}
+#screen-workout .aw-param-toggle svg{width:16px;height:16px}
+#screen-workout .aw-param-toggle[aria-expanded=true]{background:var(--aw-soft);border-color:var(--aw-link)}
+.aw-params{--cell-gap:4px;position:relative;margin:0 12px 12px;border:1px solid var(--aw-line);border-radius:12px;background:color-mix(in srgb,var(--aw-link) 4%,var(--aw-panel))}
+.aw-params[data-open=false]:has(.aw-param-summary:empty){border:0;background:transparent}
+.aw-params h4{font-size:13px;font-weight:500;text-align:center;margin:0;padding:7px 4px;color:var(--aw-muted)}
+.aw-param-summary,.aw-params .execution-options{display:flex;flex-wrap:wrap;gap:var(--cell-gap)}
+.aw-param-summary:not(:empty){margin:0 8px 8px}
+.execution-badge{display:inline-block;max-width:100%;overflow-wrap:anywhere;background:#8271db22;color:inherit;padding:2px 7px;border-radius:6px;font-size:12px}
+.aw-param-summary .execution-badge{text-align:center;padding-block:5px}
+.aw-param-drawer{display:grid;grid-template-rows:0fr;visibility:hidden;transition:grid-template-rows .23s ease,visibility 0s .23s}
+.aw-params[data-open=true] .aw-param-drawer{grid-template-rows:1fr;visibility:visible;transition-delay:0s}
+.aw-param-drawer>div{overflow:hidden;min-height:0}
+#screen-workout .aw-params .execution-controls{padding:0 8px 12.5px;gap:0}
+#screen-workout .aw-params .execution-parameter{display:block;border-top:1px solid var(--aw-line);padding:6.5px 0}
+#screen-workout .aw-params .execution-parameter:last-child{padding-bottom:0}
+#screen-workout .aw-params .execution-label{display:block;max-width:none;margin:0 4px 4px}
+#screen-workout .aw-params .execution-options{background:transparent;padding:0;gap:var(--cell-gap)}
+#screen-workout .aw-params .execution-option{min-height:40px;background:var(--aw-raised);color:var(--text-primary);font-size:13px;padding:6px 9px;max-width:100%}
+#screen-workout .aw-params .execution-option[aria-pressed=true]{background:var(--aw-soft);box-shadow:inset 0 0 0 1px var(--aw-link)}
+#screen-workout .aw-chevron{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:color-mix(in srgb,var(--aw-link) 9%,var(--aw-panel));color:var(--aw-link)}
+#screen-workout .aw-chevron svg{width:12px;height:12px}
+.aw-param-fold{position:absolute;left:50%;bottom:-.5px;transform:translate(-50%,50%);padding:0;border:0}
+.aw-param-fold::after{content:"";position:absolute;inset:-3px -13px}
+.aw-radar-grid.aw-radar-planned{stroke:var(--aw-muted);stroke-dasharray:3 4}
+.aw-radar-pending{fill:var(--aw-panel);stroke:var(--aw-muted);stroke-width:1.5}
+@media(pointer:coarse){#screen-workout .aw-params .execution-option{min-height:44px}}
+@media(prefers-reduced-motion:reduce){.aw-param-drawer{transition:none}}

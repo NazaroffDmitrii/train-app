@@ -1,37 +1,5 @@
 "use strict";
-const ExerciseDescriptions = (() => {
- const clone=value=>JSON.parse(JSON.stringify(value));
- const kinds=['movement','muscles','technique','mistakes','features','restrictions'];
- function base(ex){
-  const a=ex.atlas||{},roles=[['target','agonists'],['synergist','synergists'],['stabilizer','stabilizers']];
-  return {movement:clone(a.categories||[]),muscles:roles.flatMap(([role,legacy])=>(a[role]||splitMuscles(ex.muscles?.[legacy]).map(text=>{const m=text.match(/^(.*?)\s*\(([^)]+)\)$/);return {muscle:m?m[1].trim():text,bundle:m?m[2]:''};})).map(m=>({...clone(m),role,bundles:Array.isArray(m.bundles)?m.bundles:m.bundle?[m.bundle]:[]}))),technique:a.technique||(ex.steps||[]).join('\n'),mistakes:Array.isArray(a.mistakeDetails)?clone(a.mistakeDetails):(a.mistakes||[]).map(text=>{const parts=String(text).split(/Исправление:\s*/);return {problem:parts.shift().trim(),correction:parts.join('Исправление: ').trim()};}),features:Array.isArray(a.features)?clone(a.features):[a.differences,a.extra].filter(Boolean),restrictions:a.contraindications||''};
- }
- function variants(ex){
-  const result={},defs=normalizeExecutionParameters(ex.atlas?.executionParameters);
-  for(const [key,description] of Object.entries(ex.atlas?.executionDescriptions?.variants||{})){
-   try{const pairs=JSON.parse(key);if(!Array.isArray(pairs)||!pairs.length||pairs.some(pair=>!Array.isArray(pair)||pair.length!==2||!defs.some(p=>p.id===pair[0]&&p.options.includes(pair[1]))))continue;
-    const clean={};for(const kind of kinds)if(Object.hasOwn(description,kind)&&((['technique','restrictions'].includes(kind)&&typeof description[kind]==='string')||(!['technique','restrictions'].includes(kind)&&Array.isArray(description[kind]))))clean[kind]=clone(description[kind]);
-    result[key]=clean;
-   }catch{}
-  }return result;
- }
- function resolve(ex,snapshot){
-  const common=base(ex),rules=variants(ex),values=snapshot.executionValues,sections={};
-  for(const kind of kinds){
-   const matches=Object.entries(rules).filter(([key,rule])=>Object.hasOwn(rule,kind)&&JSON.parse(key).every(([id,value])=>values.some(v=>v.id===id&&v.value===value))).sort((a,b)=>JSON.parse(b[0]).length-JSON.parse(a[0]).length);
-   const best=matches[0],conflict=best&&matches.some(([key,rule])=>JSON.parse(key).length===JSON.parse(best[0]).length&&JSON.stringify(rule[kind])!==JSON.stringify(best[1][kind]));
-   sections[kind]={value:best&&!conflict?best[1][kind]:common[kind],conditions:best&&!conflict?JSON.parse(best[0]):[],conflict:!!conflict,changed:!!best&&!conflict&&JSON.stringify(best[1][kind])!==JSON.stringify(common[kind])};
-  }
-  const out=clone(ex),a=out.atlas||={};a.categories=sections.movement.value.filter(name=>typeof name==='string'&&name.trim());
-  for(const role of ['target','synergist','stabilizer'])a[role]=sections.muscles.value.filter(m=>m.role===role&&m.muscle?.trim()).map(({role,...m})=>({...m,bundle:m.bundles?.length?m.bundles.join(' · '):m.bundle||''}));
-  out.muscles={...(out.muscles||{}),...Object.fromEntries([['target','agonists'],['synergist','synergists'],['stabilizer','stabilizers']].map(([role,key])=>[key,a[role].map(m=>m.muscle+(m.bundle?' ('+m.bundle+')':'')).join(', ')]))};
-  a.technique=sections.technique.value;out.steps=a.technique.split('\n').map(v=>v.trim()).filter(Boolean);
-  a.mistakeDetails=sections.mistakes.value;a.mistakes=a.mistakeDetails.filter(m=>m.problem?.trim()).map(m=>m.problem.trim()+(m.correction?.trim()?' Исправление: '+m.correction.trim():''));
-  a.features=sections.features.value.filter(t=>t.trim());a.differences=a.features[0]||'';a.extra=a.features.slice(1).join('\n\n');a.contraindications=sections.restrictions.value;
-  return {exercise:out,sections};
- }
- return {base,variants,resolve};
-})();
+
 (() => {
  if(new URLSearchParams(location.search).has("__exercise_design"))return;
  const chevron='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>';
@@ -67,8 +35,9 @@ const ExerciseDescriptions = (() => {
    host.innerHTML=executionControlsHtml(current,ex.id);
    wireExecutionControls(host,()=>current,value=>{
     if(options.onExecutionChange){options.onExecutionChange(value);return;}
+    if(_constructorCatalog?.selectedId===ex.id)_constructorCatalog.selectedSnapshot=value;
     _executionDrafts.set(executionDraftKey(DATA.getCurrentUser(),ex.id),value);
-    const body=$('exd-body'),scroll=body.scrollTop;openExerciseDetail(ex.id,returnScreen,{scope:catalog?'catalog':'mine'});body.scrollTop=scroll;
+    const body=$('exd-body'),scroll=body.scrollTop;openExerciseDetail(ex.id,returnScreen,{...options,executionSnapshot:value,scope:catalog?'catalog':'mine'});body.scrollTop=scroll;
    });return host;
  }
  function removalLabel(ex,catalog){
@@ -168,18 +137,6 @@ const ExerciseDescriptions = (() => {
      parameterNodes.push(edit);
    }
    if (parameterNodes.length) tree.append(wrap('Параметры выполнения',parameterNodes,'parameters',index++));
-   const variations = ex.groupId ? DATA.libraryExercises(userId,catalog).filter(item=>item.groupId===ex.groupId && item.id!==ex.id) : [];
-   if (variations.length) {
-     const list=document.createElement('div');
-     for (const variation of variations) {
-       const link=document.createElement('button');link.type='button';link.className='xd-movement-link';
-       link.innerHTML=`<span>${escHtml(variation.atlas?.variationName || variation.name)}</span>${chevron}`;
-       link.disabled=!!options.previewExercise || returnScreen==='workout';
-       link.onclick=()=>openExerciseDetail(variation.id,returnScreen,{scope:catalog?'catalog':'mine'});
-       list.append(link);
-     }
-     tree.append(wrap('Вариации',[list],'features',index++));
-   }
    tree.append(execution);
    const moves=exerciseMovements(resolved.exercise);
    if(moves.length){const links=document.createElement('div');links.innerHTML=moves.map(name=>`<button class="xd-movement-link" type="button" data-reference-kind="movement" data-reference-name="${escHtml(name)}"><span>${escHtml(name)}</span>${chevron}</button>`).join('');execution.append(wrap('Движения',[links],'movement',index++));}
@@ -229,8 +186,15 @@ const ExerciseDescriptions = (() => {
      }
    });
    if(!options.previewExercise){
-     const sessions=DATA.getWorkoutHistory(userId).filter(w=>w.type==='strength' && !w.deleted &&
-       w.exercises?.some(entry=>entry.exerciseId===ex.id && entry.sets?.some(WorkoutCore.performed)));
+     const sessions=ExerciseDescriptions.history(userId).filter(w=>w.type==='strength' && !w.deleted &&
+       w.exercises?.some(entry=>entry.exerciseId===ex.id && entry.sets?.some(set=>WorkoutCore.performed(set)&&WorkoutCore.setKey(set,entry)===WorkoutCore.executionKey(snapshot))));
+     const pr=WorkoutCore.record(sessions,{exerciseId:ex.id,...snapshot},DATA.getExerciseMetric(userId,ex.id));
+     if(pr){
+       const result=document.createElement('button');result.type='button';result.className='xd-movement-link';
+       result.textContent=pr.metric==='time'?WorkoutCore.formatTime(pr.value):pr.weight+' кг × '+pr.value;
+       result.onclick=()=>openDetailScreen(pr.workout,'exerciseDetail',ex.id);
+       tree.append(wrap('Рекорд выполнения',[result],'history',index++));
+     }
      const list=document.createElement('div');
      function showSessions(all){
        list.replaceChildren();
@@ -252,13 +216,19 @@ const ExerciseDescriptions = (() => {
    if(!execution.children.length)execution.remove();
    const included=!DATA.isHidden(userId,ex.id);
    const hero=document.createElement('article');hero.className='xd-hero';
-   hero.innerHTML=`<h1>${escHtml(ex.name)}</h1><div class="xd-hero-meta">${ex.cat?.trim()?`<button type="button" class="xd-group movement-group-chip" data-xd-group="${escHtml(ex.cat)}" aria-label="Группа: ${escHtml(ex.cat)}">${referenceIcon('groups')}<span>${escHtml(ex.cat)}</span></button>`:''}${a.level?.trim()?`<span class="xd-type">${escHtml(LEVEL_LABELS[a.level]||a.level)}</span>`:''}${catalog&&!options.previewExercise?'<button type="button" class="xd-membership" aria-pressed="'+included+'"></button>':''}</div>`;
+   hero.innerHTML=`<h1>${escHtml(ex.name)}</h1><div class="xd-hero-meta">${resolved.sections.groups.value.map(group=>`<button type="button" class="xd-group movement-group-chip" data-xd-group="${escHtml(group)}" aria-label="Группа: ${escHtml(group)}">${referenceIcon('groups')}<span>${escHtml(group)}</span></button>`).join('')}${a.level?.trim()?`<span class="xd-type">${escHtml(LEVEL_LABELS[a.level]||a.level)}</span>`:''}${catalog&&!options.previewExercise?'<button type="button" class="xd-membership" aria-pressed="'+included+'"></button>':''}</div>`;
+   if(snapshot.executionValues.length)hero.insertAdjacentHTML('beforeend',executionBadges(snapshot));
+   if(options.previewExercise){
+     const note=document.createElement('p');note.className='ex-form-hint';
+     note.textContent='В выборе упражнений · '+resolved.sections.groups.value.join(' / ')+' · '+ex.name+
+       (snapshot.executionValues.length?' · '+snapshot.executionValues.map(v=>v.value).join(' · '):'')+
+       '  |  На графике · '+(resolved.exercise.atlas.categories.join(' · ')||'Движения не заданы');hero.append(note);
+   }
    if(!options.previewExercise&&returnScreen!=='workout')hero.querySelector('.xd-hero-meta').append(tabs);
-   const groupButton=hero.querySelector('[data-xd-group]');
-   if(groupButton){groupButton.disabled=!!options.previewExercise;groupButton.onclick=()=>{
-     if(!ex.cat)return;
+   for(const groupButton of hero.querySelectorAll('[data-xd-group]')){groupButton.disabled=!!options.previewExercise;groupButton.onclick=()=>{
+     const group=groupButton.dataset.xdGroup;
      _referenceTrail=[{screen:'screen-exercise-detail',state:{..._referenceState},exerciseId:ex.id,returnScreen,scroll:body.scrollTop}];
-     _referenceState={page:'group',name:ex.cat,scope:_exerciseLibrary,query:'',sort:'count-desc',picker:null,scrollTop:0,owner:Auth.userId(),userId};goToScreen('exerciseReference');
+     _referenceState={page:'group',name:group,scope:_exerciseLibrary,query:'',sort:'count-desc',picker:null,scrollTop:0,owner:Auth.userId(),userId};goToScreen('exerciseReference');
    };}
    if(catalog&&!options.previewExercise){const button=hero.querySelector('.xd-membership');button.setAttribute('aria-pressed',String(included));button.innerHTML=exerciseMembershipIcon(included);button.setAttribute('aria-label',included?'Убрать из моих':'Добавить в мои');button.title=included?'Убрать из моих':'Добавить в мои';button.onclick=()=>{toggleExerciseLibrary(ex.id);openExerciseDetail(ex.id,returnScreen,{scope:'catalog'});};}
    let header=screen.querySelector('.xd-fixed-header');
@@ -266,10 +236,6 @@ const ExerciseDescriptions = (() => {
    header.querySelector('.xd-hero')?.remove();header.append(hero);
    const membershipButton=hero.querySelector('.xd-membership');if(membershipButton)header.querySelector('.detail-screen-header').insertBefore(membershipButton,$('exd-edit-btn'));
    const inner=document.createElement('div');inner.className='xd-scroll-inner';inner.append(...(media?[media]:[]),...(tree.querySelector('.xd-section')?[tree]:[]),...links);body.replaceChildren(inner);
-   if(canEdit){
-     const add=document.createElement('button');add.type='button';add.className='btn-chip';add.textContent='Добавить вариацию';
-     add.onclick=()=>openExerciseForm(null,{catalog,variationOf:ex.id});inner.append(add);
-   }
    if(!catalog&&!options.previewExercise&&DATA.catalogUpdateAvailable(userId,ex.id)){
      const notice=document.createElement('section');notice.className='xd-catalog-update';
      notice.innerHTML='<p><b>В каталоге есть обновление</b><br>Ваша версия сохранена. Можно оставить её или заменить версией из каталога.</p><button type="button" class="btn-chip">Посмотреть обновление</button>';

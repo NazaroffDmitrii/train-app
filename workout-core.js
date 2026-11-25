@@ -21,7 +21,7 @@
   function executionKey(source) {
     const values = new Map();
     (source?.executionValues || []).forEach(v => {
-      if (v && typeof v.id === 'string' && typeof v.value === 'string') values.set(v.id, v.value);
+      if (v && typeof v.id === 'string' && typeof v.value === 'string') if (!source.executionParameters?.some(p=>p.id===v.id && p.defaultValue===v.value)) values.set(v.id, v.value);
     });
     return JSON.stringify([...values].sort(([a], [b]) => a.localeCompare(b)));
   }
@@ -120,7 +120,7 @@
     if (!Number.isFinite(weight) || !Number.isSafeInteger(value) || value <= 0) throw Error(metric === 'time' ? 'Укажи время подхода' : 'Укажи количество повторений');
     return {weight,metric,reps:metric === 'reps' ? value : 0,...(metric === 'time' ? {durationSec:value} : {}),
       rpe:effort(set.rpe) || (compatible ? effort(old.rpe) : 0),
-      executionParameters:clone(exercise.executionParameters || []),executionValues:clone(exercise.executionValues || [])};
+      movements:clone(exercise.movements || []),executionParameters:clone(exercise.executionParameters || []),executionValues:clone(exercise.executionValues || [])};
   }
   function commit(exercise, main, oldGroup) {
     const mainValue = measurement(exercise,main,oldGroup?.main), drops = children(exercise,main);
@@ -182,9 +182,11 @@
     const byId = new Map(definitions.map(ex => [ex.id,ex]));
     const counts = new Map(names.map(name => [name,0]));
     for (const ex of exercises || []) {
-      const def = byId.get(ex.exerciseId), movements = def?.atlas?.categories || ex.movements || [];
-      const completed = (ex.sets || []).filter(s => performed(s) && !s.dropSet).length;
-      new Set(movements).forEach(name => {if (counts.has(name)) counts.set(name,counts.get(name)+completed);});
+      for(const set of ex.sets || []){
+        if(!performed(set)||set.dropSet)continue;
+        const moves=set.movements??ex.movements??byId.get(ex.exerciseId)?.atlas?.categories??[];
+        for(const name of new Set(moves))if(counts.has(name))counts.set(name,counts.get(name)+1);
+      }
     }
     return [...counts.values()];
   }

@@ -61,12 +61,16 @@
   let _hasPlan = false, _resultSnapshot = null, _sessionActive = false, _sessionRevision = 0;
   let _cDrag = null;    // активное перетаскивание карточки
 
+  let definitions=new Map(),legacyLinks=new Map();
   function loadData() {
     const uid = DATA.getCurrentUser();
     categories = DATA.atlasMovements();  // {name, group, type}
     muscles = DATA.atlasMuscles();       // {name, group, visible, bundles}
     // Личные упражнения без atlas доступны вручную; подбор требует совпадения движения.
-    exercises = DATA.getVisibleExercises(uid).filter(e => e.type !== "run" && !DATA.isHidden(uid, e.id)).map(e => ({
+    const library=DATA.getVisibleExercises(uid);
+    definitions=new Map(library.map(ex=>[ex.id,ex]));
+    legacyLinks=ExerciseDescriptions.legacyMap(library);
+    exercises = library.filter(e => !legacyLinks.has(e.id) && e.type !== "run" && !DATA.isHidden(uid, e.id)).map(e => ({
       id: e.id,
       name: e.name,
       group: e.cat || "",
@@ -102,6 +106,11 @@
       if(!r&&legacy&&confirm('Есть старый план конструктора без отметки аккаунта. Это ваш план? Скопировать его в текущий аккаунт? Исходник сохранится.'))r=legacy;
       if (r) { const d = JSON.parse(r); if (d && Array.isArray(d.days) && d.days.length) {
         d.priority = d.priority || []; d.restrictions = d.restrictions || []; d.equipOff = d.equipOff || []; d.pins = d.pins || {};
+        for(const day of d.days)for(const item of day.items||[]){
+          if(!legacyLinks.has(item.exId))continue;
+          const mapped=ExerciseDescriptions.mapEntry({...item.execution,exerciseId:item.exId},legacyLinks);
+          item.exId=mapped.exerciseId;item.execution=copyExecutionSnapshot(mapped);
+        }
         return d;
       } }
     } catch (e) {}
@@ -115,6 +124,12 @@
   function activeDay() { if (workout.active === "all") return workout.days[0] || { items: [] }; if (workout.active >= workout.days.length) workout.active = workout.days.length - 1; return workout.days[workout.active]; }
   function totalVolume() { return workout.days.reduce((s, d) => s + dayVolume(d), 0); }
   function exById(id) { return exercises.find(e => e.id === id); }
+  function plannedExercise(item){
+    const base=exById(item?.exId);
+    if(!base||!item.execution?.executionValues?.length)return base;
+    const ex=ExerciseDescriptions.resolve(definitions.get(base.id),item.execution).exercise;
+    return {...base,group:ex.cat,categories:ex.atlas.categories,muscles:{target:ex.atlas.target,synergist:ex.atlas.synergist,stabilizer:ex.atlas.stabilizer}};
+  }
   function exBaseCats(e) { return (e.categories || []).filter(cn => { const c = categories.find(x => x.name === cn); return c && c.type === "База"; }); }
   function exOptCats(e) { return (e.categories || []).filter(cn => { const c = categories.find(x => x.name === cn); return c && c.type === "Опция"; }); }
   function exCharacter(e) {
@@ -147,18 +162,18 @@
   }
   function coverage(cov0) {
     const cov = cov0 || {}; categories.forEach(c => { if (!(c.name in cov)) cov[c.name] = 0; });
-    activeDay().items.forEach(it => { const e = exById(it.exId); if (!e) return; (e.categories || []).forEach(cn => { if (cn in cov) cov[cn] += (+it.sets || 0); }); });
+    activeDay().items.forEach(it => { const e = plannedExercise(it); if (!e) return; (e.categories || []).forEach(cn => { if (cn in cov) cov[cn] += (+it.sets || 0); }); });
     return cov;
   }
   function microCoverage() {
     const cov = {}; categories.forEach(c => cov[c.name] = 0);
-    workout.days.forEach(d => d.items.forEach(it => { const e = exById(it.exId); if (!e) return; (e.categories || []).forEach(cn => { if (cn in cov) cov[cn] += (+it.sets || 0); }); }));
+    workout.days.forEach(d => d.items.forEach(it => { const e = plannedExercise(it); if (!e) return; (e.categories || []).forEach(cn => { if (cn in cov) cov[cn] += (+it.sets || 0); }); }));
     return cov;
   }
   function dayVolume(d) { return d.items.reduce((s, it) => s + (+it.sets || 0), 0); }
   function muscleStats() {
     const st = {};
-    activeDay().items.forEach(it => { const e = exById(it.exId); if (!e) return; const s = +it.sets || 0;
+    activeDay().items.forEach(it => { const e = plannedExercise(it); if (!e) return; const s = +it.sets || 0;
       (e.muscles.target || []).forEach(o => { const x = st[o.muscle] = st[o.muscle] || { frac: 0, prim: 0, sec: 0 }; x.frac += s; x.prim++; });
       (e.muscles.synergist || []).forEach(o => { const x = st[o.muscle] = st[o.muscle] || { frac: 0, prim: 0, sec: 0 }; x.frac += s * 0.5; x.sec++; });
     });
@@ -192,10 +207,10 @@
   function generateInto(movements) {
     const set = new Set(movements);
     const pool = exercises.filter(e => { const bc = exGoalCats(e); return bc.some(c => set.has(c)) && available(e); });
-    const preserved = workout.days.flatMap(d => d.items).filter(it => it.locked && exById(it.exId) && available(exById(it.exId)) && exGoalCats(exById(it.exId)).some(c => set.has(c)));
+    const preserved = workout.days.flatMap(d => d.items).filter(it => it.locked && plannedExercise(it) && available(plannedExercise(it)) && exGoalCats(plannedExercise(it)).some(c => set.has(c)));
     const uncovered = new Set(movements), usedIds = new Set(), chosen = preserved.map(it => ({ ...it })), load = {};
     chosen.forEach(it => {
-      const e = exById(it.exId); usedIds.add(it.exId);
+      const e = plannedExercise(it); usedIds.add(it.exId);
       exGoalCats(e).forEach(c => uncovered.delete(c));
       loadKeys(e).forEach(x => { load[x.key] = (load[x.key] || 0) + it.sets * x.w; });
     });
@@ -230,7 +245,7 @@
       loadKeys(e).forEach(x => { load[x.key] = (load[x.key] || 0) + sets * x.w; });
     }
     const rank = { glob: 0, reg: 1, loc: 2 };
-    chosen.sort((a, b) => { const ea = exById(a.exId), eb = exById(b.exId); return (rank[CHAR[exCharacter(ea)]] - rank[CHAR[exCharacter(eb)]]) || (exGoalCats(eb).length - exGoalCats(ea).length); });
+    chosen.sort((a, b) => { const ea = plannedExercise(a), eb = plannedExercise(b); return (rank[CHAR[exCharacter(ea)]] - rank[CHAR[exCharacter(eb)]]) || (exGoalCats(eb).length - exGoalCats(ea).length); });
     return chosen;
   }
   function exConflicts(e) {
@@ -253,7 +268,7 @@
       const days = DAY_LETTERS.slice(0, N).map(n => ({ name: n, items: [], vol: 0, fwd: false, up: false, erector: 0, joints: {} }));
       const pins = workout.pins || {};
       all.slice().sort((a, b) => (+b.sets || 0) - (+a.sets || 0)).forEach(it => {
-        const e = exById(it.exId); if (!e) return; const c = exConflicts(e); const s = +it.sets || 0;
+        const e = plannedExercise(it); if (!e) return; const c = exConflicts(e); const s = +it.sets || 0;
         let forced = null;
         for (const mv of exBaseCats(e)) { const p = pins[mv]; if (p != null && p !== "" && days[+p]) { forced = +p; break; } }
         let best;
@@ -274,7 +289,7 @@
         if (c.joint) best.joints[c.joint] = (best.joints[c.joint] || 0) + 1;
       });
       const rank = { glob: 0, reg: 1, loc: 2 };
-      days.forEach(d => d.items.sort((a, b) => { const ea = exById(a.exId), eb = exById(b.exId); return (rank[CHAR[exCharacter(ea)]] - rank[CHAR[exCharacter(eb)]]) || (exBaseCats(eb).length - exBaseCats(ea).length); }));
+      days.forEach(d => d.items.sort((a, b) => { const ea = plannedExercise(a), eb = plannedExercise(b); return (rank[CHAR[exCharacter(ea)]] - rank[CHAR[exCharacter(eb)]]) || (exBaseCats(eb).length - exBaseCats(ea).length); }));
       workout.days = days.map(d => ({ name: d.name, items: d.items }));
     }
     workout.active = 0; workout.manual = false; workout.splitFromSingle = false; _sessionActive = true; _hasPlan = true; _step = "result"; _keepVolume = false;
@@ -286,7 +301,7 @@
     const day = activeDay(), activeIdx = workout.active;
     const restricted = new Set(workout.restrictions), pins = workout.pins || {};
     const micro = microCoverage();
-    const inDay = new Set(); day.items.forEach(it => { const e = exById(it.exId); if (e) exGoalCats(e).forEach(c => inDay.add(c)); });
+    const inDay = new Set(); day.items.forEach(it => { const e = plannedExercise(it); if (e) exGoalCats(e).forEach(c => inDay.add(c)); });
     const targets = goalCats().map(c => c.name).filter(name => {
       if (restricted.has(name)) return false;
       if (inDay.has(name)) return false;
@@ -295,8 +310,8 @@
       return true;
     });
     if (!targets.length) { showToast("Дополнять нечего — недостающих движений нет"); return; }
-    const load = {}; day.items.forEach(it => { const e = exById(it.exId); if (!e) return; const s = +it.sets || 0; loadKeys(e).forEach(x => load[x.key] = (load[x.key] || 0) + s * x.w); });
-    const dayZones = {}; day.items.forEach(it => { const z = jointLoad(exById(it.exId)); if (z) dayZones[z] = (dayZones[z] || 0) + 1; });
+    const load = {}; day.items.forEach(it => { const e = plannedExercise(it); if (!e) return; const s = +it.sets || 0; loadKeys(e).forEach(x => load[x.key] = (load[x.key] || 0) + s * x.w); });
+    const dayZones = {}; day.items.forEach(it => { const z = jointLoad(plannedExercise(it)); if (z) dayZones[z] = (dayZones[z] || 0) + 1; });
     const usedIds = new Set(); workout.days.forEach(d => d.items.forEach(it => usedIds.add(it.exId)));
     const set = new Set(targets);
     const pool = exercises.filter(e => { const bc = exGoalCats(e); return bc.length && bc.every(c => set.has(c)) && available(e); });
@@ -323,7 +338,7 @@
     if (!added.length) { showToast("Лимит занятия достигнут — убери лишнее или добавь день"); return; }
     day.items = day.items.concat(added);
     const rank = { glob: 0, reg: 1, loc: 2 };
-    day.items.sort((a, b) => { const ea = exById(a.exId), eb = exById(b.exId); return (rank[CHAR[exCharacter(ea)]] - rank[CHAR[exCharacter(eb)]]) || (exGoalCats(eb).length - exGoalCats(ea).length); });
+    day.items.sort((a, b) => { const ea = plannedExercise(a), eb = plannedExercise(b); return (rank[CHAR[exCharacter(ea)]] - rank[CHAR[exCharacter(eb)]]) || (exGoalCats(eb).length - exGoalCats(ea).length); });
     render();
   }
   function removeItem(di, i) { const d = workout.days[+di]; if (!d) return; d.items.splice(i, 1); render(); }
@@ -367,10 +382,10 @@
       .map(x => x.m + " (" + (Number.isInteger(x.frac) ? x.frac : x.frac.toFixed(1)) + " усл.)");
     if (risk.length) warns.push({ t: "warn", m: "Риск перетренированности" + dn + ": " + risk.join("; ") + "." });
     const zones = {};
-    activeDay().items.forEach(it => { const e = exById(it.exId); if (!e) return; const z = jointLoad(e); if (z) (zones[z] = zones[z] || []).push(e.name); });
+    activeDay().items.forEach(it => { const e = plannedExercise(it); if (!e) return; const z = jointLoad(e); if (z) (zones[z] = zones[z] || []).push(e.name); });
     Object.keys(zones).forEach(z => { if (zones[z].length >= 2) warns.push({ t: "warn", m: "Перегруз сустава (" + z + ")" + dn + ": " + zones[z].join(", ") + "." }); });
     if (workout.readiness !== "низкая") {
-      const noGlob = workout.days.filter(d => d.items.length && !d.items.some(it => { const e = exById(it.exId); return e && exCharacter(e) === "глобальные"; })).map(d => d.name);
+      const noGlob = workout.days.filter(d => d.items.length && !d.items.some(it => { const e = plannedExercise(it); return e && exCharacter(e) === "глобальные"; })).map(d => d.name);
       if (noGlob.length) warns.push({ t: "note", m: "Нет глобального (базового) упражнения в дне: " + noGlob.join(", ") + "." });
     }
     return warns;
@@ -389,7 +404,7 @@
       const tpl = DATA.createBlankTemplate(uid, name);
       const exList = d.items.map(it => ({
         exerciseId: it.exId,
-        ...(typeof executionForExercise === 'function' ? executionForExercise(uid, DATA.getVisibleExercises(uid).find(e => e.id === it.exId)) : {}),
+        ...(it.execution||executionSnapshot(definitions.get(it.exId)?.atlas?.executionParameters)),
         sets: Array.from({ length: Math.max(1, +it.sets || 1) }, () => ({ weight: "", reps: repsToNum(it.reps) })),
       }));
       DATA.updateTemplateExercises(uid, tpl.id, exList);
@@ -554,7 +569,7 @@
     return workout.days.reduce((best,d,i) => dayVolume(d)<dayVolume(workout.days[best]) ? i : best,0);
   }
   function candidateExercises(item, mode='analog', query='', movement) {
-    const e = item && exById(item.exId), source = e?.categories || [];
+    const e = item && plannedExercise(item), source = e?.categories || [];
     const used = new Set(workout.days.flatMap(d=>d.items.map(it=>it.exId)));
     const q = query.trim().toLocaleLowerCase('ru');
     return exercises.filter(x => !used.has(x.id) && available(x) &&
@@ -562,19 +577,19 @@
       (!q || [x.name,x.group,...x.categories].join(' ').toLocaleLowerCase('ru').includes(q)))
       .sort((a,b)=>Number(exSig(b)===exSig(e||{categories:[]}))-Number(exSig(a)===exSig(e||{categories:[]})) || a.name.localeCompare(b.name,'ru'));
   }
-  function replacePlanItem(item,id) {
+  function replacePlanItem(item,id,execution) {
     const e = exById(id);
     if (!itemLocation(item) || item.locked || !e || !available(e) || workout.days.some(d=>d.items.some(it=>it.exId===id))) return false;
-    item.exId=id; render(); return true;
+    item.exId=id;item.execution=execution; render(); return true;
   }
-  function addMovementExercise(name,id) {
-    const e=exById(id);
+  function addMovementExercise(name,id,execution) {
+    const e=plannedExercise({exId:id,execution});
     if (!e || !available(e) || (name && !e.categories.includes(name)) || workout.days.some(d=>d.items.some(it=>it.exId===id))) return false;
-    workout.days[additionDay()].items.push({exId:id,sets:setsForEx(e),reps:normalizeReps(workout.reps),rpe:READINESS[workout.readiness].rpe});
+    workout.days[additionDay()].items.push({exId:id,execution,sets:setsForEx(e),reps:normalizeReps(workout.reps),rpe:READINESS[workout.readiness].rpe});
     render(); return true;
   }
   function resultStepper(it,di,i,small=false) {
-    const name=esc(exById(it.exId)?.name || 'упражнение');
+    const name=esc(plannedExercise(it)?.name || 'упражнение');
     return `<div class="rp-stepper ${small?'compact':''}"><button type="button" data-rp-sets="${di}:${i}" data-value="${+it.sets-1}" aria-label="Уменьшить подходы: ${name}" ${it.sets<=1?'disabled':''}>−</button><span><b>${it.sets}</b><small>подх.</small></span><button type="button" class="plus" data-rp-sets="${di}:${i}" data-value="${+it.sets+1}" aria-label="Увеличить подходы: ${name}" ${it.sets>=30?'disabled':''}>+</button></div>`;
   }
   function resultDayChips(di,i,small=false) {
@@ -584,7 +599,7 @@
     return `<button type="button" class="${it.locked?'on':''}" data-rp-lock="${di}:${i}" aria-pressed="${!!it.locked}" aria-label="${it.locked?'Открепить':'Закрепить'} упражнение">${icon('lock')}${small?'':it.locked?'Закреплено':'Закрепить'}</button><button type="button" data-rp-replace="${di}:${i}" aria-label="Заменить упражнение" ${it.locked?'disabled':''}>${icon('swap')}${small?'':'Заменить'}</button>`;
   }
   function resultItemHtml(it,di,i,small=false) {
-    const e=exById(it.exId), open=_expandedItem===it, cats=e?.categories||[], rows=coverageRows();
+    const e=plannedExercise(it), open=_expandedItem===it, cats=e?.categories||[], rows=coverageRows();
     const group=e?.group || categories.find(c=>cats.includes(c.name))?.group || 'Своё упражнение';
     const title=`<button type="button" class="rp-name" data-exercise-detail="${esc(it.exId)}" title="Открыть подробности: ${esc(e?.name)}">${esc(e?.name||'Упражнение недоступно')}</button>${it.locked?`<span class="rp-locked">${icon('lock')}</span>`:''}`;
     const toggle=`<button type="button" class="rp-expand" data-rp-expand="${di}:${i}" aria-expanded="${open}" aria-label="${open?'Свернуть':'Настроить'}: ${esc(e?.name)}">${icon(open?'up':'down')}</button>`;
@@ -595,7 +610,7 @@
   }
   function movementTreeHtml(r) {
     if(r.excluded)return '<div class="rp-tree sg-muted">Движение исключено из плана</div>';
-    return `<div class="rp-tree">${workout.days.map((d,di)=>d.items.map((it,i)=>exById(it.exId)?.categories.includes(r.name)?resultItemHtml(it,di,i,true):'').join('')).join('')}<button type="button" class="rp-add" data-rp-add-movement="${esc(r.name)}">+ Добавить упражнение</button></div>`;
+    return `<div class="rp-tree">${workout.days.map((d,di)=>d.items.map((it,i)=>plannedExercise(it)?.categories.includes(r.name)?resultItemHtml(it,di,i,true):'').join('')).join('')}<button type="button" class="rp-add" data-rp-add-movement="${esc(r.name)}">+ Добавить упражнение</button></div>`;
   }
   function movementRowHtml(r) {
     return `<button type="button" class="rp-movement-row ${r.excluded?'excluded':''}" data-movement="${r.i}" aria-expanded="${_selectedMovement===r.i}"><span class="rp-number ${_selectedMovement===r.i?'on':''}">${r.i+1}</span><span class="rp-movement-name">${esc(r.name)}${r.priority?'<em> ★</em>':''}<small>${r.excluded?'исключено из плана':esc(movementHint(r))}</small></span><span class="rp-value">${r.excluded?icon('ban'):`<b style="color:${r.color}">${r.value}</b>/${r.target}`}</span></button>`;
@@ -696,7 +711,7 @@
       initialSelectedId:item.exId, title:'Замена упражнения', subtitle:original.name,
       modes:[{id:'analog',label:'Аналоги · '+exercises.filter(e=>e.id!==item.exId && canSelect(e.id)).length},{id:'any',label:'Любое упражнение'}],
       canSelect,
-      onConfirm:id=>valid() && replacePlanItem(item,id),
+      onConfirm:(id,mode,execution)=>valid() && replacePlanItem(item,id,execution),
     });
   }
 
@@ -788,7 +803,10 @@
     on('[data-movement-summary]', n => { _movementExpanded = _movementExpanded === n.dataset.movementSummary ? null : n.dataset.movementSummary; render(); });
     on('[data-parameters]', setParameters);
     on('[data-find-movement]', n => openExercisePicker(n.dataset.findMovement));
-    on('[data-exercise-detail]', n => window.openExerciseDetail(n.dataset.exerciseDetail, 'constructor'));
+    on('[data-exercise-detail]', n => {
+      const item=workout.days.flatMap(day=>day.items).find(it=>it.exId===n.dataset.exerciseDetail);
+      window.openExerciseDetail(n.dataset.exerciseDetail,'constructor',{executionSnapshot:item?.execution});
+    });
     on('[data-item-step]', n => updateItemSets(+n.dataset.itemStep, +activeDay().items[+n.dataset.itemStep].sets + +n.dataset.delta));
     el.querySelectorAll('[data-item-sets]').forEach(n => n.addEventListener('change', () => updateItemSets(+n.dataset.itemSets, n.value)));
     $('wk-resume')?.addEventListener('click', resumePlan);
@@ -954,10 +972,10 @@
     if (movement) {
       const valid = resultContext();
       window.openConstructorExerciseCatalog({
-        title: 'Добавить упражнение', subtitle: movement,
+        title: 'Добавить упражнение', subtitle: movement, requiredMovement:movement,
         modes: [{id:'movement',label:'По движению'},{id:'any',label:'Любое упражнение'}],
-        canSelect: (id,mode='movement') => { const e = exById(id); return !!e && available(e) && (mode==='any' || e.categories.includes(movement)) && !workout.days.some(d=>d.items.some(it=>it.exId===id)); },
-        onConfirm: (id,mode='movement') => valid() && addMovementExercise(mode==='any' ? null : movement, id),
+        canSelect: (id,mode='movement') => { const e = exById(id); return !!e && available(e) && (mode==='any' || !!ExerciseDescriptions.forFilter(definitions.get(id),null,new Set([movement]))) && !workout.days.some(d=>d.items.some(it=>it.exId===id)); },
+        onConfirm: (id,mode='movement',execution) => valid() && addMovementExercise(mode==='any' ? null : movement, id,execution),
       });
       return;
     }
@@ -965,11 +983,11 @@
     window.openConstructorExerciseCatalog({
       title:'Добавить упражнение',
       canSelect: id => { const e = exById(id); return !!e && available(e) && !day.items.some(it=>it.exId===id); },
-      onConfirm: id => {
+      onConfirm: (id,mode,execution) => {
         if (sessionRevision !== _sessionRevision || context.owner !== Auth.userId() || context.profile !== DATA.getCurrentUser()) return false;
         const e = exById(id);
         if (!e || !available(e) || (movement && !e.categories.includes(movement)) || day.items.some(it => it.exId === id)) return false;
-        day.items.push({ exId: e.id, sets: setsForEx(e), reps: normalizeReps(workout.reps), rpe: READINESS[workout.readiness].rpe });
+        day.items.push({ exId: e.id, execution, sets: setsForEx(e), reps: normalizeReps(workout.reps), rpe: READINESS[workout.readiness].rpe });
         persist(); return true;
       },
     });

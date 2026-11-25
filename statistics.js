@@ -336,7 +336,7 @@
     const sameView=key===viewKey;
     const openDetails=[...scroll.querySelectorAll('details[open]')].map(el=>el.className);
     if(key!==viewKey){selectedInterval=null;selectedActivity=null;calendarExpanded=false;openFocusFilter=null;} viewKey=key;
-    const m=analyze(DATA.getWorkoutHistory(user),state.period,state.type), s=m.summary;
+    const m=analyze(ExerciseDescriptions.history(user),state.period,state.type), s=m.summary;
     const catalog=DATA.getVisibleExercises(user), series=exerciseSeries(m.scope,catalog), runs=summarize(m.current.filter(w=>w.type==='run'));
     syncFocusFilters(state);
     const periodNames={week:'7 дней',month:'30 дней','3month':'90 дней',year:'365 дней',all:'всё время'};
