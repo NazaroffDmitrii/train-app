@@ -32,16 +32,16 @@ function copyExecutionSnapshot(source) {
 }
 const ExerciseDescriptions = (() => {
  const clone=value=>JSON.parse(JSON.stringify(value));
- const kinds=['groups','movement','muscles','technique','mistakes','features','restrictions'];
+ const kinds=['level','tip','media','groups','movement','muscles','technique','mistakes','features','restrictions'];
  function base(ex){
   const a=ex.atlas||{},roles=[['target','agonists'],['synergist','synergists'],['stabilizer','stabilizers']];
-  return {groups:[ex.cat].filter(Boolean),movement:clone(a.categories||[]),muscles:roles.flatMap(([role,legacy])=>(a[role]||splitMuscles(ex.muscles?.[legacy]).map(text=>{const m=text.match(/^(.*?)\s*\(([^)]+)\)$/);return {muscle:m?m[1].trim():text,bundle:m?m[2]:''};})).map(m=>({...clone(m),role,bundles:Array.isArray(m.bundles)?m.bundles:m.bundle?[m.bundle]:[]}))),technique:a.technique||(ex.steps||[]).join('\n'),mistakes:Array.isArray(a.mistakeDetails)?clone(a.mistakeDetails):(a.mistakes||[]).map(text=>{const parts=String(text).split(/Исправление:\s*/);return {problem:parts.shift().trim(),correction:parts.join('Исправление: ').trim()};}),features:Array.isArray(a.features)?clone(a.features):[a.differences,a.extra].filter(Boolean),restrictions:a.contraindications||''};
+  return {level:a.level||'',tip:ex.tip||'',media:ex.media||'',groups:[ex.cat].filter(Boolean),movement:clone(a.categories||[]),muscles:roles.flatMap(([role,legacy])=>(a[role]||splitMuscles(ex.muscles?.[legacy]).map(text=>{const m=text.match(/^(.*?)\s*\(([^)]+)\)$/);return {muscle:m?m[1].trim():text,bundle:m?m[2]:''};})).map(m=>({...clone(m),role,bundles:Array.isArray(m.bundles)?m.bundles:m.bundle?[m.bundle]:[]}))),technique:a.technique||(ex.steps||[]).join('\n'),mistakes:Array.isArray(a.mistakeDetails)?clone(a.mistakeDetails):(a.mistakes||[]).map(text=>{const parts=String(text).split(/Исправление:\s*/);return {problem:parts.shift().trim(),correction:parts.join('Исправление: ').trim()};}),features:Array.isArray(a.features)?clone(a.features):[a.differences,a.extra].filter(Boolean),restrictions:a.contraindications||''};
  }
  function variants(ex){
   const result={},defs=normalizeExecutionParameters(ex.atlas?.executionParameters);
   for(const [key,description] of Object.entries(ex.atlas?.executionDescriptions?.variants||{})){
    try{const pairs=JSON.parse(key);if(!Array.isArray(pairs)||!pairs.length||pairs.some(pair=>!Array.isArray(pair)||pair.length!==2||!defs.some(p=>p.id===pair[0]&&p.options.includes(pair[1]))))continue;
-    const clean={};for(const kind of kinds)if(Object.hasOwn(description,kind)&&((['technique','restrictions'].includes(kind)&&typeof description[kind]==='string')||(!['technique','restrictions'].includes(kind)&&Array.isArray(description[kind]))))clean[kind]=clone(description[kind]);
+    const clean={};for(const kind of kinds)if(Object.hasOwn(description,kind)&&((['technique','restrictions','level','tip','media'].includes(kind)&&typeof description[kind]==='string')||(!['technique','restrictions','level','tip','media'].includes(kind)&&Array.isArray(description[kind]))))clean[kind]=clone(description[kind]);
     if(Array.isArray(description.sources))clean.sources=description.sources.filter(id=>typeof id==='string'&&id!==ex.id);
     if(Array.isArray(description.preferredGroups))clean.preferredGroups=description.preferredGroups.filter(name=>typeof name==='string');
     result[key]=clean;
@@ -104,7 +104,7 @@ const ExerciseDescriptions = (() => {
  function resolve(ex,snapshot){
   const common=base(ex),rules=variants(ex),values=effectiveValues(snapshot),sections={};
   for(const kind of kinds)sections[kind]=section(common[kind],rules,values,kind);
-  const out=clone(ex),a=out.atlas||={};out.cat=sections.groups.value[0]||ex.cat;out.groups=sections.groups.value;a.categories=sections.movement.value.filter(name=>typeof name==='string'&&name.trim());
+  const out=clone(ex),a=out.atlas||={};a.level=sections.level.value;out.tip=sections.tip.value;out.media=sections.media.value;out.cat=sections.groups.value[0]||ex.cat;out.groups=sections.groups.value;a.categories=sections.movement.value.filter(name=>typeof name==='string'&&name.trim());
   for(const role of ['target','synergist','stabilizer'])a[role]=sections.muscles.value.filter(m=>m.role===role&&m.muscle?.trim()).map(({role,...m})=>({...m,bundle:m.bundles?.length?m.bundles.join(' · '):m.bundle||''}));
   out.muscles={...(out.muscles||{}),...Object.fromEntries([['target','agonists'],['synergist','synergists'],['stabilizer','stabilizers']].map(([role,key])=>[key,a[role].map(m=>m.muscle+(m.bundle?' ('+m.bundle+')':'')).join(', ')]))};
   a.technique=sections.technique.value;out.steps=a.technique.split('\n').map(v=>v.trim()).filter(Boolean);
@@ -1728,6 +1728,7 @@ function setupTemplateCarousel(carousel, options = {}) {
   };
 
   const syncHeight = () => {
+    if(options.naturalHeight)return;
     const items = templateCarouselItems(carousel);
     if (!items.length) { carousel.style.removeProperty("height"); return; }
     const index = Math.max(0, Math.min(options.followHeight && !state.gesture ? templateCarouselIndex(carousel) : state.settledIndex, items.length - 1));
@@ -7675,7 +7676,7 @@ function referenceDetailHtml(data) {
   return _referenceState.page === 'muscle' ? referenceMuscleHtml(data) : referenceMovementHtml(data);
 }
 function openReferenceDetail(kind, name) {
-  if (!['muscle','movement'].includes(kind)) return;
+  if (!['group','muscle','movement'].includes(kind)) return;
   const active = document.querySelector('.screen.active')?.id;
   if (active === 'screen-exercise-reference') { referenceNavigate(kind,name); return; }
   const scope = active === 'screen-exercise-detail' ? (_exdCatalog ? 'catalog' : 'mine') : _exerciseLibrary;

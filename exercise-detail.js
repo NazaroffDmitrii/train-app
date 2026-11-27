@@ -2,22 +2,57 @@
 
 (() => {
  if(new URLSearchParams(location.search).has("__exercise_design"))return;
+  const paths={history:'M3 12a9 9 0 1 0 3-6L3 9m0-5v5h5m4-2v5l3 2',additional:'M10 13a5 5 0 0 1 7 0m-3-3 3-3',level:'M4 18h3v-4H4z M10 18h3v-8h-3z M16 18h3V6h-3z',back:'M19 12H5m7-7-7 7 7 7',down:'m6 9 6 6 6-6',plus:'M12 5v14M5 12h14',eye:'M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',groups:'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',parameters:'M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6',muscles:'M3 12h4l3-8 4 16 3-8h4',movement:'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',technique:'M9 5h11M9 12h11M9 19h11M3 5h1M3 12h1M3 19h1',mistakes:'m12 3 10 18H2L12 3ZM12 9v5M12 17v1',lock:'M5 10h14v11H5ZM8 10V6a4 4 0 0 1 8 0v4',features:'M9 18h6M9 21h6M8 14a6 6 0 1 1 8 0l-1 3H9l-1-3Z',restrictions:'m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3ZM12 8v5M12 16v1',check:'m5 12 4 4L19 6',link:'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2'};
+  const cardIcon=name=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.features}"/></svg>`;
+  const sectionNames={parameters:'Параметры выполнения',groups:'Группа',level:'Тип упражнения',movement:'Движения',muscles:'Рабочие мышцы',technique:'Техника выполнения',restrictions:'Ограничения',features:'Особенности',mistakes:'Типичные ошибки',additional:'Дополнительно'};
+  const descriptionOrder=['technique','restrictions','features','mistakes','additional'];
+  function sectionShell(kind,{content='',editing=false,open=true,count='',fallback='',attr=''}={}){
+    const title=sectionNames[kind]||fallback;
+    const tag=kind==='restrictions'&&!editing?'section':'details',heading=tag==='details'?'summary':'h2';
+    return `<${tag} class="xd-section exercise-section" data-section-kind="${kind}" ${editing?'data-kind="'+kind+'"':''} ${tag==='details'&&open?'open':''} ${attr}>
+      <${heading} class="xd-section-heading"><span class="xd-node" aria-hidden="true">${cardIcon(kind)}</span><span class="xd-heading-title">${escHtml(title)}</span>${editing?`<span class="xe-summary-count" data-count="${kind}">${escHtml(count)}</span>`:'<span class="xd-section-parameters" hidden></span>'}${tag==='details'?cardIcon('down'):''}</${heading}>
+      <div class="xd-content${editing?' xe-disclosure-body':''}">${content}</div></${tag}>`;
+  }
+  function headerTags(groups,level,linkGroups=false){
+    return groups.map(name=>{
+      const body=referenceIcon('groups')+'<span>'+escHtml(name)+'</span>';
+      return linkGroups?referenceLink('group',name,name,'xd-group movement-group-chip',body):'<span class="xd-group movement-group-chip">'+body+'</span>';
+    }).join('')+(level?`<span class="xd-type">${escHtml(LEVEL_LABELS[level]||level)}</span>`:'');
+  }
+  function nameWords(name){
+    return name.split(/(\s+)/).map(word=>{
+      if(!word.includes('-'))return word;
+      const span=document.createElement('span');span.className='title-word';span.textContent=word;return span;
+    });
+  }
+  function fillCardHeader(header,{back,action,title,name,kind,hero,extra}){
+    header.className='xd-fixed-header card-header';
+    const toolbar=document.createElement('div');toolbar.className='detail-screen-header card-toolbar';
+    const kicker=document.createElement('span');kicker.className='read-kicker';kicker.textContent=kind==='section'?'Раздел':'Упражнение';
+    back.classList.add('card-back');action.classList.add('card-action');title.classList.add('card-title');
+    title.replaceChildren(...nameWords(name));toolbar.append(back,kicker,action,title);
+    if(extra)toolbar.append(extra);
+    header.replaceChildren(toolbar,hero);
+  }
+  function libraryTabs(catalog){
+    const tabs=document.createElement('div');tabs.className='xd-source';tabs.dataset.active=catalog?'catalog':'mine';
+    tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Источник упражнения');
+    tabs.innerHTML=['mine','catalog'].map(scope=>`<button type="button" role="tab" data-xd-scope="${scope}" aria-selected="${catalog===(scope==='catalog')}">${scope==='mine'?'Мои':'Каталог'}</button>`).join('');
+    return tabs;
+  }
+
  const chevron='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>';
- const down='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
- const icons={history:'<path d="M3 12a9 9 0 1 0 3-6L3 9m0-5v5h5m4-2v5l3 2"/>',movement:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',muscles:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',technique:'<path d="M9 5h11M9 12h11M9 19h11M3 5h1M3 12h1M3 19h1"/>',mistakes:'<path d="m12 3 10 18H2L12 3ZM12 9v5M12 17v1"/>',features:'<path d="M9 18h6M9 21h6M8 14a6 6 0 1 1 8 0l-1 3H9l-1-3Z"/>',restrictions:'<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3ZM12 8v5M12 16v1"/>',parameters:'<path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/>'};
- const sheet=(title,text)=>{
-   document.querySelector('.xd-sheet')?.remove();
-   const dialog=document.createElement('dialog');dialog.className='xd-sheet';
-   dialog.innerHTML=`<h2>${escHtml(title)}</h2><p>${escHtml(text)}</p><button type="button">Понятно</button>`;
-   $('screen-exercise-detail').append(dialog);dialog.querySelector('button').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());dialog.showModal();
+ let displayed=null;
+ const currentExecution=(id,catalog,user)=>displayed?.id===id&&displayed.catalog===catalog&&displayed.user===user?copyExecutionSnapshot(displayed.snapshot):null;
+ const sourceNotice=text=>{
+   const header=$('screen-exercise-detail').querySelector('.xd-hero');
+   header.querySelector('.source-note')?.remove();
+   const note=document.createElement('p');note.className='source-note';note.textContent=text;note.setAttribute('role','status');header.append(note);
  };
- function wrap(title,nodes,icon,index){
-   const section=document.createElement('section');section.className='xd-section';
-   section.dataset.sectionKind=icon;
-   const id='xd-section-'+index;
-   section.innerHTML=`<button class="xd-section-heading" type="button" aria-expanded="true" aria-controls="${id}"><span class="xd-node" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${icons[icon]||icons.features}</svg></span><span class="xd-heading-title">${escHtml(title)}</span><span class="xd-section-parameters" hidden></span>${down}</button><div class="xd-content" id="${id}"></div>`;
-   section.querySelector('.xd-content').append(...nodes);
-   section.querySelector('button').onclick=event=>{const button=event.currentTarget,content=section.querySelector('.xd-content');content.hidden=!content.hidden;button.setAttribute('aria-expanded',String(!content.hidden));};
+ function wrap(title,nodes,kind,index){
+   const template=document.createElement('template');template.innerHTML=sectionShell(kind,{fallback:title});
+   const section=template.content.firstElementChild;
+   const content=section.querySelector('.xd-content');content.id='xd-section-'+index;content.append(...nodes);
    return section;
  }
  function carousel(content,label){
@@ -26,7 +61,7 @@
    const dots=document.createElement('div');dots.className='xd-carousel-dots';
    content.replaceChildren(dots,track);
    const render=setupCompactCarouselDots(dots,slides.length,label);
-   const controller=setupTemplateCarousel(track,{onIndexChange:render,followHeight:true});
+   const controller=setupTemplateCarousel(track,{onIndexChange:render,naturalHeight:true});
    track.onkeydown=event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();const index=Math.max(0,Math.min(slides.length-1,controller.currentIndex()+(event.key==='ArrowRight'?1:-1)));track.scrollTo({left:templateCarouselTargets(track)[index],behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}};
    const cleanup=new MutationObserver(()=>{if(!content.isConnected){controller.destroy();cleanup.disconnect();}});cleanup.observe($('screen-exercise-detail'),{childList:true,subtree:true});
  }
@@ -94,6 +129,7 @@
  function decorate(ex,returnScreen,options,snapshot,resolved){
    const screen=$('screen-exercise-detail'),body=$('exd-body'),catalog=_exdCatalog,a=ex.atlas||{},userId=DATA.getCurrentUser();
    screen.querySelector('.xd-pick-footer')?.remove();
+   if(!options.previewExercise)displayed={id:ex.id,catalog,user:userId,snapshot};
    const picker=_constructorCatalog;
    if(picker && !options.previewExercise && returnScreen==='exercises' && picker.selectedId===ex.id){
      const footer=document.createElement('footer');footer.className='xd-pick-footer';
@@ -102,15 +138,11 @@
      footer.append(button);screen.append(footer);
    }
    screen.classList.add('xd-view');screen.querySelector('[data-xd-remove]')?.remove();$('exd-title').textContent='Упражнение';
-   document.querySelector('.xd-source')?.remove();
-   document.querySelectorAll('.xd-membership').forEach(button=>button.remove());
-   const tabs=document.createElement('div');tabs.className='xd-source';tabs.dataset.active=catalog?'catalog':'mine';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Источник упражнения');
-   tabs.innerHTML=['mine','catalog'].map(scope=>`<button type="button" role="tab" data-xd-scope="${scope}" aria-selected="${catalog===(scope==='catalog')}">${scope==='mine'?'Мои':'Каталог'}</button>`).join('');
-
+   const tabs=libraryTabs(catalog);
    const changeSource=scope=>{
      if(!scope||scope===(catalog?'catalog':'mine'))return;
      const found=DATA.libraryExercises(userId,scope==='catalog').find(item=>item.id===ex.id);
-     if(!found){if(scope==='catalog')sheet('В каталоге больше нет','Оригинал недоступен. Ваша личная копия сохранена.');else sheet('В «Моих» пока нет','Добавьте упражнение из каталога в «Мои», чтобы открыть его в своей библиотеке.');return;}
+     if(!found){if(scope==='catalog')sourceNotice('Оригинал недоступен. Ваша личная копия сохранена.');else sourceNotice('Добавьте упражнение из каталога в «Мои», чтобы открыть его в своей библиотеке.');return;}
      setReferenceLibraryScope(scope);openExerciseDetail(ex.id,returnScreen,{scope});
      document.querySelector('.xd-source [aria-selected="true"]')?.focus();
    };
@@ -118,7 +150,7 @@
    tabs.onkeydown=event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();changeSource(catalog?'mine':'catalog');}};
    $('exd-edit-btn').style.display=options.previewExercise||catalog&&!DATA.isAdmin()?'none':'';
    $('exd-edit-btn').onclick=null;
-   const cards=[...body.querySelectorAll(':scope > .exd-card')],media=body.querySelector(':scope > .exd-media'),links=[...body.querySelectorAll(':scope > a.exd-video-btn')];
+   const cards=[...body.querySelectorAll(':scope > .exd-card')],media=body.querySelector(':scope > .exd-media');
    const tree=document.createElement('div');tree.className='xd-tree';let index=0;
    const execution=document.createElement('div');execution.className='xd-execution-group xd-variant-description';execution.setAttribute('aria-label','Описание выполнения: движения, мышцы, техника, ошибки, особенности и ограничения');
    const updateMarks=()=>execution.querySelectorAll('.xd-section').forEach(section=>{
@@ -127,15 +159,7 @@
     if(relation.changed)section.querySelector('.xd-content')?.classList.add('xd-dependent-fragment');
     if(relation.conflict){const note=document.createElement('p');note.className='ex-form-hint';note.textContent='Для этого сочетания показано общее описание: отличия требуют уточнения.';section.querySelector('.xd-content')?.prepend(note);}
    });
-   const canEdit = canEditExerciseLibrary(catalog) && !options.previewExercise && !_constructorCatalog && returnScreen !== 'workout';
-   const parameterNodes = snapshot.executionParameters.length ? [parameters(ex,catalog,returnScreen,options)] : [];
-   if (canEdit && parameterNodes.length) {
-     const edit = document.createElement('button');
-     edit.type = 'button'; edit.className = 'btn-chip';
-     edit.textContent = 'Настроить параметры';
-     edit.onclick = () => openExerciseForm(ex.id,{catalog,focus:'parameters'});
-     parameterNodes.push(edit);
-   }
+   const parameterNodes=snapshot.executionParameters.length?[parameters(ex,catalog,returnScreen,options)]:[];
    if (parameterNodes.length) tree.append(wrap('Параметры выполнения',parameterNodes,'parameters',index++));
    tree.append(execution);
    const moves=exerciseMovements(resolved.exercise);
@@ -148,10 +172,16 @@
      else if(card.querySelector('.exd-mistake'))icon='mistakes';
      else if(card.querySelector('.exd-warn')){title='Ограничения';icon='restrictions';}
      else if(card.querySelector('.exd-tip')){title='Дополнительно';icon='additional';card.querySelector('.exd-tip b')?.remove();}
-     else if(card.querySelector('.exd-note'))title='Особенности упражнения';
+     else if(card.querySelector('.exd-note'))title='Особенности';
      if(!title)return;
      labels.forEach(label=>label.remove());
-     card.querySelectorAll('.exd-muscle-role-name').forEach(label=>{if(label.textContent.trim()==='Целевые')label.textContent='Агонисты';});
+     const roleRows=[...card.querySelectorAll('.exd-muscle-role')];
+     const support=roleRows.filter(row=>['Синергисты','Стабилизаторы','Распределители'].includes(row.querySelector('.exd-muscle-role-name')?.textContent.trim()));
+     if(support.length){
+       const first=support[0];first.querySelector('.exd-muscle-role-name').textContent='Вспомогательные';
+       for(const row of support.slice(1)){first.querySelector('.exd-chips').append(...row.querySelector('.exd-chips').children);row.remove();}
+     }
+     card.querySelectorAll('.exd-muscle-role-name').forEach(label=>{if(label.textContent.trim()==='Целевые')label.textContent='Основные';else if(label.textContent.trim()==='Синергисты')label.textContent='Вспомогательные';});
      card.querySelectorAll('.exd-chip').forEach(button=>{
        const text=button.textContent,parts=text.split(' · ');
        button.innerHTML=`<span>${escHtml(parts[0])}${parts.length>1?`<small>${escHtml(parts.slice(1).join(' · '))}</small>`:''}</span>${chevron}`;
@@ -168,18 +198,17 @@
          const content=section.querySelector('.xd-content');content.classList.add('xd-errors-content');
          content.querySelectorAll('.exd-mistake').forEach((old,n)=>{
            const text=old.querySelector('span:last-child').textContent,parts=text.split(/Исправление:\s*/),problem=parts.shift(),correction=parts.join('Исправление: ');
-           const item=document.createElement('details');item.className='xd-error-item';
-           item.innerHTML=`<summary><span class="xd-slide-title">${escHtml(problem.trim())}</span>${down}</summary><div class="xd-error-detail">${correction?`<div class="xd-error-fix"><span class="xd-fix-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Исправление</span><p>${escHtml(correction)}</p></div>`:''}</div>`;
+           const item=document.createElement('article');item.className='xd-error-item';
+           item.innerHTML=`<p class="xd-slide-title">${escHtml(problem.trim())}</p>${correction?`<div class="xd-error-detail xd-error-fix"><span class="xd-fix-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Исправление</span><p>${escHtml(correction)}</p></div>`:''}`;
            old.replaceWith(item);
          });
          carousel(content,'Типичные ошибки');
-       }else if(title==='Особенности упражнения'){
+       }else if(title==='Особенности'){
          section.classList.add('xd-features-section');const content=section.querySelector('.xd-content');content.classList.add('xd-features-content');
          content.replaceChildren();for(const text of resolved.sections.features.value.filter(text=>text.trim())){const item=document.createElement('article');item.className='xd-feature-item';item.innerHTML=`<p class="xd-feature-detail">${escHtml(text)}</p>`;content.append(item);}
-         carousel(content,'Особенности упражнения');
+         carousel(content,'Особенности');
        }else if(title==='Ограничения'){
          section.classList.add('xd-restrictions-section');section.querySelector('.xd-content').classList.add('xd-restrictions-content');
-         const toggle=section.querySelector('.xd-section-heading'),heading=document.createElement('h2');heading.className='xd-section-heading xd-fixed-heading';heading.innerHTML=toggle.innerHTML;heading.querySelector(':scope > svg')?.remove();toggle.replaceWith(heading);
          const lead=section.querySelector('.exd-warn b');if(lead?.textContent==='Противопоказания.')lead.remove();
        }
        execution.append(section);
@@ -211,12 +240,18 @@
      }
      if(sessions.length){showSessions(false);tree.append(wrap('Последние тренировки',[list],'history',index++));}
    }
+   for(const kind of descriptionOrder){
+     const section=execution.querySelector('[data-section-kind="'+kind+'"]');if(section)execution.append(section);
+   }
    updateMarks();
    if(options.previewExercise)execution.querySelectorAll('[data-reference-kind]').forEach(button=>button.disabled=true);
    if(!execution.children.length)execution.remove();
    const included=!DATA.isHidden(userId,ex.id);
    const hero=document.createElement('article');hero.className='xd-hero';
-   hero.innerHTML=`<h1>${escHtml(ex.name)}</h1><div class="xd-hero-meta">${resolved.sections.groups.value.map(group=>`<button type="button" class="xd-group movement-group-chip" data-xd-group="${escHtml(group)}" aria-label="Группа: ${escHtml(group)}">${referenceIcon('groups')}<span>${escHtml(group)}</span></button>`).join('')}${a.level?.trim()?`<span class="xd-type">${escHtml(LEVEL_LABELS[a.level]||a.level)}</span>`:''}${catalog&&!options.previewExercise?'<button type="button" class="xd-membership" aria-pressed="'+included+'"></button>':''}</div>`;
+   hero.innerHTML='<div class="xd-hero-meta"></div>';
+   if(catalog&&!options.previewExercise)hero.firstChild.innerHTML='<button type="button" class="xd-membership"></button>';
+   const meta=hero.querySelector('.xd-hero-meta');
+   meta.insertAdjacentHTML('afterbegin',headerTags(resolved.sections.groups.value,resolved.sections.level.value,!options.previewExercise));
    if(snapshot.executionValues.length)hero.insertAdjacentHTML('beforeend',executionBadges(snapshot));
    if(options.previewExercise){
      const note=document.createElement('p');note.className='ex-form-hint';
@@ -225,17 +260,16 @@
        '  |  На графике · '+(resolved.exercise.atlas.categories.join(' · ')||'Движения не заданы');hero.append(note);
    }
    if(!options.previewExercise&&returnScreen!=='workout')hero.querySelector('.xd-hero-meta').append(tabs);
-   for(const groupButton of hero.querySelectorAll('[data-xd-group]')){groupButton.disabled=!!options.previewExercise;groupButton.onclick=()=>{
-     const group=groupButton.dataset.xdGroup;
-     _referenceTrail=[{screen:'screen-exercise-detail',state:{..._referenceState},exerciseId:ex.id,returnScreen,scroll:body.scrollTop}];
-     _referenceState={page:'group',name:group,scope:_exerciseLibrary,query:'',sort:'count-desc',picker:null,scrollTop:0,owner:Auth.userId(),userId};goToScreen('exerciseReference');
-   };}
    if(catalog&&!options.previewExercise){const button=hero.querySelector('.xd-membership');button.setAttribute('aria-pressed',String(included));button.innerHTML=exerciseMembershipIcon(included);button.setAttribute('aria-label',included?'Убрать из моих':'Добавить в мои');button.title=included?'Убрать из моих':'Добавить в мои';button.onclick=()=>{toggleExerciseLibrary(ex.id);openExerciseDetail(ex.id,returnScreen,{scope:'catalog'});};}
-   let header=screen.querySelector('.xd-fixed-header');
-   if(!header){header=document.createElement('header');header.className='xd-fixed-header';const toolbar=screen.querySelector('.detail-screen-header');screen.prepend(header);header.append(toolbar);}
-   header.querySelector('.xd-hero')?.remove();header.append(hero);
-   const membershipButton=hero.querySelector('.xd-membership');if(membershipButton)header.querySelector('.detail-screen-header').insertBefore(membershipButton,$('exd-edit-btn'));
-   const inner=document.createElement('div');inner.className='xd-scroll-inner';inner.append(...(media?[media]:[]),...(tree.querySelector('.xd-section')?[tree]:[]),...links);body.replaceChildren(inner);
+   const back=$('exd-back-btn'),action=$('exd-edit-btn'),title=$('exd-title'),extra=$('exd-meta');
+   const oldToolbar=screen.querySelector('.detail-screen-header');
+   let header=screen.querySelector('.card-header');
+   if(!header){header=document.createElement('header');screen.prepend(header);}
+   title.className='card-title';title.setAttribute('role','heading');title.setAttribute('aria-level','1');
+   fillCardHeader(header,{back,action,title,name:ex.name,kind:ex.kind,hero,extra});
+   oldToolbar?.remove();
+   const material=media||(ex.media&&isHttpUrl(ex.media)?body.querySelector('a.exd-video-btn'):null);
+   const inner=document.createElement('div');inner.className='xd-scroll-inner';inner.append(...(material?[material]:[]),...(tree.querySelector('.xd-section')?[tree]:[]));body.replaceChildren(inner);
    if(!catalog&&!options.previewExercise&&DATA.catalogUpdateAvailable(userId,ex.id)){
      const notice=document.createElement('section');notice.className='xd-catalog-update';
      notice.innerHTML='<p><b>В каталоге есть обновление</b><br>Ваша версия сохранена. Можно оставить её или заменить версией из каталога.</p><button type="button" class="btn-chip">Посмотреть обновление</button>';
@@ -259,7 +293,7 @@
      };
      inner.prepend(notice);
    }
-   body.scrollTop=0;body.querySelectorAll('.exd-video-btn').forEach(link=>{link.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>Открыть материал';});
+   body.scrollTop=0;
  }
- window.ExerciseDetailPage={decorate,mountRemoval,confirmRemoval};
+ window.ExerciseDetailPage={currentExecution,decorate,mountRemoval,confirmRemoval,cardIcon,sectionShell,descriptionOrder,fillCardHeader,headerTags,libraryTabs};
 })();
